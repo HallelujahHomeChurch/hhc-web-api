@@ -1,0 +1,16 @@
+trigger:
+  branches: { include: [main] }
+
+pool: { vmImage: ubuntu-latest }
+
+steps:
+  - task: GoTool@0
+    inputs: { version: '1.24.6' }
+  - script: |
+      set -euo pipefail
+      docker run -d --name hhc-web-api-postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=hhc_web -p 5432:5432 postgres:16-alpine
+      for attempt in {1..30}; do docker exec hhc-web-api-postgres pg_isready -U postgres && break; sleep 1; done
+      HHW_TEST_DATABASE_URL='postgres://postgres:postgres@127.0.0.1:5432/hhc_web?sslmode=disable' go test ./...
+      go vet ./...
+      docker build -t hhc-web-api:verify .
+    displayName: Test and build

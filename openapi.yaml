@@ -1,0 +1,79 @@
+openapi: 3.1.0
+info:
+  title: HHC Web API
+  version: 0.1.0
+servers:
+  - url: https://www.alive.org.tw/api
+paths:
+  /bulletins:
+    get:
+      operationId: listPublicBulletins
+      parameters:
+        - $ref: '#/components/parameters/Locale'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200': { $ref: '#/components/responses/PublicBulletinList' }
+  /bulletins/latest:
+    get:
+      operationId: getLatestPublicBulletin
+      parameters: [{ $ref: '#/components/parameters/Locale' }]
+      responses:
+        '200': { description: Published latest bulletin }
+        '404': { $ref: '#/components/responses/Error' }
+  /bulletins/{issueDate}:
+    get:
+      operationId: getPublicBulletinByDate
+      parameters:
+        - { name: issueDate, in: path, required: true, schema: { type: string, format: date } }
+        - $ref: '#/components/parameters/Locale'
+      responses:
+        '200': { description: Published bulletin }
+        '404': { $ref: '#/components/responses/Error' }
+  /admin/bulletins:
+    get:
+      operationId: listAdminBulletins
+      security: [{ bearerAuth: [cms:read] }]
+      responses: { '200': { description: CMS bulletin list } }
+    post:
+      operationId: createBulletinIssue
+      security: [{ bearerAuth: [cms:write] }]
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      responses: { '201': { description: Bulletin issue created }, '409': { $ref: '#/components/responses/Error' } }
+  /admin/bulletins/{issueId}:
+    get:
+      operationId: getAdminBulletin
+      security: [{ bearerAuth: [cms:read] }]
+      parameters: [{ $ref: '#/components/parameters/IssueID' }]
+      responses: { '200': { description: CMS bulletin detail }, '404': { $ref: '#/components/responses/Error' } }
+  /admin/bulletins/{issueId}/versions:
+    post:
+      operationId: putBulletinVersion
+      security: [{ bearerAuth: [cms:write] }]
+      parameters: [{ $ref: '#/components/parameters/IssueID' }, { $ref: '#/components/parameters/IfMatch' }]
+      responses: { '200': { description: Localized version attached }, '412': { $ref: '#/components/responses/Error' } }
+  /admin/bulletins/{issueId}/publish:
+    post:
+      operationId: publishBulletin
+      security: [{ bearerAuth: [cms:publish, assets:grant] }]
+      parameters: [{ $ref: '#/components/parameters/IssueID' }, { $ref: '#/components/parameters/IfMatch' }]
+      responses: { '202': { description: Publication workflow accepted }, '422': { $ref: '#/components/responses/Error' } }
+  /admin/bulletins/{issueId}/unpublish:
+    post:
+      operationId: unpublishBulletin
+      security: [{ bearerAuth: [cms:publish] }]
+      parameters: [{ $ref: '#/components/parameters/IssueID' }, { $ref: '#/components/parameters/IfMatch' }]
+      responses: { '200': { description: Public projection removed }, '412': { $ref: '#/components/responses/Error' } }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  parameters:
+    Locale: { name: locale, in: query, schema: { type: string, enum: [zh-Hant, zh-Hans, en], default: zh-Hant } }
+    Page: { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+    PageSize: { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+    IssueID: { name: issueId, in: path, required: true, schema: { type: string, format: uuid } }
+    IdempotencyKey: { name: Idempotency-Key, in: header, required: true, schema: { type: string } }
+    IfMatch: { name: If-Match, in: header, required: true, schema: { type: string } }
+  responses:
+    PublicBulletinList: { description: Published bulletin page }
+    Error: { description: Standard API error envelope }
