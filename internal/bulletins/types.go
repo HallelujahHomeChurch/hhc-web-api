@@ -28,17 +28,18 @@ type Issue struct {
 }
 
 type Version struct {
-	ID          string     `json:"id"`
-	IssueID     string     `json:"issueId"`
-	Locale      string     `json:"locale"`
-	Title       string     `json:"title"`
-	PDFAssetID  string     `json:"pdfAssetId"`
-	PDFFileName string     `json:"pdfFileName"`
-	Status      string     `json:"status"`
-	Version     int64      `json:"version"`
-	PublishedAt *time.Time `json:"publishedAt,omitempty"`
-	CreatedAt   time.Time  `json:"createdAt"`
-	UpdatedAt   time.Time  `json:"updatedAt"`
+	ID            string     `json:"id"`
+	IssueID       string     `json:"issueId"`
+	Locale        string     `json:"locale"`
+	Title         string     `json:"title"`
+	PDFAssetID    string     `json:"pdfAssetId"`
+	PDFFileName   string     `json:"pdfFileName"`
+	PublicGrantID string     `json:"publicGrantId,omitempty"`
+	Status        string     `json:"status"`
+	Version       int64      `json:"version"`
+	PublishedAt   *time.Time `json:"publishedAt,omitempty"`
+	CreatedAt     time.Time  `json:"createdAt"`
+	UpdatedAt     time.Time  `json:"updatedAt"`
 }
 
 type PublicBulletin struct {

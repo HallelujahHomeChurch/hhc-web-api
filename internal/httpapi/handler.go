@@ -11,15 +11,26 @@ import (
 	"strings"
 	"time"
 
+	"github.com/HallelujahHomeChurch/hhc-web-api/internal/assetclient"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/bulletins"
 )
+
+const maxBulletinPDFSize = 20 << 20
+
+type assetUploads interface {
+	CreateBulletinUpload(context.Context, string, string, string, string, int64, string) (assetclient.CreatedUpload, error)
+	CompleteUpload(context.Context, string, assetclient.CompleteUploadInput) (assetclient.Asset, error)
+}
 
 type Handler struct {
 	service *bulletins.Service
 	db      *sql.DB
+	uploads assetUploads
 }
 
-func New(service *bulletins.Service, db *sql.DB) *Handler { return &Handler{service: service, db: db} }
+func New(service *bulletins.Service, db *sql.DB, uploads assetUploads) *Handler {
+	return &Handler{service: service, db: db, uploads: uploads}
+}
 func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
@@ -34,10 +45,90 @@ func (h *Handler) Routes() http.Handler {
 	admin.HandleFunc("POST /api/admin/bulletins", requireScope("cms:write", h.adminCreate))
 	admin.HandleFunc("GET /api/admin/bulletins/{issueID}", requireScope("cms:read", h.adminGet))
 	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/versions", requireScope("cms:write", h.adminPutVersion))
+	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/upload-sessions", requireScopes([]string{"cms:write", "assets:write"}, h.adminCreateUpload))
+	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/assets/{assetID}/complete", requireScopes([]string{"cms:write", "assets:write"}, h.adminCompleteUpload))
 	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/publish", requireScope("cms:publish", h.adminPublish))
 	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/unpublish", requireScope("cms:publish", h.adminUnpublish))
 	mux.Handle("/api/admin/", requireTrusted(admin))
 	return requestID(mux)
+}
+
+type createUploadInput struct {
+	Locale    string `json:"locale"`
+	FileName  string `json:"fileName"`
+	MIMEType  string `json:"mimeType"`
+	SizeBytes int64  `json:"sizeBytes"`
+}
+type completeUploadInput struct {
+	Locale         string `json:"locale"`
+	Title          string `json:"title"`
+	FileName       string `json:"fileName"`
+	MIMEType       string `json:"mimeType"`
+	SizeBytes      int64  `json:"sizeBytes"`
+	ChecksumSHA256 string `json:"checksumSha256"`
+}
+
+func (h *Handler) adminCreateUpload(w http.ResponseWriter, r *http.Request) {
+	if h.uploads == nil {
+		writeError(w, http.StatusServiceUnavailable, "asset_service_unavailable", "Asset uploads are unavailable.")
+		return
+	}
+	var input createUploadInput
+	if !decode(w, r, &input) {
+		return
+	}
+	if !validLocale(input.Locale) || strings.TrimSpace(input.FileName) == "" || input.MIMEType != "application/pdf" || input.SizeBytes <= 0 || input.SizeBytes > maxBulletinPDFSize || strings.TrimSpace(r.Header.Get("Idempotency-Key")) == "" {
+		handleError(w, bulletins.ErrInvalid)
+		return
+	}
+	if _, err := h.service.GetIssue(r.Context(), r.PathValue("issueID")); err != nil {
+		handleError(w, err)
+		return
+	}
+	created, err := h.uploads.CreateBulletinUpload(r.Context(), r.PathValue("issueID"), input.Locale, input.FileName, input.MIMEType, input.SizeBytes, r.Header.Get("Idempotency-Key"))
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+	writeData(w, http.StatusCreated, created, nil)
+}
+func (h *Handler) adminCompleteUpload(w http.ResponseWriter, r *http.Request) {
+	if h.uploads == nil {
+		writeError(w, http.StatusServiceUnavailable, "asset_service_unavailable", "Asset uploads are unavailable.")
+		return
+	}
+	expected, ok := ifMatch(w, r)
+	if !ok {
+		return
+	}
+	var input completeUploadInput
+	if !decode(w, r, &input) {
+		return
+	}
+	if !validLocale(input.Locale) || strings.TrimSpace(input.Title) == "" || input.MIMEType != "application/pdf" || input.SizeBytes <= 0 || len(input.ChecksumSHA256) != 64 {
+		handleError(w, bulletins.ErrInvalid)
+		return
+	}
+	asset, err := h.uploads.CompleteUpload(r.Context(), r.PathValue("assetID"), assetclient.CompleteUploadInput{SizeBytes: input.SizeBytes, ChecksumSHA256: input.ChecksumSHA256, MIMEType: input.MIMEType})
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+	if asset.ID != r.PathValue("assetID") || asset.Namespace != "cms.weekly.pdf" || asset.OwnerService != "hhc-web-api" || asset.OwnerType != "bulletin_issue" || asset.OwnerID != r.PathValue("issueID") || asset.Locale != input.Locale {
+		writeError(w, http.StatusForbidden, "asset_owner_mismatch", "The uploaded asset does not belong to this bulletin.")
+		return
+	}
+	fileName := asset.OriginalFileName
+	if fileName == "" {
+		fileName = input.FileName
+	}
+	value, err := h.service.PutVersion(r.Context(), r.PathValue("issueID"), expected, bulletins.PutVersionInput{Locale: input.Locale, Title: input.Title, PDFAssetID: asset.ID, PDFFileName: fileName}, actor(r))
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+	w.Header().Set("ETag", fmt.Sprintf(`"%d"`, value.Version))
+	writeData(w, http.StatusOK, value, nil)
 }
 func (h *Handler) ready(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
@@ -166,6 +257,7 @@ func locale(r *http.Request) string {
 	}
 	return value
 }
+func validLocale(value string) bool { return value == "zh-Hant" || value == "zh-Hans" || value == "en" }
 func pagination(r *http.Request) (int, int) {
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 	size, _ := strconv.Atoi(r.URL.Query().Get("pageSize"))

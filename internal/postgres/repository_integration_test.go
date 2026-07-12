@@ -10,6 +10,7 @@ import (
 
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/bulletins"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/migrations"
+	"github.com/HallelujahHomeChurch/hhc-web-api/internal/publication"
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
@@ -60,4 +61,34 @@ func TestRepositoryPublishWaitsForAssetWorkflow(t *testing.T) {
 	if events != 1 {
 		t.Fatalf("outbox events = %d", events)
 	}
+	event, found, err := repository.Claim(ctx, now, 30*time.Second)
+	if err != nil || !found {
+		t.Fatalf("claim found=%v err=%v", found, err)
+	}
+	if err := repository.CompletePublish(ctx, event, "grant-1", "https://www.alive.org.tw/api/assets/public/asset-1", now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	public, err := repository.GetPublicLatest(ctx, "zh-Hant")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if public.IssueDate != "2026-07-12" || public.DownloadURL != "https://www.alive.org.tw/api/assets/public/asset-1" {
+		t.Fatalf("public = %#v", public)
+	}
+	published, err := repository.GetIssue(ctx, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if published.Status != "published" || published.Versions[0].PublicGrantID != "grant-1" {
+		t.Fatalf("published = %#v", published)
+	}
+	var status string
+	if err := db.QueryRowContext(ctx, `SELECT status FROM hhc_web.outbox_event WHERE id=$1`, event.ID).Scan(&status); err != nil {
+		t.Fatal(err)
+	}
+	if status != "delivered" {
+		t.Fatalf("outbox status = %q", status)
+	}
 }
+
+var _ publication.Repository = (*Repository)(nil)

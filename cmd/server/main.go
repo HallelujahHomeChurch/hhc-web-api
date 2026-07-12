@@ -11,11 +11,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/HallelujahHomeChurch/hhc-web-api/internal/assetclient"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/bulletins"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/config"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/httpapi"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/migrations"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/postgres"
+	"github.com/HallelujahHomeChurch/hhc-web-api/internal/publication"
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
@@ -44,7 +46,16 @@ func run() error {
 	}
 	repository := postgres.New(db)
 	service := bulletins.NewService(repository, time.Now)
-	handler := httpapi.New(service, db)
+	assetClient := assetclient.New(cfg.AssetAPIBaseURL, cfg.InternalCallerAppID, cfg.PublicBaseURL)
+	handler := httpapi.New(service, db, assetClient)
+	assets := publication.NewAssetAdapter(assetClient)
+	worker := publication.NewWorker(repository, assets, cfg.OutboxMaxAttempts)
+	go func() {
+		if err := worker.Run(ctx); err != nil {
+			slog.Error("publication worker stopped", "error", err)
+			stop()
+		}
+	}()
 	server := &http.Server{Addr: ":" + cfg.Port, Handler: handler.Routes(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 2 * time.Minute}
 	serverErrors := make(chan error, 1)
 	go func() { slog.Info("hhc web api listening", "port", cfg.Port); serverErrors <- server.ListenAndServe() }()

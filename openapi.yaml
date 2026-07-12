@@ -33,35 +33,58 @@ paths:
   /admin/bulletins:
     get:
       operationId: listAdminBulletins
-      security: [{ bearerAuth: [cms:read] }]
+      security: [{ bearerAuth: [] }]
+      x-required-scopes: [cms:read]
       responses: { '200': { description: CMS bulletin list } }
     post:
       operationId: createBulletinIssue
-      security: [{ bearerAuth: [cms:write] }]
+      security: [{ bearerAuth: [] }]
+      x-required-scopes: [cms:write]
       parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
       responses: { '201': { description: Bulletin issue created }, '409': { $ref: '#/components/responses/Error' } }
   /admin/bulletins/{issueId}:
     get:
       operationId: getAdminBulletin
-      security: [{ bearerAuth: [cms:read] }]
+      security: [{ bearerAuth: [] }]
+      x-required-scopes: [cms:read]
       parameters: [{ $ref: '#/components/parameters/IssueID' }]
       responses: { '200': { description: CMS bulletin detail }, '404': { $ref: '#/components/responses/Error' } }
   /admin/bulletins/{issueId}/versions:
     post:
       operationId: putBulletinVersion
-      security: [{ bearerAuth: [cms:write] }]
+      security: [{ bearerAuth: [] }]
+      x-required-scopes: [cms:write]
       parameters: [{ $ref: '#/components/parameters/IssueID' }, { $ref: '#/components/parameters/IfMatch' }]
       responses: { '200': { description: Localized version attached }, '412': { $ref: '#/components/responses/Error' } }
+  /admin/bulletins/{issueId}/upload-sessions:
+    post:
+      operationId: createBulletinUploadSession
+      security: [{ bearerAuth: [] }]
+      x-required-scopes: [cms:write, assets:write]
+      parameters: [{ $ref: '#/components/parameters/IssueID' }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      responses: { '201': { description: Short-lived asset upload target created } }
+  /admin/bulletins/{issueId}/assets/{assetId}/complete:
+    post:
+      operationId: completeBulletinUpload
+      security: [{ bearerAuth: [] }]
+      x-required-scopes: [cms:write, assets:write]
+      parameters:
+        - $ref: '#/components/parameters/IssueID'
+        - { name: assetId, in: path, required: true, schema: { type: string } }
+        - $ref: '#/components/parameters/IfMatch'
+      responses: { '200': { description: Upload verified and attached to localized draft }, '412': { $ref: '#/components/responses/Error' } }
   /admin/bulletins/{issueId}/publish:
     post:
       operationId: publishBulletin
-      security: [{ bearerAuth: [cms:publish, assets:grant] }]
+      security: [{ bearerAuth: [] }]
+      x-required-scopes: [cms:publish]
       parameters: [{ $ref: '#/components/parameters/IssueID' }, { $ref: '#/components/parameters/IfMatch' }]
       responses: { '202': { description: Publication workflow accepted }, '422': { $ref: '#/components/responses/Error' } }
   /admin/bulletins/{issueId}/unpublish:
     post:
       operationId: unpublishBulletin
-      security: [{ bearerAuth: [cms:publish] }]
+      security: [{ bearerAuth: [] }]
+      x-required-scopes: [cms:publish]
       parameters: [{ $ref: '#/components/parameters/IssueID' }, { $ref: '#/components/parameters/IfMatch' }]
       responses: { '200': { description: Public projection removed }, '412': { $ref: '#/components/responses/Error' } }
 components:

@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -16,6 +17,7 @@ type Config struct {
 	AssetAPIBaseURL     string
 	InternalCallerAppID string
 	PublicBaseURL       string
+	OutboxMaxAttempts   int
 }
 
 func Load() (Config, error) {
@@ -23,6 +25,7 @@ func Load() (Config, error) {
 		Port: value("PORT", "8082"), DatabaseURL: strings.TrimSpace(os.Getenv("DATABASE_URL")), RedisURL: strings.TrimSpace(os.Getenv("REDIS_URL")),
 		Environment: value("ENVIRONMENT", "development"), ShutdownTimeout: 10 * time.Second, AssetAPIBaseURL: value("ASSET_API_BASE_URL", "http://127.0.0.1:8083"),
 		InternalCallerAppID: value("INTERNAL_CALLER_APP_ID", "hhc-web-api"), PublicBaseURL: value("PUBLIC_BASE_URL", "http://127.0.0.1:8082/api"),
+		OutboxMaxAttempts: 20,
 	}
 	if cfg.DatabaseURL == "" {
 		return Config{}, fmt.Errorf("DATABASE_URL is required")
@@ -33,6 +36,13 @@ func Load() (Config, error) {
 			return Config{}, fmt.Errorf("invalid SHUTDOWN_TIMEOUT")
 		}
 		cfg.ShutdownTimeout = parsed
+	}
+	if raw := strings.TrimSpace(os.Getenv("OUTBOX_MAX_ATTEMPTS")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed <= 0 {
+			return Config{}, fmt.Errorf("invalid OUTBOX_MAX_ATTEMPTS")
+		}
+		cfg.OutboxMaxAttempts = parsed
 	}
 	return cfg, nil
 }

@@ -25,7 +25,11 @@ go run ./cmd/server
 - `GET /api/admin/bulletins/{issueId}`
 - `POST /api/admin/bulletins`
 - `POST /api/admin/bulletins/{issueId}/versions`
+- `POST /api/admin/bulletins/{issueId}/upload-sessions`
+- `POST /api/admin/bulletins/{issueId}/assets/{assetId}/complete`
 - `POST /api/admin/bulletins/{issueId}/publish`
 - `POST /api/admin/bulletins/{issueId}/unpublish`
 
 Admin writes require `If-Match` after creation. Publish is asynchronous and returns `202`; public visibility changes only after the asset grant workflow completes.
+
+Weekly bulletin uploads are orchestrated here, while `asset-api` owns the upload target, private object, ClamAV status, and public read grant. The browser never chooses an asset namespace or owner. PDF uploads are limited to 20 MiB.
