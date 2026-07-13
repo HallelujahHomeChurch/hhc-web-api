@@ -168,9 +168,17 @@ func (u *apiUploads) CreateBulletinUpload(_ context.Context, issueID, locale, fi
 	u.createdLocale = locale
 	return assetclient.CreatedUpload{Asset: assetclient.Asset{ID: "asset-1"}, UploadTarget: assetclient.UploadTarget{URL: "http://example.test/upload", Method: http.MethodPut}}, nil
 }
+func (u *apiUploads) CreateNewsCoverUpload(_ context.Context, newsID, fileName, mimeType string, sizeBytes int64, key string) (assetclient.CreatedUpload, error) {
+	return assetclient.CreatedUpload{Asset: assetclient.Asset{ID: "news-asset", OwnerID: newsID}, UploadTarget: assetclient.UploadTarget{URL: "http://example.test/upload", Method: http.MethodPut}}, nil
+}
 func (u *apiUploads) CompleteUpload(context.Context, string, assetclient.CompleteUploadInput) (assetclient.Asset, error) {
 	return u.completed, nil
 }
+func (u *apiUploads) Get(context.Context, string) (assetclient.Asset, error) { return u.completed, nil }
+func (*apiUploads) CreatePublicGrant(context.Context, string, string) (assetclient.Grant, error) {
+	return assetclient.Grant{ID: "grant-1"}, nil
+}
+func (*apiUploads) RevokeGrant(context.Context, string, string) error { return nil }
 func (*apiRepository) StartPublish(context.Context, string, string, int64, string, time.Time) (bulletins.Workflow, error) {
 	return bulletins.Workflow{}, nil
 }

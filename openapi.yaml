@@ -277,6 +277,55 @@ paths:
         - $ref: '#/components/parameters/IfMatch'
       responses:
         '200': { $ref: '#/components/responses/ContentItem' }
+  /admin/content/news/{contentId}/upload-sessions:
+    post:
+      operationId: createNewsCoverUpload
+      security: [{ bearerAuth: [] }]
+      x-required-scopes: [cms:write, assets:write]
+      parameters:
+        - $ref: '#/components/parameters/ContentID'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateImageUploadInput' }
+      responses:
+        '201':
+          description: News cover upload target
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreatedUploadEnvelope' }
+  /admin/content/news/{contentId}/assets/{assetId}:
+    get:
+      operationId: getNewsCoverStatus
+      security: [{ bearerAuth: [] }]
+      x-required-scopes: [cms:read]
+      parameters:
+        - $ref: '#/components/parameters/ContentID'
+        - { name: assetId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: News cover scan and processing status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AssetStatusEnvelope' }
+  /admin/content/news/{contentId}/assets/{assetId}/complete:
+    post:
+      operationId: completeNewsCoverUpload
+      security: [{ bearerAuth: [] }]
+      x-required-scopes: [cms:write, assets:write]
+      parameters:
+        - $ref: '#/components/parameters/ContentID'
+        - { name: assetId, in: path, required: true, schema: { type: string } }
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CompleteImageUploadInput' }
+      responses:
+        '200': { $ref: '#/components/responses/ContentItem' }
 components:
   securitySchemes:
     bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
@@ -465,6 +514,36 @@ components:
         mimeType: { type: string, const: application/pdf }
         sizeBytes: { type: integer, format: int64, minimum: 1, maximum: 20971520 }
         checksumSha256: { type: string, pattern: '^[a-fA-F0-9]{64}$' }
+    CreateImageUploadInput:
+      type: object
+      additionalProperties: false
+      required: [fileName, mimeType, sizeBytes]
+      properties:
+        fileName: { type: string, minLength: 1 }
+        mimeType: { type: string, enum: [image/jpeg, image/png, image/webp] }
+        sizeBytes: { type: integer, format: int64, minimum: 1, maximum: 10485760 }
+    CompleteImageUploadInput:
+      type: object
+      additionalProperties: false
+      required: [fileName, mimeType, sizeBytes, checksumSha256]
+      properties:
+        fileName: { type: string, minLength: 1 }
+        mimeType: { type: string, enum: [image/jpeg, image/png, image/webp] }
+        sizeBytes: { type: integer, format: int64, minimum: 1, maximum: 10485760 }
+        checksumSha256: { type: string, pattern: '^[a-fA-F0-9]{64}$' }
+    AssetStatus:
+      type: object
+      required: [id, namespace, ownerService, ownerType, ownerId, uploadStatus, scanStatus, processingStatus, visibility]
+      properties:
+        id: { type: string }
+        namespace: { type: string }
+        ownerService: { type: string }
+        ownerType: { type: string }
+        ownerId: { type: string }
+        uploadStatus: { type: string, enum: [created, completed, failed] }
+        scanStatus: { type: string, enum: [pending, clean, infected, failed] }
+        processingStatus: { type: string, enum: [pending, ready, not_required, failed] }
+        visibility: { type: string }
     PublicationInput:
       type: object
       additionalProperties: false
@@ -626,5 +705,12 @@ components:
           properties:
             news: { type: array, items: { $ref: '#/components/schemas/PublicContentItem' } }
             videos: { type: array, items: { $ref: '#/components/schemas/PublicContentItem' } }
+        meta: { type: object, additionalProperties: true }
+        error: { type: ['null'] }
+    AssetStatusEnvelope:
+      type: object
+      required: [data, meta]
+      properties:
+        data: { $ref: '#/components/schemas/AssetStatus' }
         meta: { type: object, additionalProperties: true }
         error: { type: ['null'] }

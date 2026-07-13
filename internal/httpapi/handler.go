@@ -20,7 +20,11 @@ const maxBulletinPDFSize = 20 << 20
 
 type assetUploads interface {
 	CreateBulletinUpload(context.Context, string, string, string, string, int64, string) (assetclient.CreatedUpload, error)
+	CreateNewsCoverUpload(context.Context, string, string, string, int64, string) (assetclient.CreatedUpload, error)
 	CompleteUpload(context.Context, string, assetclient.CompleteUploadInput) (assetclient.Asset, error)
+	Get(context.Context, string) (assetclient.Asset, error)
+	CreatePublicGrant(context.Context, string, string) (assetclient.Grant, error)
+	RevokeGrant(context.Context, string, string) error
 }
 
 type Handler struct {

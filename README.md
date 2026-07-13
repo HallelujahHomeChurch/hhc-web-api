@@ -41,3 +41,5 @@ Admin writes require `If-Match` after creation. Publish is asynchronous and retu
 Weekly bulletin uploads are orchestrated here, while `asset-api` owns the upload target, private object, ClamAV status, and public read grant. The browser never chooses an asset namespace or owner. PDF uploads are limited to 20 MiB.
 
 News, history, and video content share lifecycle, locale, revision, and public-projection behavior while retaining typed module tables and validation. Public routes never read drafts.
+
+News cover uploads are coordinated through content-owned upload routes. A news item can publish only after the cover is owned by that item, ClamAV marks it clean, responsive derivatives are ready, and a public read grant is created. Unpublish revokes the grant before removing the projection.

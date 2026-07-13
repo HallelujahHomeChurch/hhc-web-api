@@ -60,6 +60,7 @@ type Item struct {
 	YouTubeVideoID string        `json:"youtubeVideoId,omitempty"`
 	CoverAssetID   string        `json:"coverAssetId,omitempty"`
 	CoverURL       string        `json:"coverUrl,omitempty"`
+	PublicGrantID  string        `json:"-"`
 	Featured       bool          `json:"featured,omitempty"`
 	HomeEligible   bool          `json:"homeEligible,omitempty"`
 	Translations   []Translation `json:"translations"`
@@ -105,7 +106,7 @@ type Repository interface {
 	ListContent(context.Context, Module, int, int, string) (Page, error)
 	GetContent(context.Context, Module, string) (Item, error)
 	UpdateContent(context.Context, Module, string, int64, WriteInput, string, time.Time) (Item, error)
-	PublishContent(context.Context, Module, string, int64, string, time.Time) (Item, error)
+	PublishContent(context.Context, Module, string, int64, string, string, time.Time) (Item, error)
 	UnpublishContent(context.Context, Module, string, int64, string, time.Time) (Item, error)
 	ContentRevisions(context.Context, Module, string) ([]Revision, error)
 	RestoreContent(context.Context, Module, string, int64, int64, string, time.Time) (Item, error)

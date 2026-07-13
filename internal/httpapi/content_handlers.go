@@ -4,7 +4,9 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
+	"github.com/HallelujahHomeChurch/hhc-web-api/internal/assetclient"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/content"
 )
 
@@ -21,6 +23,9 @@ func (h *Handler) contentRoutes(public, admin *http.ServeMux) {
 	admin.HandleFunc("POST /api/admin/content/{module}/{contentID}/unpublish", requireScope("cms:publish", h.adminContentUnpublish))
 	admin.HandleFunc("GET /api/admin/content/{module}/{contentID}/revisions", requireScope("cms:read", h.adminContentRevisions))
 	admin.HandleFunc("POST /api/admin/content/{module}/{contentID}/revisions/{revision}/restore", requireScope("cms:write", h.adminContentRestore))
+	admin.HandleFunc("POST /api/admin/content/news/{contentID}/upload-sessions", requireScopes([]string{"cms:write", "assets:write"}, h.adminNewsCoverUpload))
+	admin.HandleFunc("POST /api/admin/content/news/{contentID}/assets/{assetID}/complete", requireScopes([]string{"cms:write", "assets:write"}, h.adminNewsCoverComplete))
+	admin.HandleFunc("GET /api/admin/content/news/{contentID}/assets/{assetID}", requireScope("cms:read", h.adminNewsCoverStatus))
 }
 
 func (h *Handler) publicContent(module content.Module, limit int) http.HandlerFunc {
@@ -145,8 +150,46 @@ func (h *Handler) changeContentPublication(w http.ResponseWriter, r *http.Reques
 	module, id := content.Module(r.PathValue("module")), r.PathValue("contentID")
 	var value content.Item
 	var err error
-	if publish {
-		value, err = h.content.PublishContent(r.Context(), module, id, expected, actor(r))
+	if module == content.ModuleNews {
+		current, getErr := h.content.GetContent(r.Context(), module, id)
+		if getErr != nil {
+			handleContentError(w, getErr)
+			return
+		}
+		if h.uploads == nil || current.CoverAssetID == "" {
+			handleContentError(w, content.ErrNotPublishable)
+			return
+		}
+		asset, assetErr := h.uploads.Get(r.Context(), current.CoverAssetID)
+		if assetErr != nil || asset.Namespace != "cms.news.cover" || asset.OwnerService != "hhc-web-api" || asset.OwnerType != "news" || asset.OwnerID != id {
+			handleContentError(w, content.ErrNotPublishable)
+			return
+		}
+		if publish {
+			if asset.UploadStatus != "completed" || asset.ScanStatus != "clean" || asset.ProcessingStatus != "ready" {
+				handleContentError(w, content.ErrNotPublishable)
+				return
+			}
+			grant, grantErr := h.uploads.CreatePublicGrant(r.Context(), asset.ID, "news:"+id+":publish:v"+strconv.FormatInt(expected, 10))
+			if grantErr != nil {
+				handleContentError(w, content.ErrNotPublishable)
+				return
+			}
+			value, err = h.content.PublishContent(r.Context(), module, id, expected, actor(r), grant.ID)
+			if err != nil {
+				_ = h.uploads.RevokeGrant(r.Context(), asset.ID, grant.ID)
+			}
+		} else {
+			if current.PublicGrantID != "" {
+				if revokeErr := h.uploads.RevokeGrant(r.Context(), asset.ID, current.PublicGrantID); revokeErr != nil {
+					writeError(w, http.StatusServiceUnavailable, "asset_service_unavailable", "The public asset grant could not be revoked.")
+					return
+				}
+			}
+			value, err = h.content.UnpublishContent(r.Context(), module, id, expected, actor(r))
+		}
+	} else if publish {
+		value, err = h.content.PublishContent(r.Context(), module, id, expected, actor(r), "")
 	} else {
 		value, err = h.content.UnpublishContent(r.Context(), module, id, expected, actor(r))
 	}
@@ -155,6 +198,100 @@ func (h *Handler) changeContentPublication(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeContentItem(w, value)
+}
+
+type newsCoverUploadInput struct {
+	FileName  string `json:"fileName"`
+	MIMEType  string `json:"mimeType"`
+	SizeBytes int64  `json:"sizeBytes"`
+}
+type newsCoverCompleteInput struct {
+	FileName       string `json:"fileName"`
+	MIMEType       string `json:"mimeType"`
+	SizeBytes      int64  `json:"sizeBytes"`
+	ChecksumSHA256 string `json:"checksumSha256"`
+}
+
+func (h *Handler) adminNewsCoverUpload(w http.ResponseWriter, r *http.Request) {
+	if h.uploads == nil {
+		writeError(w, http.StatusServiceUnavailable, "asset_service_unavailable", "Asset uploads are unavailable.")
+		return
+	}
+	var input newsCoverUploadInput
+	if !decode(w, r, &input) {
+		return
+	}
+	if !validImageMIME(input.MIMEType) || strings.TrimSpace(input.FileName) == "" || input.SizeBytes < 1 || input.SizeBytes > 10<<20 || strings.TrimSpace(r.Header.Get("Idempotency-Key")) == "" {
+		handleContentError(w, content.ErrInvalid)
+		return
+	}
+	if _, err := h.content.GetContent(r.Context(), content.ModuleNews, r.PathValue("contentID")); err != nil {
+		handleContentError(w, err)
+		return
+	}
+	created, err := h.uploads.CreateNewsCoverUpload(r.Context(), r.PathValue("contentID"), input.FileName, input.MIMEType, input.SizeBytes, r.Header.Get("Idempotency-Key"))
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "asset_service_unavailable", "The upload session could not be created.")
+		return
+	}
+	writeData(w, http.StatusCreated, created, nil)
+}
+func (h *Handler) adminNewsCoverComplete(w http.ResponseWriter, r *http.Request) {
+	if h.uploads == nil {
+		writeError(w, http.StatusServiceUnavailable, "asset_service_unavailable", "Asset uploads are unavailable.")
+		return
+	}
+	expected, ok := ifMatch(w, r)
+	if !ok {
+		return
+	}
+	var input newsCoverCompleteInput
+	if !decode(w, r, &input) {
+		return
+	}
+	if !validImageMIME(input.MIMEType) || input.SizeBytes < 1 || len(input.ChecksumSHA256) != 64 {
+		handleContentError(w, content.ErrInvalid)
+		return
+	}
+	asset, err := h.uploads.CompleteUpload(r.Context(), r.PathValue("assetID"), assetclient.CompleteUploadInput{SizeBytes: input.SizeBytes, ChecksumSHA256: input.ChecksumSHA256, MIMEType: input.MIMEType})
+	if err != nil || !ownedNewsAsset(asset, r.PathValue("contentID"), r.PathValue("assetID")) {
+		writeError(w, http.StatusForbidden, "asset_owner_mismatch", "The uploaded asset does not belong to this news item.")
+		return
+	}
+	current, err := h.content.GetContent(r.Context(), content.ModuleNews, r.PathValue("contentID"))
+	if err != nil {
+		handleContentError(w, err)
+		return
+	}
+	write := writeInput(current)
+	write.CoverAssetID = asset.ID
+	updated, err := h.content.UpdateContent(r.Context(), content.ModuleNews, current.ID, expected, write, actor(r))
+	if err != nil {
+		handleContentError(w, err)
+		return
+	}
+	writeContentItem(w, updated)
+}
+func (h *Handler) adminNewsCoverStatus(w http.ResponseWriter, r *http.Request) {
+	if h.uploads == nil {
+		writeError(w, http.StatusServiceUnavailable, "asset_service_unavailable", "Asset status is unavailable.")
+		return
+	}
+	asset, err := h.uploads.Get(r.Context(), r.PathValue("assetID"))
+	if err != nil || !ownedNewsAsset(asset, r.PathValue("contentID"), r.PathValue("assetID")) {
+		writeError(w, http.StatusNotFound, "not_found", "The cover image was not found.")
+		return
+	}
+	writeData(w, http.StatusOK, asset, nil)
+}
+func ownedNewsAsset(asset assetclient.Asset, contentID, assetID string) bool {
+	return asset.ID == assetID && asset.Namespace == "cms.news.cover" && asset.OwnerService == "hhc-web-api" && asset.OwnerType == "news" && asset.OwnerID == contentID
+}
+func validImageMIME(value string) bool {
+	return value == "image/jpeg" || value == "image/png" || value == "image/webp"
+}
+func writeInput(item content.Item) content.WriteInput {
+	return content.WriteInput{Slug: item.Slug, DisplayDate: item.DisplayDate, SortOrder: item.SortOrder, YouTubeVideoID: item.YouTubeVideoID, CoverAssetID: item.CoverAssetID, Featured: item.Featured, HomeEligible: item.HomeEligible, Translations: item.Translations}
 }
 func (h *Handler) adminContentRevisions(w http.ResponseWriter, r *http.Request) {
 	values, err := h.content.ContentRevisions(r.Context(), content.Module(r.PathValue("module")), r.PathValue("contentID"))

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/HallelujahHomeChurch/hhc-web-api/internal/assetclient"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/bulletins"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/content"
 )
@@ -44,14 +45,34 @@ func TestPublicContentReadsProjectionWithoutAuthentication(t *testing.T) {
 	}
 }
 
+func TestNewsPublishRequiresOwnedCleanProcessedCover(t *testing.T) {
+	repo := &contentRepository{item: content.Item{ID: "news-1", Module: content.ModuleNews, Status: content.StatusDraft, Version: 2, Slug: "news", DisplayDate: "2026-07-13", CoverAssetID: "asset-1", Translations: []content.Translation{{Locale: "zh-Hant", Title: "消息"}}}}
+	uploads := &apiUploads{completed: assetclient.Asset{ID: "asset-1", Namespace: "cms.news.cover", OwnerService: "hhc-web-api", OwnerType: "news", OwnerID: "news-1", UploadStatus: "completed", ScanStatus: "clean", ProcessingStatus: "ready"}}
+	request := httptest.NewRequest(http.MethodPost, "/api/admin/content/news/news-1/publish", nil)
+	trusted(request, "cms:publish")
+	request.Header.Set("If-Match", `"2"`)
+	response := httptest.NewRecorder()
+	contentTestHandlerWithAssets(repo, uploads).ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	if repo.grantID != "grant-1" {
+		t.Fatalf("grant=%q", repo.grantID)
+	}
+}
+
 func contentTestHandler(repo content.Repository) http.Handler {
+	return contentTestHandlerWithAssets(repo, nil)
+}
+func contentTestHandlerWithAssets(repo content.Repository, uploads assetUploads) http.Handler {
 	bulletinService := bulletins.NewService(&apiRepository{}, time.Now)
-	return NewWithContent(bulletinService, content.NewService(repo, time.Now), nil, nil).Routes()
+	return NewWithContent(bulletinService, content.NewService(repo, time.Now), nil, uploads).Routes()
 }
 
 type contentRepository struct {
-	item   content.Item
-	public []content.PublicItem
+	item    content.Item
+	public  []content.PublicItem
+	grantID string
 }
 
 func (r *contentRepository) CreateContent(_ context.Context, module content.Module, input content.WriteInput, actor, key string, now time.Time) (content.Item, error) {
@@ -67,7 +88,9 @@ func (r *contentRepository) GetContent(context.Context, content.Module, string) 
 func (r *contentRepository) UpdateContent(context.Context, content.Module, string, int64, content.WriteInput, string, time.Time) (content.Item, error) {
 	return r.item, nil
 }
-func (r *contentRepository) PublishContent(context.Context, content.Module, string, int64, string, time.Time) (content.Item, error) {
+func (r *contentRepository) PublishContent(_ context.Context, _ content.Module, _ string, _ int64, _, grantID string, _ time.Time) (content.Item, error) {
+	r.grantID = grantID
+	r.item.Status = content.StatusPublished
 	return r.item, nil
 }
 func (r *contentRepository) UnpublishContent(context.Context, content.Module, string, int64, string, time.Time) (content.Item, error) {

@@ -116,7 +116,7 @@ func (r *Repository) UpdateContent(ctx context.Context, module content.Module, i
 	return item, tx.Commit()
 }
 
-func (r *Repository) PublishContent(ctx context.Context, module content.Module, id string, expected int64, actor string, now time.Time) (content.Item, error) {
+func (r *Repository) PublishContent(ctx context.Context, module content.Module, id string, expected int64, actor, publicGrantID string, now time.Time) (content.Item, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return content.Item{}, err
@@ -124,6 +124,11 @@ func (r *Repository) PublishContent(ctx context.Context, module content.Module, 
 	defer tx.Rollback()
 	if err := lockContentVersion(ctx, tx, module, id, expected); err != nil {
 		return content.Item{}, err
+	}
+	if module == content.ModuleNews {
+		if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.news_item SET public_grant_id=$2 WHERE entry_id=$1`, id, publicGrantID); err != nil {
+			return content.Item{}, err
+		}
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.content_entry SET status='published',version=version+1,published_at=$2,updated_by=$3,updated_at=$2 WHERE id=$1`, id, now, actor); err != nil {
 		return content.Item{}, err
@@ -161,6 +166,11 @@ func (r *Repository) UnpublishContent(ctx context.Context, module content.Module
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM hhc_web.public_projection WHERE resource_type=$1 AND resource_id=$2`, module, id); err != nil {
 		return content.Item{}, err
+	}
+	if module == content.ModuleNews {
+		if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.news_item SET public_grant_id='' WHERE entry_id=$1`, id); err != nil {
+			return content.Item{}, err
+		}
 	}
 	item, err := loadContent(ctx, tx, module, id)
 	if err != nil {
@@ -264,7 +274,7 @@ func loadContent(ctx context.Context, query contentQueryer, module content.Modul
 	}
 	switch module {
 	case content.ModuleNews:
-		err = query.QueryRowContext(ctx, `SELECT slug,display_date::text,cover_asset_id,featured FROM hhc_web.news_item WHERE entry_id=$1`, id).Scan(&item.Slug, &item.DisplayDate, &item.CoverAssetID, &item.Featured)
+		err = query.QueryRowContext(ctx, `SELECT slug,display_date::text,cover_asset_id,featured,public_grant_id FROM hhc_web.news_item WHERE entry_id=$1`, id).Scan(&item.Slug, &item.DisplayDate, &item.CoverAssetID, &item.Featured, &item.PublicGrantID)
 	case content.ModuleHistory:
 		err = query.QueryRowContext(ctx, `SELECT sort_order FROM hhc_web.history_event WHERE entry_id=$1`, id).Scan(&item.SortOrder)
 	case content.ModuleVideos:
@@ -366,7 +376,7 @@ func publicContent(item content.Item, translation content.Translation) content.P
 	value := content.PublicItem{ID: item.ID, Title: translation.Title, Summary: translation.Summary, Body: translation.Body, DateLabel: translation.DateLabel, DisplayDate: item.DisplayDate, ImageAlt: translation.ImageAlt, YouTubeVideoID: item.YouTubeVideoID, SortOrder: item.SortOrder, Featured: item.Featured, HomeEligible: item.HomeEligible}
 	switch item.Module {
 	case content.ModuleNews:
-		value.ImageURL = "/api/assets/public/" + item.CoverAssetID
+		value.ImageURL = "/api/assets/public/" + item.CoverAssetID + "/large"
 		value.Href = "/" + translation.Locale + "/news/" + item.Slug
 	case content.ModuleVideos:
 		value.ImageURL = "https://img.youtube.com/vi/" + item.YouTubeVideoID + "/maxresdefault.jpg"
