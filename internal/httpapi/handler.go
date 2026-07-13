@@ -13,6 +13,7 @@ import (
 
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/assetclient"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/bulletins"
+	"github.com/HallelujahHomeChurch/hhc-web-api/internal/content"
 )
 
 const maxBulletinPDFSize = 20 << 20
@@ -24,12 +25,16 @@ type assetUploads interface {
 
 type Handler struct {
 	service *bulletins.Service
+	content *content.Service
 	db      *sql.DB
 	uploads assetUploads
 }
 
 func New(service *bulletins.Service, db *sql.DB, uploads assetUploads) *Handler {
-	return &Handler{service: service, db: db, uploads: uploads}
+	return NewWithContent(service, nil, db, uploads)
+}
+func NewWithContent(service *bulletins.Service, contentService *content.Service, db *sql.DB, uploads assetUploads) *Handler {
+	return &Handler{service: service, content: contentService, db: db, uploads: uploads}
 }
 func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
@@ -49,6 +54,9 @@ func (h *Handler) Routes() http.Handler {
 	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/assets/{assetID}/complete", requireScopes([]string{"cms:write", "assets:write"}, h.adminCompleteUpload))
 	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/publish", requireScope("cms:publish", h.adminPublish))
 	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/unpublish", requireScope("cms:publish", h.adminUnpublish))
+	if h.content != nil {
+		h.contentRoutes(mux, admin)
+	}
 	mux.Handle("/api/admin/", requireTrusted(admin))
 	return requestID(mux)
 }

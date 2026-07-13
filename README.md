@@ -29,7 +29,15 @@ go run ./cmd/server
 - `POST /api/admin/bulletins/{issueId}/assets/{assetId}/complete`
 - `POST /api/admin/bulletins/{issueId}/publish`
 - `POST /api/admin/bulletins/{issueId}/unpublish`
+- `GET /api/news`, `/api/history`, `/api/videos`, `/api/home`
+- `GET/POST /api/admin/content/{news|history|videos}`
+- `GET/PUT /api/admin/content/{module}/{contentId}`
+- `POST /api/admin/content/{module}/{contentId}/{publish|unpublish}`
+- `GET /api/admin/content/{module}/{contentId}/revisions`
+- `POST /api/admin/content/{module}/{contentId}/revisions/{revision}/restore`
 
 Admin writes require `If-Match` after creation. Publish is asynchronous and returns `202`; public visibility changes only after the asset grant workflow completes.
 
 Weekly bulletin uploads are orchestrated here, while `asset-api` owns the upload target, private object, ClamAV status, and public read grant. The browser never chooses an asset namespace or owner. PDF uploads are limited to 20 MiB.
+
+News, history, and video content share lifecycle, locale, revision, and public-projection behavior while retaining typed module tables and validation. Public routes never read drafts.

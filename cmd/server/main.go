@@ -14,6 +14,7 @@ import (
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/assetclient"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/bulletins"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/config"
+	"github.com/HallelujahHomeChurch/hhc-web-api/internal/content"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/httpapi"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/migrations"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/postgres"
@@ -47,7 +48,7 @@ func run() error {
 	repository := postgres.New(db)
 	service := bulletins.NewService(repository, time.Now)
 	assetClient := assetclient.New(cfg.AssetAPIBaseURL, cfg.InternalCallerAppID, cfg.PublicBaseURL)
-	handler := httpapi.New(service, db, assetClient)
+	handler := httpapi.NewWithContent(service, content.NewService(repository, time.Now), db, assetClient)
 	assets := publication.NewAssetAdapter(assetClient)
 	worker := publication.NewWorker(repository, assets, cfg.OutboxMaxAttempts)
 	go func() {
