@@ -22,6 +22,7 @@ type PublishPayload struct {
 	AggregateVersion int64  `json:"aggregateVersion"`
 }
 type UnpublishPayload struct {
+	WorkflowID       string `json:"workflowId"`
 	IssueID          string `json:"issueId"`
 	Locale           string `json:"locale"`
 	AssetID          string `json:"assetId"`
@@ -34,12 +35,14 @@ type Repository interface {
 	Retry(context.Context, string, string, time.Time, time.Time) error
 	Fail(context.Context, Event, string, time.Time) error
 	CompletePublish(context.Context, Event, string, string, time.Time) error
+	CompleteUnpublish(context.Context, Event, time.Time) error
 	Complete(context.Context, string, time.Time) error
 }
 type AssetClient interface {
 	Get(context.Context, string) (Asset, error)
 	CreatePublicGrant(context.Context, string, string) (Grant, error)
 	RevokeGrant(context.Context, string, string) error
+	Delete(context.Context, string) error
 	PublicURL(string) string
 }
 type Asset struct{ ID, OwnerService, UploadStatus, ScanStatus, ProcessingStatus string }

@@ -387,10 +387,10 @@ components:
       default: zh-Hant
     BulletinStatus:
       type: string
-      enum: [draft, publishing, published, unpublished, archived]
+      enum: [draft, publishing, published, unpublishing, unpublish_failed, unpublished, archived]
     BulletinVersionStatus:
       type: string
-      enum: [draft, publishing, published, unpublished]
+      enum: [draft, publishing, published, unpublishing, unpublish_failed, unpublished]
     ContentModule:
       type: string
       enum: [news, history, videos]
@@ -422,6 +422,8 @@ components:
         pdfFileName: { type: string }
         publicGrantId: { type: string }
         status: { $ref: '#/components/schemas/BulletinVersionStatus' }
+        workflowStatus: { type: string }
+        workflowError: { type: string }
         version: { type: integer, format: int64 }
         publishedAt: { type: string, format: date-time }
         createdAt: { type: string, format: date-time }

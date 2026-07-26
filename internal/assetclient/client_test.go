@@ -37,3 +37,20 @@ func TestClientMapsNotFound(t *testing.T) {
 		t.Fatalf("error = %v", err)
 	}
 }
+
+func TestClientDeletesOwnedAsset(t *testing.T) {
+	var method, path string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		method, path = r.Method, r.URL.Path
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	client := New(server.URL, "hhc-web-api", "https://www.alive.org.tw/api")
+
+	if err := client.Delete(context.Background(), "asset-1"); err != nil {
+		t.Fatal(err)
+	}
+	if method != http.MethodDelete || path != "/priv/assets/asset-1" {
+		t.Fatalf("method=%s path=%s", method, path)
+	}
+}

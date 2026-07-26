@@ -51,6 +51,8 @@ func (w *Worker) processNext(ctx context.Context) (bool, error) {
 		err = w.publish(ctx, event, now)
 	case "bulletin.unpublish.revoke_asset":
 		err = w.unpublish(ctx, event, now)
+	case "bulletin.asset.retire":
+		err = w.retire(ctx, event, now)
 	default:
 		err = terminalError{fmt.Errorf("unsupported outbox event %s", event.EventType)}
 	}
@@ -112,6 +114,28 @@ func (w *Worker) unpublish(ctx context.Context, event Event, now time.Time) erro
 		return terminalError{fmt.Errorf("published grant id is missing")}
 	}
 	if err := w.assets.RevokeGrant(ctx, payload.AssetID, payload.GrantID); err != nil && !errors.Is(err, ErrGrantNotFound) {
+		return err
+	}
+	if err := w.assets.Delete(ctx, payload.AssetID); err != nil && !errors.Is(err, ErrGrantNotFound) {
+		return err
+	}
+	return w.repository.CompleteUnpublish(ctx, event, now)
+}
+
+func (w *Worker) retire(ctx context.Context, event Event, now time.Time) error {
+	var payload UnpublishPayload
+	if err := json.Unmarshal(event.Payload, &payload); err != nil {
+		return terminalError{err}
+	}
+	if payload.AssetID == "" {
+		return terminalError{fmt.Errorf("retiring asset id is missing")}
+	}
+	if payload.GrantID != "" {
+		if err := w.assets.RevokeGrant(ctx, payload.AssetID, payload.GrantID); err != nil && !errors.Is(err, ErrGrantNotFound) {
+			return err
+		}
+	}
+	if err := w.assets.Delete(ctx, payload.AssetID); err != nil && !errors.Is(err, ErrGrantNotFound) {
 		return err
 	}
 	return w.repository.Complete(ctx, event.ID, now)

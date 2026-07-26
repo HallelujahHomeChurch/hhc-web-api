@@ -94,7 +94,20 @@ func scanIssue(row scanner) (bulletins.Issue, error) {
 	return v, err
 }
 func (r *Repository) versions(ctx context.Context, id string) ([]bulletins.Version, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT id::text,issue_id::text,locale,title,pdf_asset_id,pdf_file_name,COALESCE(public_grant_id,''),status,version,published_at,created_at,updated_at FROM hhc_web.bulletin_version WHERE issue_id=$1 ORDER BY locale`, id)
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT v.id::text,v.issue_id::text,v.locale,v.title,v.pdf_asset_id,v.pdf_file_name,
+		       COALESCE(v.public_grant_id,''),v.status,COALESCE(w.status,''),COALESCE(w.error_detail,''),
+		       v.version,v.published_at,v.created_at,v.updated_at
+		FROM hhc_web.bulletin_version v
+		LEFT JOIN LATERAL (
+			SELECT status,error_detail
+			FROM hhc_web.publication_workflow
+			WHERE resource_id=v.issue_id AND locale=v.locale
+			ORDER BY created_at DESC
+			LIMIT 1
+		) w ON true
+		WHERE v.issue_id=$1
+		ORDER BY v.locale`, id)
 	if err != nil {
 		return nil, err
 	}
@@ -103,7 +116,7 @@ func (r *Repository) versions(ctx context.Context, id string) ([]bulletins.Versi
 	for rows.Next() {
 		var v bulletins.Version
 		var published sql.NullTime
-		if err := rows.Scan(&v.ID, &v.IssueID, &v.Locale, &v.Title, &v.PDFAssetID, &v.PDFFileName, &v.PublicGrantID, &v.Status, &v.Version, &published, &v.CreatedAt, &v.UpdatedAt); err != nil {
+		if err := rows.Scan(&v.ID, &v.IssueID, &v.Locale, &v.Title, &v.PDFAssetID, &v.PDFFileName, &v.PublicGrantID, &v.Status, &v.WorkflowStatus, &v.WorkflowError, &v.Version, &published, &v.CreatedAt, &v.UpdatedAt); err != nil {
 			return nil, err
 		}
 		if published.Valid {
@@ -130,7 +143,23 @@ func (r *Repository) PutVersion(ctx context.Context, id string, expected int64, 
 	if current != expected {
 		return bulletins.Issue{}, bulletins.ErrPrecondition
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO hhc_web.bulletin_version(id,issue_id,locale,title,pdf_asset_id,pdf_file_name,status,version,created_by,updated_by,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,'draft',1,$7,$7,$8,$8) ON CONFLICT(issue_id,locale) DO UPDATE SET title=EXCLUDED.title,pdf_asset_id=EXCLUDED.pdf_asset_id,pdf_file_name=EXCLUDED.pdf_file_name,status='draft',version=hhc_web.bulletin_version.version+1,updated_by=EXCLUDED.updated_by,updated_at=EXCLUDED.updated_at`, platform.NewID(), id, input.Locale, input.Title, input.PDFAssetID, input.PDFFileName, actor, now)
+	var existingStatus string
+	err = tx.QueryRowContext(ctx, `SELECT status FROM hhc_web.bulletin_version WHERE issue_id=$1 AND locale=$2`, id, input.Locale).Scan(&existingStatus)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return bulletins.Issue{}, err
+	}
+	if existingStatus == "unpublishing" || existingStatus == "unpublish_failed" {
+		return bulletins.Issue{}, bulletins.ErrNotPublishable
+	}
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO hhc_web.bulletin_version(id,issue_id,locale,title,pdf_asset_id,pdf_file_name,status,version,created_by,updated_by,created_at,updated_at)
+		VALUES($1,$2,$3,$4,$5,$6,'draft',1,$7,$7,$8,$8)
+		ON CONFLICT(issue_id,locale) DO UPDATE SET
+			retiring_asset_id=CASE WHEN hhc_web.bulletin_version.status='published' THEN hhc_web.bulletin_version.pdf_asset_id ELSE hhc_web.bulletin_version.retiring_asset_id END,
+			retiring_grant_id=CASE WHEN hhc_web.bulletin_version.status='published' THEN hhc_web.bulletin_version.public_grant_id ELSE hhc_web.bulletin_version.retiring_grant_id END,
+			title=EXCLUDED.title,pdf_asset_id=EXCLUDED.pdf_asset_id,pdf_file_name=EXCLUDED.pdf_file_name,status='draft',
+			version=hhc_web.bulletin_version.version+1,updated_by=EXCLUDED.updated_by,updated_at=EXCLUDED.updated_at`,
+		platform.NewID(), id, input.Locale, input.Title, input.PDFAssetID, input.PDFFileName, actor, now)
 	if err != nil {
 		return bulletins.Issue{}, err
 	}
@@ -201,16 +230,25 @@ func (r *Repository) Unpublish(ctx context.Context, id, locale string, expected 
 		return bulletins.Issue{}, bulletins.ErrPrecondition
 	}
 	var assetID, grantID, date string
-	if err := tx.QueryRowContext(ctx, `SELECT v.pdf_asset_id,COALESCE(v.public_grant_id,''),i.issue_date::text FROM hhc_web.bulletin_version v JOIN hhc_web.bulletin_issue i ON i.id=v.issue_id WHERE v.issue_id=$1 AND v.locale=$2 AND v.status='published' FOR UPDATE`, id, locale).Scan(&assetID, &grantID, &date); errors.Is(err, sql.ErrNoRows) {
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COALESCE(NULLIF(v.retiring_asset_id,''),v.pdf_asset_id),COALESCE(v.public_grant_id,''),i.issue_date::text
+		FROM hhc_web.bulletin_version v
+		JOIN hhc_web.bulletin_issue i ON i.id=v.issue_id
+		WHERE v.issue_id=$1 AND v.locale=$2 AND v.status IN ('published','draft','unpublish_failed') AND COALESCE(v.public_grant_id,'')<>''
+		FOR UPDATE`, id, locale).Scan(&assetID, &grantID, &date); errors.Is(err, sql.ErrNoRows) {
 		return bulletins.Issue{}, bulletins.ErrNotPublishable
 	} else if err != nil {
 		return bulletins.Issue{}, err
 	}
 	next := current + 1
-	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.bulletin_version SET status='unpublished',version=version+1,updated_by=$3,updated_at=$4 WHERE issue_id=$1 AND locale=$2`, id, locale, actor, now); err != nil {
+	workflowID := platform.NewID()
+	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.bulletin_version SET status='unpublishing',version=version+1,updated_by=$3,updated_at=$4 WHERE issue_id=$1 AND locale=$2`, id, locale, actor, now); err != nil {
 		return bulletins.Issue{}, err
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.bulletin_issue SET status=CASE WHEN EXISTS(SELECT 1 FROM hhc_web.bulletin_version WHERE issue_id=$1 AND status='published') THEN 'published' ELSE 'unpublished' END,version=$2,updated_by=$3,updated_at=$4 WHERE id=$1`, id, next, actor, now); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.bulletin_issue SET status='unpublishing',version=$2,updated_by=$3,updated_at=$4 WHERE id=$1`, id, next, actor, now); err != nil {
+		return bulletins.Issue{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO hhc_web.publication_workflow(id,workflow_type,resource_type,resource_id,locale,aggregate_version,asset_id,status,created_by,created_at,updated_at) VALUES($1,'bulletin_unpublish','bulletin',$2,$3,$4,$5,'revoke_pending',$6,$7,$7)`, workflowID, id, locale, next, assetID, actor, now); err != nil {
 		return bulletins.Issue{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM hhc_web.public_projection WHERE projection_key=$1 OR (projection_key=$2 AND resource_id=$3)`, fmt.Sprintf("bulletins:issue:%s:%s", locale, date), fmt.Sprintf("bulletins:latest:%s", locale), id); err != nil {
@@ -219,7 +257,7 @@ func (r *Repository) Unpublish(ctx context.Context, id, locale string, expected 
 	if _, err := tx.ExecContext(ctx, `INSERT INTO hhc_web.public_projection(projection_key,resource_type,resource_id,locale,route_path,version,etag,payload_json,updated_at) SELECT $1,resource_type,resource_id,locale,'/bulletins/latest',version,etag,payload_json,$3 FROM hhc_web.public_projection WHERE resource_type='bulletin_issue' AND locale=$2 ORDER BY payload_json->>'issueDate' DESC LIMIT 1 ON CONFLICT(projection_key) DO UPDATE SET resource_id=EXCLUDED.resource_id,version=EXCLUDED.version,etag=EXCLUDED.etag,payload_json=EXCLUDED.payload_json,updated_at=EXCLUDED.updated_at`, fmt.Sprintf("bulletins:latest:%s", locale), locale, now); err != nil {
 		return bulletins.Issue{}, err
 	}
-	payload, _ := json.Marshal(map[string]any{"issueId": id, "locale": locale, "assetId": assetID, "grantId": grantID, "aggregateVersion": next})
+	payload, _ := json.Marshal(publication.UnpublishPayload{WorkflowID: workflowID, IssueID: id, Locale: locale, AssetID: assetID, GrantID: grantID, AggregateVersion: next})
 	if _, err := tx.ExecContext(ctx, `INSERT INTO hhc_web.outbox_event(id,destination,event_type,aggregate_type,aggregate_id,aggregate_version,payload_json,idempotency_key,status,next_attempt_at,created_at,updated_at) VALUES($1,'asset-api','bulletin.unpublish.revoke_asset','bulletin',$2,$3,$4,$5,'pending',$6,$6,$6)`, platform.NewID(), id, next, payload, fmt.Sprintf("bulletin:%s:%s:unpublish:v%d", id, locale, next), now); err != nil {
 		return bulletins.Issue{}, err
 	}
@@ -319,11 +357,20 @@ func (r *Repository) Fail(ctx context.Context, event publication.Event, detail s
 		if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.publication_workflow SET status='failed',error_code='PUBLICATION_FAILED',error_detail=$2,updated_at=$3 WHERE id=$1`, payload.WorkflowID, detail, now); err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.bulletin_issue SET status='draft',updated_at=$3 WHERE id=$1 AND version=$2 AND status='publishing'`, payload.IssueID, payload.AggregateVersion, now); err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.bulletin_version SET status='draft',updated_at=$4 WHERE issue_id=$1 AND locale=$2 AND status='publishing' AND EXISTS(SELECT 1 FROM hhc_web.bulletin_issue WHERE id=$1 AND version=$3)`, payload.IssueID, payload.Locale, payload.AggregateVersion, now); err != nil {
-			return err
+		if event.EventType == "bulletin.unpublish.revoke_asset" {
+			if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.bulletin_issue SET status='unpublish_failed',updated_at=$3 WHERE id=$1 AND version=$2 AND status='unpublishing'`, payload.IssueID, payload.AggregateVersion, now); err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.bulletin_version SET status='unpublish_failed',updated_at=$4 WHERE issue_id=$1 AND locale=$2 AND status='unpublishing' AND EXISTS(SELECT 1 FROM hhc_web.bulletin_issue WHERE id=$1 AND version=$3)`, payload.IssueID, payload.Locale, payload.AggregateVersion, now); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.bulletin_issue SET status='draft',updated_at=$3 WHERE id=$1 AND version=$2 AND status='publishing'`, payload.IssueID, payload.AggregateVersion, now); err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.bulletin_version SET status='draft',updated_at=$4 WHERE issue_id=$1 AND locale=$2 AND status='publishing' AND EXISTS(SELECT 1 FROM hhc_web.bulletin_issue WHERE id=$1 AND version=$3)`, payload.IssueID, payload.Locale, payload.AggregateVersion, now); err != nil {
+				return err
+			}
 		}
 	}
 	return tx.Commit()
@@ -339,9 +386,15 @@ func (r *Repository) CompletePublish(ctx context.Context, event publication.Even
 		return err
 	}
 	defer tx.Rollback()
-	var issueDate, issueStatus, title, versionStatus string
+	var issueDate, issueStatus, title, versionStatus, retiringAssetID, retiringGrantID string
 	var issueVersion int64
-	if err := tx.QueryRowContext(ctx, `SELECT i.issue_date::text,i.status,i.version,v.title,v.status FROM hhc_web.bulletin_issue i JOIN hhc_web.bulletin_version v ON v.issue_id=i.id AND v.locale=$2 WHERE i.id=$1 FOR UPDATE OF i,v`, payload.IssueID, payload.Locale).Scan(&issueDate, &issueStatus, &issueVersion, &title, &versionStatus); err != nil {
+	if err := tx.QueryRowContext(ctx, `
+		SELECT i.issue_date::text,i.status,i.version,v.title,v.status,
+		       COALESCE(v.retiring_asset_id,''),COALESCE(v.retiring_grant_id,'')
+		FROM hhc_web.bulletin_issue i
+		JOIN hhc_web.bulletin_version v ON v.issue_id=i.id AND v.locale=$2
+		WHERE i.id=$1 FOR UPDATE OF i,v`, payload.IssueID, payload.Locale).
+		Scan(&issueDate, &issueStatus, &issueVersion, &title, &versionStatus, &retiringAssetID, &retiringGrantID); err != nil {
 		return err
 	}
 	if issueVersion != payload.AggregateVersion || issueStatus != "publishing" || versionStatus != "publishing" {
@@ -357,7 +410,7 @@ func (r *Repository) CompletePublish(ctx context.Context, event publication.Even
 	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.bulletin_issue SET status='published',published_at=$2,updated_at=$2 WHERE id=$1`, payload.IssueID, now); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.bulletin_version SET status='published',public_grant_id=$3,published_at=$4,updated_at=$4 WHERE issue_id=$1 AND locale=$2`, payload.IssueID, payload.Locale, grantID, now); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.bulletin_version SET status='published',public_grant_id=$3,retiring_asset_id=NULL,retiring_grant_id=NULL,published_at=$4,updated_at=$4 WHERE issue_id=$1 AND locale=$2`, payload.IssueID, payload.Locale, grantID, now); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO hhc_web.public_projection(projection_key,resource_type,resource_id,locale,route_path,version,etag,payload_json,updated_at) VALUES($1,'bulletin_issue',$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(projection_key) DO UPDATE SET resource_id=EXCLUDED.resource_id,route_path=EXCLUDED.route_path,version=EXCLUDED.version,etag=EXCLUDED.etag,payload_json=EXCLUDED.payload_json,updated_at=EXCLUDED.updated_at`, fmt.Sprintf("bulletins:issue:%s:%s", payload.Locale, issueDate), payload.IssueID, payload.Locale, "/bulletins/"+issueDate, issueVersion, etag, encoded, now); err != nil {
@@ -368,6 +421,56 @@ func (r *Repository) CompletePublish(ctx context.Context, event publication.Even
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.publication_workflow SET status='completed',updated_at=$2 WHERE id=$1`, payload.WorkflowID, now); err != nil {
 		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.outbox_event SET status='delivered',claimed_until=NULL,last_error='',updated_at=$2 WHERE id=$1`, event.ID, now); err != nil {
+		return err
+	}
+	if retiringAssetID != "" && retiringAssetID != payload.AssetID {
+		retirePayload, _ := json.Marshal(publication.UnpublishPayload{
+			IssueID: payload.IssueID, Locale: payload.Locale, AssetID: retiringAssetID,
+			GrantID: retiringGrantID, AggregateVersion: issueVersion,
+		})
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO hhc_web.outbox_event(id,destination,event_type,aggregate_type,aggregate_id,aggregate_version,payload_json,idempotency_key,status,next_attempt_at,created_at,updated_at)
+			VALUES($1,'asset-api','bulletin.asset.retire','bulletin',$2,$3,$4,$5,'pending',$6,$6,$6)
+			ON CONFLICT(destination,idempotency_key) DO NOTHING`,
+			platform.NewID(), payload.IssueID, issueVersion, retirePayload,
+			fmt.Sprintf("bulletin:%s:%s:retire:%s", payload.IssueID, payload.Locale, retiringAssetID), now); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func (r *Repository) CompleteUnpublish(ctx context.Context, event publication.Event, now time.Time) error {
+	var payload publication.UnpublishPayload
+	if err := json.Unmarshal(event.Payload, &payload); err != nil {
+		return err
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE hhc_web.bulletin_version
+		SET status='unpublished',public_grant_id=NULL,retiring_asset_id=NULL,retiring_grant_id=NULL,updated_at=$4
+		WHERE issue_id=$1 AND locale=$2 AND status='unpublishing'
+		  AND EXISTS(SELECT 1 FROM hhc_web.bulletin_issue WHERE id=$1 AND version=$3)`,
+		payload.IssueID, payload.Locale, payload.AggregateVersion, now); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE hhc_web.bulletin_issue
+		SET status=CASE WHEN EXISTS(SELECT 1 FROM hhc_web.bulletin_version WHERE issue_id=$1 AND status='published') THEN 'published' ELSE 'unpublished' END,
+		    updated_at=$3
+		WHERE id=$1 AND version=$2`, payload.IssueID, payload.AggregateVersion, now); err != nil {
+		return err
+	}
+	if payload.WorkflowID != "" {
+		if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.publication_workflow SET status='completed',updated_at=$2 WHERE id=$1`, payload.WorkflowID, now); err != nil {
+			return err
+		}
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.outbox_event SET status='delivered',claimed_until=NULL,last_error='',updated_at=$2 WHERE id=$1`, event.ID, now); err != nil {
 		return err

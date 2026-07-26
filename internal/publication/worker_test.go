@@ -87,6 +87,28 @@ func TestWorkerTreatsMissingGrantAsSuccessfulUnpublish(t *testing.T) {
 	if repository.completeCount != 1 {
 		t.Fatalf("complete=%d", repository.completeCount)
 	}
+	if assets.deletedAsset != "asset-1" {
+		t.Fatalf("deleted=%q", assets.deletedAsset)
+	}
+}
+
+func TestWorkerRetiresReplacedAsset(t *testing.T) {
+	repository := &workerRepository{event: Event{
+		ID:          "event-retire",
+		EventType:   "bulletin.asset.retire",
+		AggregateID: "issue-1",
+		Payload:     []byte(`{"issueId":"issue-1","locale":"zh-Hant","assetId":"asset-old","grantId":"grant-old","aggregateVersion":4}`),
+		Attempts:    1,
+	}}
+	assets := &workerAssets{}
+	worker := NewWorker(repository, assets, 5)
+
+	if _, err := worker.processNext(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if assets.revokedGrant != "grant-old" || assets.deletedAsset != "asset-old" || repository.completeCount != 1 {
+		t.Fatalf("revoked=%q deleted=%q complete=%d", assets.revokedGrant, assets.deletedAsset, repository.completeCount)
+	}
 }
 
 func TestWorkerRevokesGrantWhenPublishWasSuperseded(t *testing.T) {
@@ -120,13 +142,14 @@ func publishEvent(attempts int) Event {
 }
 
 type workerRepository struct {
-	event                Event
-	claimed              bool
-	retryCount           int
-	failCount            int
-	completeCount        int
-	completedGrant       string
-	completePublishError error
+	event                  Event
+	claimed                bool
+	retryCount             int
+	failCount              int
+	completeCount          int
+	completeUnpublishCount int
+	completedGrant         string
+	completePublishError   error
 }
 
 func (r *workerRepository) Claim(context.Context, time.Time, time.Duration) (Event, bool, error) {
@@ -152,6 +175,11 @@ func (r *workerRepository) Complete(context.Context, string, time.Time) error {
 	r.completeCount++
 	return nil
 }
+func (r *workerRepository) CompleteUnpublish(context.Context, Event, time.Time) error {
+	r.completeCount++
+	r.completeUnpublishCount++
+	return nil
+}
 
 type workerAssets struct {
 	asset        Asset
@@ -160,6 +188,7 @@ type workerAssets struct {
 	grantError   error
 	revokeError  error
 	revokedGrant string
+	deletedAsset string
 }
 
 func (a *workerAssets) Get(context.Context, string) (Asset, error) {
@@ -171,6 +200,10 @@ func (a *workerAssets) CreatePublicGrant(context.Context, string, string) (Grant
 func (a *workerAssets) RevokeGrant(_ context.Context, _, grantID string) error {
 	a.revokedGrant = grantID
 	return a.revokeError
+}
+func (a *workerAssets) Delete(_ context.Context, assetID string) error {
+	a.deletedAsset = assetID
+	return nil
 }
 func (a *workerAssets) PublicURL(string) string {
 	return "https://www.alive.org.tw/api/assets/public/asset-1"

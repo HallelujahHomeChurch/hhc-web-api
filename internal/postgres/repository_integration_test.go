@@ -89,6 +89,58 @@ func TestRepositoryPublishWaitsForAssetWorkflow(t *testing.T) {
 	if status != "delivered" {
 		t.Fatalf("outbox status = %q", status)
 	}
+
+	replacement, err := repository.PutVersion(ctx, published.ID, published.Version, bulletins.PutVersionInput{
+		Locale: "zh-Hant", Title: "新週報", PDFAssetID: "asset-2", PDFFileName: "weekly-2.pdf",
+	}, "user-1", now.Add(2*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stillPublic, err := repository.GetPublicLatest(ctx, "zh-Hant"); err != nil || stillPublic.DownloadURL != public.DownloadURL {
+		t.Fatalf("public during replacement = %#v err=%v", stillPublic, err)
+	}
+	if _, err := repository.StartPublish(ctx, replacement.ID, "zh-Hant", replacement.Version, "user-1", now.Add(3*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	publishReplacement, found, err := repository.Claim(ctx, now.Add(3*time.Minute), 30*time.Second)
+	if err != nil || !found {
+		t.Fatalf("claim replacement found=%v err=%v", found, err)
+	}
+	if err := repository.CompletePublish(ctx, publishReplacement, "grant-2", "https://www.alive.org.tw/api/assets/public/asset-2", now.Add(4*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	retire, found, err := repository.Claim(ctx, now.Add(4*time.Minute), 30*time.Second)
+	if err != nil || !found || retire.EventType != "bulletin.asset.retire" {
+		t.Fatalf("retire=%#v found=%v err=%v", retire, found, err)
+	}
+	if err := repository.Complete(ctx, retire.ID, now.Add(5*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+
+	current, err := repository.GetIssue(ctx, published.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.Unpublish(ctx, current.ID, "zh-Hant", current.Version, "user-1", now.Add(6*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.GetPublicLatest(ctx, "zh-Hant"); !errors.Is(err, bulletins.ErrNotFound) {
+		t.Fatalf("public latest after unpublish = %v", err)
+	}
+	unpublish, found, err := repository.Claim(ctx, now.Add(6*time.Minute), 30*time.Second)
+	if err != nil || !found || unpublish.EventType != "bulletin.unpublish.revoke_asset" {
+		t.Fatalf("unpublish=%#v found=%v err=%v", unpublish, found, err)
+	}
+	if err := repository.CompleteUnpublish(ctx, unpublish, now.Add(7*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	unpublished, err := repository.GetIssue(ctx, current.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unpublished.Status != "unpublished" || unpublished.Versions[0].Status != "unpublished" {
+		t.Fatalf("unpublished = %#v", unpublished)
+	}
 }
 
 var _ publication.Repository = (*Repository)(nil)

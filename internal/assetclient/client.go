@@ -111,6 +111,13 @@ func (c *Client) CreatePublicGrant(ctx context.Context, id, key string) (Grant, 
 func (c *Client) RevokeGrant(ctx context.Context, assetID, grantID string) error {
 	return c.request(ctx, http.MethodDelete, "/priv/assets/"+url.PathEscape(assetID)+"/grants/"+url.PathEscape(grantID), nil, "", nil)
 }
+func (c *Client) Delete(ctx context.Context, assetID string) error {
+	err := c.request(ctx, http.MethodDelete, "/priv/assets/"+url.PathEscape(assetID), nil, "", nil)
+	if errors.Is(err, ErrNotFound) {
+		return nil
+	}
+	return err
+}
 func (c *Client) PublicURL(assetID string) string {
 	return c.publicBaseURL + "/assets/public/" + url.PathEscape(assetID)
 }

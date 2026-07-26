@@ -32,6 +32,9 @@ func (a *AssetAdapter) RevokeGrant(ctx context.Context, assetID, grantID string)
 	}
 	return err
 }
+func (a *AssetAdapter) Delete(ctx context.Context, id string) error {
+	return a.client.Delete(ctx, id)
+}
 func (a *AssetAdapter) PublicURL(id string) string { return a.client.PublicURL(id) }
 
 var _ AssetClient = (*AssetAdapter)(nil)
