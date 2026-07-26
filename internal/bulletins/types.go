@@ -53,6 +53,11 @@ type PublicBulletin struct {
 	Version     int64     `json:"version"`
 }
 
+type PublicIssue struct {
+	IssueDate string           `json:"issueDate"`
+	Versions  []PublicBulletin `json:"versions"`
+}
+
 type Workflow struct {
 	ID               string    `json:"id"`
 	Status           string    `json:"status"`
@@ -79,10 +84,10 @@ type Page struct {
 	Total    int64   `json:"total"`
 }
 type PublicPage struct {
-	Items    []PublicBulletin `json:"items"`
-	Page     int              `json:"page"`
-	PageSize int              `json:"pageSize"`
-	Total    int64            `json:"total"`
+	Items    []PublicIssue `json:"items"`
+	Page     int           `json:"page"`
+	PageSize int           `json:"pageSize"`
+	Total    int64         `json:"total"`
 }
 
 type Repository interface {
@@ -94,5 +99,5 @@ type Repository interface {
 	Unpublish(context.Context, string, string, int64, string, time.Time) (Issue, error)
 	GetPublicLatest(context.Context, string) (PublicBulletin, error)
 	GetPublicByDate(context.Context, string, string) (PublicBulletin, error)
-	ListPublic(context.Context, string, int, int) (PublicPage, error)
+	ListPublic(context.Context, int, int) (PublicPage, error)
 }

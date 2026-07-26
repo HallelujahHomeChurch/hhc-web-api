@@ -169,7 +169,7 @@ func (h *Handler) publicByDate(w http.ResponseWriter, r *http.Request) {
 }
 func (h *Handler) publicList(w http.ResponseWriter, r *http.Request) {
 	page, size := pagination(r)
-	value, err := h.service.ListPublic(r.Context(), locale(r), page, size)
+	value, err := h.service.ListPublic(r.Context(), page, size)
 	if err != nil {
 		handleError(w, err)
 		return

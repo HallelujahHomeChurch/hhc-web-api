@@ -51,6 +51,6 @@ func (r *repositoryStub) GetPublicLatest(context.Context, string) (PublicBulleti
 func (r *repositoryStub) GetPublicByDate(context.Context, string, string) (PublicBulletin, error) {
 	return PublicBulletin{}, nil
 }
-func (r *repositoryStub) ListPublic(context.Context, string, int, int) (PublicPage, error) {
+func (r *repositoryStub) ListPublic(context.Context, int, int) (PublicPage, error) {
 	return PublicPage{}, nil
 }

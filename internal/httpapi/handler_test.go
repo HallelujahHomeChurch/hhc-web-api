@@ -191,6 +191,6 @@ func (r *apiRepository) GetPublicLatest(context.Context, string) (bulletins.Publ
 func (r *apiRepository) GetPublicByDate(context.Context, string, string) (bulletins.PublicBulletin, error) {
 	return r.public, nil
 }
-func (r *apiRepository) ListPublic(context.Context, string, int, int) (bulletins.PublicPage, error) {
-	return bulletins.PublicPage{Items: []bulletins.PublicBulletin{r.public}, Page: 1, PageSize: 20, Total: 1}, nil
+func (r *apiRepository) ListPublic(context.Context, int, int) (bulletins.PublicPage, error) {
+	return bulletins.PublicPage{Items: []bulletins.PublicIssue{{IssueDate: r.public.IssueDate, Versions: []bulletins.PublicBulletin{r.public}}}, Page: 1, PageSize: 20, Total: 1}, nil
 }

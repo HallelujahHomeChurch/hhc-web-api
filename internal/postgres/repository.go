@@ -288,17 +288,32 @@ func (r *Repository) publicProjection(ctx context.Context, key string) (bulletin
 	}
 	return v, nil
 }
-func (r *Repository) ListPublic(ctx context.Context, locale string, page, size int) (bulletins.PublicPage, error) {
+func (r *Repository) ListPublic(ctx context.Context, page, size int) (bulletins.PublicPage, error) {
 	var total int64
-	if err := r.db.QueryRowContext(ctx, `SELECT count(*) FROM hhc_web.public_projection WHERE resource_type='bulletin_issue' AND locale=$1`, locale).Scan(&total); err != nil {
+	if err := r.db.QueryRowContext(ctx, `SELECT count(DISTINCT resource_id) FROM hhc_web.public_projection WHERE resource_type='bulletin_issue'`).Scan(&total); err != nil {
 		return bulletins.PublicPage{}, err
 	}
-	rows, err := r.db.QueryContext(ctx, `SELECT payload_json FROM hhc_web.public_projection WHERE resource_type='bulletin_issue' AND locale=$1 ORDER BY payload_json->>'issueDate' DESC LIMIT $2 OFFSET $3`, locale, size, (page-1)*size)
+	rows, err := r.db.QueryContext(ctx, `
+		WITH issues AS (
+			SELECT resource_id, max(payload_json->>'issueDate') AS issue_date
+			FROM hhc_web.public_projection
+			WHERE resource_type='bulletin_issue'
+			GROUP BY resource_id
+			ORDER BY issue_date DESC
+			LIMIT $1 OFFSET $2
+		)
+		SELECT p.payload_json
+		FROM issues i
+		JOIN hhc_web.public_projection p
+		  ON p.resource_type='bulletin_issue' AND p.resource_id=i.resource_id
+		ORDER BY i.issue_date DESC,
+		  CASE p.locale WHEN 'zh-Hant' THEN 1 WHEN 'zh-Hans' THEN 2 ELSE 3 END`,
+		size, (page-1)*size)
 	if err != nil {
 		return bulletins.PublicPage{}, err
 	}
 	defer rows.Close()
-	items := []bulletins.PublicBulletin{}
+	items := []bulletins.PublicIssue{}
 	for rows.Next() {
 		var payload []byte
 		var item bulletins.PublicBulletin
@@ -308,7 +323,10 @@ func (r *Repository) ListPublic(ctx context.Context, locale string, page, size i
 		if err := json.Unmarshal(payload, &item); err != nil {
 			return bulletins.PublicPage{}, err
 		}
-		items = append(items, item)
+		if len(items) == 0 || items[len(items)-1].IssueDate != item.IssueDate {
+			items = append(items, bulletins.PublicIssue{IssueDate: item.IssueDate, Versions: []bulletins.PublicBulletin{}})
+		}
+		items[len(items)-1].Versions = append(items[len(items)-1].Versions, item)
 	}
 	return bulletins.PublicPage{Items: items, Page: page, PageSize: size, Total: total}, rows.Err()
 }

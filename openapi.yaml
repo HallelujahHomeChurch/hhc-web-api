@@ -9,7 +9,6 @@ paths:
     get:
       operationId: listPublicBulletins
       parameters:
-        - $ref: '#/components/parameters/Locale'
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PageSize'
       responses:
@@ -454,6 +453,14 @@ components:
         downloadUrl: { type: string }
         publishedAt: { type: string, format: date-time }
         version: { type: integer, format: int64 }
+    PublicBulletinIssue:
+      type: object
+      required: [issueDate, versions]
+      properties:
+        issueDate: { type: string, format: date }
+        versions:
+          type: array
+          items: { $ref: '#/components/schemas/PublicBulletin' }
     Workflow:
       type: object
       required: [id, status, aggregateVersion, createdAt]
@@ -645,7 +652,7 @@ components:
       type: object
       required: [data, meta]
       properties:
-        data: { type: array, items: { $ref: '#/components/schemas/PublicBulletin' } }
+        data: { type: array, items: { $ref: '#/components/schemas/PublicBulletinIssue' } }
         meta: { $ref: '#/components/schemas/PageMeta' }
         error: { type: ['null'] }
     CreatedUploadEnvelope:

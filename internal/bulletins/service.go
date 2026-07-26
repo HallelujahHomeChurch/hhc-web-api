@@ -66,12 +66,9 @@ func (s *Service) GetPublicByDate(ctx context.Context, date, locale string) (Pub
 	}
 	return s.repository.GetPublicByDate(ctx, date, locale)
 }
-func (s *Service) ListPublic(ctx context.Context, locale string, page, pageSize int) (PublicPage, error) {
-	if !validLocale(locale) {
-		return PublicPage{}, ErrInvalid
-	}
+func (s *Service) ListPublic(ctx context.Context, page, pageSize int) (PublicPage, error) {
 	page, pageSize = normalizePage(page, pageSize)
-	return s.repository.ListPublic(ctx, locale, page, pageSize)
+	return s.repository.ListPublic(ctx, page, pageSize)
 }
 
 func validLocale(value string) bool { return value == "zh-Hant" || value == "zh-Hans" || value == "en" }
