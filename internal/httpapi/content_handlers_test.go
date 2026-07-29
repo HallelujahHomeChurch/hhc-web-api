@@ -82,7 +82,7 @@ func contentTestHandler(repo content.Repository) http.Handler {
 }
 func contentTestHandlerWithAssets(repo content.Repository, uploads assetUploads) http.Handler {
 	bulletinService := bulletins.NewService(&apiRepository{}, time.Now)
-	return NewWithContent(bulletinService, content.NewService(repo, time.Now), nil, uploads, "api-gateway", false).Routes()
+	return NewWithContent(bulletinService, content.NewService(repo, time.Now), nil, uploads, "api-gateway", "", false).Routes()
 }
 
 type contentRepository struct {

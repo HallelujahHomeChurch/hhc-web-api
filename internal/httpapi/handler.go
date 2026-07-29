@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -31,14 +32,15 @@ type Handler struct {
 	db             *sql.DB
 	uploads        assetUploads
 	trustedCaller  string
+	daprAPIToken   string
 	allowDevCaller bool
 }
 
 func New(service *bulletins.Service, db *sql.DB, uploads assetUploads) *Handler {
-	return NewWithContent(service, nil, db, uploads, "api-gateway", false)
+	return NewWithContent(service, nil, db, uploads, "api-gateway", "", false)
 }
-func NewWithContent(service *bulletins.Service, contentService *content.Service, db *sql.DB, uploads assetUploads, trustedCaller string, allowDevCaller bool) *Handler {
-	return &Handler{service: service, content: contentService, db: db, uploads: uploads, trustedCaller: trustedCaller, allowDevCaller: allowDevCaller}
+func NewWithContent(service *bulletins.Service, contentService *content.Service, db *sql.DB, uploads assetUploads, trustedCaller, daprAPIToken string, allowDevCaller bool) *Handler {
+	return &Handler{service: service, content: contentService, db: db, uploads: uploads, trustedCaller: trustedCaller, daprAPIToken: daprAPIToken, allowDevCaller: allowDevCaller}
 }
 func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
@@ -60,8 +62,8 @@ func (h *Handler) Routes() http.Handler {
 	if h.content != nil {
 		h.contentRoutes(mux, admin)
 	}
-	mux.Handle("/api/admin/", requireTrusted(h.trustedCaller, h.allowDevCaller, admin))
-	return requestID(mux)
+	mux.Handle("/api/admin/", requireTrusted(h.trustedCaller, h.daprAPIToken, h.allowDevCaller, admin))
+	return requestID(accessLog(mux))
 }
 
 type createUploadInput struct {
@@ -319,5 +321,47 @@ func requestID(next http.Handler) http.Handler {
 		}
 		w.Header().Set("X-HHC-Request-ID", id)
 		next.ServeHTTP(w, r)
+	})
+}
+
+type statusWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *statusWriter) WriteHeader(status int) {
+	if w.status != 0 {
+		return
+	}
+	w.status = status
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *statusWriter) Write(body []byte) (int, error) {
+	if w.status == 0 {
+		w.status = http.StatusOK
+	}
+	return w.ResponseWriter.Write(body)
+}
+
+func accessLog(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/health" || r.URL.Path == "/ready" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		started := time.Now()
+		response := &statusWriter{ResponseWriter: w}
+		next.ServeHTTP(response, r)
+		if response.status == 0 {
+			response.status = http.StatusOK
+		}
+		slog.Info("http request",
+			"request_id", w.Header().Get("X-HHC-Request-ID"),
+			"method", r.Method,
+			"path", r.URL.Path,
+			"status", response.status,
+			"duration_ms", time.Since(started).Milliseconds(),
+		)
 	})
 }

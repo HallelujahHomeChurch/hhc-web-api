@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"crypto/subtle"
 	"net/http"
 	"strings"
 )
@@ -13,7 +14,7 @@ type principal struct {
 }
 type principalKey struct{}
 
-func requireTrusted(caller string, allowDevCaller bool, next http.Handler) http.Handler {
+func requireTrusted(caller, daprAPIToken string, allowDevCaller bool, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		actualCaller := strings.TrimSpace(r.Header.Get("Dapr-Caller-App-Id"))
 		if actualCaller == "" && allowDevCaller {
@@ -21,7 +22,8 @@ func requireTrusted(caller string, allowDevCaller bool, next http.Handler) http.
 		}
 		userID := strings.TrimSpace(r.Header.Get("X-HHC-User-ID"))
 		provider := strings.TrimSpace(r.Header.Get("X-HHC-Auth-Provider"))
-		if actualCaller != caller || userID == "" || provider != "account-api" {
+		tokenValid := daprAPIToken == "" || subtle.ConstantTimeCompare([]byte(r.Header.Get("dapr-api-token")), []byte(daprAPIToken)) == 1
+		if !tokenValid || actualCaller != caller || userID == "" || provider != "account-api" {
 			writeError(w, http.StatusUnauthorized, "unauthorized", "Trusted gateway identity is required.")
 			return
 		}

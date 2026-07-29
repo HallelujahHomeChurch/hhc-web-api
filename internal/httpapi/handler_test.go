@@ -3,8 +3,10 @@ package httpapi
 import (
 	"bytes"
 	"context"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -35,6 +37,51 @@ func TestAdminRoutesRequireTrustedIdentityAndScope(t *testing.T) {
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusUnauthorized {
 		t.Fatalf("spoofed gateway status=%d", response.Code)
+	}
+}
+
+func TestAdminRoutesRequireDaprAPITokenWhenConfigured(t *testing.T) {
+	handler := NewWithContent(
+		bulletins.NewService(&apiRepository{}, time.Now),
+		nil,
+		nil,
+		nil,
+		"api-gateway",
+		"sidecar-token",
+		false,
+	).Routes()
+	request := httptest.NewRequest(http.MethodGet, "/api/admin/bulletins", nil)
+	trusted(request, "cms:read")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("missing token status=%d", response.Code)
+	}
+
+	request = httptest.NewRequest(http.MethodGet, "/api/admin/bulletins", nil)
+	trusted(request, "cms:read")
+	request.Header.Set("dapr-api-token", "sidecar-token")
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("valid token status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestRequestsAreLoggedWithStatusAndRequestID(t *testing.T) {
+	var output bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&output, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+
+	handler := testHandler(&apiRepository{})
+	request := httptest.NewRequest(http.MethodGet, "/missing", nil)
+	request.Header.Set("X-HHC-Request-ID", "request-1")
+	handler.ServeHTTP(httptest.NewRecorder(), request)
+
+	logged := output.String()
+	if !strings.Contains(logged, `"status":404`) || !strings.Contains(logged, `"request_id":"request-1"`) {
+		t.Fatalf("unexpected log: %s", logged)
 	}
 }
 

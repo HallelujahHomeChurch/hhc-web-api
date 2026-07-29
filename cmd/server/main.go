@@ -39,10 +39,13 @@ func run() error {
 		return err
 	}
 	defer db.Close()
+	db.SetMaxOpenConns(cfg.DBMaxOpenConns)
+	db.SetMaxIdleConns(cfg.DBMaxIdleConns)
+	db.SetConnMaxLifetime(cfg.DBConnMaxLifetime)
 	repository := postgres.New(db)
 	service := bulletins.NewService(repository, time.Now)
 	assetClient := assetclient.New(cfg.AssetAPIBaseURL, cfg.InternalCallerAppID, cfg.PublicBaseURL)
-	handler := httpapi.NewWithContent(service, content.NewService(repository, time.Now), db, assetClient, cfg.AdminAllowedCaller, cfg.AllowDevCaller)
+	handler := httpapi.NewWithContent(service, content.NewService(repository, time.Now), db, assetClient, cfg.AdminAllowedCaller, cfg.DaprAPIToken, cfg.AllowDevCaller)
 	assets := publication.NewAssetAdapter(assetClient)
 	worker := publication.NewWorker(repository, assets, cfg.OutboxMaxAttempts)
 	go func() {

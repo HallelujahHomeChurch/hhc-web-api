@@ -2,7 +2,7 @@
 
 Website backend and CMS core for `www.alive.org.tw`.
 
-The service owns CMS source records, revisions/publication workflows, weekly bulletin metadata, public projections, and website product orchestration. Public routes read published projections only. Protected admin routes trust sanitized `X-HHC-*` identity headers from `api-gateway` and repeat scope/resource authorization.
+The service owns CMS source records, revisions/publication workflows, weekly bulletin metadata, public projections, and website product orchestration. Public routes read published projections only. Protected admin routes require the Azure Container Apps Dapr token, the `api-gateway` Dapr caller identity, sanitized `X-HHC-*` identity headers, and scope/resource authorization.
 
 There is no separate v1 `cms-api` or `bulletin-api`.
 
@@ -24,7 +24,6 @@ go run ./cmd/server
 - `GET /api/admin/bulletins`
 - `GET /api/admin/bulletins/{issueId}`
 - `POST /api/admin/bulletins`
-- `POST /api/admin/bulletins/{issueId}/versions`
 - `POST /api/admin/bulletins/{issueId}/upload-sessions`
 - `POST /api/admin/bulletins/{issueId}/assets/{assetId}/complete`
 - `POST /api/admin/bulletins/{issueId}/publish`
@@ -36,10 +35,14 @@ go run ./cmd/server
 - `GET /api/admin/content/{module}/{contentId}/revisions`
 - `POST /api/admin/content/{module}/{contentId}/revisions/{revision}/restore`
 
-Admin writes require `If-Match` after creation. Publish is asynchronous and returns `202`; public visibility changes only after the asset grant workflow completes.
+Admin writes require `If-Match` after creation. Publish is asynchronous and returns `202`; public visibility changes only after the asset grant workflow completes. News edits keep the previous published projection live until the replacement asset grant is ready.
 
 Weekly bulletin uploads are orchestrated here, while `asset-api` owns the upload target, private object, ClamAV status, and public read grant. The browser never chooses an asset namespace or owner. PDF uploads are limited to 20 MiB.
 
 News, history, and video content share lifecycle, locale, revision, and public-projection behavior while retaining typed module tables and validation. Public routes never read drafts.
 
-News cover uploads are coordinated through content-owned upload routes. A news item can publish only after the cover is owned by that item, ClamAV marks it clean, responsive derivatives are ready, and a public read grant is created. Unpublish revokes the grant before removing the projection.
+News cover uploads are coordinated through content-owned upload routes. A news item can publish only after the cover is owned by that item, ClamAV marks it clean, responsive derivatives are ready, and a public read grant is created. Unpublish removes the projection immediately and revokes the public grant asynchronously while retaining the private asset for revisions and republishing.
+
+## Production release
+
+GitHub Actions builds one immutable image for the migration job and runtime. The release stops if the manual Container Apps migration job fails. See [`infra/README.md`](infra/README.md).
