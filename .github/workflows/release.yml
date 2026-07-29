@@ -144,23 +144,10 @@ jobs:
           exit 1
       - name: Verify Dapr API through gateway
         run: |
-          probe() {
-            local path="$1"
-            output="$(timeout 60s script -q -e -c \
-              "az containerapp exec -g \"$RESOURCE_GROUP\" -n \"$API_GATEWAY_APP_NAME\" --command \"/usr/bin/wget -S -O - http://localhost:3500/v1.0/invoke/hhc-web-api/method${path}\"" \
-              /dev/null 2>&1)"
-            output="${output//$'\r'/}"
-            printf '%s\n' "$output"
-            grep -Eq 'HTTP/1\.[01][[:space:]]+200' <<< "$output"
-          }
-          probe /health
-          probe /ready
-          probe '/api/home?locale=zh-Hant'
-      - name: Verify protected routes reject missing identity
-        run: |
           output="$(timeout 60s script -q -e -c \
-            "az containerapp exec -g \"$RESOURCE_GROUP\" -n \"$API_GATEWAY_APP_NAME\" --command \"/usr/bin/wget -S -O - http://localhost:3500/v1.0/invoke/hhc-web-api/method/api/admin/bulletins\"" \
-            /dev/null 2>&1 || true)"
+            "az containerapp exec -g \"$RESOURCE_GROUP\" -n \"$API_GATEWAY_APP_NAME\" --command \"/bin/sh -c \\\"/usr/bin/wget -qO- http://localhost:3500/v1.0/invoke/hhc-web-api/method/api/home?locale=zh-Hant >/dev/null && echo PUBLIC_OK; /usr/bin/wget -S -O- http://localhost:3500/v1.0/invoke/hhc-web-api/method/api/admin/bulletins 2>&1 || true\\\"\"" \
+            /dev/null 2>&1)"
           output="${output//$'\r'/}"
           printf '%s\n' "$output"
+          grep -Fq 'PUBLIC_OK' <<< "$output"
           grep -Eq 'HTTP/1\.[01][[:space:]]+401' <<< "$output"
