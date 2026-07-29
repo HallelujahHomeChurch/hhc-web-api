@@ -97,22 +97,6 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/BulletinIssue' }
         '404': { $ref: '#/components/responses/Error' }
-  /admin/bulletins/{issueId}/versions:
-    post:
-      operationId: putBulletinVersion
-      security: [{ bearerAuth: [] }]
-      x-required-scopes: [cms:write]
-      parameters:
-        - $ref: '#/components/parameters/IssueID'
-        - $ref: '#/components/parameters/IfMatch'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/PutBulletinVersionInput' }
-      responses:
-        '200': { $ref: '#/components/responses/BulletinIssue' }
-        '412': { $ref: '#/components/responses/Error' }
   /admin/bulletins/{issueId}/upload-sessions:
     post:
       operationId: createBulletinUploadSession
@@ -395,7 +379,7 @@ components:
       enum: [news, history, videos]
     ContentStatus:
       type: string
-      enum: [draft, published, unpublished, archived]
+      enum: [draft, publishing, published, publish_failed, unpublishing, unpublish_failed, unpublished, archived]
     PageMeta:
       type: object
       required: [page, pageSize, total]
@@ -503,15 +487,6 @@ components:
         fileName: { type: string, minLength: 1 }
         mimeType: { type: string, const: application/pdf }
         sizeBytes: { type: integer, format: int64, minimum: 1, maximum: 20971520 }
-    PutBulletinVersionInput:
-      type: object
-      additionalProperties: false
-      required: [locale, title, pdfAssetId, pdfFileName]
-      properties:
-        locale: { $ref: '#/components/schemas/Locale' }
-        title: { type: string, minLength: 1 }
-        pdfAssetId: { type: string, minLength: 1 }
-        pdfFileName: { type: string, minLength: 1 }
     CompleteBulletinUploadInput:
       type: object
       additionalProperties: false
@@ -590,13 +565,15 @@ components:
       allOf:
         - $ref: '#/components/schemas/ContentWriteInput'
         - type: object
-          required: [id, module, status, version, createdBy, updatedBy, createdAt, updatedAt]
+          required: [id, module, status, version, isPublished, createdBy, updatedBy, createdAt, updatedAt]
           properties:
             id: { type: string, format: uuid }
             module: { $ref: '#/components/schemas/ContentModule' }
             status: { $ref: '#/components/schemas/ContentStatus' }
             version: { type: integer, format: int64 }
             coverUrl: { type: string }
+            isPublished: { type: boolean }
+            publishedVersion: { type: integer, format: int64 }
             createdBy: { type: string }
             updatedBy: { type: string }
             publishedAt: { type: string, format: date-time }

@@ -12,6 +12,10 @@ func TestWorkerCompletesPublishForCleanAsset(t *testing.T) {
 	assets := &workerAssets{asset: Asset{
 		ID:               "asset-1",
 		OwnerService:     "hhc-web-api",
+		Namespace:        "cms.weekly.pdf",
+		OwnerType:        "bulletin_issue",
+		OwnerID:          "issue-1",
+		Locale:           "zh-Hant",
 		UploadStatus:     "completed",
 		ScanStatus:       "clean",
 		ProcessingStatus: "ready",
@@ -36,6 +40,10 @@ func TestWorkerRetriesWhileAssetScanIsPending(t *testing.T) {
 	assets := &workerAssets{asset: Asset{
 		ID:               "asset-1",
 		OwnerService:     "hhc-web-api",
+		Namespace:        "cms.weekly.pdf",
+		OwnerType:        "bulletin_issue",
+		OwnerID:          "issue-1",
+		Locale:           "zh-Hant",
 		UploadStatus:     "completed",
 		ScanStatus:       "pending",
 		ProcessingStatus: "pending",
@@ -55,6 +63,10 @@ func TestWorkerFailsImmediatelyForInfectedAsset(t *testing.T) {
 	assets := &workerAssets{asset: Asset{
 		ID:               "asset-1",
 		OwnerService:     "hhc-web-api",
+		Namespace:        "cms.weekly.pdf",
+		OwnerType:        "bulletin_issue",
+		OwnerID:          "issue-1",
+		Locale:           "zh-Hant",
 		UploadStatus:     "completed",
 		ScanStatus:       "infected",
 		ProcessingStatus: "failed",
@@ -87,8 +99,79 @@ func TestWorkerTreatsMissingGrantAsSuccessfulUnpublish(t *testing.T) {
 	if repository.completeCount != 1 {
 		t.Fatalf("complete=%d", repository.completeCount)
 	}
-	if assets.deletedAsset != "asset-1" {
-		t.Fatalf("deleted=%q", assets.deletedAsset)
+	if assets.deletedAsset != "" {
+		t.Fatalf("unpublish deleted asset=%q", assets.deletedAsset)
+	}
+}
+
+func TestWorkerRejectsBulletinAssetFromAnotherOwner(t *testing.T) {
+	repository := &workerRepository{event: publishEvent(1)}
+	assets := &workerAssets{asset: Asset{
+		ID:               "asset-1",
+		OwnerService:     "hhc-web-api",
+		Namespace:        "cms.news.cover",
+		OwnerType:        "news",
+		OwnerID:          "news-1",
+		UploadStatus:     "completed",
+		ScanStatus:       "clean",
+		ProcessingStatus: "ready",
+	}}
+	worker := NewWorker(repository, assets, 5)
+
+	if _, err := worker.processNext(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if repository.failCount != 1 || assets.grantCalls != 0 {
+		t.Fatalf("fail=%d grantCalls=%d", repository.failCount, assets.grantCalls)
+	}
+}
+
+func TestWorkerPublishesOwnedNewsCover(t *testing.T) {
+	repository := &workerRepository{event: Event{
+		ID:               "event-news",
+		EventType:        "news.publish.ensure_asset",
+		AggregateID:      "news-1",
+		AggregateVersion: 3,
+		Payload:          []byte(`{"contentId":"news-1","assetId":"asset-news","aggregateVersion":3}`),
+		Attempts:         1,
+	}}
+	assets := &workerAssets{asset: Asset{
+		ID:               "asset-news",
+		Namespace:        "cms.news.cover",
+		OwnerService:     "hhc-web-api",
+		OwnerType:        "news",
+		OwnerID:          "news-1",
+		UploadStatus:     "completed",
+		ScanStatus:       "clean",
+		ProcessingStatus: "ready",
+	}, grant: Grant{ID: "grant-news"}}
+	worker := NewWorker(repository, assets, 5)
+
+	if _, err := worker.processNext(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if repository.completedContentGrant != "grant-news" || assets.grantCalls != 1 {
+		t.Fatalf("grant=%q calls=%d", repository.completedContentGrant, assets.grantCalls)
+	}
+}
+
+func TestWorkerUnpublishesNewsWithoutDeletingCover(t *testing.T) {
+	repository := &workerRepository{event: Event{
+		ID:               "event-news-unpublish",
+		EventType:        "news.unpublish.revoke_asset",
+		AggregateID:      "news-1",
+		AggregateVersion: 4,
+		Payload:          []byte(`{"contentId":"news-1","assetId":"asset-news","grantId":"grant-news","aggregateVersion":4}`),
+		Attempts:         1,
+	}}
+	assets := &workerAssets{}
+	worker := NewWorker(repository, assets, 5)
+
+	if _, err := worker.processNext(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if assets.revokedGrant != "grant-news" || assets.deletedAsset != "" || repository.completeContentUnpublishCount != 1 {
+		t.Fatalf("revoked=%q deleted=%q completed=%d", assets.revokedGrant, assets.deletedAsset, repository.completeContentUnpublishCount)
 	}
 }
 
@@ -116,6 +199,10 @@ func TestWorkerRevokesGrantWhenPublishWasSuperseded(t *testing.T) {
 	assets := &workerAssets{asset: Asset{
 		ID:               "asset-1",
 		OwnerService:     "hhc-web-api",
+		Namespace:        "cms.weekly.pdf",
+		OwnerType:        "bulletin_issue",
+		OwnerID:          "issue-1",
+		Locale:           "zh-Hant",
 		UploadStatus:     "completed",
 		ScanStatus:       "clean",
 		ProcessingStatus: "ready",
@@ -142,14 +229,17 @@ func publishEvent(attempts int) Event {
 }
 
 type workerRepository struct {
-	event                  Event
-	claimed                bool
-	retryCount             int
-	failCount              int
-	completeCount          int
-	completeUnpublishCount int
-	completedGrant         string
-	completePublishError   error
+	event                         Event
+	claimed                       bool
+	retryCount                    int
+	failCount                     int
+	completeCount                 int
+	completeUnpublishCount        int
+	completedGrant                string
+	completedContentGrant         string
+	completePublishError          error
+	completeContentError          error
+	completeContentUnpublishCount int
 }
 
 func (r *workerRepository) Claim(context.Context, time.Time, time.Duration) (Event, bool, error) {
@@ -171,6 +261,14 @@ func (r *workerRepository) CompletePublish(_ context.Context, _ Event, grantID, 
 	r.completedGrant = grantID
 	return r.completePublishError
 }
+func (r *workerRepository) CompleteContentPublish(_ context.Context, _ Event, grantID, _ string, _ time.Time) error {
+	r.completedContentGrant = grantID
+	return r.completeContentError
+}
+func (r *workerRepository) CompleteContentUnpublish(context.Context, Event, time.Time) error {
+	r.completeContentUnpublishCount++
+	return nil
+}
 func (r *workerRepository) Complete(context.Context, string, time.Time) error {
 	r.completeCount++
 	return nil
@@ -189,12 +287,14 @@ type workerAssets struct {
 	revokeError  error
 	revokedGrant string
 	deletedAsset string
+	grantCalls   int
 }
 
 func (a *workerAssets) Get(context.Context, string) (Asset, error) {
 	return a.asset, a.getError
 }
 func (a *workerAssets) CreatePublicGrant(context.Context, string, string) (Grant, error) {
+	a.grantCalls++
 	return a.grant, a.grantError
 }
 func (a *workerAssets) RevokeGrant(_ context.Context, _, grantID string) error {

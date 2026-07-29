@@ -13,11 +13,15 @@ type principal struct {
 }
 type principalKey struct{}
 
-func requireTrusted(next http.Handler) http.Handler {
+func requireTrusted(caller string, allowDevCaller bool, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		actualCaller := strings.TrimSpace(r.Header.Get("Dapr-Caller-App-Id"))
+		if actualCaller == "" && allowDevCaller {
+			actualCaller = strings.TrimSpace(r.Header.Get("X-Internal-Caller-App-Id"))
+		}
 		userID := strings.TrimSpace(r.Header.Get("X-HHC-User-ID"))
 		provider := strings.TrimSpace(r.Header.Get("X-HHC-Auth-Provider"))
-		if userID == "" || provider != "account-api" {
+		if actualCaller != caller || userID == "" || provider != "account-api" {
 			writeError(w, http.StatusUnauthorized, "unauthorized", "Trusted gateway identity is required.")
 			return
 		}

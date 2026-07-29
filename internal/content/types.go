@@ -23,10 +23,14 @@ const (
 )
 
 const (
-	StatusDraft       = "draft"
-	StatusPublished   = "published"
-	StatusUnpublished = "unpublished"
-	StatusArchived    = "archived"
+	StatusDraft           = "draft"
+	StatusPublishing      = "publishing"
+	StatusPublished       = "published"
+	StatusUnpublishing    = "unpublishing"
+	StatusPublishFailed   = "publish_failed"
+	StatusUnpublishFailed = "unpublish_failed"
+	StatusUnpublished     = "unpublished"
+	StatusArchived        = "archived"
 )
 
 type Translation struct {
@@ -50,25 +54,28 @@ type WriteInput struct {
 }
 
 type Item struct {
-	ID             string        `json:"id"`
-	Module         Module        `json:"module"`
-	Status         string        `json:"status"`
-	Version        int64         `json:"version"`
-	Slug           string        `json:"slug,omitempty"`
-	DisplayDate    string        `json:"displayDate,omitempty"`
-	SortOrder      int           `json:"sortOrder,omitempty"`
-	YouTubeVideoID string        `json:"youtubeVideoId,omitempty"`
-	CoverAssetID   string        `json:"coverAssetId,omitempty"`
-	CoverURL       string        `json:"coverUrl,omitempty"`
-	PublicGrantID  string        `json:"-"`
-	Featured       bool          `json:"featured,omitempty"`
-	HomeEligible   bool          `json:"homeEligible,omitempty"`
-	Translations   []Translation `json:"translations"`
-	CreatedBy      string        `json:"createdBy"`
-	UpdatedBy      string        `json:"updatedBy"`
-	PublishedAt    *time.Time    `json:"publishedAt,omitempty"`
-	CreatedAt      time.Time     `json:"createdAt"`
-	UpdatedAt      time.Time     `json:"updatedAt"`
+	ID               string        `json:"id"`
+	Module           Module        `json:"module"`
+	Status           string        `json:"status"`
+	Version          int64         `json:"version"`
+	Slug             string        `json:"slug,omitempty"`
+	DisplayDate      string        `json:"displayDate,omitempty"`
+	SortOrder        int           `json:"sortOrder,omitempty"`
+	YouTubeVideoID   string        `json:"youtubeVideoId,omitempty"`
+	CoverAssetID     string        `json:"coverAssetId,omitempty"`
+	CoverURL         string        `json:"coverUrl,omitempty"`
+	PublicGrantID    string        `json:"-"`
+	PublishedCoverID string        `json:"-"`
+	IsPublished      bool          `json:"isPublished"`
+	PublishedVersion int64         `json:"publishedVersion,omitempty"`
+	Featured         bool          `json:"featured,omitempty"`
+	HomeEligible     bool          `json:"homeEligible,omitempty"`
+	Translations     []Translation `json:"translations"`
+	CreatedBy        string        `json:"createdBy"`
+	UpdatedBy        string        `json:"updatedBy"`
+	PublishedAt      *time.Time    `json:"publishedAt,omitempty"`
+	CreatedAt        time.Time     `json:"createdAt"`
+	UpdatedAt        time.Time     `json:"updatedAt"`
 }
 
 type Revision struct {
@@ -106,7 +113,7 @@ type Repository interface {
 	ListContent(context.Context, Module, int, int, string) (Page, error)
 	GetContent(context.Context, Module, string) (Item, error)
 	UpdateContent(context.Context, Module, string, int64, WriteInput, string, time.Time) (Item, error)
-	PublishContent(context.Context, Module, string, int64, string, string, time.Time) (Item, error)
+	PublishContent(context.Context, Module, string, int64, string, time.Time) (Item, error)
 	UnpublishContent(context.Context, Module, string, int64, string, time.Time) (Item, error)
 	ContentRevisions(context.Context, Module, string) ([]Revision, error)
 	RestoreContent(context.Context, Module, string, int64, int64, string, time.Time) (Item, error)

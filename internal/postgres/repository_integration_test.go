@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/bulletins"
+	"github.com/HallelujahHomeChurch/hhc-web-api/internal/content"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/migrations"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/publication"
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -140,6 +141,116 @@ func TestRepositoryPublishWaitsForAssetWorkflow(t *testing.T) {
 	}
 	if unpublished.Status != "unpublished" || unpublished.Versions[0].Status != "unpublished" {
 		t.Fatalf("unpublished = %#v", unpublished)
+	}
+}
+
+func TestNewsPublicationKeepsLiveProjectionUntilReplacement(t *testing.T) {
+	databaseURL := os.Getenv("HHW_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("HHW_TEST_DATABASE_URL is not configured")
+	}
+	db, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	if err := migrations.Run(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `TRUNCATE hhc_web.outbox_event,hhc_web.public_projection,hhc_web.content_revision,hhc_web.content_translation,hhc_web.news_item,hhc_web.content_entry CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+	repository := New(db)
+	now := time.Now().UTC()
+	input := content.WriteInput{
+		Slug: "first-news", DisplayDate: "2026-07-30", CoverAssetID: "asset-1",
+		Translations: []content.Translation{{Locale: "zh-Hant", Title: "最新消息"}},
+	}
+	item, err := repository.CreateContent(ctx, content.ModuleNews, input, "user-1", "news-create-1", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conflicting := input
+	conflicting.Slug = "different-news"
+	if _, err := repository.CreateContent(ctx, content.ModuleNews, conflicting, "user-1", "news-create-1", now); !errors.Is(err, content.ErrConflict) {
+		t.Fatalf("idempotency payload mismatch error=%v", err)
+	}
+	item, err = repository.PublishContent(ctx, content.ModuleNews, item.ID, item.Version, "user-1", now.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item.Status != content.StatusPublishing {
+		t.Fatalf("status=%q", item.Status)
+	}
+	event, found, err := repository.Claim(ctx, now.Add(time.Minute), 30*time.Second)
+	if err != nil || !found || event.EventType != "news.publish.ensure_asset" {
+		t.Fatalf("event=%#v found=%v err=%v", event, found, err)
+	}
+	if err := repository.CompleteContentPublish(ctx, event, "grant-1", "/api/assets/public/asset-1", now.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	public, err := repository.PublicContent(ctx, content.ModuleNews, "zh-Hant", 20)
+	if err != nil || len(public) != 1 || public[0].ImageURL != "/api/assets/public/asset-1/large" {
+		t.Fatalf("public=%#v err=%v", public, err)
+	}
+
+	input.CoverAssetID = "asset-2"
+	input.Translations[0].Title = "更新消息"
+	item, err = repository.UpdateContent(ctx, content.ModuleNews, item.ID, item.Version, input, "user-1", now.Add(3*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !item.IsPublished || item.Status != content.StatusDraft {
+		t.Fatalf("draft=%#v", item)
+	}
+	item, err = repository.PublishContent(ctx, content.ModuleNews, item.ID, item.Version, "user-1", now.Add(4*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	stillPublic, err := repository.PublicContent(ctx, content.ModuleNews, "zh-Hant", 20)
+	if err != nil || len(stillPublic) != 1 || stillPublic[0].ImageURL != "/api/assets/public/asset-1/large" {
+		t.Fatalf("public during replacement=%#v err=%v", stillPublic, err)
+	}
+	replacement, found, err := repository.Claim(ctx, now.Add(4*time.Minute), 30*time.Second)
+	if err != nil || !found || replacement.EventType != "news.publish.ensure_asset" {
+		t.Fatalf("replacement=%#v found=%v err=%v", replacement, found, err)
+	}
+	if err := repository.CompleteContentPublish(ctx, replacement, "grant-2", "/api/assets/public/asset-2", now.Add(5*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	retire, found, err := repository.Claim(ctx, now.Add(5*time.Minute), 30*time.Second)
+	if err != nil || !found || retire.EventType != "asset.grant.revoke" {
+		t.Fatalf("retire=%#v found=%v err=%v", retire, found, err)
+	}
+	if err := repository.Complete(ctx, retire.ID, now.Add(6*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+
+	item, err = repository.GetContent(ctx, content.ModuleNews, item.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, err = repository.UnpublishContent(ctx, content.ModuleNews, item.ID, item.Version, "user-1", now.Add(7*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item.Status != content.StatusUnpublishing {
+		t.Fatalf("status=%q", item.Status)
+	}
+	if values, err := repository.PublicContent(ctx, content.ModuleNews, "zh-Hant", 20); err != nil || len(values) != 0 {
+		t.Fatalf("public after unpublish request=%#v err=%v", values, err)
+	}
+	unpublish, found, err := repository.Claim(ctx, now.Add(7*time.Minute), 30*time.Second)
+	if err != nil || !found || unpublish.EventType != "news.unpublish.revoke_asset" {
+		t.Fatalf("unpublish=%#v found=%v err=%v", unpublish, found, err)
+	}
+	if err := repository.CompleteContentUnpublish(ctx, unpublish, now.Add(8*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	item, err = repository.GetContent(ctx, content.ModuleNews, item.ID)
+	if err != nil || item.IsPublished || item.Status != content.StatusUnpublished {
+		t.Fatalf("unpublished=%#v err=%v", item, err)
 	}
 }
 

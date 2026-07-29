@@ -27,6 +27,15 @@ func TestAdminRoutesRequireTrustedIdentityAndScope(t *testing.T) {
 	if response.Code != http.StatusForbidden {
 		t.Fatalf("status=%d", response.Code)
 	}
+
+	request = httptest.NewRequest(http.MethodGet, "/api/admin/bulletins", nil)
+	trusted(request, "cms:read")
+	request.Header.Set("Dapr-Caller-App-Id", "untrusted-service")
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("spoofed gateway status=%d", response.Code)
+	}
 }
 
 func TestCreateIssueRequiresIdempotencyAndReturnsETag(t *testing.T) {
@@ -50,8 +59,8 @@ func TestCreateIssueRequiresIdempotencyAndReturnsETag(t *testing.T) {
 
 func TestMutationRequiresIfMatch(t *testing.T) {
 	handler := testHandler(&apiRepository{})
-	request := httptest.NewRequest(http.MethodPost, "/api/admin/bulletins/issue-1/versions", bytes.NewBufferString(`{"locale":"zh-Hant","title":"週報","pdfAssetId":"asset-1","pdfFileName":"weekly.pdf"}`))
-	trusted(request, "cms:write")
+	request := httptest.NewRequest(http.MethodPost, "/api/admin/bulletins/issue-1/publish", bytes.NewBufferString(`{"locale":"zh-Hant"}`))
+	trusted(request, "cms:publish")
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusPreconditionRequired {
@@ -122,6 +131,7 @@ func testHandlerWithUploads(repo bulletins.Repository, uploads assetUploads) htt
 	return New(bulletins.NewService(repo, time.Now), nil, uploads).Routes()
 }
 func trusted(request *http.Request, scopes string) {
+	request.Header.Set("Dapr-Caller-App-Id", "api-gateway")
 	request.Header.Set("X-HHC-User-ID", "user-1")
 	request.Header.Set("X-HHC-Auth-Provider", "account-api")
 	request.Header.Set("X-HHC-Scopes", scopes)
@@ -175,10 +185,6 @@ func (u *apiUploads) CompleteUpload(context.Context, string, assetclient.Complet
 	return u.completed, nil
 }
 func (u *apiUploads) Get(context.Context, string) (assetclient.Asset, error) { return u.completed, nil }
-func (*apiUploads) CreatePublicGrant(context.Context, string, string) (assetclient.Grant, error) {
-	return assetclient.Grant{ID: "grant-1"}, nil
-}
-func (*apiUploads) RevokeGrant(context.Context, string, string) error { return nil }
 func (*apiRepository) StartPublish(context.Context, string, string, int64, string, time.Time) (bulletins.Workflow, error) {
 	return bulletins.Workflow{}, nil
 }

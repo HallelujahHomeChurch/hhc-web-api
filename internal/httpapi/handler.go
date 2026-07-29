@@ -23,22 +23,22 @@ type assetUploads interface {
 	CreateNewsCoverUpload(context.Context, string, string, string, int64, string) (assetclient.CreatedUpload, error)
 	CompleteUpload(context.Context, string, assetclient.CompleteUploadInput) (assetclient.Asset, error)
 	Get(context.Context, string) (assetclient.Asset, error)
-	CreatePublicGrant(context.Context, string, string) (assetclient.Grant, error)
-	RevokeGrant(context.Context, string, string) error
 }
 
 type Handler struct {
-	service *bulletins.Service
-	content *content.Service
-	db      *sql.DB
-	uploads assetUploads
+	service        *bulletins.Service
+	content        *content.Service
+	db             *sql.DB
+	uploads        assetUploads
+	trustedCaller  string
+	allowDevCaller bool
 }
 
 func New(service *bulletins.Service, db *sql.DB, uploads assetUploads) *Handler {
-	return NewWithContent(service, nil, db, uploads)
+	return NewWithContent(service, nil, db, uploads, "api-gateway", false)
 }
-func NewWithContent(service *bulletins.Service, contentService *content.Service, db *sql.DB, uploads assetUploads) *Handler {
-	return &Handler{service: service, content: contentService, db: db, uploads: uploads}
+func NewWithContent(service *bulletins.Service, contentService *content.Service, db *sql.DB, uploads assetUploads, trustedCaller string, allowDevCaller bool) *Handler {
+	return &Handler{service: service, content: contentService, db: db, uploads: uploads, trustedCaller: trustedCaller, allowDevCaller: allowDevCaller}
 }
 func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
@@ -53,7 +53,6 @@ func (h *Handler) Routes() http.Handler {
 	admin.HandleFunc("GET /api/admin/bulletins", requireScope("cms:read", h.adminList))
 	admin.HandleFunc("POST /api/admin/bulletins", requireScope("cms:write", h.adminCreate))
 	admin.HandleFunc("GET /api/admin/bulletins/{issueID}", requireScope("cms:read", h.adminGet))
-	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/versions", requireScope("cms:write", h.adminPutVersion))
 	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/upload-sessions", requireScopes([]string{"cms:write", "assets:write"}, h.adminCreateUpload))
 	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/assets/{assetID}/complete", requireScopes([]string{"cms:write", "assets:write"}, h.adminCompleteUpload))
 	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/publish", requireScope("cms:publish", h.adminPublish))
@@ -61,7 +60,7 @@ func (h *Handler) Routes() http.Handler {
 	if h.content != nil {
 		h.contentRoutes(mux, admin)
 	}
-	mux.Handle("/api/admin/", requireTrusted(admin))
+	mux.Handle("/api/admin/", requireTrusted(h.trustedCaller, h.allowDevCaller, admin))
 	return requestID(mux)
 }
 
@@ -206,23 +205,6 @@ func (h *Handler) adminCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("ETag", fmt.Sprintf(`"%d"`, value.Version))
 	writeData(w, http.StatusCreated, value, nil)
-}
-func (h *Handler) adminPutVersion(w http.ResponseWriter, r *http.Request) {
-	expected, ok := ifMatch(w, r)
-	if !ok {
-		return
-	}
-	var input bulletins.PutVersionInput
-	if !decode(w, r, &input) {
-		return
-	}
-	value, err := h.service.PutVersion(r.Context(), r.PathValue("issueID"), expected, input, actor(r))
-	if err != nil {
-		handleError(w, err)
-		return
-	}
-	w.Header().Set("ETag", fmt.Sprintf(`"%d"`, value.Version))
-	writeData(w, http.StatusOK, value, nil)
 }
 func (h *Handler) adminPublish(w http.ResponseWriter, r *http.Request) {
 	expected, ok := ifMatch(w, r)

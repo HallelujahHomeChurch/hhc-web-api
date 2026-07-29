@@ -50,7 +50,7 @@ func (s *Service) UpdateContent(ctx context.Context, module Module, id string, e
 	}
 	return s.repository.UpdateContent(ctx, module, id, expected, input, actor, s.now().UTC())
 }
-func (s *Service) PublishContent(ctx context.Context, module Module, id string, expected int64, actor, publicGrantID string) (Item, error) {
+func (s *Service) PublishContent(ctx context.Context, module Module, id string, expected int64, actor string) (Item, error) {
 	item, err := s.repository.GetContent(ctx, module, id)
 	if err != nil {
 		return Item{}, err
@@ -61,10 +61,7 @@ func (s *Service) PublishContent(ctx context.Context, module Module, id string, 
 	if !publishable(item) {
 		return Item{}, ErrNotPublishable
 	}
-	if module == ModuleNews && strings.TrimSpace(publicGrantID) == "" {
-		return Item{}, ErrNotPublishable
-	}
-	return s.repository.PublishContent(ctx, module, id, expected, actor, publicGrantID, s.now().UTC())
+	return s.repository.PublishContent(ctx, module, id, expected, actor, s.now().UTC())
 }
 func (s *Service) UnpublishContent(ctx context.Context, module Module, id string, expected int64, actor string) (Item, error) {
 	return s.repository.UnpublishContent(ctx, module, id, expected, actor, s.now().UTC())

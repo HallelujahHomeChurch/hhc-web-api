@@ -11,20 +11,23 @@ import (
 type Config struct {
 	Port                string
 	DatabaseURL         string
-	RedisURL            string
 	Environment         string
 	ShutdownTimeout     time.Duration
 	AssetAPIBaseURL     string
 	InternalCallerAppID string
+	AdminAllowedCaller  string
+	AllowDevCaller      bool
 	PublicBaseURL       string
 	OutboxMaxAttempts   int
 }
 
 func Load() (Config, error) {
 	cfg := Config{
-		Port: value("PORT", "8082"), DatabaseURL: strings.TrimSpace(os.Getenv("DATABASE_URL")), RedisURL: strings.TrimSpace(os.Getenv("REDIS_URL")),
+		Port: value("PORT", "8082"), DatabaseURL: strings.TrimSpace(os.Getenv("DATABASE_URL")),
 		Environment: value("ENVIRONMENT", "development"), ShutdownTimeout: 10 * time.Second, AssetAPIBaseURL: value("ASSET_API_BASE_URL", "http://127.0.0.1:8083"),
-		InternalCallerAppID: value("INTERNAL_CALLER_APP_ID", "hhc-web-api"), PublicBaseURL: value("PUBLIC_BASE_URL", "http://127.0.0.1:8082/api"),
+		InternalCallerAppID: value("INTERNAL_CALLER_APP_ID", "hhc-web-api"), AdminAllowedCaller: value("ADMIN_ALLOWED_CALLER_APP_ID", "api-gateway"),
+		AllowDevCaller:    strings.EqualFold(strings.TrimSpace(os.Getenv("ALLOW_DEV_CALLER_HEADER")), "true"),
+		PublicBaseURL:     value("PUBLIC_BASE_URL", "http://127.0.0.1:8082/api"),
 		OutboxMaxAttempts: 20,
 	}
 	if cfg.DatabaseURL == "" {

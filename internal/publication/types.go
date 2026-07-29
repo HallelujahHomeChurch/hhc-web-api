@@ -29,6 +29,17 @@ type UnpublishPayload struct {
 	GrantID          string `json:"grantId"`
 	AggregateVersion int64  `json:"aggregateVersion"`
 }
+type ContentPublishPayload struct {
+	ContentID        string `json:"contentId"`
+	AssetID          string `json:"assetId"`
+	AggregateVersion int64  `json:"aggregateVersion"`
+}
+type ContentUnpublishPayload struct {
+	ContentID        string `json:"contentId"`
+	AssetID          string `json:"assetId"`
+	GrantID          string `json:"grantId"`
+	AggregateVersion int64  `json:"aggregateVersion"`
+}
 
 type Repository interface {
 	Claim(context.Context, time.Time, time.Duration) (Event, bool, error)
@@ -36,6 +47,8 @@ type Repository interface {
 	Fail(context.Context, Event, string, time.Time) error
 	CompletePublish(context.Context, Event, string, string, time.Time) error
 	CompleteUnpublish(context.Context, Event, time.Time) error
+	CompleteContentPublish(context.Context, Event, string, string, time.Time) error
+	CompleteContentUnpublish(context.Context, Event, time.Time) error
 	Complete(context.Context, string, time.Time) error
 }
 type AssetClient interface {
@@ -45,5 +58,8 @@ type AssetClient interface {
 	Delete(context.Context, string) error
 	PublicURL(string) string
 }
-type Asset struct{ ID, OwnerService, UploadStatus, ScanStatus, ProcessingStatus string }
+type Asset struct {
+	ID, Namespace, OwnerService, OwnerType, OwnerID, Locale string
+	UploadStatus, ScanStatus, ProcessingStatus              string
+}
 type Grant struct{ ID string }

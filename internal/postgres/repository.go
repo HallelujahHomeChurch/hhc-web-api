@@ -371,6 +371,28 @@ func (r *Repository) Fail(ctx context.Context, event publication.Event, detail s
 	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.outbox_event SET status='failed',claimed_until=NULL,last_error=$2,updated_at=$3 WHERE id=$1`, event.ID, detail, now); err != nil {
 		return err
 	}
+	if strings.HasPrefix(event.EventType, "news.") {
+		var contentID string
+		var version int64
+		nextStatus := "draft"
+		if event.EventType == "news.unpublish.revoke_asset" {
+			var contentPayload publication.ContentUnpublishPayload
+			if err := json.Unmarshal(event.Payload, &contentPayload); err != nil {
+				return err
+			}
+			contentID, version, nextStatus = contentPayload.ContentID, contentPayload.AggregateVersion, "unpublish_failed"
+		} else {
+			var contentPayload publication.ContentPublishPayload
+			if err := json.Unmarshal(event.Payload, &contentPayload); err != nil {
+				return err
+			}
+			contentID, version = contentPayload.ContentID, contentPayload.AggregateVersion
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.content_entry SET status=$3,updated_at=$4 WHERE id=$1 AND version=$2`, contentID, version, nextStatus, now); err != nil {
+			return err
+		}
+		return tx.Commit()
+	}
 	if payload.WorkflowID != "" {
 		if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.publication_workflow SET status='failed',error_code='PUBLICATION_FAILED',error_detail=$2,updated_at=$3 WHERE id=$1`, payload.WorkflowID, detail, now); err != nil {
 			return err

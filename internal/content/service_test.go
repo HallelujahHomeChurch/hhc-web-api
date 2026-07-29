@@ -33,11 +33,11 @@ func TestNewsPublishRequiresCleanCoverReference(t *testing.T) {
 	repo := &serviceRepository{item: Item{ID: "item-1", Module: ModuleNews, Status: StatusDraft, Version: 2, Slug: "announcement", DisplayDate: "2026-07-13", Translations: translations()}}
 	service := NewService(repo, time.Now)
 
-	if _, err := service.PublishContent(context.Background(), ModuleNews, "item-1", 2, "user-1", ""); !errors.Is(err, ErrNotPublishable) {
+	if _, err := service.PublishContent(context.Background(), ModuleNews, "item-1", 2, "user-1"); !errors.Is(err, ErrNotPublishable) {
 		t.Fatalf("err=%v", err)
 	}
 	repo.item.CoverAssetID = "asset-1"
-	if _, err := service.PublishContent(context.Background(), ModuleNews, "item-1", 2, "user-1", "grant-1"); err != nil {
+	if _, err := service.PublishContent(context.Background(), ModuleNews, "item-1", 2, "user-1"); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -77,7 +77,7 @@ func (r *serviceRepository) GetContent(context.Context, Module, string) (Item, e
 func (r *serviceRepository) UpdateContent(context.Context, Module, string, int64, WriteInput, string, time.Time) (Item, error) {
 	return r.item, nil
 }
-func (r *serviceRepository) PublishContent(_ context.Context, _ Module, _ string, _ int64, _, _ string, _ time.Time) (Item, error) {
+func (r *serviceRepository) PublishContent(_ context.Context, _ Module, _ string, _ int64, _ string, _ time.Time) (Item, error) {
 	r.item.Status = StatusPublished
 	return r.item, nil
 }

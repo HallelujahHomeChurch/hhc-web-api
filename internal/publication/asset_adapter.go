@@ -15,7 +15,11 @@ func (a *AssetAdapter) Get(ctx context.Context, id string) (Asset, error) {
 	value, err := a.client.Get(ctx, id)
 	return Asset{
 		ID:               value.ID,
+		Namespace:        value.Namespace,
 		OwnerService:     value.OwnerService,
+		OwnerType:        value.OwnerType,
+		OwnerID:          value.OwnerID,
+		Locale:           value.Locale,
 		UploadStatus:     value.UploadStatus,
 		ScanStatus:       value.ScanStatus,
 		ProcessingStatus: value.ProcessingStatus,

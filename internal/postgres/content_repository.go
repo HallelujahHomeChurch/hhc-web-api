@@ -8,10 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/content"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/platform"
+	"github.com/HallelujahHomeChurch/hhc-web-api/internal/publication"
 )
 
 func (r *Repository) CreateContent(ctx context.Context, module content.Module, input content.WriteInput, actor, key string, now time.Time) (content.Item, error) {
@@ -21,13 +23,26 @@ func (r *Repository) CreateContent(ctx context.Context, module content.Module, i
 	}
 	defer tx.Rollback()
 	id := platform.NewID()
-	result, err := tx.ExecContext(ctx, `INSERT INTO hhc_web.content_entry(id,module,status,version,idempotency_key,created_by,updated_by,created_at,updated_at) VALUES($1,$2,'draft',1,$3,$4,$4,$5,$5) ON CONFLICT(idempotency_key) DO NOTHING`, id, module, key, actor, now)
+	encoded, err := json.Marshal(struct {
+		Module content.Module     `json:"module"`
+		Input  content.WriteInput `json:"input"`
+	}{Module: module, Input: input})
 	if err != nil {
-		return content.Item{}, mapConflict(err)
+		return content.Item{}, err
+	}
+	fingerprint := fmt.Sprintf("%x", sha256.Sum256(encoded))
+	result, err := tx.ExecContext(ctx, `INSERT INTO hhc_web.content_entry(id,module,status,version,idempotency_key,idempotency_fingerprint,created_by,updated_by,created_at,updated_at) VALUES($1,$2,'draft',1,$3,$4,$5,$5,$6,$6) ON CONFLICT(idempotency_key) DO NOTHING`, id, module, key, fingerprint, actor, now)
+	if err != nil {
+		return content.Item{}, mapContentConflict(err)
 	}
 	if rows, _ := result.RowsAffected(); rows == 0 {
-		if err := tx.QueryRowContext(ctx, `SELECT id::text,module FROM hhc_web.content_entry WHERE idempotency_key=$1`, key).Scan(&id, &module); err != nil {
+		var existingModule content.Module
+		var existingFingerprint string
+		if err := tx.QueryRowContext(ctx, `SELECT id::text,module,idempotency_fingerprint FROM hhc_web.content_entry WHERE idempotency_key=$1`, key).Scan(&id, &existingModule, &existingFingerprint); err != nil {
 			return content.Item{}, err
+		}
+		if existingModule != module || existingFingerprint != fingerprint {
+			return content.Item{}, content.ErrConflict
 		}
 		item, err := loadContent(ctx, tx, module, id)
 		if err != nil {
@@ -36,7 +51,7 @@ func (r *Repository) CreateContent(ctx context.Context, module content.Module, i
 		return item, tx.Commit()
 	}
 	if err := writeTypedContent(ctx, tx, module, id, input, true); err != nil {
-		return content.Item{}, mapConflict(err)
+		return content.Item{}, mapContentConflict(err)
 	}
 	if err := replaceTranslations(ctx, tx, id, input.Translations); err != nil {
 		return content.Item{}, err
@@ -98,7 +113,7 @@ func (r *Repository) UpdateContent(ctx context.Context, module content.Module, i
 		return content.Item{}, err
 	}
 	if err := writeTypedContent(ctx, tx, module, id, input, false); err != nil {
-		return content.Item{}, mapConflict(err)
+		return content.Item{}, mapContentConflict(err)
 	}
 	if err := replaceTranslations(ctx, tx, id, input.Translations); err != nil {
 		return content.Item{}, err
@@ -116,7 +131,10 @@ func (r *Repository) UpdateContent(ctx context.Context, module content.Module, i
 	return item, tx.Commit()
 }
 
-func (r *Repository) PublishContent(ctx context.Context, module content.Module, id string, expected int64, actor, publicGrantID string, now time.Time) (content.Item, error) {
+func (r *Repository) PublishContent(ctx context.Context, module content.Module, id string, expected int64, actor string, now time.Time) (content.Item, error) {
+	if module == content.ModuleNews {
+		return r.startNewsPublish(ctx, id, expected, actor, now)
+	}
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return content.Item{}, err
@@ -124,11 +142,6 @@ func (r *Repository) PublishContent(ctx context.Context, module content.Module, 
 	defer tx.Rollback()
 	if err := lockContentVersion(ctx, tx, module, id, expected); err != nil {
 		return content.Item{}, err
-	}
-	if module == content.ModuleNews {
-		if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.news_item SET public_grant_id=$2 WHERE entry_id=$1`, id, publicGrantID); err != nil {
-			return content.Item{}, err
-		}
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.content_entry SET status='published',version=version+1,published_at=$2,updated_by=$3,updated_at=$2 WHERE id=$1`, id, now, actor); err != nil {
 		return content.Item{}, err
@@ -153,6 +166,9 @@ func (r *Repository) PublishContent(ctx context.Context, module content.Module, 
 }
 
 func (r *Repository) UnpublishContent(ctx context.Context, module content.Module, id string, expected int64, actor string, now time.Time) (content.Item, error) {
+	if module == content.ModuleNews {
+		return r.startNewsUnpublish(ctx, id, expected, actor, now)
+	}
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return content.Item{}, err
@@ -167,11 +183,6 @@ func (r *Repository) UnpublishContent(ctx context.Context, module content.Module
 	if _, err := tx.ExecContext(ctx, `DELETE FROM hhc_web.public_projection WHERE resource_type=$1 AND resource_id=$2`, module, id); err != nil {
 		return content.Item{}, err
 	}
-	if module == content.ModuleNews {
-		if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.news_item SET public_grant_id='' WHERE entry_id=$1`, id); err != nil {
-			return content.Item{}, err
-		}
-	}
 	item, err := loadContent(ctx, tx, module, id)
 	if err != nil {
 		return content.Item{}, err
@@ -180,6 +191,183 @@ func (r *Repository) UnpublishContent(ctx context.Context, module content.Module
 		return content.Item{}, err
 	}
 	return item, tx.Commit()
+}
+
+func (r *Repository) startNewsPublish(ctx context.Context, id string, expected int64, actor string, now time.Time) (content.Item, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return content.Item{}, err
+	}
+	defer tx.Rollback()
+	if err := lockContentVersion(ctx, tx, content.ModuleNews, id, expected); err != nil {
+		return content.Item{}, err
+	}
+	current, err := loadContent(ctx, tx, content.ModuleNews, id)
+	if err != nil {
+		return content.Item{}, err
+	}
+	if current.CoverAssetID == "" || current.Status == content.StatusPublishing || current.Status == content.StatusUnpublishing || current.Status == content.StatusArchived {
+		return content.Item{}, content.ErrNotPublishable
+	}
+	next := expected + 1
+	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.content_entry SET status='publishing',version=$2,updated_by=$3,updated_at=$4 WHERE id=$1`, id, next, actor, now); err != nil {
+		return content.Item{}, err
+	}
+	payload, _ := json.Marshal(publication.ContentPublishPayload{ContentID: id, AssetID: current.CoverAssetID, AggregateVersion: next})
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO hhc_web.outbox_event(id,destination,event_type,aggregate_type,aggregate_id,aggregate_version,payload_json,idempotency_key,status,next_attempt_at,created_at,updated_at)
+		VALUES($1,'asset-api','news.publish.ensure_asset','news',$2,$3,$4,$5,'pending',$6,$6,$6)`,
+		platform.NewID(), id, next, payload, fmt.Sprintf("news:%s:publish:v%d", id, next), now); err != nil {
+		return content.Item{}, err
+	}
+	item, err := loadContent(ctx, tx, content.ModuleNews, id)
+	if err != nil {
+		return content.Item{}, err
+	}
+	if err := insertRevision(ctx, tx, item, actor, now); err != nil {
+		return content.Item{}, err
+	}
+	return item, tx.Commit()
+}
+
+func (r *Repository) startNewsUnpublish(ctx context.Context, id string, expected int64, actor string, now time.Time) (content.Item, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return content.Item{}, err
+	}
+	defer tx.Rollback()
+	if err := lockContentVersion(ctx, tx, content.ModuleNews, id, expected); err != nil {
+		return content.Item{}, err
+	}
+	current, err := loadContent(ctx, tx, content.ModuleNews, id)
+	if err != nil {
+		return content.Item{}, err
+	}
+	if !current.IsPublished || current.PublishedCoverID == "" || current.PublicGrantID == "" ||
+		current.Status == content.StatusPublishing || current.Status == content.StatusUnpublishing {
+		return content.Item{}, content.ErrNotPublishable
+	}
+	next := expected + 1
+	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.content_entry SET status='unpublishing',version=$2,updated_by=$3,updated_at=$4 WHERE id=$1`, id, next, actor, now); err != nil {
+		return content.Item{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM hhc_web.public_projection WHERE resource_type='news' AND resource_id=$1`, id); err != nil {
+		return content.Item{}, err
+	}
+	payload, _ := json.Marshal(publication.ContentUnpublishPayload{
+		ContentID: id, AssetID: current.PublishedCoverID, GrantID: current.PublicGrantID, AggregateVersion: next,
+	})
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO hhc_web.outbox_event(id,destination,event_type,aggregate_type,aggregate_id,aggregate_version,payload_json,idempotency_key,status,next_attempt_at,created_at,updated_at)
+		VALUES($1,'asset-api','news.unpublish.revoke_asset','news',$2,$3,$4,$5,'pending',$6,$6,$6)`,
+		platform.NewID(), id, next, payload, fmt.Sprintf("news:%s:unpublish:v%d", id, next), now); err != nil {
+		return content.Item{}, err
+	}
+	item, err := loadContent(ctx, tx, content.ModuleNews, id)
+	if err != nil {
+		return content.Item{}, err
+	}
+	return item, tx.Commit()
+}
+
+func (r *Repository) CompleteContentPublish(ctx context.Context, event publication.Event, grantID, publicURL string, now time.Time) error {
+	var payload publication.ContentPublishPayload
+	if err := json.Unmarshal(event.Payload, &payload); err != nil {
+		return err
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var status, oldAssetID, oldGrantID string
+	var version int64
+	if err := tx.QueryRowContext(ctx, `
+		SELECT e.status,e.version,n.published_cover_asset_id,n.public_grant_id
+		FROM hhc_web.content_entry e
+		JOIN hhc_web.news_item n ON n.entry_id=e.id
+		WHERE e.id=$1 AND e.module='news'
+		FOR UPDATE OF e,n`, payload.ContentID).Scan(&status, &version, &oldAssetID, &oldGrantID); err != nil {
+		return err
+	}
+	if status != content.StatusPublishing || version != payload.AggregateVersion {
+		return publication.ErrStalePublication
+	}
+	item, err := loadContent(ctx, tx, content.ModuleNews, payload.ContentID)
+	if err != nil {
+		return err
+	}
+	item.Status = content.StatusPublished
+	item.PublishedAt = &now
+	item.CoverURL = publicURL
+	for _, translation := range item.Translations {
+		public := publicContent(item, translation)
+		encoded, err := json.Marshal(public)
+		if err != nil {
+			return err
+		}
+		etag := fmt.Sprintf(`%x`, sha256.Sum256(encoded))
+		key := fmt.Sprintf("%s:%s:%s", content.ModuleNews, translation.Locale, item.ID)
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO hhc_web.public_projection(projection_key,resource_type,resource_id,locale,route_path,version,etag,payload_json,updated_at)
+			VALUES($1,'news',$2,$3,$4,$5,$6,$7,$8)
+			ON CONFLICT(projection_key) DO UPDATE SET route_path=EXCLUDED.route_path,version=EXCLUDED.version,etag=EXCLUDED.etag,payload_json=EXCLUDED.payload_json,updated_at=EXCLUDED.updated_at`,
+			key, item.ID, translation.Locale, public.Href, version, etag, encoded, now); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.content_entry SET status='published',published_at=$2,updated_at=$2 WHERE id=$1`, item.ID, now); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.news_item SET public_grant_id=$2,published_cover_asset_id=$3,published_version=$4 WHERE entry_id=$1`, item.ID, grantID, payload.AssetID, version); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.outbox_event SET status='delivered',claimed_until=NULL,last_error='',updated_at=$2 WHERE id=$1`, event.ID, now); err != nil {
+		return err
+	}
+	if oldGrantID != "" && oldGrantID != grantID {
+		revokePayload, _ := json.Marshal(publication.ContentUnpublishPayload{
+			ContentID: item.ID, AssetID: oldAssetID, GrantID: oldGrantID, AggregateVersion: version,
+		})
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO hhc_web.outbox_event(id,destination,event_type,aggregate_type,aggregate_id,aggregate_version,payload_json,idempotency_key,status,next_attempt_at,created_at,updated_at)
+			VALUES($1,'asset-api','asset.grant.revoke','news',$2,$3,$4,$5,'pending',$6,$6,$6)
+			ON CONFLICT(destination,idempotency_key) DO NOTHING`,
+			platform.NewID(), item.ID, version, revokePayload, fmt.Sprintf("news:%s:revoke:%s", item.ID, oldGrantID), now); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func (r *Repository) CompleteContentUnpublish(ctx context.Context, event publication.Event, now time.Time) error {
+	var payload publication.ContentUnpublishPayload
+	if err := json.Unmarshal(event.Payload, &payload); err != nil {
+		return err
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `
+		UPDATE hhc_web.content_entry
+		SET status='unpublished',updated_at=$3
+		WHERE id=$1 AND module='news' AND version=$2 AND status='unpublishing'`,
+		payload.ContentID, payload.AggregateVersion, now)
+	if err != nil {
+		return err
+	}
+	if rows, _ := result.RowsAffected(); rows == 0 {
+		return publication.ErrStalePublication
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.news_item SET public_grant_id='',published_cover_asset_id='',published_version=NULL WHERE entry_id=$1`, payload.ContentID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.outbox_event SET status='delivered',claimed_until=NULL,last_error='',updated_at=$2 WHERE id=$1`, event.ID, now); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (r *Repository) ContentRevisions(ctx context.Context, module content.Module, id string) ([]content.Revision, error) {
@@ -274,13 +462,22 @@ func loadContent(ctx context.Context, query contentQueryer, module content.Modul
 	}
 	switch module {
 	case content.ModuleNews:
-		err = query.QueryRowContext(ctx, `SELECT slug,display_date::text,cover_asset_id,featured,public_grant_id FROM hhc_web.news_item WHERE entry_id=$1`, id).Scan(&item.Slug, &item.DisplayDate, &item.CoverAssetID, &item.Featured, &item.PublicGrantID)
+		var publishedVersion sql.NullInt64
+		err = query.QueryRowContext(ctx, `SELECT slug,display_date::text,cover_asset_id,featured,public_grant_id,published_cover_asset_id,published_version FROM hhc_web.news_item WHERE entry_id=$1`, id).
+			Scan(&item.Slug, &item.DisplayDate, &item.CoverAssetID, &item.Featured, &item.PublicGrantID, &item.PublishedCoverID, &publishedVersion)
+		if publishedVersion.Valid {
+			item.PublishedVersion = publishedVersion.Int64
+		}
 	case content.ModuleHistory:
 		err = query.QueryRowContext(ctx, `SELECT sort_order FROM hhc_web.history_event WHERE entry_id=$1`, id).Scan(&item.SortOrder)
 	case content.ModuleVideos:
 		err = query.QueryRowContext(ctx, `SELECT youtube_video_id,home_eligible FROM hhc_web.video_item WHERE entry_id=$1`, id).Scan(&item.YouTubeVideoID, &item.HomeEligible)
 	}
 	if err != nil {
+		return content.Item{}, err
+	}
+	if err := query.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM hhc_web.public_projection WHERE resource_type=$1 AND resource_id=$2),COALESCE(MAX(version),0) FROM hhc_web.public_projection WHERE resource_type=$1 AND resource_id=$2`, module, id).
+		Scan(&item.IsPublished, &item.PublishedVersion); err != nil {
 		return content.Item{}, err
 	}
 	rows, err := query.QueryContext(ctx, `SELECT locale,title,summary,body,date_label,image_alt FROM hhc_web.content_translation WHERE entry_id=$1 ORDER BY locale`, id)
@@ -308,6 +505,13 @@ func contentOrdering(module content.Module) (string, string) {
 	default:
 		return "e.updated_at DESC", ""
 	}
+}
+
+func mapContentConflict(err error) error {
+	if err != nil && strings.Contains(strings.ToLower(err.Error()), "duplicate key") {
+		return content.ErrConflict
+	}
+	return err
 }
 func writeTypedContent(ctx context.Context, tx *sql.Tx, module content.Module, id string, input content.WriteInput, insert bool) error {
 	verb := "UPDATE"
@@ -352,7 +556,8 @@ func replaceTranslations(ctx context.Context, tx *sql.Tx, id string, values []co
 }
 func lockContentVersion(ctx context.Context, tx *sql.Tx, module content.Module, id string, expected int64) error {
 	var current int64
-	err := tx.QueryRowContext(ctx, `SELECT version FROM hhc_web.content_entry WHERE id=$1 AND module=$2 FOR UPDATE`, id, module).Scan(&current)
+	var status string
+	err := tx.QueryRowContext(ctx, `SELECT version,status FROM hhc_web.content_entry WHERE id=$1 AND module=$2 FOR UPDATE`, id, module).Scan(&current, &status)
 	if errors.Is(err, sql.ErrNoRows) {
 		return content.ErrNotFound
 	}
@@ -361,6 +566,9 @@ func lockContentVersion(ctx context.Context, tx *sql.Tx, module content.Module, 
 	}
 	if current != expected {
 		return content.ErrPrecondition
+	}
+	if status == content.StatusPublishing || status == content.StatusUnpublishing || status == content.StatusArchived {
+		return content.ErrConflict
 	}
 	return nil
 }
@@ -376,7 +584,10 @@ func publicContent(item content.Item, translation content.Translation) content.P
 	value := content.PublicItem{ID: item.ID, Title: translation.Title, Summary: translation.Summary, Body: translation.Body, DateLabel: translation.DateLabel, DisplayDate: item.DisplayDate, ImageAlt: translation.ImageAlt, YouTubeVideoID: item.YouTubeVideoID, SortOrder: item.SortOrder, Featured: item.Featured, HomeEligible: item.HomeEligible}
 	switch item.Module {
 	case content.ModuleNews:
-		value.ImageURL = "/api/assets/public/" + item.CoverAssetID + "/large"
+		value.ImageURL = item.CoverURL + "/large"
+		if item.CoverURL == "" {
+			value.ImageURL = "/api/assets/public/" + item.CoverAssetID + "/large"
+		}
 		value.Href = "/" + translation.Locale + "/news/" + item.Slug
 	case content.ModuleVideos:
 		value.ImageURL = "https://img.youtube.com/vi/" + item.YouTubeVideoID + "/maxresdefault.jpg"

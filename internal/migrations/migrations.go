@@ -13,7 +13,17 @@ import (
 var files embed.FS
 
 func Run(ctx context.Context, db *sql.DB) error {
-	if _, err := db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS public.schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`); err != nil {
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	const lockID int64 = 721732019260730
+	if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_lock($1)`, lockID); err != nil {
+		return err
+	}
+	defer conn.ExecContext(context.WithoutCancel(ctx), `SELECT pg_advisory_unlock($1)`, lockID)
+	if _, err := conn.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS public.schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`); err != nil {
 		return err
 	}
 	entries, err := fs.Glob(files, "sql/*.sql")
@@ -23,7 +33,7 @@ func Run(ctx context.Context, db *sql.DB) error {
 	sort.Strings(entries)
 	for _, name := range entries {
 		var exists bool
-		if err := db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM public.schema_migrations WHERE version=$1)`, name).Scan(&exists); err != nil {
+		if err := conn.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM public.schema_migrations WHERE version=$1)`, name).Scan(&exists); err != nil {
 			return err
 		}
 		if exists {
@@ -33,7 +43,7 @@ func Run(ctx context.Context, db *sql.DB) error {
 		if err != nil {
 			return err
 		}
-		tx, err := db.BeginTx(ctx, nil)
+		tx, err := conn.BeginTx(ctx, nil)
 		if err != nil {
 			return err
 		}

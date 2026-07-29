@@ -45,7 +45,7 @@ func TestPublicContentReadsProjectionWithoutAuthentication(t *testing.T) {
 	}
 }
 
-func TestNewsPublishRequiresOwnedCleanProcessedCover(t *testing.T) {
+func TestNewsPublishQueuesOwnedCleanProcessedCover(t *testing.T) {
 	repo := &contentRepository{item: content.Item{ID: "news-1", Module: content.ModuleNews, Status: content.StatusDraft, Version: 2, Slug: "news", DisplayDate: "2026-07-13", CoverAssetID: "asset-1", Translations: []content.Translation{{Locale: "zh-Hant", Title: "消息"}}}}
 	uploads := &apiUploads{completed: assetclient.Asset{ID: "asset-1", Namespace: "cms.news.cover", OwnerService: "hhc-web-api", OwnerType: "news", OwnerID: "news-1", UploadStatus: "completed", ScanStatus: "clean", ProcessingStatus: "ready"}}
 	request := httptest.NewRequest(http.MethodPost, "/api/admin/content/news/news-1/publish", nil)
@@ -56,8 +56,24 @@ func TestNewsPublishRequiresOwnedCleanProcessedCover(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
-	if repo.grantID != "grant-1" {
-		t.Fatalf("grant=%q", repo.grantID)
+	if repo.item.Status != content.StatusPublishing {
+		t.Fatalf("status=%q", repo.item.Status)
+	}
+}
+
+func TestNewsUnpublishDoesNotDependOnCurrentDraftCover(t *testing.T) {
+	repo := &contentRepository{item: content.Item{
+		ID: "news-1", Module: content.ModuleNews, Status: content.StatusDraft, Version: 3,
+		Slug: "news", DisplayDate: "2026-07-13", IsPublished: true,
+		Translations: []content.Translation{{Locale: "zh-Hant", Title: "消息"}},
+	}}
+	request := httptest.NewRequest(http.MethodPost, "/api/admin/content/news/news-1/unpublish", nil)
+	trusted(request, "cms:publish")
+	request.Header.Set("If-Match", `"3"`)
+	response := httptest.NewRecorder()
+	contentTestHandler(repo).ServeHTTP(response, request)
+	if response.Code != http.StatusOK || repo.item.Status != content.StatusUnpublishing {
+		t.Fatalf("status=%d item=%#v body=%s", response.Code, repo.item, response.Body.String())
 	}
 }
 
@@ -66,13 +82,12 @@ func contentTestHandler(repo content.Repository) http.Handler {
 }
 func contentTestHandlerWithAssets(repo content.Repository, uploads assetUploads) http.Handler {
 	bulletinService := bulletins.NewService(&apiRepository{}, time.Now)
-	return NewWithContent(bulletinService, content.NewService(repo, time.Now), nil, uploads).Routes()
+	return NewWithContent(bulletinService, content.NewService(repo, time.Now), nil, uploads, "api-gateway", false).Routes()
 }
 
 type contentRepository struct {
-	item    content.Item
-	public  []content.PublicItem
-	grantID string
+	item   content.Item
+	public []content.PublicItem
 }
 
 func (r *contentRepository) CreateContent(_ context.Context, module content.Module, input content.WriteInput, actor, key string, now time.Time) (content.Item, error) {
@@ -88,12 +103,12 @@ func (r *contentRepository) GetContent(context.Context, content.Module, string) 
 func (r *contentRepository) UpdateContent(context.Context, content.Module, string, int64, content.WriteInput, string, time.Time) (content.Item, error) {
 	return r.item, nil
 }
-func (r *contentRepository) PublishContent(_ context.Context, _ content.Module, _ string, _ int64, _, grantID string, _ time.Time) (content.Item, error) {
-	r.grantID = grantID
-	r.item.Status = content.StatusPublished
+func (r *contentRepository) PublishContent(_ context.Context, _ content.Module, _ string, _ int64, _ string, _ time.Time) (content.Item, error) {
+	r.item.Status = content.StatusPublishing
 	return r.item, nil
 }
 func (r *contentRepository) UnpublishContent(context.Context, content.Module, string, int64, string, time.Time) (content.Item, error) {
+	r.item.Status = content.StatusUnpublishing
 	return r.item, nil
 }
 func (r *contentRepository) ContentRevisions(context.Context, content.Module, string) ([]content.Revision, error) {

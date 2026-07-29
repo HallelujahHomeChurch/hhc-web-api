@@ -151,45 +151,28 @@ func (h *Handler) changeContentPublication(w http.ResponseWriter, r *http.Reques
 	var value content.Item
 	var err error
 	if module == content.ModuleNews {
-		current, getErr := h.content.GetContent(r.Context(), module, id)
-		if getErr != nil {
-			handleContentError(w, getErr)
-			return
-		}
-		if h.uploads == nil || current.CoverAssetID == "" {
-			handleContentError(w, content.ErrNotPublishable)
-			return
-		}
-		asset, assetErr := h.uploads.Get(r.Context(), current.CoverAssetID)
-		if assetErr != nil || asset.Namespace != "cms.news.cover" || asset.OwnerService != "hhc-web-api" || asset.OwnerType != "news" || asset.OwnerID != id {
-			handleContentError(w, content.ErrNotPublishable)
-			return
-		}
 		if publish {
-			if asset.UploadStatus != "completed" || asset.ScanStatus != "clean" || asset.ProcessingStatus != "ready" {
+			current, getErr := h.content.GetContent(r.Context(), module, id)
+			if getErr != nil {
+				handleContentError(w, getErr)
+				return
+			}
+			if h.uploads == nil || current.CoverAssetID == "" {
 				handleContentError(w, content.ErrNotPublishable)
 				return
 			}
-			grant, grantErr := h.uploads.CreatePublicGrant(r.Context(), asset.ID, "news:"+id+":publish:v"+strconv.FormatInt(expected, 10))
-			if grantErr != nil {
+			asset, assetErr := h.uploads.Get(r.Context(), current.CoverAssetID)
+			if assetErr != nil || asset.Namespace != "cms.news.cover" || asset.OwnerService != "hhc-web-api" || asset.OwnerType != "news" || asset.OwnerID != id ||
+				asset.UploadStatus != "completed" || asset.ScanStatus != "clean" || asset.ProcessingStatus != "ready" {
 				handleContentError(w, content.ErrNotPublishable)
 				return
 			}
-			value, err = h.content.PublishContent(r.Context(), module, id, expected, actor(r), grant.ID)
-			if err != nil {
-				_ = h.uploads.RevokeGrant(r.Context(), asset.ID, grant.ID)
-			}
+			value, err = h.content.PublishContent(r.Context(), module, id, expected, actor(r))
 		} else {
-			if current.PublicGrantID != "" {
-				if revokeErr := h.uploads.RevokeGrant(r.Context(), asset.ID, current.PublicGrantID); revokeErr != nil {
-					writeError(w, http.StatusServiceUnavailable, "asset_service_unavailable", "The public asset grant could not be revoked.")
-					return
-				}
-			}
 			value, err = h.content.UnpublishContent(r.Context(), module, id, expected, actor(r))
 		}
 	} else if publish {
-		value, err = h.content.PublishContent(r.Context(), module, id, expected, actor(r), "")
+		value, err = h.content.PublishContent(r.Context(), module, id, expected, actor(r))
 	} else {
 		value, err = h.content.UnpublishContent(r.Context(), module, id, expected, actor(r))
 	}
