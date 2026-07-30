@@ -87,6 +87,19 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
       - run: az extension add --name containerapp --upgrade --yes
+      - name: Capture rollback revision
+        run: |
+          revision="$(az containerapp show -g "$RESOURCE_GROUP" -n "$API_APP_NAME" \
+            --query properties.latestReadyRevisionName -o tsv --only-show-errors)"
+          test -n "$revision"
+          image="$(az containerapp revision show -g "$RESOURCE_GROUP" -n "$API_APP_NAME" \
+            --revision "$revision" \
+            --query properties.template.containers[0].image -o tsv --only-show-errors)"
+          test -n "$image"
+          {
+            echo "PREVIOUS_READY_REVISION=$revision"
+            echo "PREVIOUS_IMAGE=$image"
+          } >> "$GITHUB_ENV"
       - name: Build and push image
         run: |
           az acr build \
@@ -119,6 +132,7 @@ jobs:
           echo "Migration timed out" >&2
           exit 1
       - name: Deploy API
+        id: deploy_runtime
         run: |
           image_ref="${ACR_LOGIN_SERVER}/${IMAGE_REPOSITORY}:${IMAGE_TAG}"
           az deployment group create \
@@ -151,3 +165,29 @@ jobs:
           printf '%s\n' "$output"
           grep -Fq 'PUBLIC_OK' <<< "$output"
           grep -Eq 'HTTP/1\.[01][[:space:]]+401' <<< "$output"
+      - name: Roll back failed runtime
+        if: ${{ failure() && steps.deploy_runtime.outcome != 'skipped' }}
+        run: |
+          az containerapp revision copy \
+            -g "$RESOURCE_GROUP" \
+            -n "$API_APP_NAME" \
+            --from-revision "$PREVIOUS_READY_REVISION" \
+            --revision-suffix "rollback-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --only-show-errors \
+            --output none
+
+          for attempt in {1..60}; do
+            latest="$(az containerapp show -g "$RESOURCE_GROUP" -n "$API_APP_NAME" \
+              --query properties.latestRevisionName -o tsv --only-show-errors)"
+            ready="$(az containerapp show -g "$RESOURCE_GROUP" -n "$API_APP_NAME" \
+              --query properties.latestReadyRevisionName -o tsv --only-show-errors)"
+            if [[ -n "$latest" && "$latest" == "$ready" ]]; then
+              image="$(az containerapp revision show -g "$RESOURCE_GROUP" -n "$API_APP_NAME" \
+                --revision "$ready" \
+                --query properties.template.containers[0].image -o tsv --only-show-errors)"
+              [[ "$image" == "$PREVIOUS_IMAGE" ]] && exit 0
+            fi
+            sleep 10
+          done
+          echo "HHC web API rollback did not become ready" >&2
+          exit 1
