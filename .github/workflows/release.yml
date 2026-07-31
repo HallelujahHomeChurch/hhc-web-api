@@ -34,6 +34,8 @@ jobs:
           --health-retries 10
     env:
       HHW_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/hhc_web_test?sslmode=disable
+      TEST_POSTGRES_DSN: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
+      HHC_WEB_ALLOW_DESTRUCTIVE_TEST: "1"
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
@@ -41,7 +43,10 @@ jobs:
           go-version-file: go.mod
           cache: true
       - run: |
-          ./scripts/bootstrap-database.test.sh
+          ./scripts/bootstrap-migration-role.test.sh
+          ./scripts/test-migration-policy-test.sh
+          ./scripts/test-migration-policy.sh internal/migrations/sql/*.sql
+          ./scripts/test-what-if-policy.sh
           go test -race ./... -count=1 -p=1
           go vet ./...
           ./scripts/test-release-policy.sh
@@ -85,6 +90,15 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
       - run: az extension add --name containerapp --upgrade --yes
+      - name: Verify isolated runtime prerequisites
+        run: |
+          runtime_principal="$(az identity show -g "$RESOURCE_GROUP" -n hhc-web-api-identity --query principalId -o tsv --only-show-errors)"
+          migration_principal="$(az identity show -g "$RESOURCE_GROUP" -n hhc-web-migrate-identity --query principalId -o tsv --only-show-errors)"
+          runtime_vault="$(az keyvault show -g "$RESOURCE_GROUP" -n alive-hhw-runtime-kv --query id -o tsv --only-show-errors)"
+          migration_vault="$(az keyvault show -g "$RESOURCE_GROUP" -n alive-hhw-migrate-kv --query id -o tsv --only-show-errors)"
+          [[ "$(az role assignment list --scope "$runtime_vault" --assignee-object-id "$runtime_principal" --query "[?roleDefinitionName=='Key Vault Secrets User'] | length(@)" -o tsv --only-show-errors)" == "1" ]]
+          [[ "$(az role assignment list --scope "$migration_vault" --assignee-object-id "$migration_principal" --query "[?roleDefinitionName=='Key Vault Secrets User'] | length(@)" -o tsv --only-show-errors)" == "1" ]]
+          [[ "$(az keyvault show -g "$RESOURCE_GROUP" -n alive-vault --query "properties.accessPolicies[?objectId=='${runtime_principal}'] | length(@)" -o tsv --only-show-errors)" == "0" ]]
       - name: Capture rollback revision
         run: |
           resolve_image_ref() {
@@ -134,12 +148,13 @@ jobs:
           az deployment group what-if \
             --resource-group "$RESOURCE_GROUP" \
             --template-file infra/main.bicep \
-            --parameters migrationImage="$IMAGE_REF" runtimeImage="$IMAGE_REF" deployRuntime=true provisionPermissions=false \
+            --parameters migrationImage="$IMAGE_REF" runtimeImage="$IMAGE_REF" deployRuntime=true provisionPermissions=false retainLegacyRuntimeSecret=false \
             --validation-level Provider \
             --result-format FullResourcePayloads \
+            --no-pretty-print \
             --only-show-errors \
             --output json > what-if.json
-          jq -e '[.changes[] | select(.changeType == "Delete" or .changeType == "Unsupported")] | length == 0' what-if.json
+          ./scripts/check-what-if.sh what-if.json
       - name: Update migration job
         id: update_migration
         run: |
@@ -147,7 +162,7 @@ jobs:
             --name "hhc-web-migrate-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
             --resource-group "$RESOURCE_GROUP" \
             --template-file infra/main.bicep \
-            --parameters migrationImage="$IMAGE_REF" runtimeImage="$IMAGE_REF" deployRuntime=false provisionPermissions=false \
+            --parameters migrationImage="$IMAGE_REF" runtimeImage="$IMAGE_REF" deployRuntime=false provisionPermissions=false retainLegacyRuntimeSecret=false \
             --only-show-errors --output none
       - name: Run migrations
         run: |
@@ -176,7 +191,7 @@ jobs:
             --name "hhc-web-runtime-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
             --resource-group "$RESOURCE_GROUP" \
             --template-file infra/main.bicep \
-            --parameters migrationImage="$IMAGE_REF" runtimeImage="$IMAGE_REF" deployRuntime=true provisionPermissions=false \
+            --parameters migrationImage="$IMAGE_REF" runtimeImage="$IMAGE_REF" deployRuntime=true provisionPermissions=false retainLegacyRuntimeSecret=false \
             --only-show-errors --output none
       - name: Wait for API revision
         run: |
