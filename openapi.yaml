@@ -172,6 +172,30 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/BulletinIssue' }
         '412': { $ref: '#/components/responses/Error' }
+  /admin/bulletins/{issueId}/archive:
+    post:
+      operationId: archiveBulletin
+      security: [{ bearerAuth: [] }]
+      x-required-scopes: ['cms:write']
+      parameters:
+        - $ref: '#/components/parameters/IssueID'
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '200': { $ref: '#/components/responses/BulletinIssue' }
+        '409': { $ref: '#/components/responses/Error' }
+        '412': { $ref: '#/components/responses/Error' }
+  /admin/bulletins/{issueId}/restore:
+    post:
+      operationId: restoreBulletin
+      security: [{ bearerAuth: [] }]
+      x-required-scopes: ['cms:write']
+      parameters:
+        - $ref: '#/components/parameters/IssueID'
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '200': { $ref: '#/components/responses/BulletinIssue' }
+        '409': { $ref: '#/components/responses/Error' }
+        '412': { $ref: '#/components/responses/Error' }
   /admin/content/{module}:
     get:
       operationId: listAdminContent

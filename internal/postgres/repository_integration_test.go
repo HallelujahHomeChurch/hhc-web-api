@@ -152,6 +152,99 @@ func TestRepositoryPublishWaitsForAssetWorkflow(t *testing.T) {
 	}
 }
 
+func TestBulletinArchivePreservesPrivateAssetsAndRejectsPublicState(t *testing.T) {
+	databaseURL := os.Getenv("HHW_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("HHW_TEST_DATABASE_URL is not configured")
+	}
+	db, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	if err := migrations.Run(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `TRUNCATE hhc_web.outbox_event,hhc_web.publication_workflow,hhc_web.public_projection,hhc_web.bulletin_version,hhc_web.bulletin_issue CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+	repository := New(db)
+	now := time.Now().UTC()
+	issue, err := repository.CreateIssue(ctx, "2026-08-23", "user-1", "archive-issue", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	issue, err = repository.PutVersion(ctx, issue.ID, issue.Version, bulletins.PutVersionInput{
+		Locale: "zh-Hant", Title: "週報", PDFAssetID: "asset-private", PDFFileName: "weekly.pdf",
+	}, "user-1", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	archived, err := repository.ArchiveIssue(ctx, issue.ID, issue.Version, "user-1", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if archived.Status != "archived" || archived.Version != issue.Version+1 {
+		t.Fatalf("archived=%#v", archived)
+	}
+	if _, err := repository.RestoreIssue(ctx, issue.ID, issue.Version, "user-1", now); !errors.Is(err, bulletins.ErrPrecondition) {
+		t.Fatalf("stale restore error=%v", err)
+	}
+	if _, err := repository.PutVersion(ctx, issue.ID, archived.Version, bulletins.PutVersionInput{
+		Locale: "en", Title: "Weekly", PDFAssetID: "asset-2", PDFFileName: "weekly-en.pdf",
+	}, "user-1", now); !errors.Is(err, bulletins.ErrConflict) {
+		t.Fatalf("archived edit error=%v", err)
+	}
+	if _, err := repository.StartPublish(ctx, issue.ID, "zh-Hant", archived.Version, "user-1", now); !errors.Is(err, bulletins.ErrConflict) {
+		t.Fatalf("archived publish error=%v", err)
+	}
+	if _, err := repository.Unpublish(ctx, issue.ID, "zh-Hant", archived.Version, "user-1", now); !errors.Is(err, bulletins.ErrConflict) {
+		t.Fatalf("archived unpublish error=%v", err)
+	}
+
+	restored, err := repository.RestoreIssue(ctx, issue.ID, archived.Version, "user-2", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restored.Status != "draft" || restored.Version != archived.Version+1 || len(restored.Versions) != 1 || restored.Versions[0].PDFAssetID != "asset-private" {
+		t.Fatalf("restored=%#v", restored)
+	}
+	var outboxCount, versionCount int
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM hhc_web.outbox_event`).Scan(&outboxCount); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM hhc_web.bulletin_version WHERE issue_id=$1`, issue.ID).Scan(&versionCount); err != nil {
+		t.Fatal(err)
+	}
+	if outboxCount != 0 || versionCount != 1 {
+		t.Fatalf("outbox=%d versions=%d", outboxCount, versionCount)
+	}
+
+	if _, err := db.ExecContext(ctx, `INSERT INTO hhc_web.public_projection(projection_key,resource_type,resource_id,locale,route_path,version,etag,payload_json,updated_at) VALUES('archive-test','bulletin_issue',$1,'zh-Hant','/bulletins/test',1,'etag','{}',$2)`, issue.ID, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.ArchiveIssue(ctx, issue.ID, restored.Version, "user-1", now); !errors.Is(err, bulletins.ErrConflict) {
+		t.Fatalf("projection archive error=%v", err)
+	}
+	if _, err := db.ExecContext(ctx, `DELETE FROM hhc_web.public_projection WHERE projection_key='archive-test'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE hhc_web.bulletin_version SET public_grant_id='grant-public' WHERE issue_id=$1`, issue.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.ArchiveIssue(ctx, issue.ID, restored.Version, "user-1", now); !errors.Is(err, bulletins.ErrConflict) {
+		t.Fatalf("grant archive error=%v", err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE hhc_web.bulletin_version SET public_grant_id=NULL,retiring_grant_id='grant-retiring' WHERE issue_id=$1`, issue.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.ArchiveIssue(ctx, issue.ID, restored.Version, "user-1", now); !errors.Is(err, bulletins.ErrConflict) {
+		t.Fatalf("retiring grant archive error=%v", err)
+	}
+}
+
 func TestBulletinRejectsCrossLocaleMutationDuringPublication(t *testing.T) {
 	databaseURL := os.Getenv("HHW_TEST_DATABASE_URL")
 	if databaseURL == "" {

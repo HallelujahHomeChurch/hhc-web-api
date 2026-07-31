@@ -54,6 +54,18 @@ func (s *Service) Unpublish(ctx context.Context, id, locale string, expected int
 	}
 	return s.repository.Unpublish(ctx, id, locale, expected, actor, s.now().UTC())
 }
+func (s *Service) ArchiveIssue(ctx context.Context, id string, expected int64, actor string) (Issue, error) {
+	if strings.TrimSpace(id) == "" || expected <= 0 || strings.TrimSpace(actor) == "" {
+		return Issue{}, ErrInvalid
+	}
+	return s.repository.ArchiveIssue(ctx, id, expected, actor, s.now().UTC())
+}
+func (s *Service) RestoreIssue(ctx context.Context, id string, expected int64, actor string) (Issue, error) {
+	if strings.TrimSpace(id) == "" || expected <= 0 || strings.TrimSpace(actor) == "" {
+		return Issue{}, ErrInvalid
+	}
+	return s.repository.RestoreIssue(ctx, id, expected, actor, s.now().UTC())
+}
 func (s *Service) GetPublicLatest(ctx context.Context, locale string) (PublicBulletin, error) {
 	if !validLocale(locale) {
 		return PublicBulletin{}, ErrInvalid

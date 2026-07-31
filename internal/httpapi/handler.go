@@ -62,6 +62,8 @@ func (h *Handler) Routes() http.Handler {
 	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/assets/{assetID}/complete", requireScopes([]string{"cms:write", "assets:write"}, h.adminCompleteUpload))
 	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/publish", requireScope("cms:publish", h.adminPublish))
 	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/unpublish", requireScope("cms:publish", h.adminUnpublish))
+	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/archive", requireScope("cms:write", h.adminArchive))
+	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/restore", requireScope("cms:write", h.adminRestore))
 	if h.content != nil {
 		h.contentRoutes(mux, admin)
 	}
@@ -97,8 +99,13 @@ func (h *Handler) adminCreateUpload(w http.ResponseWriter, r *http.Request) {
 		handleError(w, bulletins.ErrInvalid)
 		return
 	}
-	if _, err := h.service.GetIssue(r.Context(), r.PathValue("issueID")); err != nil {
+	issue, err := h.service.GetIssue(r.Context(), r.PathValue("issueID"))
+	if err != nil {
 		handleError(w, err)
+		return
+	}
+	if issue.Status == "archived" {
+		handleError(w, bulletins.ErrNotPublishable)
 		return
 	}
 	created, err := h.uploads.CreateBulletinUpload(r.Context(), r.PathValue("issueID"), input.Locale, input.FileName, input.MIMEType, input.SizeBytes, r.Header.Get("Idempotency-Key"))
@@ -123,6 +130,15 @@ func (h *Handler) adminCompleteUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	if !validLocale(input.Locale) || strings.TrimSpace(input.Title) == "" || input.MIMEType != "application/pdf" || input.SizeBytes <= 0 || len(input.ChecksumSHA256) != 64 {
 		handleError(w, bulletins.ErrInvalid)
+		return
+	}
+	issue, err := h.service.GetIssue(r.Context(), r.PathValue("issueID"))
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+	if issue.Status == "archived" {
+		handleError(w, bulletins.ErrNotPublishable)
 		return
 	}
 	assetID := r.PathValue("assetID")
@@ -252,6 +268,31 @@ func (h *Handler) adminUnpublish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	value, err := h.service.Unpublish(r.Context(), r.PathValue("issueID"), input.Locale, expected, actor(r))
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+	w.Header().Set("ETag", fmt.Sprintf(`"%d"`, value.Version))
+	writeData(w, http.StatusOK, value, nil)
+}
+func (h *Handler) adminArchive(w http.ResponseWriter, r *http.Request) {
+	h.changeArchive(w, r, true)
+}
+func (h *Handler) adminRestore(w http.ResponseWriter, r *http.Request) {
+	h.changeArchive(w, r, false)
+}
+func (h *Handler) changeArchive(w http.ResponseWriter, r *http.Request, archive bool) {
+	expected, ok := ifMatch(w, r)
+	if !ok {
+		return
+	}
+	var value bulletins.Issue
+	var err error
+	if archive {
+		value, err = h.service.ArchiveIssue(r.Context(), r.PathValue("issueID"), expected, actor(r))
+	} else {
+		value, err = h.service.RestoreIssue(r.Context(), r.PathValue("issueID"), expected, actor(r))
+	}
 	if err != nil {
 		handleError(w, err)
 		return

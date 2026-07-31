@@ -97,6 +97,8 @@ type Repository interface {
 	PutVersion(context.Context, string, int64, PutVersionInput, string, time.Time) (Issue, error)
 	StartPublish(context.Context, string, string, int64, string, time.Time) (Workflow, error)
 	Unpublish(context.Context, string, string, int64, string, time.Time) (Issue, error)
+	ArchiveIssue(context.Context, string, int64, string, time.Time) (Issue, error)
+	RestoreIssue(context.Context, string, int64, string, time.Time) (Issue, error)
 	GetPublicLatest(context.Context, string) (PublicBulletin, error)
 	GetPublicByDate(context.Context, string, string) (PublicBulletin, error)
 	ListPublic(context.Context, int, int) (PublicPage, error)

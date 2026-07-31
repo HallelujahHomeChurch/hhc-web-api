@@ -144,6 +144,9 @@ func (r *Repository) PutVersion(ctx context.Context, id string, expected int64, 
 	if current != expected {
 		return bulletins.Issue{}, bulletins.ErrPrecondition
 	}
+	if issueStatus == "archived" {
+		return bulletins.Issue{}, bulletins.ErrConflict
+	}
 	if issueStatus == "publishing" || issueStatus == "unpublishing" {
 		return bulletins.Issue{}, bulletins.ErrNotPublishable
 	}
@@ -192,6 +195,9 @@ func (r *Repository) StartPublish(ctx context.Context, id, locale string, expect
 	if current != expected {
 		return bulletins.Workflow{}, bulletins.ErrPrecondition
 	}
+	if issueStatus == "archived" {
+		return bulletins.Workflow{}, bulletins.ErrConflict
+	}
 	if issueStatus == "publishing" || issueStatus == "unpublishing" {
 		return bulletins.Workflow{}, bulletins.ErrNotPublishable
 	}
@@ -238,6 +244,9 @@ func (r *Repository) Unpublish(ctx context.Context, id, locale string, expected 
 	if current != expected {
 		return bulletins.Issue{}, bulletins.ErrPrecondition
 	}
+	if issueStatus == "archived" {
+		return bulletins.Issue{}, bulletins.ErrConflict
+	}
 	if issueStatus == "publishing" || issueStatus == "unpublishing" {
 		return bulletins.Issue{}, bulletins.ErrNotPublishable
 	}
@@ -271,6 +280,64 @@ func (r *Repository) Unpublish(ctx context.Context, id, locale string, expected 
 	}
 	payload, _ := json.Marshal(publication.UnpublishPayload{WorkflowID: workflowID, IssueID: id, Locale: locale, AssetID: assetID, GrantID: grantID, AggregateVersion: next})
 	if _, err := tx.ExecContext(ctx, `INSERT INTO hhc_web.outbox_event(id,destination,event_type,aggregate_type,aggregate_id,aggregate_version,payload_json,idempotency_key,status,next_attempt_at,created_at,updated_at) VALUES($1,'asset-api','bulletin.unpublish.revoke_asset','bulletin',$2,$3,$4,$5,'pending',$6,$6,$6)`, platform.NewID(), id, next, payload, fmt.Sprintf("bulletin:%s:%s:unpublish:v%d", id, locale, next), now); err != nil {
+		return bulletins.Issue{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return bulletins.Issue{}, err
+	}
+	return r.GetIssue(ctx, id)
+}
+
+func (r *Repository) ArchiveIssue(ctx context.Context, id string, expected int64, actor string, now time.Time) (bulletins.Issue, error) {
+	return r.changeIssueArchiveStatus(ctx, id, expected, actor, "archived", now)
+}
+
+func (r *Repository) RestoreIssue(ctx context.Context, id string, expected int64, actor string, now time.Time) (bulletins.Issue, error) {
+	return r.changeIssueArchiveStatus(ctx, id, expected, actor, "draft", now)
+}
+
+func (r *Repository) changeIssueArchiveStatus(ctx context.Context, id string, expected int64, actor, target string, now time.Time) (bulletins.Issue, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return bulletins.Issue{}, err
+	}
+	defer tx.Rollback()
+
+	var current int64
+	var status string
+	if err := tx.QueryRowContext(ctx, `SELECT version,status FROM hhc_web.bulletin_issue WHERE id=$1 FOR UPDATE`, id).Scan(&current, &status); errors.Is(err, sql.ErrNoRows) {
+		return bulletins.Issue{}, bulletins.ErrNotFound
+	} else if err != nil {
+		return bulletins.Issue{}, err
+	}
+	if current != expected {
+		return bulletins.Issue{}, bulletins.ErrPrecondition
+	}
+	if target == "archived" {
+		if status != "draft" && status != "unpublished" {
+			return bulletins.Issue{}, bulletins.ErrConflict
+		}
+	} else if status != "archived" {
+		return bulletins.Issue{}, bulletins.ErrConflict
+	}
+
+	var hasPublicState bool
+	if err := tx.QueryRowContext(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM hhc_web.public_projection
+			WHERE resource_type='bulletin_issue' AND resource_id=$1
+		) OR EXISTS(
+			SELECT 1 FROM hhc_web.bulletin_version
+			WHERE issue_id=$1 AND (
+				COALESCE(public_grant_id,'')<>'' OR COALESCE(retiring_grant_id,'')<>''
+			)
+		)`, id).Scan(&hasPublicState); err != nil {
+		return bulletins.Issue{}, err
+	}
+	if hasPublicState {
+		return bulletins.Issue{}, bulletins.ErrConflict
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.bulletin_issue SET status=$2,version=version+1,updated_by=$3,updated_at=$4 WHERE id=$1`, id, target, actor, now); err != nil {
 		return bulletins.Issue{}, err
 	}
 	if err := tx.Commit(); err != nil {
