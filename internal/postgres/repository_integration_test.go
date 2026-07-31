@@ -308,6 +308,13 @@ func TestNewsPublicationKeepsLiveProjectionUntilReplacement(t *testing.T) {
 	if err != nil || len(public) != 1 || public[0].ImageURL != "/api/assets/public/asset-1/large" {
 		t.Fatalf("public=%#v err=%v", public, err)
 	}
+	detail, etag, err := repository.PublicNews(ctx, "zh-Hant", "first-news")
+	if err != nil || detail.ID != item.ID || etag == "" {
+		t.Fatalf("detail=%#v etag=%q err=%v", detail, etag, err)
+	}
+	if _, _, err := repository.PublicNews(ctx, "en", "first-news"); !errors.Is(err, content.ErrNotFound) {
+		t.Fatalf("wrong locale detail err=%v", err)
+	}
 
 	input.CoverAssetID = "asset-2"
 	input.Translations[0].Title = "更新消息"
@@ -333,6 +340,10 @@ func TestNewsPublicationKeepsLiveProjectionUntilReplacement(t *testing.T) {
 	if err := repository.CompleteContentPublish(ctx, replacement, "grant-2", "/api/assets/public/asset-2", now.Add(5*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
+	detail, replacementETag, err := repository.PublicNews(ctx, "zh-Hant", "first-news")
+	if err != nil || detail.Title != "更新消息" || detail.ImageURL != "/api/assets/public/asset-2/large" || replacementETag == etag {
+		t.Fatalf("replacement detail=%#v etag=%q err=%v", detail, replacementETag, err)
+	}
 	retire, found, err := repository.Claim(ctx, now.Add(5*time.Minute), 30*time.Second)
 	if err != nil || !found || retire.EventType != "asset.grant.revoke" {
 		t.Fatalf("retire=%#v found=%v err=%v", retire, found, err)
@@ -354,6 +365,9 @@ func TestNewsPublicationKeepsLiveProjectionUntilReplacement(t *testing.T) {
 	}
 	if values, err := repository.PublicContent(ctx, content.ModuleNews, "zh-Hant", 20); err != nil || len(values) != 0 {
 		t.Fatalf("public after unpublish request=%#v err=%v", values, err)
+	}
+	if _, _, err := repository.PublicNews(ctx, "zh-Hant", "first-news"); !errors.Is(err, content.ErrNotFound) {
+		t.Fatalf("detail after unpublish request err=%v", err)
 	}
 	unpublish, found, err := repository.Claim(ctx, now.Add(7*time.Minute), 30*time.Second)
 	if err != nil || !found || unpublish.EventType != "news.unpublish.revoke_asset" {

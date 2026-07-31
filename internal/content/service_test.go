@@ -159,6 +159,13 @@ func TestServiceValidatesAndNormalizesContentList(t *testing.T) {
 	}
 }
 
+func TestServiceRejectsInvalidPublicNewsSlug(t *testing.T) {
+	service := NewService(&serviceRepository{}, time.Now)
+	if _, _, err := service.PublicNews(context.Background(), "zh-Hant", "Invalid Slug"); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("err=%v", err)
+	}
+}
+
 func translations() []Translation {
 	return []Translation{{Locale: "zh-Hant", Title: "標題", Summary: "摘要", Body: "內容", DateLabel: "2026年"}}
 }
@@ -207,4 +214,7 @@ func (r *serviceRepository) RestoreArchivedContent(context.Context, Module, stri
 }
 func (r *serviceRepository) PublicContent(context.Context, Module, string, int) ([]PublicItem, error) {
 	return nil, nil
+}
+func (r *serviceRepository) PublicNews(context.Context, string, string) (PublicItem, string, error) {
+	return PublicItem{}, "", nil
 }

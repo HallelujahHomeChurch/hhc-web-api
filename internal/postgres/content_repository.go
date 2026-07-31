@@ -546,6 +546,27 @@ func (r *Repository) PublicContent(ctx context.Context, module content.Module, l
 	return values, rows.Err()
 }
 
+func (r *Repository) PublicNews(ctx context.Context, locale, slug string) (content.PublicItem, string, error) {
+	var payload []byte
+	var etag string
+	err := r.db.QueryRowContext(ctx, `
+		SELECT payload_json,etag
+		FROM hhc_web.public_projection
+		WHERE resource_type='news' AND locale=$1 AND route_path=$2`,
+		locale, "/"+locale+"/news/"+slug).Scan(&payload, &etag)
+	if errors.Is(err, sql.ErrNoRows) {
+		return content.PublicItem{}, "", content.ErrNotFound
+	}
+	if err != nil {
+		return content.PublicItem{}, "", err
+	}
+	var item content.PublicItem
+	if err := json.Unmarshal(payload, &item); err != nil {
+		return content.PublicItem{}, "", err
+	}
+	return item, etag, nil
+}
+
 func lockContent(ctx context.Context, tx *sql.Tx, module content.Module, id string) (int64, string, error) {
 	var version int64
 	var status string

@@ -126,6 +126,12 @@ func (s *Service) PublicContent(ctx context.Context, module Module, locale strin
 	}
 	return s.repository.PublicContent(ctx, module, locale, limit)
 }
+func (s *Service) PublicNews(ctx context.Context, locale, slug string) (PublicItem, string, error) {
+	if !validLocale(locale) || !contentSlug.MatchString(slug) {
+		return PublicItem{}, "", ErrInvalid
+	}
+	return s.repository.PublicNews(ctx, locale, slug)
+}
 
 func validModule(module Module) bool {
 	return module == ModuleNews || module == ModuleHistory || module == ModuleVideos

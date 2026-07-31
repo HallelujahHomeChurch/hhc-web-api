@@ -46,6 +46,35 @@ func TestPublicContentReadsProjectionWithoutAuthentication(t *testing.T) {
 	}
 }
 
+func TestPublicNewsDetailUsesProjectionETag(t *testing.T) {
+	repo := &contentRepository{
+		publicNews: content.PublicItem{ID: "news-1", Title: "最新消息"},
+		publicETag: "news-etag",
+	}
+	handler := contentTestHandler(repo)
+	request := httptest.NewRequest(http.MethodGet, "/api/news/announcement?locale=zh-Hant", nil)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || response.Header().Get("ETag") != `"news-etag"` {
+		t.Fatalf("status=%d etag=%q body=%s", response.Code, response.Header().Get("ETag"), response.Body.String())
+	}
+
+	request = httptest.NewRequest(http.MethodGet, "/api/news/announcement?locale=zh-Hant", nil)
+	request.Header.Set("If-None-Match", `"news-etag"`)
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusNotModified || response.Body.Len() != 0 {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+
+	repo.publicNewsErr = content.ErrNotFound
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/news/missing?locale=zh-Hant", nil))
+	if response.Code != http.StatusNotFound || response.Header().Get("Cache-Control") != "public, max-age=30" {
+		t.Fatalf("status=%d cache=%q", response.Code, response.Header().Get("Cache-Control"))
+	}
+}
+
 func TestPublicHomeIsCacheableAndSelectsVideosDeterministically(t *testing.T) {
 	values := []content.PublicItem{
 		{ID: "1", HomeEligible: true},
@@ -177,8 +206,11 @@ func contentTestHandlerWithAssets(repo content.Repository, uploads assetUploads)
 }
 
 type contentRepository struct {
-	item   content.Item
-	public []content.PublicItem
+	item          content.Item
+	public        []content.PublicItem
+	publicNews    content.PublicItem
+	publicETag    string
+	publicNewsErr error
 }
 
 func (r *contentRepository) CreateContent(_ context.Context, module content.Module, input content.WriteInput, actor, key string, now time.Time) (content.Item, error) {
@@ -220,4 +252,7 @@ func (r *contentRepository) RestoreArchivedContent(context.Context, content.Modu
 }
 func (r *contentRepository) PublicContent(context.Context, content.Module, string, int) ([]content.PublicItem, error) {
 	return r.public, nil
+}
+func (r *contentRepository) PublicNews(context.Context, string, string) (content.PublicItem, string, error) {
+	return r.publicNews, r.publicETag, r.publicNewsErr
 }

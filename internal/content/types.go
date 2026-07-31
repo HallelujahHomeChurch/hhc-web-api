@@ -129,4 +129,5 @@ type Repository interface {
 	ArchiveContent(context.Context, Module, string, int64, string, time.Time) (Item, error)
 	RestoreArchivedContent(context.Context, Module, string, int64, string, time.Time) (Item, error)
 	PublicContent(context.Context, Module, string, int) ([]PublicItem, error)
+	PublicNews(context.Context, string, string) (PublicItem, string, error)
 }

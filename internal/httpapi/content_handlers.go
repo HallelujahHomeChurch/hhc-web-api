@@ -15,6 +15,7 @@ import (
 
 func (h *Handler) contentRoutes(public, admin *http.ServeMux) {
 	public.HandleFunc("GET /api/news", h.publicContent(content.ModuleNews, 20))
+	public.HandleFunc("GET /api/news/{slug}", h.publicNews)
 	public.HandleFunc("GET /api/history", h.publicContent(content.ModuleHistory, 100))
 	public.HandleFunc("GET /api/videos", h.publicContent(content.ModuleVideos, 100))
 	public.HandleFunc("GET /api/home", h.publicHome)
@@ -31,6 +32,25 @@ func (h *Handler) contentRoutes(public, admin *http.ServeMux) {
 	admin.HandleFunc("POST /api/admin/content/news/{contentID}/upload-sessions", requireScopes([]string{"cms:write", "assets:write"}, h.adminNewsCoverUpload))
 	admin.HandleFunc("POST /api/admin/content/news/{contentID}/assets/{assetID}/complete", requireScopes([]string{"cms:write", "assets:write"}, h.adminNewsCoverComplete))
 	admin.HandleFunc("GET /api/admin/content/news/{contentID}/assets/{assetID}", requireScope("cms:read", h.adminNewsCoverStatus))
+}
+
+func (h *Handler) publicNews(w http.ResponseWriter, r *http.Request) {
+	value, etag, err := h.content.PublicNews(r.Context(), locale(r), r.PathValue("slug"))
+	if err != nil {
+		if errors.Is(err, content.ErrNotFound) {
+			w.Header().Set("Cache-Control", "public, max-age=30")
+		}
+		handleContentError(w, err)
+		return
+	}
+	etag = `"` + etag + `"`
+	w.Header().Set("Cache-Control", "public, max-age=300, stale-while-revalidate=600")
+	w.Header().Set("ETag", etag)
+	if r.Header.Get("If-None-Match") == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+	writeData(w, http.StatusOK, value, nil)
 }
 
 func (h *Handler) publicContent(module content.Module, limit int) http.HandlerFunc {

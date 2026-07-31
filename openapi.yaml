@@ -38,6 +38,16 @@ paths:
       operationId: listPublicNews
       parameters: [{ $ref: '#/components/parameters/Locale' }]
       responses: { '200': { $ref: '#/components/responses/PublicContentList' } }
+  /news/{slug}:
+    get:
+      operationId: getPublicNews
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 120, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$' } }
+        - $ref: '#/components/parameters/Locale'
+      responses:
+        '200': { $ref: '#/components/responses/PublicContentItem' }
+        '304': { description: Content has not changed }
+        '404': { $ref: '#/components/responses/Error' }
   /history:
     get:
       operationId: listPublicHistory
@@ -393,6 +403,13 @@ components:
       content:
         application/json:
           schema: { $ref: '#/components/schemas/PublicContentListEnvelope' }
+    PublicContentItem:
+      description: Published localized content item
+      headers:
+        ETag: { schema: { type: string } }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/PublicContentItemEnvelope' }
   schemas:
     Locale:
       type: string
@@ -710,6 +727,13 @@ components:
       required: [data, meta]
       properties:
         data: { type: array, items: { $ref: '#/components/schemas/PublicContentItem' } }
+        meta: { type: object, additionalProperties: true }
+        error: { type: ['null'] }
+    PublicContentItemEnvelope:
+      type: object
+      required: [data, meta]
+      properties:
+        data: { $ref: '#/components/schemas/PublicContentItem' }
         meta: { type: object, additionalProperties: true }
         error: { type: ['null'] }
     HomeEnvelope:
