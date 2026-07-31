@@ -249,7 +249,13 @@ func (h *Handler) adminNewsCoverComplete(w http.ResponseWriter, r *http.Request)
 		handleContentError(w, content.ErrInvalid)
 		return
 	}
-	asset, err := h.uploads.CompleteUpload(r.Context(), r.PathValue("assetID"), assetclient.CompleteUploadInput{SizeBytes: input.SizeBytes, ChecksumSHA256: input.ChecksumSHA256, MIMEType: input.MIMEType})
+	assetID := r.PathValue("assetID")
+	asset, err := h.uploads.Get(r.Context(), assetID)
+	if err != nil || !ownedNewsAsset(asset, r.PathValue("contentID"), assetID) {
+		writeError(w, http.StatusForbidden, "asset_owner_mismatch", "The uploaded asset does not belong to this news item.")
+		return
+	}
+	asset, err = h.uploads.CompleteUpload(r.Context(), assetID, assetclient.CompleteUploadInput{SizeBytes: input.SizeBytes, ChecksumSHA256: input.ChecksumSHA256, MIMEType: input.MIMEType})
 	if err != nil || !ownedNewsAsset(asset, r.PathValue("contentID"), r.PathValue("assetID")) {
 		writeError(w, http.StatusForbidden, "asset_owner_mismatch", "The uploaded asset does not belong to this news item.")
 		return

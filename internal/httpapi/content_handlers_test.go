@@ -89,6 +89,22 @@ func TestNewsPublishQueuesOwnedCleanProcessedCover(t *testing.T) {
 	}
 }
 
+func TestCompleteNewsCoverRejectsOwnerBeforeMutation(t *testing.T) {
+	repo := &contentRepository{item: content.Item{ID: "news-1", Module: content.ModuleNews, Version: 1}}
+	uploads := &apiUploads{completed: assetclient.Asset{
+		ID: "asset-1", Namespace: "cms.news.cover", OwnerService: "hhc-web-api",
+		OwnerType: "news", OwnerID: "another-news",
+	}}
+	request := httptest.NewRequest(http.MethodPost, "/api/admin/content/news/news-1/assets/asset-1/complete", bytes.NewBufferString(`{"fileName":"cover.jpg","mimeType":"image/jpeg","sizeBytes":128,"checksumSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`))
+	trusted(request, "cms:write assets:write")
+	request.Header.Set("If-Match", `"1"`)
+	response := httptest.NewRecorder()
+	contentTestHandlerWithAssets(repo, uploads).ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden || uploads.completeCalls != 0 {
+		t.Fatalf("status=%d completeCalls=%d", response.Code, uploads.completeCalls)
+	}
+}
+
 func TestNewsUnpublishDoesNotDependOnCurrentDraftCover(t *testing.T) {
 	repo := &contentRepository{item: content.Item{
 		ID: "news-1", Module: content.ModuleNews, Status: content.StatusDraft, Version: 3,

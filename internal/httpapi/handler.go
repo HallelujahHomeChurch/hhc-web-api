@@ -122,12 +122,18 @@ func (h *Handler) adminCompleteUpload(w http.ResponseWriter, r *http.Request) {
 		handleError(w, bulletins.ErrInvalid)
 		return
 	}
-	asset, err := h.uploads.CompleteUpload(r.Context(), r.PathValue("assetID"), assetclient.CompleteUploadInput{SizeBytes: input.SizeBytes, ChecksumSHA256: input.ChecksumSHA256, MIMEType: input.MIMEType})
+	assetID := r.PathValue("assetID")
+	asset, err := h.uploads.Get(r.Context(), assetID)
+	if err != nil || !ownedBulletinAsset(asset, r.PathValue("issueID"), assetID, input.Locale) {
+		writeError(w, http.StatusForbidden, "asset_owner_mismatch", "The uploaded asset does not belong to this bulletin.")
+		return
+	}
+	asset, err = h.uploads.CompleteUpload(r.Context(), assetID, assetclient.CompleteUploadInput{SizeBytes: input.SizeBytes, ChecksumSHA256: input.ChecksumSHA256, MIMEType: input.MIMEType})
 	if err != nil {
 		handleError(w, err)
 		return
 	}
-	if asset.ID != r.PathValue("assetID") || asset.Namespace != "cms.weekly.pdf" || asset.OwnerService != "hhc-web-api" || asset.OwnerType != "bulletin_issue" || asset.OwnerID != r.PathValue("issueID") || asset.Locale != input.Locale {
+	if !ownedBulletinAsset(asset, r.PathValue("issueID"), assetID, input.Locale) {
 		writeError(w, http.StatusForbidden, "asset_owner_mismatch", "The uploaded asset does not belong to this bulletin.")
 		return
 	}
@@ -142,6 +148,11 @@ func (h *Handler) adminCompleteUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("ETag", fmt.Sprintf(`"%d"`, value.Version))
 	writeData(w, http.StatusOK, value, nil)
+}
+func ownedBulletinAsset(asset assetclient.Asset, issueID, assetID, locale string) bool {
+	return asset.ID == assetID && asset.Namespace == "cms.weekly.pdf" &&
+		asset.OwnerService == "hhc-web-api" && asset.OwnerType == "bulletin_issue" &&
+		asset.OwnerID == issueID && asset.Locale == locale
 }
 func (h *Handler) ready(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
