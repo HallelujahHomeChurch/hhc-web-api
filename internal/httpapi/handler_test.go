@@ -195,6 +195,18 @@ func TestCompleteBulletinUploadRejectsOwnerBeforeMutation(t *testing.T) {
 	}
 }
 
+func TestCompleteBulletinUploadReportsAssetServiceUnavailable(t *testing.T) {
+	uploads := &apiUploads{getError: assetclient.ErrUnavailable}
+	request := httptest.NewRequest(http.MethodPost, "/api/admin/bulletins/issue-1/assets/asset-1/complete", bytes.NewBufferString(`{"locale":"zh-Hant","title":"週報","fileName":"weekly.pdf","mimeType":"application/pdf","sizeBytes":128,"checksumSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`))
+	trusted(request, "cms:write assets:write")
+	request.Header.Set("If-Match", `"1"`)
+	response := httptest.NewRecorder()
+	testHandlerWithUploads(&apiRepository{issue: bulletinIssue()}, uploads).ServeHTTP(response, request)
+	if response.Code != http.StatusServiceUnavailable || uploads.completeCalls != 0 {
+		t.Fatalf("status=%d completeCalls=%d", response.Code, uploads.completeCalls)
+	}
+}
+
 func testHandler(repo bulletins.Repository) http.Handler {
 	return testHandlerWithUploads(repo, nil)
 }
@@ -243,6 +255,7 @@ type apiUploads struct {
 	createdIssue, createdLocale string
 	completed                   assetclient.Asset
 	completeCalls               int
+	getError                    error
 }
 
 func (u *apiUploads) CreateBulletinUpload(_ context.Context, issueID, locale, fileName, mimeType string, sizeBytes int64, key string) (assetclient.CreatedUpload, error) {
@@ -257,7 +270,9 @@ func (u *apiUploads) CompleteUpload(context.Context, string, assetclient.Complet
 	u.completeCalls++
 	return u.completed, nil
 }
-func (u *apiUploads) Get(context.Context, string) (assetclient.Asset, error) { return u.completed, nil }
+func (u *apiUploads) Get(context.Context, string) (assetclient.Asset, error) {
+	return u.completed, u.getError
+}
 func (*apiRepository) StartPublish(context.Context, string, string, int64, string, time.Time) (bulletins.Workflow, error) {
 	return bulletins.Workflow{}, nil
 }

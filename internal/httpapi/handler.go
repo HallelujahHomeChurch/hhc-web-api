@@ -127,6 +127,10 @@ func (h *Handler) adminCompleteUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	assetID := r.PathValue("assetID")
 	asset, err := h.uploads.Get(r.Context(), assetID)
+	if errors.Is(err, assetclient.ErrUnavailable) {
+		writeError(w, http.StatusServiceUnavailable, "asset_service_unavailable", "Asset uploads are unavailable.")
+		return
+	}
 	if err != nil || !ownedBulletinAsset(asset, r.PathValue("issueID"), assetID, input.Locale) {
 		writeError(w, http.StatusForbidden, "asset_owner_mismatch", "The uploaded asset does not belong to this bulletin.")
 		return
@@ -293,6 +297,8 @@ func decode(w http.ResponseWriter, r *http.Request, destination any) bool {
 }
 func handleError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, assetclient.ErrUnavailable):
+		writeError(w, http.StatusServiceUnavailable, "asset_service_unavailable", "Asset uploads are unavailable.")
 	case errors.Is(err, bulletins.ErrInvalid):
 		writeError(w, http.StatusBadRequest, "invalid_request", "The request is invalid.")
 	case errors.Is(err, bulletins.ErrNotFound):

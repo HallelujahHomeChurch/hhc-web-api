@@ -105,6 +105,18 @@ func TestCompleteNewsCoverRejectsOwnerBeforeMutation(t *testing.T) {
 	}
 }
 
+func TestCompleteNewsCoverReportsAssetServiceUnavailable(t *testing.T) {
+	uploads := &apiUploads{getError: assetclient.ErrUnavailable}
+	request := httptest.NewRequest(http.MethodPost, "/api/admin/content/news/news-1/assets/asset-1/complete", bytes.NewBufferString(`{"fileName":"cover.jpg","mimeType":"image/jpeg","sizeBytes":128,"checksumSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`))
+	trusted(request, "cms:write assets:write")
+	request.Header.Set("If-Match", `"1"`)
+	response := httptest.NewRecorder()
+	contentTestHandlerWithAssets(&contentRepository{item: content.Item{ID: "news-1", Module: content.ModuleNews, Version: 1}}, uploads).ServeHTTP(response, request)
+	if response.Code != http.StatusServiceUnavailable || uploads.completeCalls != 0 {
+		t.Fatalf("status=%d completeCalls=%d", response.Code, uploads.completeCalls)
+	}
+}
+
 func TestNewsUnpublishDoesNotDependOnCurrentDraftCover(t *testing.T) {
 	repo := &contentRepository{item: content.Item{
 		ID: "news-1", Module: content.ModuleNews, Status: content.StatusDraft, Version: 3,
