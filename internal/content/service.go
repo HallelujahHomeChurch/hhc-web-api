@@ -5,9 +5,11 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 var youtubeID = regexp.MustCompile(`^[A-Za-z0-9_-]{11}$`)
+var contentSlug = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 
 type Service struct {
 	repository Repository
@@ -25,17 +27,48 @@ func (s *Service) CreateContent(ctx context.Context, module Module, input WriteI
 	}
 	return s.repository.CreateContent(ctx, module, input, actor, key, s.now().UTC())
 }
-func (s *Service) ListContent(ctx context.Context, module Module, page, size int, status string) (Page, error) {
+func (s *Service) ListContent(ctx context.Context, module Module, options ListOptions) (Page, error) {
 	if !validModule(module) {
 		return Page{}, ErrInvalid
 	}
-	if page < 1 {
-		page = 1
+	options.Query = strings.TrimSpace(options.Query)
+	if utf8.RuneCountInString(options.Query) > 200 || !validStatus(options.Status) {
+		return Page{}, ErrInvalid
 	}
-	if size < 1 || size > 100 {
-		size = 20
+	if options.Sort == "" {
+		switch module {
+		case ModuleNews:
+			options.Sort = "displayDate"
+		case ModuleHistory:
+			options.Sort = "sortOrder"
+		default:
+			options.Sort = "updatedAt"
+		}
 	}
-	return s.repository.ListContent(ctx, module, page, size, status)
+	if options.Sort != "updatedAt" &&
+		!(module == ModuleNews && options.Sort == "displayDate") &&
+		!(module == ModuleHistory && options.Sort == "sortOrder") {
+		return Page{}, ErrInvalid
+	}
+	if options.Direction == "" {
+		options.Direction = "desc"
+		if options.Sort == "sortOrder" {
+			options.Direction = "asc"
+		}
+	}
+	if options.Direction != "asc" && options.Direction != "desc" {
+		return Page{}, ErrInvalid
+	}
+	if options.Page > 10_000 {
+		return Page{}, ErrInvalid
+	}
+	if options.Page < 1 {
+		options.Page = 1
+	}
+	if options.PageSize < 1 || options.PageSize > 100 {
+		options.PageSize = 20
+	}
+	return s.repository.ListContent(ctx, module, options)
 }
 func (s *Service) GetContent(ctx context.Context, module Module, id string) (Item, error) {
 	if !validModule(module) {
@@ -75,6 +108,18 @@ func (s *Service) RestoreContent(ctx context.Context, module Module, id string, 
 	}
 	return s.repository.RestoreContent(ctx, module, id, revision, expected, actor, s.now().UTC())
 }
+func (s *Service) ArchiveContent(ctx context.Context, module Module, id string, expected int64, actor string) (Item, error) {
+	if !validModule(module) || expected < 1 {
+		return Item{}, ErrInvalid
+	}
+	return s.repository.ArchiveContent(ctx, module, id, expected, actor, s.now().UTC())
+}
+func (s *Service) RestoreArchivedContent(ctx context.Context, module Module, id string, expected int64, actor string) (Item, error) {
+	if !validModule(module) || expected < 1 {
+		return Item{}, ErrInvalid
+	}
+	return s.repository.RestoreArchivedContent(ctx, module, id, expected, actor, s.now().UTC())
+}
 func (s *Service) PublicContent(ctx context.Context, module Module, locale string, limit int) ([]PublicItem, error) {
 	if !validModule(module) || !validLocale(locale) {
 		return nil, ErrInvalid
@@ -84,6 +129,12 @@ func (s *Service) PublicContent(ctx context.Context, module Module, locale strin
 	}
 	return s.repository.PublicContent(ctx, module, locale, limit)
 }
+func (s *Service) PublicNews(ctx context.Context, locale, slug string) (PublicItem, string, error) {
+	if !validLocale(locale) || len(slug) > 120 || !contentSlug.MatchString(slug) {
+		return PublicItem{}, "", ErrInvalid
+	}
+	return s.repository.PublicNews(ctx, locale, slug)
+}
 
 func validModule(module Module) bool {
 	return module == ModuleNews || module == ModuleHistory || module == ModuleVideos
@@ -91,20 +142,34 @@ func validModule(module Module) bool {
 func validLocale(locale string) bool {
 	return locale == "zh-Hant" || locale == "zh-Hans" || locale == "en"
 }
+func validStatus(status string) bool {
+	switch status {
+	case "", StatusDraft, StatusPublishing, StatusPublished, StatusPublishFailed,
+		StatusUnpublishing, StatusUnpublishFailed, StatusUnpublished, StatusArchived:
+		return true
+	default:
+		return false
+	}
+}
 func valid(module Module, input WriteInput) bool {
-	if !validModule(module) || len(input.Translations) == 0 {
+	if !validModule(module) || len(input.Translations) == 0 || len(input.Translations) > 3 {
 		return false
 	}
 	seen := map[string]bool{}
 	for _, value := range input.Translations {
-		if !validLocale(value.Locale) || seen[value.Locale] || value.Title == "" {
+		if !validLocale(value.Locale) || seen[value.Locale] ||
+			!validText(value.Title, 1, 200) ||
+			!validText(value.Summary, 0, 500) ||
+			!validText(value.Body, 0, 100_000) ||
+			!validText(value.DateLabel, 0, 100) ||
+			!validText(value.ImageAlt, 0, 300) {
 			return false
 		}
 		seen[value.Locale] = true
 	}
 	switch module {
 	case ModuleNews:
-		return input.Slug != "" && input.DisplayDate != ""
+		return len(input.Slug) <= 120 && contentSlug.MatchString(input.Slug) && validDate(input.DisplayDate) && len(input.CoverAssetID) <= 200
 	case ModuleHistory:
 		return input.SortOrder > 0
 	case ModuleVideos:
@@ -117,7 +182,30 @@ func publishable(item Item) bool {
 	if !valid(item.Module, WriteInput{Slug: item.Slug, DisplayDate: item.DisplayDate, SortOrder: item.SortOrder, YouTubeVideoID: item.YouTubeVideoID, CoverAssetID: item.CoverAssetID, Translations: item.Translations}) {
 		return false
 	}
+	for _, value := range item.Translations {
+		switch item.Module {
+		case ModuleNews:
+			if value.Summary == "" && value.Body == "" {
+				return false
+			}
+		case ModuleHistory:
+			if value.DateLabel == "" || value.Body == "" {
+				return false
+			}
+		}
+	}
 	return item.Module != ModuleNews || item.CoverAssetID != ""
+}
+func validDate(value string) bool {
+	parsed, err := time.Parse("2006-01-02", value)
+	return err == nil && parsed.Format("2006-01-02") == value
+}
+func validText(value string, min, max int) bool {
+	if !utf8.ValidString(value) {
+		return false
+	}
+	length := utf8.RuneCountInString(value)
+	return length >= min && length <= max
 }
 func normalize(input WriteInput) WriteInput {
 	input.Slug = strings.TrimSpace(input.Slug)

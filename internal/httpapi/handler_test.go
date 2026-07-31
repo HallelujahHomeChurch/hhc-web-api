@@ -40,6 +40,14 @@ func TestAdminRoutesRequireTrustedIdentityAndScope(t *testing.T) {
 	}
 }
 
+func TestLivenessRouteDoesNotRequireDependencies(t *testing.T) {
+	response := httptest.NewRecorder()
+	testHandler(&apiRepository{}).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/health/live", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
 func TestAdminRoutesRequireDaprAPITokenWhenConfigured(t *testing.T) {
 	handler := NewWithContent(
 		bulletins.NewService(&apiRepository{}, time.Now),
@@ -115,6 +123,32 @@ func TestMutationRequiresIfMatch(t *testing.T) {
 	}
 }
 
+func TestArchiveIssueRequiresWriteScopeAndReturnsETag(t *testing.T) {
+	repo := &apiRepository{issue: bulletinIssue()}
+	handler := testHandler(repo)
+
+	request := httptest.NewRequest(http.MethodPost, "/api/admin/bulletins/issue-1/archive", nil)
+	trusted(request, "cms:read")
+	request.Header.Set("If-Match", `"1"`)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("read-only status=%d", response.Code)
+	}
+
+	request = httptest.NewRequest(http.MethodPost, "/api/admin/bulletins/issue-1/archive", nil)
+	trusted(request, "cms:write")
+	request.Header.Set("If-Match", `"1"`)
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || response.Header().Get("ETag") != `"2"` {
+		t.Fatalf("status=%d etag=%q body=%s", response.Code, response.Header().Get("ETag"), response.Body.String())
+	}
+	if repo.issue.Status != "archived" {
+		t.Fatalf("issue=%#v", repo.issue)
+	}
+}
+
 func TestPublicLatestUsesPublishedProjection(t *testing.T) {
 	repo := &apiRepository{public: bulletins.PublicBulletin{IssueDate: "2026-07-12", Locale: "zh-Hant", Title: "週報", DownloadURL: "/api/assets/public/asset-1", Version: 3}}
 	handler := testHandler(repo)
@@ -154,6 +188,21 @@ func TestBulletinUploadSessionRequiresBothCMSAndAssetScopes(t *testing.T) {
 	}
 }
 
+func TestBulletinUploadSessionRejectsArchivedIssueBeforeCreatingAsset(t *testing.T) {
+	repo := &apiRepository{issue: bulletinIssue()}
+	repo.issue.Status = "archived"
+	uploads := &apiUploads{}
+	request := httptest.NewRequest(http.MethodPost, "/api/admin/bulletins/issue-1/upload-sessions", bytes.NewBufferString(`{"locale":"zh-Hant","fileName":"weekly.pdf","mimeType":"application/pdf","sizeBytes":128}`))
+	trusted(request, "cms:write assets:write")
+	request.Header.Set("Idempotency-Key", "upload-archived")
+	response := httptest.NewRecorder()
+	testHandlerWithUploads(repo, uploads).ServeHTTP(response, request)
+
+	if response.Code != http.StatusUnprocessableEntity || uploads.createdIssue != "" {
+		t.Fatalf("status=%d createdIssue=%q", response.Code, uploads.createdIssue)
+	}
+}
+
 func TestCompleteBulletinUploadAttachesOwnedAsset(t *testing.T) {
 	repo := &apiRepository{issue: bulletinIssue()}
 	uploads := &apiUploads{completed: assetclient.Asset{ID: "asset-1", Namespace: "cms.weekly.pdf", OwnerService: "hhc-web-api", OwnerType: "bulletin_issue", OwnerID: "issue-1", Locale: "zh-Hant", OriginalFileName: "weekly.pdf"}}
@@ -168,6 +217,49 @@ func TestCompleteBulletinUploadAttachesOwnedAsset(t *testing.T) {
 	}
 	if repo.put.PDFAssetID != "asset-1" || repo.put.Locale != "zh-Hant" {
 		t.Fatalf("put = %#v", repo.put)
+	}
+}
+
+func TestCompleteBulletinUploadRejectsOwnerBeforeMutation(t *testing.T) {
+	repo := &apiRepository{issue: bulletinIssue()}
+	uploads := &apiUploads{completed: assetclient.Asset{
+		ID: "asset-1", Namespace: "cms.weekly.pdf", OwnerService: "hhc-web-api",
+		OwnerType: "bulletin_issue", OwnerID: "another-issue", Locale: "zh-Hant",
+	}}
+	request := httptest.NewRequest(http.MethodPost, "/api/admin/bulletins/issue-1/assets/asset-1/complete", bytes.NewBufferString(`{"locale":"zh-Hant","title":"週報","fileName":"weekly.pdf","mimeType":"application/pdf","sizeBytes":128,"checksumSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`))
+	trusted(request, "cms:write assets:write")
+	request.Header.Set("If-Match", `"1"`)
+	response := httptest.NewRecorder()
+	testHandlerWithUploads(repo, uploads).ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden || uploads.completeCalls != 0 {
+		t.Fatalf("status=%d completeCalls=%d", response.Code, uploads.completeCalls)
+	}
+}
+
+func TestCompleteBulletinUploadRejectsArchivedIssueBeforeAssetMutation(t *testing.T) {
+	issue := bulletinIssue()
+	issue.Status = "archived"
+	uploads := &apiUploads{completed: assetclient.Asset{ID: "asset-1"}}
+	request := httptest.NewRequest(http.MethodPost, "/api/admin/bulletins/issue-1/assets/asset-1/complete", bytes.NewBufferString(`{"locale":"zh-Hant","title":"週報","fileName":"weekly.pdf","mimeType":"application/pdf","sizeBytes":128,"checksumSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`))
+	trusted(request, "cms:write assets:write")
+	request.Header.Set("If-Match", `"1"`)
+	response := httptest.NewRecorder()
+	testHandlerWithUploads(&apiRepository{issue: issue}, uploads).ServeHTTP(response, request)
+
+	if response.Code != http.StatusUnprocessableEntity || uploads.completeCalls != 0 {
+		t.Fatalf("status=%d completeCalls=%d", response.Code, uploads.completeCalls)
+	}
+}
+
+func TestCompleteBulletinUploadReportsAssetServiceUnavailable(t *testing.T) {
+	uploads := &apiUploads{getError: assetclient.ErrUnavailable}
+	request := httptest.NewRequest(http.MethodPost, "/api/admin/bulletins/issue-1/assets/asset-1/complete", bytes.NewBufferString(`{"locale":"zh-Hant","title":"週報","fileName":"weekly.pdf","mimeType":"application/pdf","sizeBytes":128,"checksumSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`))
+	trusted(request, "cms:write assets:write")
+	request.Header.Set("If-Match", `"1"`)
+	response := httptest.NewRecorder()
+	testHandlerWithUploads(&apiRepository{issue: bulletinIssue()}, uploads).ServeHTTP(response, request)
+	if response.Code != http.StatusServiceUnavailable || uploads.completeCalls != 0 {
+		t.Fatalf("status=%d completeCalls=%d", response.Code, uploads.completeCalls)
 	}
 }
 
@@ -218,6 +310,8 @@ func bulletinIssue() bulletins.Issue {
 type apiUploads struct {
 	createdIssue, createdLocale string
 	completed                   assetclient.Asset
+	completeCalls               int
+	getError                    error
 }
 
 func (u *apiUploads) CreateBulletinUpload(_ context.Context, issueID, locale, fileName, mimeType string, sizeBytes int64, key string) (assetclient.CreatedUpload, error) {
@@ -229,14 +323,29 @@ func (u *apiUploads) CreateNewsCoverUpload(_ context.Context, newsID, fileName, 
 	return assetclient.CreatedUpload{Asset: assetclient.Asset{ID: "news-asset", OwnerID: newsID}, UploadTarget: assetclient.UploadTarget{URL: "http://example.test/upload", Method: http.MethodPut}}, nil
 }
 func (u *apiUploads) CompleteUpload(context.Context, string, assetclient.CompleteUploadInput) (assetclient.Asset, error) {
+	u.completeCalls++
 	return u.completed, nil
 }
-func (u *apiUploads) Get(context.Context, string) (assetclient.Asset, error) { return u.completed, nil }
+func (u *apiUploads) Get(context.Context, string) (assetclient.Asset, error) {
+	return u.completed, u.getError
+}
 func (*apiRepository) StartPublish(context.Context, string, string, int64, string, time.Time) (bulletins.Workflow, error) {
 	return bulletins.Workflow{}, nil
 }
 func (*apiRepository) Unpublish(context.Context, string, string, int64, string, time.Time) (bulletins.Issue, error) {
 	return bulletins.Issue{}, nil
+}
+func (r *apiRepository) ArchiveIssue(_ context.Context, _ string, _ int64, actor string, _ time.Time) (bulletins.Issue, error) {
+	r.issue.Status = "archived"
+	r.issue.Version++
+	r.issue.UpdatedBy = actor
+	return r.issue, nil
+}
+func (r *apiRepository) RestoreIssue(_ context.Context, _ string, _ int64, actor string, _ time.Time) (bulletins.Issue, error) {
+	r.issue.Status = "draft"
+	r.issue.Version++
+	r.issue.UpdatedBy = actor
+	return r.issue, nil
 }
 func (r *apiRepository) GetPublicLatest(context.Context, string) (bulletins.PublicBulletin, error) {
 	return r.public, nil

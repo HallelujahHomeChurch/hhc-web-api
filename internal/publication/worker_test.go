@@ -2,6 +2,7 @@ package publication
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 )
@@ -194,7 +195,7 @@ func TestWorkerRetiresReplacedAsset(t *testing.T) {
 	}
 }
 
-func TestWorkerRevokesGrantWhenPublishWasSuperseded(t *testing.T) {
+func TestWorkerQueuesGrantRevocationWhenPublishWasSuperseded(t *testing.T) {
 	repository := &workerRepository{event: publishEvent(1), completePublishError: ErrStalePublication}
 	assets := &workerAssets{asset: Asset{
 		ID:               "asset-1",
@@ -212,8 +213,90 @@ func TestWorkerRevokesGrantWhenPublishWasSuperseded(t *testing.T) {
 	if _, err := worker.processNext(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if assets.revokedGrant != "grant-1" || repository.failCount != 1 || repository.retryCount != 0 {
+	if assets.revokedGrant != "" || repository.compensationGrant != "grant-1" || repository.failCount != 1 || repository.retryCount != 0 {
+		t.Fatalf("revoked=%q compensation=%q fail=%d retry=%d", assets.revokedGrant, repository.compensationGrant, repository.failCount, repository.retryCount)
+	}
+}
+
+func TestWorkerQueuesGrantRevocationBeforeFinalPublishFailure(t *testing.T) {
+	repository := &workerRepository{event: publishEvent(5), completePublishError: errors.New("database unavailable")}
+	assets := &workerAssets{asset: readyBulletinAsset(), grant: Grant{ID: "grant-1"}}
+	worker := NewWorker(repository, assets, 5)
+
+	if _, err := worker.processNext(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if assets.revokedGrant != "" || repository.compensationGrant != "grant-1" || repository.failCount != 1 || repository.retryCount != 0 {
+		t.Fatalf("revoked=%q compensation=%q fail=%d retry=%d", assets.revokedGrant, repository.compensationGrant, repository.failCount, repository.retryCount)
+	}
+}
+
+func TestWorkerRetriesFailedCompensationPastMaxAttempts(t *testing.T) {
+	repository := &workerRepository{
+		event: publishEvent(5), completePublishError: errors.New("database unavailable"),
+		failPublishError: errors.New("database unavailable"),
+	}
+	assets := &workerAssets{asset: readyBulletinAsset(), grant: Grant{ID: "grant-1"}}
+	worker := NewWorker(repository, assets, 5)
+
+	if _, err := worker.processNext(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if repository.retryCount != 1 || repository.failCount != 0 {
+		t.Fatalf("retry=%d fail=%d", repository.retryCount, repository.failCount)
+	}
+}
+
+func TestWorkerRetriesAmbiguousGrantCreationPastMaxAttempts(t *testing.T) {
+	repository := &workerRepository{event: publishEvent(5)}
+	assets := &workerAssets{asset: readyBulletinAsset(), grantError: errors.New("response unavailable")}
+	worker := NewWorker(repository, assets, 5)
+
+	if _, err := worker.processNext(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if repository.retryCount != 1 || repository.failCount != 0 {
+		t.Fatalf("retry=%d fail=%d", repository.retryCount, repository.failCount)
+	}
+}
+
+func TestWorkerDoesNotRevokeDeliveredPublishAfterAmbiguousError(t *testing.T) {
+	repository := &workerRepository{
+		event: publishEvent(5), completePublishError: errors.New("commit result unavailable"),
+		eventDelivered: true,
+	}
+	assets := &workerAssets{asset: readyBulletinAsset(), grant: Grant{ID: "grant-1"}}
+	worker := NewWorker(repository, assets, 5)
+
+	if _, err := worker.processNext(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if assets.revokedGrant != "" || repository.failCount != 0 || repository.retryCount != 0 {
 		t.Fatalf("revoked=%q fail=%d retry=%d", assets.revokedGrant, repository.failCount, repository.retryCount)
+	}
+}
+
+func TestWorkerRetriesUnpublishRevocationPastMaxAttempts(t *testing.T) {
+	repository := &workerRepository{event: Event{
+		ID: "event-unpublish", EventType: "bulletin.unpublish.revoke_asset", Attempts: 5,
+		Payload: []byte(`{"issueId":"issue-1","locale":"zh-Hant","assetId":"asset-1","grantId":"grant-1","aggregateVersion":4}`),
+	}}
+	assets := &workerAssets{revokeError: errors.New("asset unavailable")}
+	worker := NewWorker(repository, assets, 5)
+
+	if _, err := worker.processNext(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if repository.retryCount != 1 || repository.failCount != 0 {
+		t.Fatalf("retry=%d fail=%d", repository.retryCount, repository.failCount)
+	}
+}
+
+func readyBulletinAsset() Asset {
+	return Asset{
+		ID: "asset-1", OwnerService: "hhc-web-api", Namespace: "cms.weekly.pdf",
+		OwnerType: "bulletin_issue", OwnerID: "issue-1", Locale: "zh-Hant",
+		UploadStatus: "completed", ScanStatus: "clean", ProcessingStatus: "ready",
 	}
 }
 
@@ -240,6 +323,10 @@ type workerRepository struct {
 	completePublishError          error
 	completeContentError          error
 	completeContentUnpublishCount int
+	eventDelivered                bool
+	eventDeliveredError           error
+	compensationGrant             string
+	failPublishError              error
 }
 
 func (r *workerRepository) Claim(context.Context, time.Time, time.Duration) (Event, bool, error) {
@@ -256,6 +343,17 @@ func (r *workerRepository) Retry(context.Context, string, string, time.Time, tim
 func (r *workerRepository) Fail(context.Context, Event, string, time.Time) error {
 	r.failCount++
 	return nil
+}
+func (r *workerRepository) FailPublish(_ context.Context, _ Event, _, grantID, _ string, _ time.Time) error {
+	if r.failPublishError != nil {
+		return r.failPublishError
+	}
+	r.failCount++
+	r.compensationGrant = grantID
+	return nil
+}
+func (r *workerRepository) EventDelivered(context.Context, string) (bool, error) {
+	return r.eventDelivered, r.eventDeliveredError
 }
 func (r *workerRepository) CompletePublish(_ context.Context, _ Event, grantID, _ string, _ time.Time) error {
 	r.completedGrant = grantID

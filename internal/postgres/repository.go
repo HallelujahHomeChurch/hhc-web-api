@@ -135,13 +135,20 @@ func (r *Repository) PutVersion(ctx context.Context, id string, expected int64, 
 	}
 	defer tx.Rollback()
 	var current int64
-	if err := tx.QueryRowContext(ctx, `SELECT version FROM hhc_web.bulletin_issue WHERE id=$1 FOR UPDATE`, id).Scan(&current); errors.Is(err, sql.ErrNoRows) {
+	var issueStatus string
+	if err := tx.QueryRowContext(ctx, `SELECT version,status FROM hhc_web.bulletin_issue WHERE id=$1 FOR UPDATE`, id).Scan(&current, &issueStatus); errors.Is(err, sql.ErrNoRows) {
 		return bulletins.Issue{}, bulletins.ErrNotFound
 	} else if err != nil {
 		return bulletins.Issue{}, err
 	}
 	if current != expected {
 		return bulletins.Issue{}, bulletins.ErrPrecondition
+	}
+	if issueStatus == "archived" {
+		return bulletins.Issue{}, bulletins.ErrConflict
+	}
+	if issueStatus == "publishing" || issueStatus == "unpublishing" {
+		return bulletins.Issue{}, bulletins.ErrNotPublishable
 	}
 	var existingStatus string
 	err = tx.QueryRowContext(ctx, `SELECT status FROM hhc_web.bulletin_version WHERE issue_id=$1 AND locale=$2`, id, input.Locale).Scan(&existingStatus)
@@ -179,13 +186,20 @@ func (r *Repository) StartPublish(ctx context.Context, id, locale string, expect
 	}
 	defer tx.Rollback()
 	var current int64
-	if err := tx.QueryRowContext(ctx, `SELECT version FROM hhc_web.bulletin_issue WHERE id=$1 FOR UPDATE`, id).Scan(&current); errors.Is(err, sql.ErrNoRows) {
+	var issueStatus string
+	if err := tx.QueryRowContext(ctx, `SELECT version,status FROM hhc_web.bulletin_issue WHERE id=$1 FOR UPDATE`, id).Scan(&current, &issueStatus); errors.Is(err, sql.ErrNoRows) {
 		return bulletins.Workflow{}, bulletins.ErrNotFound
 	} else if err != nil {
 		return bulletins.Workflow{}, err
 	}
 	if current != expected {
 		return bulletins.Workflow{}, bulletins.ErrPrecondition
+	}
+	if issueStatus == "archived" {
+		return bulletins.Workflow{}, bulletins.ErrConflict
+	}
+	if issueStatus == "publishing" || issueStatus == "unpublishing" {
+		return bulletins.Workflow{}, bulletins.ErrNotPublishable
 	}
 	var assetID string
 	if err := tx.QueryRowContext(ctx, `SELECT pdf_asset_id FROM hhc_web.bulletin_version WHERE issue_id=$1 AND locale=$2 FOR UPDATE`, id, locale).Scan(&assetID); errors.Is(err, sql.ErrNoRows) {
@@ -221,13 +235,20 @@ func (r *Repository) Unpublish(ctx context.Context, id, locale string, expected 
 	}
 	defer tx.Rollback()
 	var current int64
-	if err := tx.QueryRowContext(ctx, `SELECT version FROM hhc_web.bulletin_issue WHERE id=$1 FOR UPDATE`, id).Scan(&current); errors.Is(err, sql.ErrNoRows) {
+	var issueStatus string
+	if err := tx.QueryRowContext(ctx, `SELECT version,status FROM hhc_web.bulletin_issue WHERE id=$1 FOR UPDATE`, id).Scan(&current, &issueStatus); errors.Is(err, sql.ErrNoRows) {
 		return bulletins.Issue{}, bulletins.ErrNotFound
 	} else if err != nil {
 		return bulletins.Issue{}, err
 	}
 	if current != expected {
 		return bulletins.Issue{}, bulletins.ErrPrecondition
+	}
+	if issueStatus == "archived" {
+		return bulletins.Issue{}, bulletins.ErrConflict
+	}
+	if issueStatus == "publishing" || issueStatus == "unpublishing" {
+		return bulletins.Issue{}, bulletins.ErrNotPublishable
 	}
 	var assetID, grantID, date string
 	if err := tx.QueryRowContext(ctx, `
@@ -259,6 +280,64 @@ func (r *Repository) Unpublish(ctx context.Context, id, locale string, expected 
 	}
 	payload, _ := json.Marshal(publication.UnpublishPayload{WorkflowID: workflowID, IssueID: id, Locale: locale, AssetID: assetID, GrantID: grantID, AggregateVersion: next})
 	if _, err := tx.ExecContext(ctx, `INSERT INTO hhc_web.outbox_event(id,destination,event_type,aggregate_type,aggregate_id,aggregate_version,payload_json,idempotency_key,status,next_attempt_at,created_at,updated_at) VALUES($1,'asset-api','bulletin.unpublish.revoke_asset','bulletin',$2,$3,$4,$5,'pending',$6,$6,$6)`, platform.NewID(), id, next, payload, fmt.Sprintf("bulletin:%s:%s:unpublish:v%d", id, locale, next), now); err != nil {
+		return bulletins.Issue{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return bulletins.Issue{}, err
+	}
+	return r.GetIssue(ctx, id)
+}
+
+func (r *Repository) ArchiveIssue(ctx context.Context, id string, expected int64, actor string, now time.Time) (bulletins.Issue, error) {
+	return r.changeIssueArchiveStatus(ctx, id, expected, actor, "archived", now)
+}
+
+func (r *Repository) RestoreIssue(ctx context.Context, id string, expected int64, actor string, now time.Time) (bulletins.Issue, error) {
+	return r.changeIssueArchiveStatus(ctx, id, expected, actor, "draft", now)
+}
+
+func (r *Repository) changeIssueArchiveStatus(ctx context.Context, id string, expected int64, actor, target string, now time.Time) (bulletins.Issue, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return bulletins.Issue{}, err
+	}
+	defer tx.Rollback()
+
+	var current int64
+	var status string
+	if err := tx.QueryRowContext(ctx, `SELECT version,status FROM hhc_web.bulletin_issue WHERE id=$1 FOR UPDATE`, id).Scan(&current, &status); errors.Is(err, sql.ErrNoRows) {
+		return bulletins.Issue{}, bulletins.ErrNotFound
+	} else if err != nil {
+		return bulletins.Issue{}, err
+	}
+	if current != expected {
+		return bulletins.Issue{}, bulletins.ErrPrecondition
+	}
+	if target == "archived" {
+		if status != "draft" && status != "unpublished" {
+			return bulletins.Issue{}, bulletins.ErrConflict
+		}
+	} else if status != "archived" {
+		return bulletins.Issue{}, bulletins.ErrConflict
+	}
+
+	var hasPublicState bool
+	if err := tx.QueryRowContext(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM hhc_web.public_projection
+			WHERE resource_type='bulletin_issue' AND resource_id=$1
+		) OR EXISTS(
+			SELECT 1 FROM hhc_web.bulletin_version
+			WHERE issue_id=$1 AND (
+				COALESCE(public_grant_id,'')<>'' OR COALESCE(retiring_grant_id,'')<>''
+			)
+		)`, id).Scan(&hasPublicState); err != nil {
+		return bulletins.Issue{}, err
+	}
+	if hasPublicState {
+		return bulletins.Issue{}, bulletins.ErrConflict
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.bulletin_issue SET status=$2,version=version+1,updated_by=$3,updated_at=$4 WHERE id=$1`, id, target, actor, now); err != nil {
 		return bulletins.Issue{}, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -361,13 +440,48 @@ func (r *Repository) Retry(ctx context.Context, id, detail string, nextAttempt, 
 }
 
 func (r *Repository) Fail(ctx context.Context, event publication.Event, detail string, now time.Time) error {
-	var payload publication.PublishPayload
-	_ = json.Unmarshal(event.Payload, &payload)
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
+	if err := failEvent(ctx, tx, event, detail, now); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (r *Repository) FailPublish(ctx context.Context, event publication.Event, assetID, grantID, detail string, now time.Time) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := failEvent(ctx, tx, event, detail, now); err != nil {
+		return err
+	}
+	payload, err := json.Marshal(publication.ContentUnpublishPayload{AssetID: assetID, GrantID: grantID, AggregateVersion: event.AggregateVersion})
+	if err != nil {
+		return err
+	}
+	aggregateType := "bulletin"
+	if strings.HasPrefix(event.EventType, "news.") {
+		aggregateType = "news"
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO hhc_web.outbox_event(id,destination,event_type,aggregate_type,aggregate_id,aggregate_version,payload_json,idempotency_key,status,next_attempt_at,created_at,updated_at)
+		VALUES($1,'asset-api','asset.grant.revoke',$2,$3,$4,$5,$6,'pending',$7,$7,$7)
+		ON CONFLICT(destination,idempotency_key) DO NOTHING`,
+		platform.NewID(), aggregateType, event.AggregateID, event.AggregateVersion, payload,
+		fmt.Sprintf("publication:%s:revoke:%s", event.ID, grantID), now); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func failEvent(ctx context.Context, tx *sql.Tx, event publication.Event, detail string, now time.Time) error {
+	var payload publication.PublishPayload
+	_ = json.Unmarshal(event.Payload, &payload)
 	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.outbox_event SET status='failed',claimed_until=NULL,last_error=$2,updated_at=$3 WHERE id=$1`, event.ID, detail, now); err != nil {
 		return err
 	}
@@ -391,7 +505,7 @@ func (r *Repository) Fail(ctx context.Context, event publication.Event, detail s
 		if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.content_entry SET status=$3,updated_at=$4 WHERE id=$1 AND version=$2`, contentID, version, nextStatus, now); err != nil {
 			return err
 		}
-		return tx.Commit()
+		return nil
 	}
 	if payload.WorkflowID != "" {
 		if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.publication_workflow SET status='failed',error_code='PUBLICATION_FAILED',error_detail=$2,updated_at=$3 WHERE id=$1`, payload.WorkflowID, detail, now); err != nil {
@@ -413,7 +527,7 @@ func (r *Repository) Fail(ctx context.Context, event publication.Event, detail s
 			}
 		}
 	}
-	return tx.Commit()
+	return nil
 }
 
 func (r *Repository) CompletePublish(ctx context.Context, event publication.Event, grantID, downloadURL string, now time.Time) error {
@@ -426,6 +540,13 @@ func (r *Repository) CompletePublish(ctx context.Context, event publication.Even
 		return err
 	}
 	defer tx.Rollback()
+	delivered, err := eventDelivered(ctx, tx, event.ID)
+	if err != nil {
+		return err
+	}
+	if delivered {
+		return nil
+	}
 	var issueDate, issueStatus, title, versionStatus, retiringAssetID, retiringGrantID string
 	var issueVersion int64
 	if err := tx.QueryRowContext(ctx, `
@@ -492,20 +613,41 @@ func (r *Repository) CompleteUnpublish(ctx context.Context, event publication.Ev
 		return err
 	}
 	defer tx.Rollback()
-	if _, err := tx.ExecContext(ctx, `
+	delivered, err := eventDelivered(ctx, tx, event.ID)
+	if err != nil {
+		return err
+	}
+	if delivered {
+		return nil
+	}
+	result, err := tx.ExecContext(ctx, `
 		UPDATE hhc_web.bulletin_version
 		SET status='unpublished',public_grant_id=NULL,retiring_asset_id=NULL,retiring_grant_id=NULL,updated_at=$4
 		WHERE issue_id=$1 AND locale=$2 AND status='unpublishing'
 		  AND EXISTS(SELECT 1 FROM hhc_web.bulletin_issue WHERE id=$1 AND version=$3)`,
-		payload.IssueID, payload.Locale, payload.AggregateVersion, now); err != nil {
+		payload.IssueID, payload.Locale, payload.AggregateVersion, now)
+	if err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `
+	if rows, err := result.RowsAffected(); err != nil || rows == 0 {
+		if err != nil {
+			return err
+		}
+		return publication.ErrStalePublication
+	}
+	result, err = tx.ExecContext(ctx, `
 		UPDATE hhc_web.bulletin_issue
 		SET status=CASE WHEN EXISTS(SELECT 1 FROM hhc_web.bulletin_version WHERE issue_id=$1 AND status='published') THEN 'published' ELSE 'unpublished' END,
 		    updated_at=$3
-		WHERE id=$1 AND version=$2`, payload.IssueID, payload.AggregateVersion, now); err != nil {
+		WHERE id=$1 AND version=$2`, payload.IssueID, payload.AggregateVersion, now)
+	if err != nil {
 		return err
+	}
+	if rows, err := result.RowsAffected(); err != nil || rows == 0 {
+		if err != nil {
+			return err
+		}
+		return publication.ErrStalePublication
 	}
 	if payload.WorkflowID != "" {
 		if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.publication_workflow SET status='completed',updated_at=$2 WHERE id=$1`, payload.WorkflowID, now); err != nil {
@@ -521,6 +663,20 @@ func (r *Repository) CompleteUnpublish(ctx context.Context, event publication.Ev
 func (r *Repository) Complete(ctx context.Context, id string, now time.Time) error {
 	_, err := r.db.ExecContext(ctx, `UPDATE hhc_web.outbox_event SET status='delivered',claimed_until=NULL,last_error='',updated_at=$2 WHERE id=$1`, id, now)
 	return err
+}
+
+func (r *Repository) EventDelivered(ctx context.Context, id string) (bool, error) {
+	var delivered bool
+	err := r.db.QueryRowContext(ctx, `SELECT status='delivered' FROM hhc_web.outbox_event WHERE id=$1`, id).Scan(&delivered)
+	return delivered, err
+}
+
+func eventDelivered(ctx context.Context, tx *sql.Tx, id string) (bool, error) {
+	var status string
+	if err := tx.QueryRowContext(ctx, `SELECT status FROM hhc_web.outbox_event WHERE id=$1 FOR UPDATE`, id).Scan(&status); err != nil {
+		return false, err
+	}
+	return status == "delivered", nil
 }
 
 func mapConflict(err error) error {

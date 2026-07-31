@@ -1,10 +1,13 @@
 package httpapi
 
 import (
+	"crypto/sha256"
 	"errors"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/assetclient"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/content"
@@ -12,6 +15,7 @@ import (
 
 func (h *Handler) contentRoutes(public, admin *http.ServeMux) {
 	public.HandleFunc("GET /api/news", h.publicContent(content.ModuleNews, 20))
+	public.HandleFunc("GET /api/news/{slug}", h.publicNews)
 	public.HandleFunc("GET /api/history", h.publicContent(content.ModuleHistory, 100))
 	public.HandleFunc("GET /api/videos", h.publicContent(content.ModuleVideos, 100))
 	public.HandleFunc("GET /api/home", h.publicHome)
@@ -21,11 +25,32 @@ func (h *Handler) contentRoutes(public, admin *http.ServeMux) {
 	admin.HandleFunc("PUT /api/admin/content/{module}/{contentID}", requireScope("cms:write", h.adminContentUpdate))
 	admin.HandleFunc("POST /api/admin/content/{module}/{contentID}/publish", requireScope("cms:publish", h.adminContentPublish))
 	admin.HandleFunc("POST /api/admin/content/{module}/{contentID}/unpublish", requireScope("cms:publish", h.adminContentUnpublish))
+	admin.HandleFunc("POST /api/admin/content/{module}/{contentID}/archive", requireScope("cms:write", h.adminContentArchive))
+	admin.HandleFunc("POST /api/admin/content/{module}/{contentID}/restore", requireScope("cms:write", h.adminContentRestoreArchived))
 	admin.HandleFunc("GET /api/admin/content/{module}/{contentID}/revisions", requireScope("cms:read", h.adminContentRevisions))
 	admin.HandleFunc("POST /api/admin/content/{module}/{contentID}/revisions/{revision}/restore", requireScope("cms:write", h.adminContentRestore))
 	admin.HandleFunc("POST /api/admin/content/news/{contentID}/upload-sessions", requireScopes([]string{"cms:write", "assets:write"}, h.adminNewsCoverUpload))
 	admin.HandleFunc("POST /api/admin/content/news/{contentID}/assets/{assetID}/complete", requireScopes([]string{"cms:write", "assets:write"}, h.adminNewsCoverComplete))
 	admin.HandleFunc("GET /api/admin/content/news/{contentID}/assets/{assetID}", requireScope("cms:read", h.adminNewsCoverStatus))
+}
+
+func (h *Handler) publicNews(w http.ResponseWriter, r *http.Request) {
+	value, etag, err := h.content.PublicNews(r.Context(), locale(r), r.PathValue("slug"))
+	if err != nil {
+		if errors.Is(err, content.ErrNotFound) {
+			w.Header().Set("Cache-Control", "public, max-age=30")
+		}
+		handleContentError(w, err)
+		return
+	}
+	etag = `"` + etag + `"`
+	w.Header().Set("Cache-Control", "public, no-cache")
+	w.Header().Set("ETag", etag)
+	if etagMatches(r.Header.Get("If-None-Match"), etag) {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+	writeData(w, http.StatusOK, value, nil)
 }
 
 func (h *Handler) publicContent(module content.Module, limit int) http.HandlerFunc {
@@ -35,7 +60,7 @@ func (h *Handler) publicContent(module content.Module, limit int) http.HandlerFu
 			handleContentError(w, err)
 			return
 		}
-		w.Header().Set("Cache-Control", "public, max-age=60, stale-while-revalidate=300")
+		w.Header().Set("Cache-Control", "public, max-age=30, must-revalidate")
 		writeData(w, http.StatusOK, values, nil)
 	}
 }
@@ -52,7 +77,20 @@ func (h *Handler) publicHome(w http.ResponseWriter, r *http.Request) {
 		handleContentError(w, err)
 		return
 	}
-	writeData(w, http.StatusOK, map[string]any{"news": featuredNews(news, 3), "videos": eligibleVideos(videos, 3)}, nil)
+	seed := time.Now().UTC().Format("2006-01-02") + ":" + requestedLocale
+	w.Header().Set("Cache-Control", "public, max-age=30, must-revalidate")
+	writeData(w, http.StatusOK, map[string]any{"news": featuredNews(news, 3), "videos": eligibleVideos(videos, 3, seed)}, nil)
+}
+
+func etagMatches(header, target string) bool {
+	target = strings.TrimPrefix(target, "W/")
+	for _, candidate := range strings.Split(header, ",") {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "*" || strings.TrimPrefix(candidate, "W/") == target {
+			return true
+		}
+	}
+	return false
 }
 
 func featuredNews(values []content.PublicItem, limit int) []content.PublicItem {
@@ -77,22 +115,37 @@ func featuredNews(values []content.PublicItem, limit int) []content.PublicItem {
 	}
 	return featured
 }
-func eligibleVideos(values []content.PublicItem, limit int) []content.PublicItem {
-	eligible := make([]content.PublicItem, 0, limit)
+func eligibleVideos(values []content.PublicItem, limit int, seed string) []content.PublicItem {
+	eligible := make([]content.PublicItem, 0, len(values))
 	for _, value := range values {
 		if value.HomeEligible {
 			eligible = append(eligible, value)
 		}
-		if len(eligible) == limit {
-			break
+	}
+	sort.Slice(eligible, func(i, j int) bool {
+		left := sha256.Sum256([]byte(seed + ":" + eligible[i].ID))
+		right := sha256.Sum256([]byte(seed + ":" + eligible[j].ID))
+		if left == right {
+			return eligible[i].ID < eligible[j].ID
 		}
+		return string(left[:]) < string(right[:])
+	})
+	if len(eligible) > limit {
+		eligible = eligible[:limit]
 	}
 	return eligible
 }
 
 func (h *Handler) adminContentList(w http.ResponseWriter, r *http.Request) {
 	page, size := pagination(r)
-	value, err := h.content.ListContent(r.Context(), content.Module(r.PathValue("module")), page, size, r.URL.Query().Get("status"))
+	value, err := h.content.ListContent(r.Context(), content.Module(r.PathValue("module")), content.ListOptions{
+		Query:     r.URL.Query().Get("q"),
+		Status:    r.URL.Query().Get("status"),
+		Sort:      r.URL.Query().Get("sort"),
+		Direction: r.URL.Query().Get("direction"),
+		Page:      page,
+		PageSize:  size,
+	})
 	if err != nil {
 		handleContentError(w, err)
 		return
@@ -236,7 +289,21 @@ func (h *Handler) adminNewsCoverComplete(w http.ResponseWriter, r *http.Request)
 		handleContentError(w, content.ErrInvalid)
 		return
 	}
-	asset, err := h.uploads.CompleteUpload(r.Context(), r.PathValue("assetID"), assetclient.CompleteUploadInput{SizeBytes: input.SizeBytes, ChecksumSHA256: input.ChecksumSHA256, MIMEType: input.MIMEType})
+	assetID := r.PathValue("assetID")
+	asset, err := h.uploads.Get(r.Context(), assetID)
+	if errors.Is(err, assetclient.ErrUnavailable) {
+		writeError(w, http.StatusServiceUnavailable, "asset_service_unavailable", "Asset uploads are unavailable.")
+		return
+	}
+	if err != nil || !ownedNewsAsset(asset, r.PathValue("contentID"), assetID) {
+		writeError(w, http.StatusForbidden, "asset_owner_mismatch", "The uploaded asset does not belong to this news item.")
+		return
+	}
+	asset, err = h.uploads.CompleteUpload(r.Context(), assetID, assetclient.CompleteUploadInput{SizeBytes: input.SizeBytes, ChecksumSHA256: input.ChecksumSHA256, MIMEType: input.MIMEType})
+	if errors.Is(err, assetclient.ErrUnavailable) {
+		writeError(w, http.StatusServiceUnavailable, "asset_service_unavailable", "Asset uploads are unavailable.")
+		return
+	}
 	if err != nil || !ownedNewsAsset(asset, r.PathValue("contentID"), r.PathValue("assetID")) {
 		writeError(w, http.StatusForbidden, "asset_owner_mismatch", "The uploaded asset does not belong to this news item.")
 		return
@@ -295,6 +362,31 @@ func (h *Handler) adminContentRestore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	value, err := h.content.RestoreContent(r.Context(), content.Module(r.PathValue("module")), r.PathValue("contentID"), revision, expected, actor(r))
+	if err != nil {
+		handleContentError(w, err)
+		return
+	}
+	writeContentItem(w, value)
+}
+func (h *Handler) adminContentArchive(w http.ResponseWriter, r *http.Request) {
+	h.changeContentArchive(w, r, true)
+}
+func (h *Handler) adminContentRestoreArchived(w http.ResponseWriter, r *http.Request) {
+	h.changeContentArchive(w, r, false)
+}
+func (h *Handler) changeContentArchive(w http.ResponseWriter, r *http.Request, archive bool) {
+	expected, ok := ifMatch(w, r)
+	if !ok {
+		return
+	}
+	module, id := content.Module(r.PathValue("module")), r.PathValue("contentID")
+	var value content.Item
+	var err error
+	if archive {
+		value, err = h.content.ArchiveContent(r.Context(), module, id, expected, actor(r))
+	} else {
+		value, err = h.content.RestoreArchivedContent(r.Context(), module, id, expected, actor(r))
+	}
 	if err != nil {
 		handleContentError(w, err)
 		return

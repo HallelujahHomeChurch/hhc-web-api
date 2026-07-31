@@ -108,14 +108,26 @@ type Page struct {
 	Total    int64
 }
 
+type ListOptions struct {
+	Query     string
+	Status    string
+	Sort      string
+	Direction string
+	Page      int
+	PageSize  int
+}
+
 type Repository interface {
 	CreateContent(context.Context, Module, WriteInput, string, string, time.Time) (Item, error)
-	ListContent(context.Context, Module, int, int, string) (Page, error)
+	ListContent(context.Context, Module, ListOptions) (Page, error)
 	GetContent(context.Context, Module, string) (Item, error)
 	UpdateContent(context.Context, Module, string, int64, WriteInput, string, time.Time) (Item, error)
 	PublishContent(context.Context, Module, string, int64, string, time.Time) (Item, error)
 	UnpublishContent(context.Context, Module, string, int64, string, time.Time) (Item, error)
 	ContentRevisions(context.Context, Module, string) ([]Revision, error)
 	RestoreContent(context.Context, Module, string, int64, int64, string, time.Time) (Item, error)
+	ArchiveContent(context.Context, Module, string, int64, string, time.Time) (Item, error)
+	RestoreArchivedContent(context.Context, Module, string, int64, string, time.Time) (Item, error)
 	PublicContent(context.Context, Module, string, int) ([]PublicItem, error)
+	PublicNews(context.Context, string, string) (PublicItem, string, error)
 }

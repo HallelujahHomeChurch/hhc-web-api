@@ -26,6 +26,8 @@ jobs:
           --health-retries 10
     env:
       HHW_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/hhc_web_test?sslmode=disable
+      TEST_POSTGRES_DSN: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
+      HHC_WEB_ALLOW_DESTRUCTIVE_TEST: "1"
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
@@ -33,7 +35,11 @@ jobs:
           go-version-file: go.mod
           cache: true
       - run: |
-          ./scripts/bootstrap-database.test.sh
+          ./scripts/bootstrap-migration-role.test.sh
+          ./scripts/test-migration-policy-test.sh
+          ./scripts/test-migration-policy.sh internal/migrations/sql/*.sql
+          ./scripts/test-what-if-policy.sh
           go test -race ./... -count=1 -p=1
           go vet ./...
+          ./scripts/test-release-policy.sh
           docker build -t hhc-web-api:verify .

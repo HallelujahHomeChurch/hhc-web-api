@@ -44,10 +44,13 @@ func NewWithContent(service *bulletins.Service, contentService *content.Service,
 }
 func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
+	live := func(w http.ResponseWriter, _ *http.Request) {
 		writeData(w, http.StatusOK, map[string]string{"status": "healthy"}, nil)
-	})
+	}
+	mux.HandleFunc("GET /health", live)
+	mux.HandleFunc("GET /health/live", live)
 	mux.HandleFunc("GET /ready", h.ready)
+	mux.HandleFunc("GET /health/ready", h.ready)
 	mux.HandleFunc("GET /api/bulletins/latest", h.publicLatest)
 	mux.HandleFunc("GET /api/bulletins/{issueDate}", h.publicByDate)
 	mux.HandleFunc("GET /api/bulletins", h.publicList)
@@ -59,6 +62,8 @@ func (h *Handler) Routes() http.Handler {
 	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/assets/{assetID}/complete", requireScopes([]string{"cms:write", "assets:write"}, h.adminCompleteUpload))
 	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/publish", requireScope("cms:publish", h.adminPublish))
 	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/unpublish", requireScope("cms:publish", h.adminUnpublish))
+	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/archive", requireScope("cms:write", h.adminArchive))
+	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/restore", requireScope("cms:write", h.adminRestore))
 	if h.content != nil {
 		h.contentRoutes(mux, admin)
 	}
@@ -94,8 +99,13 @@ func (h *Handler) adminCreateUpload(w http.ResponseWriter, r *http.Request) {
 		handleError(w, bulletins.ErrInvalid)
 		return
 	}
-	if _, err := h.service.GetIssue(r.Context(), r.PathValue("issueID")); err != nil {
+	issue, err := h.service.GetIssue(r.Context(), r.PathValue("issueID"))
+	if err != nil {
 		handleError(w, err)
+		return
+	}
+	if issue.Status == "archived" {
+		handleError(w, bulletins.ErrNotPublishable)
 		return
 	}
 	created, err := h.uploads.CreateBulletinUpload(r.Context(), r.PathValue("issueID"), input.Locale, input.FileName, input.MIMEType, input.SizeBytes, r.Header.Get("Idempotency-Key"))
@@ -122,12 +132,31 @@ func (h *Handler) adminCompleteUpload(w http.ResponseWriter, r *http.Request) {
 		handleError(w, bulletins.ErrInvalid)
 		return
 	}
-	asset, err := h.uploads.CompleteUpload(r.Context(), r.PathValue("assetID"), assetclient.CompleteUploadInput{SizeBytes: input.SizeBytes, ChecksumSHA256: input.ChecksumSHA256, MIMEType: input.MIMEType})
+	issue, err := h.service.GetIssue(r.Context(), r.PathValue("issueID"))
 	if err != nil {
 		handleError(w, err)
 		return
 	}
-	if asset.ID != r.PathValue("assetID") || asset.Namespace != "cms.weekly.pdf" || asset.OwnerService != "hhc-web-api" || asset.OwnerType != "bulletin_issue" || asset.OwnerID != r.PathValue("issueID") || asset.Locale != input.Locale {
+	if issue.Status == "archived" {
+		handleError(w, bulletins.ErrNotPublishable)
+		return
+	}
+	assetID := r.PathValue("assetID")
+	asset, err := h.uploads.Get(r.Context(), assetID)
+	if errors.Is(err, assetclient.ErrUnavailable) {
+		writeError(w, http.StatusServiceUnavailable, "asset_service_unavailable", "Asset uploads are unavailable.")
+		return
+	}
+	if err != nil || !ownedBulletinAsset(asset, r.PathValue("issueID"), assetID, input.Locale) {
+		writeError(w, http.StatusForbidden, "asset_owner_mismatch", "The uploaded asset does not belong to this bulletin.")
+		return
+	}
+	asset, err = h.uploads.CompleteUpload(r.Context(), assetID, assetclient.CompleteUploadInput{SizeBytes: input.SizeBytes, ChecksumSHA256: input.ChecksumSHA256, MIMEType: input.MIMEType})
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+	if !ownedBulletinAsset(asset, r.PathValue("issueID"), assetID, input.Locale) {
 		writeError(w, http.StatusForbidden, "asset_owner_mismatch", "The uploaded asset does not belong to this bulletin.")
 		return
 	}
@@ -142,6 +171,11 @@ func (h *Handler) adminCompleteUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("ETag", fmt.Sprintf(`"%d"`, value.Version))
 	writeData(w, http.StatusOK, value, nil)
+}
+func ownedBulletinAsset(asset assetclient.Asset, issueID, assetID, locale string) bool {
+	return asset.ID == assetID && asset.Namespace == "cms.weekly.pdf" &&
+		asset.OwnerService == "hhc-web-api" && asset.OwnerType == "bulletin_issue" &&
+		asset.OwnerID == issueID && asset.Locale == locale
 }
 func (h *Handler) ready(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
@@ -241,6 +275,31 @@ func (h *Handler) adminUnpublish(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("ETag", fmt.Sprintf(`"%d"`, value.Version))
 	writeData(w, http.StatusOK, value, nil)
 }
+func (h *Handler) adminArchive(w http.ResponseWriter, r *http.Request) {
+	h.changeArchive(w, r, true)
+}
+func (h *Handler) adminRestore(w http.ResponseWriter, r *http.Request) {
+	h.changeArchive(w, r, false)
+}
+func (h *Handler) changeArchive(w http.ResponseWriter, r *http.Request, archive bool) {
+	expected, ok := ifMatch(w, r)
+	if !ok {
+		return
+	}
+	var value bulletins.Issue
+	var err error
+	if archive {
+		value, err = h.service.ArchiveIssue(r.Context(), r.PathValue("issueID"), expected, actor(r))
+	} else {
+		value, err = h.service.RestoreIssue(r.Context(), r.PathValue("issueID"), expected, actor(r))
+	}
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+	w.Header().Set("ETag", fmt.Sprintf(`"%d"`, value.Version))
+	writeData(w, http.StatusOK, value, nil)
+}
 func publicResponse(w http.ResponseWriter, value bulletins.PublicBulletin) {
 	w.Header().Set("Cache-Control", "public, max-age=60, stale-while-revalidate=300")
 	w.Header().Set("ETag", fmt.Sprintf(`"bulletin-%d"`, value.Version))
@@ -279,6 +338,8 @@ func decode(w http.ResponseWriter, r *http.Request, destination any) bool {
 }
 func handleError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, assetclient.ErrUnavailable):
+		writeError(w, http.StatusServiceUnavailable, "asset_service_unavailable", "Asset uploads are unavailable.")
 	case errors.Is(err, bulletins.ErrInvalid):
 		writeError(w, http.StatusBadRequest, "invalid_request", "The request is invalid.")
 	case errors.Is(err, bulletins.ErrNotFound):
@@ -346,7 +407,7 @@ func (w *statusWriter) Write(body []byte) (int, error) {
 
 func accessLog(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/health" || r.URL.Path == "/ready" {
+		if strings.HasPrefix(r.URL.Path, "/health") || r.URL.Path == "/ready" {
 			next.ServeHTTP(w, r)
 			return
 		}

@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 
@@ -66,37 +65,77 @@ func (r *Repository) CreateContent(ctx context.Context, module content.Module, i
 	return item, tx.Commit()
 }
 
-func (r *Repository) ListContent(ctx context.Context, module content.Module, page, size int, status string) (content.Page, error) {
+func (r *Repository) ListContent(ctx context.Context, module content.Module, options content.ListOptions) (content.Page, error) {
 	where := ` WHERE e.module=$1`
 	args := []any{module}
-	if status != "" {
-		args = append(args, status)
+	if options.Status != "" {
+		args = append(args, options.Status)
 		where += fmt.Sprintf(" AND e.status=$%d", len(args))
+	}
+	if options.Query != "" {
+		args = append(args, options.Query)
+		where += fmt.Sprintf(" AND EXISTS(SELECT 1 FROM hhc_web.content_translation search WHERE search.entry_id=e.id AND strpos(lower(search.title),lower($%d))>0)", len(args))
 	}
 	var total int64
 	if err := r.db.QueryRowContext(ctx, `SELECT count(*) FROM hhc_web.content_entry e`+where, args...).Scan(&total); err != nil {
 		return content.Page{}, err
 	}
-	order, join := contentOrdering(module)
-	args = append(args, size, (page-1)*size)
-	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`SELECT e.id::text FROM hhc_web.content_entry e %s %s ORDER BY %s LIMIT $%d OFFSET $%d`, join, where, order, len(args)-1, len(args)), args...)
+	order, join := contentOrdering(module, options.Sort, options.Direction)
+	args = append(args, options.PageSize, (options.Page-1)*options.PageSize)
+	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`
+		WITH selected AS (
+			SELECT e.id,row_number() OVER (ORDER BY %s) AS ordinal
+			FROM hhc_web.content_entry e
+			%s
+			%s
+			ORDER BY %s
+			LIMIT $%d OFFSET $%d
+		)
+		SELECT e.id::text,e.module,e.status,e.version,e.created_by,e.updated_by,e.published_at,e.created_at,e.updated_at,
+			COALESCE(n.slug,''),COALESCE(n.display_date::text,''),COALESCE(n.cover_asset_id,''),COALESCE(n.featured,false),
+			COALESCE(n.public_grant_id,''),COALESCE(n.published_cover_asset_id,''),
+			COALESCE(h.sort_order,0),COALESCE(v.youtube_video_id,''),COALESCE(v.home_eligible,false),
+			p.published_version,t.locale,t.title,t.summary,'' AS body,t.date_label,t.image_alt
+		FROM selected s
+		JOIN hhc_web.content_entry e ON e.id=s.id
+		LEFT JOIN hhc_web.news_item n ON n.entry_id=e.id
+		LEFT JOIN hhc_web.history_event h ON h.entry_id=e.id
+		LEFT JOIN hhc_web.video_item v ON v.entry_id=e.id
+		LEFT JOIN LATERAL (
+			SELECT COALESCE(MAX(version),0) AS published_version
+			FROM hhc_web.public_projection
+			WHERE resource_type=e.module AND resource_id=e.id
+		) p ON true
+		JOIN hhc_web.content_translation t ON t.entry_id=e.id
+		ORDER BY s.ordinal,t.locale`,
+		order, join, where, order, len(args)-1, len(args)), args...)
 	if err != nil {
 		return content.Page{}, err
 	}
 	defer rows.Close()
 	items := []content.Item{}
+	indexes := map[string]int{}
 	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
+		var item content.Item
+		var translation content.Translation
+		if err := rows.Scan(
+			&item.ID, &item.Module, &item.Status, &item.Version, &item.CreatedBy, &item.UpdatedBy, &item.PublishedAt, &item.CreatedAt, &item.UpdatedAt,
+			&item.Slug, &item.DisplayDate, &item.CoverAssetID, &item.Featured, &item.PublicGrantID, &item.PublishedCoverID,
+			&item.SortOrder, &item.YouTubeVideoID, &item.HomeEligible, &item.PublishedVersion,
+			&translation.Locale, &translation.Title, &translation.Summary, &translation.Body, &translation.DateLabel, &translation.ImageAlt,
+		); err != nil {
 			return content.Page{}, err
 		}
-		item, err := loadContent(ctx, r.db, module, id)
-		if err != nil {
-			return content.Page{}, err
+		item.IsPublished = item.PublishedVersion > 0
+		index, exists := indexes[item.ID]
+		if !exists {
+			index = len(items)
+			indexes[item.ID] = index
+			items = append(items, item)
 		}
-		items = append(items, item)
+		items[index].Translations = append(items[index].Translations, translation)
 	}
-	return content.Page{Items: items, Page: page, PageSize: size, Total: total}, rows.Err()
+	return content.Page{Items: items, Page: options.Page, PageSize: options.PageSize, Total: total}, rows.Err()
 }
 
 func (r *Repository) GetContent(ctx context.Context, module content.Module, id string) (content.Item, error) {
@@ -148,6 +187,9 @@ func (r *Repository) PublishContent(ctx context.Context, module content.Module, 
 	}
 	item, err := loadContent(ctx, tx, module, id)
 	if err != nil {
+		return content.Item{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM hhc_web.public_projection WHERE resource_type=$1 AND resource_id=$2`, module, id); err != nil {
 		return content.Item{}, err
 	}
 	for _, translation := range item.Translations {
@@ -280,6 +322,13 @@ func (r *Repository) CompleteContentPublish(ctx context.Context, event publicati
 		return err
 	}
 	defer tx.Rollback()
+	delivered, err := eventDelivered(ctx, tx, event.ID)
+	if err != nil {
+		return err
+	}
+	if delivered {
+		return nil
+	}
 	var status, oldAssetID, oldGrantID string
 	var version int64
 	if err := tx.QueryRowContext(ctx, `
@@ -300,6 +349,9 @@ func (r *Repository) CompleteContentPublish(ctx context.Context, event publicati
 	item.Status = content.StatusPublished
 	item.PublishedAt = &now
 	item.CoverURL = publicURL
+	if _, err := tx.ExecContext(ctx, `DELETE FROM hhc_web.public_projection WHERE resource_type='news' AND resource_id=$1`, item.ID); err != nil {
+		return err
+	}
 	for _, translation := range item.Translations {
 		public := publicContent(item, translation)
 		encoded, err := json.Marshal(public)
@@ -350,6 +402,13 @@ func (r *Repository) CompleteContentUnpublish(ctx context.Context, event publica
 		return err
 	}
 	defer tx.Rollback()
+	delivered, err := eventDelivered(ctx, tx, event.ID)
+	if err != nil {
+		return err
+	}
+	if delivered {
+		return nil
+	}
 	result, err := tx.ExecContext(ctx, `
 		UPDATE hhc_web.content_entry
 		SET status='unpublished',updated_at=$3
@@ -409,8 +468,65 @@ func (r *Repository) RestoreContent(ctx context.Context, module content.Module, 
 	return r.UpdateContent(ctx, module, id, expected, input, actor, now)
 }
 
+func (r *Repository) ArchiveContent(ctx context.Context, module content.Module, id string, expected int64, actor string, now time.Time) (content.Item, error) {
+	return r.changeArchiveStatus(ctx, module, id, expected, actor, content.StatusArchived, now)
+}
+
+func (r *Repository) RestoreArchivedContent(ctx context.Context, module content.Module, id string, expected int64, actor string, now time.Time) (content.Item, error) {
+	return r.changeArchiveStatus(ctx, module, id, expected, actor, content.StatusDraft, now)
+}
+
+func (r *Repository) changeArchiveStatus(ctx context.Context, module content.Module, id string, expected int64, actor, target string, now time.Time) (content.Item, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return content.Item{}, err
+	}
+	defer tx.Rollback()
+
+	current, status, err := lockContent(ctx, tx, module, id)
+	if err != nil {
+		return content.Item{}, err
+	}
+	if current != expected {
+		return content.Item{}, content.ErrPrecondition
+	}
+	if target == content.StatusArchived {
+		if status == content.StatusArchived || status == content.StatusPublishing || status == content.StatusPublished ||
+			status == content.StatusUnpublishing || status == content.StatusUnpublishFailed {
+			return content.Item{}, content.ErrConflict
+		}
+	} else if status != content.StatusArchived {
+		return content.Item{}, content.ErrConflict
+	}
+	hasPublicState, err := hasPublicContentState(ctx, tx, module, id)
+	if err != nil {
+		return content.Item{}, err
+	}
+	if hasPublicState {
+		return content.Item{}, content.ErrConflict
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.content_entry SET status=$2,version=version+1,updated_by=$3,updated_at=$4 WHERE id=$1`, id, target, actor, now); err != nil {
+		return content.Item{}, err
+	}
+	item, err := loadContent(ctx, tx, module, id)
+	if err != nil {
+		return content.Item{}, err
+	}
+	if err := insertRevision(ctx, tx, item, actor, now); err != nil {
+		return content.Item{}, err
+	}
+	return item, tx.Commit()
+}
+
 func (r *Repository) PublicContent(ctx context.Context, module content.Module, locale string, limit int) ([]content.PublicItem, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT payload_json FROM hhc_web.public_projection WHERE resource_type=$1 AND locale=$2`, module, locale)
+	order := "updated_at DESC, resource_id"
+	switch module {
+	case content.ModuleNews:
+		order = "payload_json->>'displayDate' DESC, resource_id"
+	case content.ModuleHistory:
+		order = "(payload_json->>'sortOrder')::integer, resource_id"
+	}
+	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`SELECT payload_json FROM hhc_web.public_projection WHERE resource_type=$1 AND locale=$2 ORDER BY %s LIMIT $3`, order), module, locale, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -427,23 +543,53 @@ func (r *Repository) PublicContent(ctx context.Context, module content.Module, l
 		}
 		values = append(values, value)
 	}
-	switch module {
-	case content.ModuleNews:
-		sort.Slice(values, func(i, j int) bool { return values[i].DisplayDate > values[j].DisplayDate })
-	case content.ModuleHistory:
-		sort.Slice(values, func(i, j int) bool { return values[i].SortOrder < values[j].SortOrder })
-	case content.ModuleVideos:
-		day := time.Now().UTC().Format("2006-01-02")
-		sort.Slice(values, func(i, j int) bool {
-			a := sha256.Sum256([]byte(day + locale + values[i].ID))
-			b := sha256.Sum256([]byte(day + locale + values[j].ID))
-			return string(a[:]) < string(b[:])
-		})
+	return values, rows.Err()
+}
+
+func (r *Repository) PublicNews(ctx context.Context, locale, slug string) (content.PublicItem, string, error) {
+	var payload []byte
+	var etag string
+	err := r.db.QueryRowContext(ctx, `
+		SELECT payload_json,etag
+		FROM hhc_web.public_projection
+		WHERE resource_type='news' AND locale=$1 AND route_path=$2`,
+		locale, "/"+locale+"/news/"+slug).Scan(&payload, &etag)
+	if errors.Is(err, sql.ErrNoRows) {
+		return content.PublicItem{}, "", content.ErrNotFound
 	}
-	if len(values) > limit {
-		values = values[:limit]
+	if err != nil {
+		return content.PublicItem{}, "", err
 	}
-	return values, nil
+	var item content.PublicItem
+	if err := json.Unmarshal(payload, &item); err != nil {
+		return content.PublicItem{}, "", err
+	}
+	return item, etag, nil
+}
+
+func lockContent(ctx context.Context, tx *sql.Tx, module content.Module, id string) (int64, string, error) {
+	var version int64
+	var status string
+	err := tx.QueryRowContext(ctx, `SELECT version,status FROM hhc_web.content_entry WHERE id=$1 AND module=$2 FOR UPDATE`, id, module).Scan(&version, &status)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, "", content.ErrNotFound
+	}
+	return version, status, err
+}
+
+func hasPublicContentState(ctx context.Context, tx *sql.Tx, module content.Module, id string) (bool, error) {
+	var hasProjection bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM hhc_web.public_projection WHERE resource_type=$1 AND resource_id=$2)`, module, id).Scan(&hasProjection); err != nil {
+		return false, err
+	}
+	if module != content.ModuleNews {
+		return hasProjection, nil
+	}
+	var hasGrant bool
+	if err := tx.QueryRowContext(ctx, `SELECT public_grant_id<>'' FROM hhc_web.news_item WHERE entry_id=$1`, id).Scan(&hasGrant); err != nil {
+		return false, err
+	}
+	return hasProjection || hasGrant, nil
 }
 
 type contentQueryer interface {
@@ -496,15 +642,18 @@ func loadContent(ctx context.Context, query contentQueryer, module content.Modul
 	return item, rows.Err()
 }
 
-func contentOrdering(module content.Module) (string, string) {
-	switch module {
-	case content.ModuleNews:
-		return "n.display_date DESC", "JOIN hhc_web.news_item n ON n.entry_id=e.id"
-	case content.ModuleHistory:
-		return "h.sort_order", "JOIN hhc_web.history_event h ON h.entry_id=e.id"
-	default:
-		return "e.updated_at DESC", ""
+func contentOrdering(module content.Module, sort, direction string) (string, string) {
+	column, join := "e.updated_at", ""
+	switch {
+	case module == content.ModuleNews && sort == "displayDate":
+		column, join = "n.display_date", "JOIN hhc_web.news_item n ON n.entry_id=e.id"
+	case module == content.ModuleHistory && sort == "sortOrder":
+		column, join = "h.sort_order", "JOIN hhc_web.history_event h ON h.entry_id=e.id"
 	}
+	if direction != "asc" {
+		direction = "desc"
+	}
+	return column + " " + strings.ToUpper(direction) + ",e.id " + strings.ToUpper(direction), join
 }
 
 func mapContentConflict(err error) error {
