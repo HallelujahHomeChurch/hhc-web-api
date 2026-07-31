@@ -3,6 +3,7 @@ set -euo pipefail
 
 env_file="${HHC_ENV_FILE:-/Users/rayselfs/Projects/hhc/.env.json}"
 host="${HHC_WEB_DB_HOST:-172.16.68.4}"
+runtime_host="${HHC_WEB_RUNTIME_DB_HOST:-hhc-pg.postgres.database.azure.com}"
 port="${HHC_WEB_DB_PORT:-5432}"
 database="${HHC_WEB_DB_NAME:-hhc_web}"
 admin_user="${HHC_WEB_DB_ADMIN_USER:-HHCAdmin}"
@@ -20,6 +21,7 @@ done
 chmod 0600 "$env_file"
 
 echo "host=$host"
+echo "runtime-host=$runtime_host"
 echo "database=$database"
 echo "migration-role=hhc_web_migrate"
 echo "runtime-role=hhc_web"
@@ -44,6 +46,11 @@ else
   runtime_dsn="$(az keyvault secret show --vault-name "$runtime_vault" --name database-url --query value -o tsv --only-show-errors 2>/dev/null || true)"
   if [[ -z "$runtime_dsn" ]]; then
     runtime_dsn="$(az keyvault secret show --vault-name "$legacy_vault" --name hhc-web-database-url --query value -o tsv --only-show-errors)"
+    runtime_dsn="${runtime_dsn/@${host}:/@${runtime_host}:}"
+    [[ "$runtime_dsn" == *"@${runtime_host}:"* ]] || {
+      echo "runtime database URL has an unexpected format" >&2
+      exit 1
+    }
     secret_file="$(mktemp)"
     chmod 0600 "$secret_file"
     printf '%s' "$runtime_dsn" >"$secret_file"
@@ -55,7 +62,7 @@ else
   migration_dsn="$(az keyvault secret show --vault-name "$migration_vault" --name database-url --query value -o tsv --only-show-errors 2>/dev/null || true)"
   if [[ -n "$migration_dsn" ]]; then
     prefix="postgres://hhc_web_migrate:"
-    suffix="@${host}:${port}/${database}?sslmode=${sslmode}"
+    suffix="@${runtime_host}:${port}/${database}?sslmode=${sslmode}"
     migration_password="${migration_dsn#"$prefix"}"
     migration_password="${migration_password%"$suffix"}"
     [[ "$migration_dsn" == "$prefix"*"$suffix" && "$migration_password" =~ ^[0-9a-f]{48}$ ]] || {
@@ -64,7 +71,7 @@ else
     }
   else
     migration_password="$(openssl rand -hex 24)"
-    migration_dsn="postgres://hhc_web_migrate:${migration_password}@${host}:${port}/${database}?sslmode=${sslmode}"
+    migration_dsn="postgres://hhc_web_migrate:${migration_password}@${runtime_host}:${port}/${database}?sslmode=${sslmode}"
     secret_file="$(mktemp)"
     chmod 0600 "$secret_file"
     printf '%s' "$migration_dsn" >"$secret_file"

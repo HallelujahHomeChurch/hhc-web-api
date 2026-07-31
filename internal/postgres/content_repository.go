@@ -526,7 +526,16 @@ func (r *Repository) PublicContent(ctx context.Context, module content.Module, l
 	case content.ModuleHistory:
 		order = "(payload_json->>'sortOrder')::integer, resource_id"
 	}
-	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`SELECT payload_json FROM hhc_web.public_projection WHERE resource_type=$1 AND locale=$2 ORDER BY %s LIMIT $3`, order), module, locale, limit)
+	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`
+		SELECT payload_json
+		FROM (
+			SELECT DISTINCT ON (resource_id) resource_id,payload_json,updated_at
+			FROM hhc_web.public_projection
+			WHERE resource_type=$1 AND locale IN ($2,'zh-Hant')
+			ORDER BY resource_id,CASE WHEN locale=$2 THEN 0 ELSE 1 END
+		) localized
+		ORDER BY %s
+		LIMIT $3`, order), module, locale, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -552,8 +561,11 @@ func (r *Repository) PublicNews(ctx context.Context, locale, slug string) (conte
 	err := r.db.QueryRowContext(ctx, `
 		SELECT payload_json,etag
 		FROM hhc_web.public_projection
-		WHERE resource_type='news' AND locale=$1 AND route_path=$2`,
-		locale, "/"+locale+"/news/"+slug).Scan(&payload, &etag)
+		WHERE resource_type='news'
+			AND locale IN ($1,'zh-Hant')
+			AND route_path IN ('/' || $1 || '/news/' || $2,'/zh-Hant/news/' || $2)
+		ORDER BY CASE WHEN locale=$1 THEN 0 ELSE 1 END
+		LIMIT 1`, locale, slug).Scan(&payload, &etag)
 	if errors.Is(err, sql.ErrNoRows) {
 		return content.PublicItem{}, "", content.ErrNotFound
 	}

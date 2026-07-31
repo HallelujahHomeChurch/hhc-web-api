@@ -21,6 +21,7 @@ printf '{"PG_ADMIN_PASSWORD":"admin-secret"}\n' >"$fixture"
 
 output="$(HHC_ENV_FILE="$fixture" HHC_WEB_BOOTSTRAP_DRY_RUN=1 ./scripts/bootstrap-migration-role.sh)"
 grep -q '^database=hhc_web$' <<<"$output"
+grep -q '^runtime-host=hhc-pg.postgres.database.azure.com$' <<<"$output"
 grep -q '^migration-role=hhc_web_migrate$' <<<"$output"
 grep -q '^runtime-role=hhc_web$' <<<"$output"
 grep -q '^runtime-key-vault=alive-hhw-runtime-kv$' <<<"$output"
