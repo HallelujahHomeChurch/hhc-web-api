@@ -1,10 +1,13 @@
 package httpapi
 
 import (
+	"crypto/sha256"
 	"errors"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/assetclient"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/content"
@@ -52,7 +55,9 @@ func (h *Handler) publicHome(w http.ResponseWriter, r *http.Request) {
 		handleContentError(w, err)
 		return
 	}
-	writeData(w, http.StatusOK, map[string]any{"news": featuredNews(news, 3), "videos": eligibleVideos(videos, 3)}, nil)
+	seed := time.Now().UTC().Format("2006-01-02") + ":" + requestedLocale
+	w.Header().Set("Cache-Control", "public, max-age=60, stale-while-revalidate=300")
+	writeData(w, http.StatusOK, map[string]any{"news": featuredNews(news, 3), "videos": eligibleVideos(videos, 3, seed)}, nil)
 }
 
 func featuredNews(values []content.PublicItem, limit int) []content.PublicItem {
@@ -77,15 +82,23 @@ func featuredNews(values []content.PublicItem, limit int) []content.PublicItem {
 	}
 	return featured
 }
-func eligibleVideos(values []content.PublicItem, limit int) []content.PublicItem {
-	eligible := make([]content.PublicItem, 0, limit)
+func eligibleVideos(values []content.PublicItem, limit int, seed string) []content.PublicItem {
+	eligible := make([]content.PublicItem, 0, len(values))
 	for _, value := range values {
 		if value.HomeEligible {
 			eligible = append(eligible, value)
 		}
-		if len(eligible) == limit {
-			break
+	}
+	sort.Slice(eligible, func(i, j int) bool {
+		left := sha256.Sum256([]byte(seed + ":" + eligible[i].ID))
+		right := sha256.Sum256([]byte(seed + ":" + eligible[j].ID))
+		if left == right {
+			return eligible[i].ID < eligible[j].ID
 		}
+		return string(left[:]) < string(right[:])
+	})
+	if len(eligible) > limit {
+		eligible = eligible[:limit]
 	}
 	return eligible
 }

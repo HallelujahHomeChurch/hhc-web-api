@@ -5,9 +5,11 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 var youtubeID = regexp.MustCompile(`^[A-Za-z0-9_-]{11}$`)
+var contentSlug = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 
 type Service struct {
 	repository Repository
@@ -92,19 +94,24 @@ func validLocale(locale string) bool {
 	return locale == "zh-Hant" || locale == "zh-Hans" || locale == "en"
 }
 func valid(module Module, input WriteInput) bool {
-	if !validModule(module) || len(input.Translations) == 0 {
+	if !validModule(module) || len(input.Translations) == 0 || len(input.Translations) > 3 {
 		return false
 	}
 	seen := map[string]bool{}
 	for _, value := range input.Translations {
-		if !validLocale(value.Locale) || seen[value.Locale] || value.Title == "" {
+		if !validLocale(value.Locale) || seen[value.Locale] ||
+			!validText(value.Title, 1, 200) ||
+			!validText(value.Summary, 0, 500) ||
+			!validText(value.Body, 0, 100_000) ||
+			!validText(value.DateLabel, 0, 100) ||
+			!validText(value.ImageAlt, 0, 300) {
 			return false
 		}
 		seen[value.Locale] = true
 	}
 	switch module {
 	case ModuleNews:
-		return input.Slug != "" && input.DisplayDate != ""
+		return len(input.Slug) <= 120 && contentSlug.MatchString(input.Slug) && validDate(input.DisplayDate) && len(input.CoverAssetID) <= 200
 	case ModuleHistory:
 		return input.SortOrder > 0
 	case ModuleVideos:
@@ -117,7 +124,30 @@ func publishable(item Item) bool {
 	if !valid(item.Module, WriteInput{Slug: item.Slug, DisplayDate: item.DisplayDate, SortOrder: item.SortOrder, YouTubeVideoID: item.YouTubeVideoID, CoverAssetID: item.CoverAssetID, Translations: item.Translations}) {
 		return false
 	}
+	for _, value := range item.Translations {
+		switch item.Module {
+		case ModuleNews:
+			if value.Summary == "" && value.Body == "" {
+				return false
+			}
+		case ModuleHistory:
+			if value.DateLabel == "" || value.Body == "" {
+				return false
+			}
+		}
+	}
 	return item.Module != ModuleNews || item.CoverAssetID != ""
+}
+func validDate(value string) bool {
+	parsed, err := time.Parse("2006-01-02", value)
+	return err == nil && parsed.Format("2006-01-02") == value
+}
+func validText(value string, min, max int) bool {
+	if !utf8.ValidString(value) {
+		return false
+	}
+	length := utf8.RuneCountInString(value)
+	return length >= min && length <= max
 }
 func normalize(input WriteInput) WriteInput {
 	input.Slug = strings.TrimSpace(input.Slug)

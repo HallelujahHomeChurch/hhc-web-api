@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 
@@ -430,7 +429,14 @@ func (r *Repository) RestoreContent(ctx context.Context, module content.Module, 
 }
 
 func (r *Repository) PublicContent(ctx context.Context, module content.Module, locale string, limit int) ([]content.PublicItem, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT payload_json FROM hhc_web.public_projection WHERE resource_type=$1 AND locale=$2`, module, locale)
+	order := "updated_at DESC, resource_id"
+	switch module {
+	case content.ModuleNews:
+		order = "payload_json->>'displayDate' DESC, resource_id"
+	case content.ModuleHistory:
+		order = "(payload_json->>'sortOrder')::integer, resource_id"
+	}
+	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`SELECT payload_json FROM hhc_web.public_projection WHERE resource_type=$1 AND locale=$2 ORDER BY %s LIMIT $3`, order), module, locale, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -446,22 +452,6 @@ func (r *Repository) PublicContent(ctx context.Context, module content.Module, l
 			return nil, err
 		}
 		values = append(values, value)
-	}
-	switch module {
-	case content.ModuleNews:
-		sort.Slice(values, func(i, j int) bool { return values[i].DisplayDate > values[j].DisplayDate })
-	case content.ModuleHistory:
-		sort.Slice(values, func(i, j int) bool { return values[i].SortOrder < values[j].SortOrder })
-	case content.ModuleVideos:
-		day := time.Now().UTC().Format("2006-01-02")
-		sort.Slice(values, func(i, j int) bool {
-			a := sha256.Sum256([]byte(day + locale + values[i].ID))
-			b := sha256.Sum256([]byte(day + locale + values[j].ID))
-			return string(a[:]) < string(b[:])
-		})
-	}
-	if len(values) > limit {
-		values = values[:limit]
 	}
 	return values, nil
 }

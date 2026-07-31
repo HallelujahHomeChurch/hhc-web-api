@@ -62,7 +62,7 @@ paths:
     get:
       operationId: listAdminBulletins
       security: [{ bearerAuth: [] }]
-      x-required-scopes: [cms:read]
+      x-required-scopes: ['cms:read']
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PageSize'
@@ -78,7 +78,7 @@ paths:
     post:
       operationId: createBulletinIssue
       security: [{ bearerAuth: [] }]
-      x-required-scopes: [cms:write]
+      x-required-scopes: ['cms:write']
       parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
       requestBody:
         required: true
@@ -92,7 +92,7 @@ paths:
     get:
       operationId: getAdminBulletin
       security: [{ bearerAuth: [] }]
-      x-required-scopes: [cms:read]
+      x-required-scopes: ['cms:read']
       parameters: [{ $ref: '#/components/parameters/IssueID' }]
       responses:
         '200': { $ref: '#/components/responses/BulletinIssue' }
@@ -101,7 +101,7 @@ paths:
     post:
       operationId: createBulletinUploadSession
       security: [{ bearerAuth: [] }]
-      x-required-scopes: [cms:write, assets:write]
+      x-required-scopes: ['cms:write', 'assets:write']
       parameters:
         - $ref: '#/components/parameters/IssueID'
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -120,7 +120,7 @@ paths:
     post:
       operationId: completeBulletinUpload
       security: [{ bearerAuth: [] }]
-      x-required-scopes: [cms:write, assets:write]
+      x-required-scopes: ['cms:write', 'assets:write']
       parameters:
         - $ref: '#/components/parameters/IssueID'
         - { name: assetId, in: path, required: true, schema: { type: string } }
@@ -137,7 +137,7 @@ paths:
     post:
       operationId: publishBulletin
       security: [{ bearerAuth: [] }]
-      x-required-scopes: [cms:publish]
+      x-required-scopes: ['cms:publish']
       parameters:
         - $ref: '#/components/parameters/IssueID'
         - $ref: '#/components/parameters/IfMatch'
@@ -153,7 +153,7 @@ paths:
     post:
       operationId: unpublishBulletin
       security: [{ bearerAuth: [] }]
-      x-required-scopes: [cms:publish]
+      x-required-scopes: ['cms:publish']
       parameters:
         - $ref: '#/components/parameters/IssueID'
         - $ref: '#/components/parameters/IfMatch'
@@ -165,7 +165,7 @@ paths:
     get:
       operationId: listAdminContent
       security: [{ bearerAuth: [] }]
-      x-required-scopes: [cms:read]
+      x-required-scopes: ['cms:read']
       parameters:
         - $ref: '#/components/parameters/ContentModule'
         - $ref: '#/components/parameters/Page'
@@ -180,7 +180,7 @@ paths:
     post:
       operationId: createContent
       security: [{ bearerAuth: [] }]
-      x-required-scopes: [cms:write]
+      x-required-scopes: ['cms:write']
       parameters:
         - $ref: '#/components/parameters/ContentModule'
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -192,7 +192,7 @@ paths:
     get:
       operationId: getAdminContent
       security: [{ bearerAuth: [] }]
-      x-required-scopes: [cms:read]
+      x-required-scopes: ['cms:read']
       parameters:
         - $ref: '#/components/parameters/ContentModule'
         - $ref: '#/components/parameters/ContentID'
@@ -202,7 +202,7 @@ paths:
     put:
       operationId: updateContent
       security: [{ bearerAuth: [] }]
-      x-required-scopes: [cms:write]
+      x-required-scopes: ['cms:write']
       parameters:
         - $ref: '#/components/parameters/ContentModule'
         - $ref: '#/components/parameters/ContentID'
@@ -215,7 +215,7 @@ paths:
     post:
       operationId: publishContent
       security: [{ bearerAuth: [] }]
-      x-required-scopes: [cms:publish]
+      x-required-scopes: ['cms:publish']
       parameters:
         - $ref: '#/components/parameters/ContentModule'
         - $ref: '#/components/parameters/ContentID'
@@ -227,7 +227,7 @@ paths:
     post:
       operationId: unpublishContent
       security: [{ bearerAuth: [] }]
-      x-required-scopes: [cms:publish]
+      x-required-scopes: ['cms:publish']
       parameters:
         - $ref: '#/components/parameters/ContentModule'
         - $ref: '#/components/parameters/ContentID'
@@ -238,7 +238,7 @@ paths:
     get:
       operationId: listContentRevisions
       security: [{ bearerAuth: [] }]
-      x-required-scopes: [cms:read]
+      x-required-scopes: ['cms:read']
       parameters:
         - $ref: '#/components/parameters/ContentModule'
         - $ref: '#/components/parameters/ContentID'
@@ -252,7 +252,7 @@ paths:
     post:
       operationId: restoreContentRevision
       security: [{ bearerAuth: [] }]
-      x-required-scopes: [cms:write]
+      x-required-scopes: ['cms:write']
       parameters:
         - $ref: '#/components/parameters/ContentModule'
         - $ref: '#/components/parameters/ContentID'
@@ -264,7 +264,7 @@ paths:
     post:
       operationId: createNewsCoverUpload
       security: [{ bearerAuth: [] }]
-      x-required-scopes: [cms:write, assets:write]
+      x-required-scopes: ['cms:write', 'assets:write']
       parameters:
         - $ref: '#/components/parameters/ContentID'
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -283,7 +283,7 @@ paths:
     get:
       operationId: getNewsCoverStatus
       security: [{ bearerAuth: [] }]
-      x-required-scopes: [cms:read]
+      x-required-scopes: ['cms:read']
       parameters:
         - $ref: '#/components/parameters/ContentID'
         - { name: assetId, in: path, required: true, schema: { type: string } }
@@ -297,7 +297,7 @@ paths:
     post:
       operationId: completeNewsCoverUpload
       security: [{ bearerAuth: [] }]
-      x-required-scopes: [cms:write, assets:write]
+      x-required-scopes: ['cms:write', 'assets:write']
       parameters:
         - $ref: '#/components/parameters/ContentID'
         - { name: assetId, in: path, required: true, schema: { type: string } }
@@ -540,26 +540,27 @@ components:
       required: [locale, title]
       properties:
         locale: { $ref: '#/components/schemas/Locale' }
-        title: { type: string, minLength: 1 }
-        summary: { type: string }
-        body: { type: string }
-        dateLabel: { type: string }
-        imageAlt: { type: string }
+        title: { type: string, minLength: 1, maxLength: 200 }
+        summary: { type: string, maxLength: 500 }
+        body: { type: string, maxLength: 100000 }
+        dateLabel: { type: string, maxLength: 100 }
+        imageAlt: { type: string, maxLength: 300 }
     ContentWriteInput:
       type: object
       additionalProperties: false
       required: [translations]
       properties:
-        slug: { type: string }
+        slug: { type: string, minLength: 1, maxLength: 120, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$' }
         displayDate: { type: string, format: date }
         sortOrder: { type: integer, minimum: 1 }
         youtubeVideoId: { type: string, pattern: '^[A-Za-z0-9_-]{11}$' }
-        coverAssetId: { type: string }
+        coverAssetId: { type: string, maxLength: 200 }
         featured: { type: boolean }
         homeEligible: { type: boolean }
         translations:
           type: array
           minItems: 1
+          maxItems: 3
           items: { $ref: '#/components/schemas/ContentTranslation' }
     ContentItem:
       allOf:

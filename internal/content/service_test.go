@@ -3,6 +3,7 @@ package content
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -26,6 +27,49 @@ func TestServiceValidatesTypedModules(t *testing.T) {
 				t.Fatalf("err=%v", err)
 			}
 		})
+	}
+}
+
+func TestServiceRejectsMalformedAndOversizedContent(t *testing.T) {
+	service := NewService(&serviceRepository{}, time.Now)
+	tests := []WriteInput{
+		{Slug: "Invalid Slug", DisplayDate: "2026-07-13", Translations: translations()},
+		{Slug: "announcement", DisplayDate: "2026-02-30", Translations: translations()},
+		{Slug: strings.Repeat("a", 121), DisplayDate: "2026-07-13", Translations: translations()},
+		{Slug: "announcement", DisplayDate: "2026-07-13", Translations: []Translation{{Locale: "en", Title: strings.Repeat("a", 201)}}},
+	}
+	for index, input := range tests {
+		if _, err := service.CreateContent(context.Background(), ModuleNews, input, "user-1", "key-1"); !errors.Is(err, ErrInvalid) {
+			t.Fatalf("case %d err=%v", index, err)
+		}
+	}
+}
+
+func TestPublishRequiresPublicContent(t *testing.T) {
+	repo := &serviceRepository{}
+	service := NewService(repo, time.Now)
+
+	repo.item = Item{
+		ID: "news-1", Module: ModuleNews, Status: StatusDraft, Version: 1,
+		Slug: "announcement", DisplayDate: "2026-07-13", CoverAssetID: "asset-1",
+		Translations: []Translation{{Locale: "zh-Hant", Title: "標題"}},
+	}
+	if _, err := service.PublishContent(context.Background(), ModuleNews, repo.item.ID, 1, "user-1"); !errors.Is(err, ErrNotPublishable) {
+		t.Fatalf("news error=%v", err)
+	}
+
+	repo.item = Item{
+		ID: "history-1", Module: ModuleHistory, Status: StatusDraft, Version: 1, SortOrder: 1,
+		Translations: []Translation{{Locale: "zh-Hant", Title: "標題"}},
+	}
+	if _, err := service.PublishContent(context.Background(), ModuleHistory, repo.item.ID, 1, "user-1"); !errors.Is(err, ErrNotPublishable) {
+		t.Fatalf("history error=%v", err)
+	}
+
+	repo.item.Translations[0].DateLabel = "2026"
+	repo.item.Translations[0].Body = "Milestone"
+	if _, err := service.PublishContent(context.Background(), ModuleHistory, repo.item.ID, 1, "user-1"); err != nil {
+		t.Fatal(err)
 	}
 }
 

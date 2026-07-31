@@ -5,6 +5,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 	"time"
 
@@ -45,8 +46,35 @@ func TestPublicContentReadsProjectionWithoutAuthentication(t *testing.T) {
 	}
 }
 
+func TestPublicHomeIsCacheableAndSelectsVideosDeterministically(t *testing.T) {
+	values := []content.PublicItem{
+		{ID: "1", HomeEligible: true},
+		{ID: "2", HomeEligible: false},
+		{ID: "3", HomeEligible: true},
+		{ID: "4", HomeEligible: true},
+		{ID: "5", HomeEligible: true},
+	}
+	first := eligibleVideos(values, 3, "2026-07-31:zh-Hant")
+	second := eligibleVideos(values, 3, "2026-07-31:zh-Hant")
+	if len(first) != 3 || !reflect.DeepEqual(first, second) {
+		t.Fatalf("first=%#v second=%#v", first, second)
+	}
+	for _, value := range first {
+		if !value.HomeEligible {
+			t.Fatalf("ineligible video selected: %#v", value)
+		}
+	}
+
+	repo := &contentRepository{public: values}
+	response := httptest.NewRecorder()
+	contentTestHandler(repo).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/home?locale=zh-Hant", nil))
+	if response.Code != http.StatusOK || response.Header().Get("Cache-Control") == "" {
+		t.Fatalf("status=%d cache=%q", response.Code, response.Header().Get("Cache-Control"))
+	}
+}
+
 func TestNewsPublishQueuesOwnedCleanProcessedCover(t *testing.T) {
-	repo := &contentRepository{item: content.Item{ID: "news-1", Module: content.ModuleNews, Status: content.StatusDraft, Version: 2, Slug: "news", DisplayDate: "2026-07-13", CoverAssetID: "asset-1", Translations: []content.Translation{{Locale: "zh-Hant", Title: "消息"}}}}
+	repo := &contentRepository{item: content.Item{ID: "news-1", Module: content.ModuleNews, Status: content.StatusDraft, Version: 2, Slug: "news", DisplayDate: "2026-07-13", CoverAssetID: "asset-1", Translations: []content.Translation{{Locale: "zh-Hant", Title: "消息", Summary: "消息摘要"}}}}
 	uploads := &apiUploads{completed: assetclient.Asset{ID: "asset-1", Namespace: "cms.news.cover", OwnerService: "hhc-web-api", OwnerType: "news", OwnerID: "news-1", UploadStatus: "completed", ScanStatus: "clean", ProcessingStatus: "ready"}}
 	request := httptest.NewRequest(http.MethodPost, "/api/admin/content/news/news-1/publish", nil)
 	trusted(request, "cms:publish")
