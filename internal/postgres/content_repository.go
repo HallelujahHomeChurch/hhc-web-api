@@ -150,6 +150,9 @@ func (r *Repository) PublishContent(ctx context.Context, module content.Module, 
 	if err != nil {
 		return content.Item{}, err
 	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM hhc_web.public_projection WHERE resource_type=$1 AND resource_id=$2`, module, id); err != nil {
+		return content.Item{}, err
+	}
 	for _, translation := range item.Translations {
 		public := publicContent(item, translation)
 		payload, _ := json.Marshal(public)
@@ -280,6 +283,13 @@ func (r *Repository) CompleteContentPublish(ctx context.Context, event publicati
 		return err
 	}
 	defer tx.Rollback()
+	delivered, err := eventDelivered(ctx, tx, event.ID)
+	if err != nil {
+		return err
+	}
+	if delivered {
+		return nil
+	}
 	var status, oldAssetID, oldGrantID string
 	var version int64
 	if err := tx.QueryRowContext(ctx, `
@@ -300,6 +310,9 @@ func (r *Repository) CompleteContentPublish(ctx context.Context, event publicati
 	item.Status = content.StatusPublished
 	item.PublishedAt = &now
 	item.CoverURL = publicURL
+	if _, err := tx.ExecContext(ctx, `DELETE FROM hhc_web.public_projection WHERE resource_type='news' AND resource_id=$1`, item.ID); err != nil {
+		return err
+	}
 	for _, translation := range item.Translations {
 		public := publicContent(item, translation)
 		encoded, err := json.Marshal(public)
@@ -350,6 +363,13 @@ func (r *Repository) CompleteContentUnpublish(ctx context.Context, event publica
 		return err
 	}
 	defer tx.Rollback()
+	delivered, err := eventDelivered(ctx, tx, event.ID)
+	if err != nil {
+		return err
+	}
+	if delivered {
+		return nil
+	}
 	result, err := tx.ExecContext(ctx, `
 		UPDATE hhc_web.content_entry
 		SET status='unpublished',updated_at=$3

@@ -69,6 +69,9 @@ func TestRepositoryPublishWaitsForAssetWorkflow(t *testing.T) {
 	if err := repository.CompletePublish(ctx, event, "grant-1", "https://www.alive.org.tw/api/assets/public/asset-1", now.Add(time.Minute)); err != nil {
 		t.Fatal(err)
 	}
+	if err := repository.CompletePublish(ctx, event, "grant-1", "https://www.alive.org.tw/api/assets/public/asset-1", now.Add(time.Minute)); err != nil {
+		t.Fatalf("replayed publish completion: %v", err)
+	}
 	public, err := repository.GetPublicLatest(ctx, "zh-Hant")
 	if err != nil {
 		t.Fatal(err)
@@ -135,12 +138,59 @@ func TestRepositoryPublishWaitsForAssetWorkflow(t *testing.T) {
 	if err := repository.CompleteUnpublish(ctx, unpublish, now.Add(7*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
+	if err := repository.CompleteUnpublish(ctx, unpublish, now.Add(7*time.Minute)); err != nil {
+		t.Fatalf("replayed unpublish completion: %v", err)
+	}
 	unpublished, err := repository.GetIssue(ctx, current.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if unpublished.Status != "unpublished" || unpublished.Versions[0].Status != "unpublished" {
 		t.Fatalf("unpublished = %#v", unpublished)
+	}
+}
+
+func TestBulletinRejectsCrossLocaleMutationDuringPublication(t *testing.T) {
+	databaseURL := os.Getenv("HHW_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("HHW_TEST_DATABASE_URL is not configured")
+	}
+	db, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	if err := migrations.Run(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `TRUNCATE hhc_web.outbox_event,hhc_web.publication_workflow,hhc_web.public_projection,hhc_web.bulletin_version,hhc_web.bulletin_issue CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+	repository := New(db)
+	now := time.Now().UTC()
+	issue, err := repository.CreateIssue(ctx, "2026-08-02", "user-1", "issue-cross-locale", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	issue, err = repository.PutVersion(ctx, issue.ID, issue.Version, bulletins.PutVersionInput{
+		Locale: "zh-Hant", Title: "週報", PDFAssetID: "asset-1", PDFFileName: "weekly.pdf",
+	}, "user-1", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.StartPublish(ctx, issue.ID, "zh-Hant", issue.Version, "user-1", now); err != nil {
+		t.Fatal(err)
+	}
+	current, err := repository.GetIssue(ctx, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = repository.PutVersion(ctx, issue.ID, current.Version, bulletins.PutVersionInput{
+		Locale: "en", Title: "Weekly", PDFAssetID: "asset-2", PDFFileName: "weekly-en.pdf",
+	}, "user-1", now)
+	if !errors.Is(err, bulletins.ErrNotPublishable) {
+		t.Fatalf("cross-locale mutation error=%v", err)
 	}
 }
 
@@ -189,6 +239,9 @@ func TestNewsPublicationKeepsLiveProjectionUntilReplacement(t *testing.T) {
 	}
 	if err := repository.CompleteContentPublish(ctx, event, "grant-1", "/api/assets/public/asset-1", now.Add(2*time.Minute)); err != nil {
 		t.Fatal(err)
+	}
+	if err := repository.CompleteContentPublish(ctx, event, "grant-1", "/api/assets/public/asset-1", now.Add(2*time.Minute)); err != nil {
+		t.Fatalf("replayed news publish completion: %v", err)
 	}
 	public, err := repository.PublicContent(ctx, content.ModuleNews, "zh-Hant", 20)
 	if err != nil || len(public) != 1 || public[0].ImageURL != "/api/assets/public/asset-1/large" {
@@ -248,9 +301,63 @@ func TestNewsPublicationKeepsLiveProjectionUntilReplacement(t *testing.T) {
 	if err := repository.CompleteContentUnpublish(ctx, unpublish, now.Add(8*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
+	if err := repository.CompleteContentUnpublish(ctx, unpublish, now.Add(8*time.Minute)); err != nil {
+		t.Fatalf("replayed news unpublish completion: %v", err)
+	}
 	item, err = repository.GetContent(ctx, content.ModuleNews, item.ID)
 	if err != nil || item.IsPublished || item.Status != content.StatusUnpublished {
 		t.Fatalf("unpublished=%#v err=%v", item, err)
+	}
+}
+
+func TestContentRepublishRemovesDeletedLocaleProjection(t *testing.T) {
+	databaseURL := os.Getenv("HHW_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("HHW_TEST_DATABASE_URL is not configured")
+	}
+	db, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	if err := migrations.Run(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `TRUNCATE hhc_web.public_projection,hhc_web.content_revision,hhc_web.content_translation,hhc_web.video_item,hhc_web.content_entry CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+	repository := New(db)
+	now := time.Now().UTC()
+	input := content.WriteInput{
+		YouTubeVideoID: "K3ckFWeSQ-k",
+		Translations: []content.Translation{
+			{Locale: "zh-Hant", Title: "影片"},
+			{Locale: "en", Title: "Video"},
+		},
+	}
+	item, err := repository.CreateContent(ctx, content.ModuleVideos, input, "user-1", "video-locales", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, err = repository.PublishContent(ctx, content.ModuleVideos, item.ID, item.Version, "user-1", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.Translations = input.Translations[:1]
+	item, err = repository.UpdateContent(ctx, content.ModuleVideos, item.ID, item.Version, input, "user-1", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.PublishContent(ctx, content.ModuleVideos, item.ID, item.Version, "user-1", now); err != nil {
+		t.Fatal(err)
+	}
+	english, err := repository.PublicContent(ctx, content.ModuleVideos, "en", 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(english) != 0 {
+		t.Fatalf("stale English projection=%#v", english)
 	}
 }
 
