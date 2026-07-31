@@ -66,7 +66,8 @@ func (w *Worker) processNext(ctx context.Context) (bool, error) {
 		return true, nil
 	}
 	var terminal terminalError
-	if errors.As(err, &terminal) || event.Attempts >= w.maxAttempts {
+	var compensation compensationError
+	if errors.As(err, &terminal) || (event.Attempts >= w.maxAttempts && !errors.As(err, &compensation)) {
 		return true, w.repository.Fail(ctx, event, safeError(err), now)
 	}
 	backoff := time.Duration(1<<min(event.Attempts-1, 5)) * 5 * time.Second
@@ -94,13 +95,7 @@ func (w *Worker) publish(ctx context.Context, event Event, now time.Time) error 
 		return err
 	}
 	if err := w.repository.CompletePublish(ctx, event, grant.ID, w.assets.PublicURL(payload.AssetID), now); err != nil {
-		if !errors.Is(err, ErrStalePublication) {
-			return err
-		}
-		if revokeErr := w.assets.RevokeGrant(ctx, payload.AssetID, grant.ID); revokeErr != nil && !errors.Is(revokeErr, ErrGrantNotFound) {
-			return revokeErr
-		}
-		return terminalError{err}
+		return w.handlePublishFailure(ctx, event, payload.AssetID, grant.ID, err)
 	}
 	return nil
 }
@@ -140,15 +135,28 @@ func (w *Worker) publishNews(ctx context.Context, event Event, now time.Time) er
 		return err
 	}
 	if err := w.repository.CompleteContentPublish(ctx, event, grant.ID, w.assets.PublicURL(payload.AssetID), now); err != nil {
-		if !errors.Is(err, ErrStalePublication) {
-			return err
-		}
-		if revokeErr := w.assets.RevokeGrant(ctx, payload.AssetID, grant.ID); revokeErr != nil && !errors.Is(revokeErr, ErrGrantNotFound) {
-			return revokeErr
-		}
-		return terminalError{err}
+		return w.handlePublishFailure(ctx, event, payload.AssetID, grant.ID, err)
 	}
 	return nil
+}
+
+func (w *Worker) handlePublishFailure(ctx context.Context, event Event, assetID, grantID string, cause error) error {
+	if !errors.Is(cause, ErrStalePublication) {
+		if event.Attempts < w.maxAttempts {
+			return cause
+		}
+		delivered, err := w.repository.EventDelivered(ctx, event.ID)
+		if err != nil {
+			return compensationError{fmt.Errorf("confirm publication before compensation: %w", err)}
+		}
+		if delivered {
+			return nil
+		}
+	}
+	if err := w.assets.RevokeGrant(ctx, assetID, grantID); err != nil && !errors.Is(err, ErrGrantNotFound) {
+		return compensationError{fmt.Errorf("revoke failed publication grant: %w", err)}
+	}
+	return terminalError{cause}
 }
 
 func (w *Worker) unpublish(ctx context.Context, event Event, now time.Time) error {
@@ -160,7 +168,7 @@ func (w *Worker) unpublish(ctx context.Context, event Event, now time.Time) erro
 		return terminalError{fmt.Errorf("published grant id is missing")}
 	}
 	if err := w.assets.RevokeGrant(ctx, payload.AssetID, payload.GrantID); err != nil && !errors.Is(err, ErrGrantNotFound) {
-		return err
+		return compensationError{err}
 	}
 	return w.repository.CompleteUnpublish(ctx, event, now)
 }
@@ -174,7 +182,7 @@ func (w *Worker) unpublishNews(ctx context.Context, event Event, now time.Time) 
 		return terminalError{fmt.Errorf("published grant id is missing")}
 	}
 	if err := w.assets.RevokeGrant(ctx, payload.AssetID, payload.GrantID); err != nil && !errors.Is(err, ErrGrantNotFound) {
-		return err
+		return compensationError{err}
 	}
 	return w.repository.CompleteContentUnpublish(ctx, event, now)
 }
@@ -188,7 +196,7 @@ func (w *Worker) revokeGrant(ctx context.Context, event Event, now time.Time) er
 		return terminalError{fmt.Errorf("asset grant reference is missing")}
 	}
 	if err := w.assets.RevokeGrant(ctx, payload.AssetID, payload.GrantID); err != nil && !errors.Is(err, ErrGrantNotFound) {
-		return err
+		return compensationError{err}
 	}
 	return w.repository.Complete(ctx, event.ID, now)
 }
@@ -203,16 +211,17 @@ func (w *Worker) retire(ctx context.Context, event Event, now time.Time) error {
 	}
 	if payload.GrantID != "" {
 		if err := w.assets.RevokeGrant(ctx, payload.AssetID, payload.GrantID); err != nil && !errors.Is(err, ErrGrantNotFound) {
-			return err
+			return compensationError{err}
 		}
 	}
 	if err := w.assets.Delete(ctx, payload.AssetID); err != nil && !errors.Is(err, ErrGrantNotFound) {
-		return err
+		return compensationError{err}
 	}
 	return w.repository.Complete(ctx, event.ID, now)
 }
 
 type terminalError struct{ error }
+type compensationError struct{ error }
 
 var ErrGrantNotFound = errors.New("grant not found")
 

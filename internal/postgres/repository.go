@@ -563,6 +563,12 @@ func (r *Repository) Complete(ctx context.Context, id string, now time.Time) err
 	return err
 }
 
+func (r *Repository) EventDelivered(ctx context.Context, id string) (bool, error) {
+	var delivered bool
+	err := r.db.QueryRowContext(ctx, `SELECT status='delivered' FROM hhc_web.outbox_event WHERE id=$1`, id).Scan(&delivered)
+	return delivered, err
+}
+
 func eventDelivered(ctx context.Context, tx *sql.Tx, id string) (bool, error) {
 	var status string
 	if err := tx.QueryRowContext(ctx, `SELECT status FROM hhc_web.outbox_event WHERE id=$1 FOR UPDATE`, id).Scan(&status); err != nil {

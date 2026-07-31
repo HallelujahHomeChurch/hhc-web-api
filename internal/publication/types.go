@@ -45,6 +45,7 @@ type Repository interface {
 	Claim(context.Context, time.Time, time.Duration) (Event, bool, error)
 	Retry(context.Context, string, string, time.Time, time.Time) error
 	Fail(context.Context, Event, string, time.Time) error
+	EventDelivered(context.Context, string) (bool, error)
 	CompletePublish(context.Context, Event, string, string, time.Time) error
 	CompleteUnpublish(context.Context, Event, time.Time) error
 	CompleteContentPublish(context.Context, Event, string, string, time.Time) error
