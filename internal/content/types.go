@@ -117,5 +117,7 @@ type Repository interface {
 	UnpublishContent(context.Context, Module, string, int64, string, time.Time) (Item, error)
 	ContentRevisions(context.Context, Module, string) ([]Revision, error)
 	RestoreContent(context.Context, Module, string, int64, int64, string, time.Time) (Item, error)
+	ArchiveContent(context.Context, Module, string, int64, string, time.Time) (Item, error)
+	RestoreArchivedContent(context.Context, Module, string, int64, string, time.Time) (Item, error)
 	PublicContent(context.Context, Module, string, int) ([]PublicItem, error)
 }

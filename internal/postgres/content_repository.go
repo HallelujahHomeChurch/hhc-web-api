@@ -428,6 +428,56 @@ func (r *Repository) RestoreContent(ctx context.Context, module content.Module, 
 	return r.UpdateContent(ctx, module, id, expected, input, actor, now)
 }
 
+func (r *Repository) ArchiveContent(ctx context.Context, module content.Module, id string, expected int64, actor string, now time.Time) (content.Item, error) {
+	return r.changeArchiveStatus(ctx, module, id, expected, actor, content.StatusArchived, now)
+}
+
+func (r *Repository) RestoreArchivedContent(ctx context.Context, module content.Module, id string, expected int64, actor string, now time.Time) (content.Item, error) {
+	return r.changeArchiveStatus(ctx, module, id, expected, actor, content.StatusDraft, now)
+}
+
+func (r *Repository) changeArchiveStatus(ctx context.Context, module content.Module, id string, expected int64, actor, target string, now time.Time) (content.Item, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return content.Item{}, err
+	}
+	defer tx.Rollback()
+
+	current, status, err := lockContent(ctx, tx, module, id)
+	if err != nil {
+		return content.Item{}, err
+	}
+	if current != expected {
+		return content.Item{}, content.ErrPrecondition
+	}
+	if target == content.StatusArchived {
+		if status == content.StatusArchived || status == content.StatusPublishing || status == content.StatusPublished ||
+			status == content.StatusUnpublishing || status == content.StatusUnpublishFailed {
+			return content.Item{}, content.ErrConflict
+		}
+	} else if status != content.StatusArchived {
+		return content.Item{}, content.ErrConflict
+	}
+	hasPublicState, err := hasPublicContentState(ctx, tx, module, id)
+	if err != nil {
+		return content.Item{}, err
+	}
+	if hasPublicState {
+		return content.Item{}, content.ErrConflict
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.content_entry SET status=$2,version=version+1,updated_by=$3,updated_at=$4 WHERE id=$1`, id, target, actor, now); err != nil {
+		return content.Item{}, err
+	}
+	item, err := loadContent(ctx, tx, module, id)
+	if err != nil {
+		return content.Item{}, err
+	}
+	if err := insertRevision(ctx, tx, item, actor, now); err != nil {
+		return content.Item{}, err
+	}
+	return item, tx.Commit()
+}
+
 func (r *Repository) PublicContent(ctx context.Context, module content.Module, locale string, limit int) ([]content.PublicItem, error) {
 	order := "updated_at DESC, resource_id"
 	switch module {
@@ -454,6 +504,31 @@ func (r *Repository) PublicContent(ctx context.Context, module content.Module, l
 		values = append(values, value)
 	}
 	return values, nil
+}
+
+func lockContent(ctx context.Context, tx *sql.Tx, module content.Module, id string) (int64, string, error) {
+	var version int64
+	var status string
+	err := tx.QueryRowContext(ctx, `SELECT version,status FROM hhc_web.content_entry WHERE id=$1 AND module=$2 FOR UPDATE`, id, module).Scan(&version, &status)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, "", content.ErrNotFound
+	}
+	return version, status, err
+}
+
+func hasPublicContentState(ctx context.Context, tx *sql.Tx, module content.Module, id string) (bool, error) {
+	var hasProjection bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM hhc_web.public_projection WHERE resource_type=$1 AND resource_id=$2)`, module, id).Scan(&hasProjection); err != nil {
+		return false, err
+	}
+	if module != content.ModuleNews {
+		return hasProjection, nil
+	}
+	var hasGrant bool
+	if err := tx.QueryRowContext(ctx, `SELECT public_grant_id<>'' FROM hhc_web.news_item WHERE entry_id=$1`, id).Scan(&hasGrant); err != nil {
+		return false, err
+	}
+	return hasProjection || hasGrant, nil
 }
 
 type contentQueryer interface {

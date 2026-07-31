@@ -77,6 +77,18 @@ func (s *Service) RestoreContent(ctx context.Context, module Module, id string, 
 	}
 	return s.repository.RestoreContent(ctx, module, id, revision, expected, actor, s.now().UTC())
 }
+func (s *Service) ArchiveContent(ctx context.Context, module Module, id string, expected int64, actor string) (Item, error) {
+	if !validModule(module) || expected < 1 {
+		return Item{}, ErrInvalid
+	}
+	return s.repository.ArchiveContent(ctx, module, id, expected, actor, s.now().UTC())
+}
+func (s *Service) RestoreArchivedContent(ctx context.Context, module Module, id string, expected int64, actor string) (Item, error) {
+	if !validModule(module) || expected < 1 {
+		return Item{}, ErrInvalid
+	}
+	return s.repository.RestoreArchivedContent(ctx, module, id, expected, actor, s.now().UTC())
+}
 func (s *Service) PublicContent(ctx context.Context, module Module, locale string, limit int) ([]PublicItem, error) {
 	if !validModule(module) || !validLocale(locale) {
 		return nil, ErrInvalid

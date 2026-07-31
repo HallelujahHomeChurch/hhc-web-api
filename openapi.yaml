@@ -234,6 +234,32 @@ paths:
         - $ref: '#/components/parameters/IfMatch'
       responses:
         '200': { $ref: '#/components/responses/ContentItem' }
+  /admin/content/{module}/{contentId}/archive:
+    post:
+      operationId: archiveContent
+      security: [{ bearerAuth: [] }]
+      x-required-scopes: ['cms:write']
+      parameters:
+        - $ref: '#/components/parameters/ContentModule'
+        - $ref: '#/components/parameters/ContentID'
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '200': { $ref: '#/components/responses/ContentItem' }
+        '409': { $ref: '#/components/responses/Error' }
+        '412': { $ref: '#/components/responses/Error' }
+  /admin/content/{module}/{contentId}/restore:
+    post:
+      operationId: restoreArchivedContent
+      security: [{ bearerAuth: [] }]
+      x-required-scopes: ['cms:write']
+      parameters:
+        - $ref: '#/components/parameters/ContentModule'
+        - $ref: '#/components/parameters/ContentID'
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '200': { $ref: '#/components/responses/ContentItem' }
+        '409': { $ref: '#/components/responses/Error' }
+        '412': { $ref: '#/components/responses/Error' }
   /admin/content/{module}/{contentId}/revisions:
     get:
       operationId: listContentRevisions

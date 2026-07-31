@@ -422,4 +422,52 @@ func TestContentRepublishRemovesDeletedLocaleProjection(t *testing.T) {
 	}
 }
 
+func TestContentArchiveRequiresUnpublishedStateAndRestoresDraft(t *testing.T) {
+	databaseURL := os.Getenv("HHW_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("HHW_TEST_DATABASE_URL is not configured")
+	}
+	db, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	if err := migrations.Run(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `TRUNCATE hhc_web.public_projection,hhc_web.content_revision,hhc_web.content_translation,hhc_web.video_item,hhc_web.content_entry CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+
+	repository := New(db)
+	now := time.Now().UTC()
+	item, err := repository.CreateContent(ctx, content.ModuleVideos, content.WriteInput{
+		YouTubeVideoID: "K3ckFWeSQ-k",
+		Translations:   []content.Translation{{Locale: "zh-Hant", Title: "影片"}},
+	}, "user-1", "video-archive", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, err = repository.PublishContent(ctx, content.ModuleVideos, item.ID, item.Version, "user-1", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.ArchiveContent(ctx, content.ModuleVideos, item.ID, item.Version, "user-1", now); !errors.Is(err, content.ErrConflict) {
+		t.Fatalf("published archive error=%v", err)
+	}
+	item, err = repository.UnpublishContent(ctx, content.ModuleVideos, item.ID, item.Version, "user-1", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, err = repository.ArchiveContent(ctx, content.ModuleVideos, item.ID, item.Version, "user-1", now)
+	if err != nil || item.Status != content.StatusArchived {
+		t.Fatalf("archived=%#v err=%v", item, err)
+	}
+	item, err = repository.RestoreArchivedContent(ctx, content.ModuleVideos, item.ID, item.Version, "user-1", now)
+	if err != nil || item.Status != content.StatusDraft {
+		t.Fatalf("restored=%#v err=%v", item, err)
+	}
+}
+
 var _ publication.Repository = (*Repository)(nil)

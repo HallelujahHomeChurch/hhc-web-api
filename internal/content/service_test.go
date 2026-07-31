@@ -102,6 +102,31 @@ func TestServiceAcceptsTypedDrafts(t *testing.T) {
 	}
 }
 
+func TestServiceArchivesAndRestoresDraftContent(t *testing.T) {
+	repo := &serviceRepository{
+		item: Item{ID: "item-1", Module: ModuleVideos, Status: StatusDraft, Version: 2},
+	}
+	service := NewService(repo, func() time.Time {
+		return time.Date(2026, 7, 31, 0, 0, 0, 0, time.UTC)
+	})
+
+	archived, err := service.ArchiveContent(context.Background(), ModuleVideos, repo.item.ID, 2, "user-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if archived.Status != StatusArchived || archived.Version != 3 {
+		t.Fatalf("archived=%#v", archived)
+	}
+
+	restored, err := service.RestoreArchivedContent(context.Background(), ModuleVideos, repo.item.ID, 3, "user-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restored.Status != StatusDraft || restored.Version != 4 {
+		t.Fatalf("restored=%#v", restored)
+	}
+}
+
 func translations() []Translation {
 	return []Translation{{Locale: "zh-Hant", Title: "標題", Summary: "摘要", Body: "內容", DateLabel: "2026年"}}
 }
@@ -132,6 +157,16 @@ func (r *serviceRepository) ContentRevisions(context.Context, Module, string) ([
 	return nil, nil
 }
 func (r *serviceRepository) RestoreContent(context.Context, Module, string, int64, int64, string, time.Time) (Item, error) {
+	return r.item, nil
+}
+func (r *serviceRepository) ArchiveContent(context.Context, Module, string, int64, string, time.Time) (Item, error) {
+	r.item.Status = StatusArchived
+	r.item.Version++
+	return r.item, nil
+}
+func (r *serviceRepository) RestoreArchivedContent(context.Context, Module, string, int64, string, time.Time) (Item, error) {
+	r.item.Status = StatusDraft
+	r.item.Version++
 	return r.item, nil
 }
 func (r *serviceRepository) PublicContent(context.Context, Module, string, int) ([]PublicItem, error) {

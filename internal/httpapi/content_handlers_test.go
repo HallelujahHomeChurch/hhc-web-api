@@ -133,6 +133,31 @@ func TestNewsUnpublishDoesNotDependOnCurrentDraftCover(t *testing.T) {
 	}
 }
 
+func TestContentArchiveAndRestoreRequireWriteScopeAndVersion(t *testing.T) {
+	repo := &contentRepository{
+		item: content.Item{ID: "video-1", Module: content.ModuleVideos, Status: content.StatusDraft, Version: 2},
+	}
+	handler := contentTestHandler(repo)
+
+	archive := httptest.NewRequest(http.MethodPost, "/api/admin/content/videos/video-1/archive", nil)
+	trusted(archive, "cms:write")
+	archive.Header.Set("If-Match", `"2"`)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, archive)
+	if response.Code != http.StatusOK || repo.item.Status != content.StatusArchived || repo.item.Version != 3 {
+		t.Fatalf("status=%d item=%#v body=%s", response.Code, repo.item, response.Body.String())
+	}
+
+	restore := httptest.NewRequest(http.MethodPost, "/api/admin/content/videos/video-1/restore", nil)
+	trusted(restore, "cms:write")
+	restore.Header.Set("If-Match", `"3"`)
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, restore)
+	if response.Code != http.StatusOK || repo.item.Status != content.StatusDraft || repo.item.Version != 4 {
+		t.Fatalf("status=%d item=%#v body=%s", response.Code, repo.item, response.Body.String())
+	}
+}
+
 func contentTestHandler(repo content.Repository) http.Handler {
 	return contentTestHandlerWithAssets(repo, nil)
 }
@@ -171,6 +196,16 @@ func (r *contentRepository) ContentRevisions(context.Context, content.Module, st
 	return nil, nil
 }
 func (r *contentRepository) RestoreContent(context.Context, content.Module, string, int64, int64, string, time.Time) (content.Item, error) {
+	return r.item, nil
+}
+func (r *contentRepository) ArchiveContent(context.Context, content.Module, string, int64, string, time.Time) (content.Item, error) {
+	r.item.Status = content.StatusArchived
+	r.item.Version++
+	return r.item, nil
+}
+func (r *contentRepository) RestoreArchivedContent(context.Context, content.Module, string, int64, string, time.Time) (content.Item, error) {
+	r.item.Status = content.StatusDraft
+	r.item.Version++
 	return r.item, nil
 }
 func (r *contentRepository) PublicContent(context.Context, content.Module, string, int) ([]content.PublicItem, error) {
