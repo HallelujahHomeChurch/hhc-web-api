@@ -158,6 +158,16 @@ func TestContentArchiveAndRestoreRequireWriteScopeAndVersion(t *testing.T) {
 	}
 }
 
+func TestContentListRejectsInvalidFilters(t *testing.T) {
+	request := httptest.NewRequest(http.MethodGet, "/api/admin/content/news?status=unknown", nil)
+	trusted(request, "cms:read")
+	response := httptest.NewRecorder()
+	contentTestHandler(&contentRepository{}).ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
 func contentTestHandler(repo content.Repository) http.Handler {
 	return contentTestHandlerWithAssets(repo, nil)
 }
@@ -175,7 +185,7 @@ func (r *contentRepository) CreateContent(_ context.Context, module content.Modu
 	r.item = content.Item{ID: "item-1", Module: module, Status: content.StatusDraft, Version: 1, YouTubeVideoID: input.YouTubeVideoID, HomeEligible: input.HomeEligible, Translations: input.Translations, CreatedBy: actor, UpdatedBy: actor, CreatedAt: now, UpdatedAt: now}
 	return r.item, nil
 }
-func (r *contentRepository) ListContent(context.Context, content.Module, int, int, string) (content.Page, error) {
+func (r *contentRepository) ListContent(context.Context, content.Module, content.ListOptions) (content.Page, error) {
 	return content.Page{}, nil
 }
 func (r *contentRepository) GetContent(context.Context, content.Module, string) (content.Item, error) {

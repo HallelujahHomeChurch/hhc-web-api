@@ -470,4 +470,55 @@ func TestContentArchiveRequiresUnpublishedStateAndRestoresDraft(t *testing.T) {
 	}
 }
 
+func TestContentListSearchesTitlesAndUsesStableTypedSorting(t *testing.T) {
+	databaseURL := os.Getenv("HHW_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("HHW_TEST_DATABASE_URL is not configured")
+	}
+	db, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	if err := migrations.Run(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `TRUNCATE hhc_web.public_projection,hhc_web.content_revision,hhc_web.content_translation,hhc_web.news_item,hhc_web.content_entry CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+
+	repository := New(db)
+	now := time.Now().UTC()
+	values := []content.WriteInput{
+		{Slug: "alpha-old", DisplayDate: "2026-07-01", Translations: []content.Translation{{Locale: "zh-Hant", Title: "Alpha 舊消息"}, {Locale: "en", Title: "Alpha old"}}},
+		{Slug: "beta", DisplayDate: "2026-07-02", Translations: []content.Translation{{Locale: "zh-Hant", Title: "Beta 消息"}}},
+		{Slug: "alpha-new", DisplayDate: "2026-07-03", Translations: []content.Translation{{Locale: "zh-Hant", Title: "最新 ALPHA"}}},
+	}
+	for index, input := range values {
+		if _, err := repository.CreateContent(ctx, content.ModuleNews, input, "user-1", input.Slug, now.Add(time.Duration(index)*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	page, err := repository.ListContent(ctx, content.ModuleNews, content.ListOptions{
+		Query: "alpha", Status: content.StatusDraft, Sort: "displayDate", Direction: "asc", Page: 1, PageSize: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Total != 2 || len(page.Items) != 1 || page.Items[0].Slug != "alpha-old" || len(page.Items[0].Translations) != 2 {
+		t.Fatalf("page=%#v", page)
+	}
+	page, err = repository.ListContent(ctx, content.ModuleNews, content.ListOptions{
+		Query: "alpha", Status: content.StatusDraft, Sort: "displayDate", Direction: "asc", Page: 2, PageSize: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Items) != 1 || page.Items[0].Slug != "alpha-new" {
+		t.Fatalf("page=%#v", page)
+	}
+}
+
 var _ publication.Repository = (*Repository)(nil)

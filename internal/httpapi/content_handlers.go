@@ -107,7 +107,14 @@ func eligibleVideos(values []content.PublicItem, limit int, seed string) []conte
 
 func (h *Handler) adminContentList(w http.ResponseWriter, r *http.Request) {
 	page, size := pagination(r)
-	value, err := h.content.ListContent(r.Context(), content.Module(r.PathValue("module")), page, size, r.URL.Query().Get("status"))
+	value, err := h.content.ListContent(r.Context(), content.Module(r.PathValue("module")), content.ListOptions{
+		Query:     r.URL.Query().Get("q"),
+		Status:    r.URL.Query().Get("status"),
+		Sort:      r.URL.Query().Get("sort"),
+		Direction: r.URL.Query().Get("direction"),
+		Page:      page,
+		PageSize:  size,
+	})
 	if err != nil {
 		handleContentError(w, err)
 		return

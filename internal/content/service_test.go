@@ -127,17 +127,53 @@ func TestServiceArchivesAndRestoresDraftContent(t *testing.T) {
 	}
 }
 
+func TestServiceValidatesAndNormalizesContentList(t *testing.T) {
+	repo := &serviceRepository{}
+	service := NewService(repo, time.Now)
+
+	if _, err := service.ListContent(context.Background(), ModuleNews, ListOptions{
+		Query: strings.Repeat("a", 201),
+	}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("oversized query err=%v", err)
+	}
+	if _, err := service.ListContent(context.Background(), ModuleNews, ListOptions{
+		Status: "unknown",
+	}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("invalid status err=%v", err)
+	}
+	if _, err := service.ListContent(context.Background(), ModuleVideos, ListOptions{
+		Sort: "displayDate",
+	}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("invalid module sort err=%v", err)
+	}
+
+	if _, err := service.ListContent(context.Background(), ModuleHistory, ListOptions{
+		Query: "  milestone  ",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if repo.listOptions.Query != "milestone" || repo.listOptions.Page != 1 ||
+		repo.listOptions.PageSize != 20 || repo.listOptions.Sort != "sortOrder" ||
+		repo.listOptions.Direction != "asc" {
+		t.Fatalf("options=%#v", repo.listOptions)
+	}
+}
+
 func translations() []Translation {
 	return []Translation{{Locale: "zh-Hant", Title: "標題", Summary: "摘要", Body: "內容", DateLabel: "2026年"}}
 }
 
-type serviceRepository struct{ item Item }
+type serviceRepository struct {
+	item        Item
+	listOptions ListOptions
+}
 
 func (r *serviceRepository) CreateContent(_ context.Context, module Module, input WriteInput, actor, key string, now time.Time) (Item, error) {
 	r.item = Item{ID: "item-1", Module: module, Status: StatusDraft, Version: 1, Slug: input.Slug, DisplayDate: input.DisplayDate, SortOrder: input.SortOrder, YouTubeVideoID: input.YouTubeVideoID, CoverAssetID: input.CoverAssetID, Featured: input.Featured, HomeEligible: input.HomeEligible, Translations: input.Translations}
 	return r.item, nil
 }
-func (r *serviceRepository) ListContent(context.Context, Module, int, int, string) (Page, error) {
+func (r *serviceRepository) ListContent(_ context.Context, _ Module, options ListOptions) (Page, error) {
+	r.listOptions = options
 	return Page{}, nil
 }
 func (r *serviceRepository) GetContent(context.Context, Module, string) (Item, error) {

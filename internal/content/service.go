@@ -27,17 +27,45 @@ func (s *Service) CreateContent(ctx context.Context, module Module, input WriteI
 	}
 	return s.repository.CreateContent(ctx, module, input, actor, key, s.now().UTC())
 }
-func (s *Service) ListContent(ctx context.Context, module Module, page, size int, status string) (Page, error) {
+func (s *Service) ListContent(ctx context.Context, module Module, options ListOptions) (Page, error) {
 	if !validModule(module) {
 		return Page{}, ErrInvalid
 	}
-	if page < 1 {
-		page = 1
+	options.Query = strings.TrimSpace(options.Query)
+	if utf8.RuneCountInString(options.Query) > 200 || !validStatus(options.Status) {
+		return Page{}, ErrInvalid
 	}
-	if size < 1 || size > 100 {
-		size = 20
+	if options.Sort == "" {
+		switch module {
+		case ModuleNews:
+			options.Sort = "displayDate"
+		case ModuleHistory:
+			options.Sort = "sortOrder"
+		default:
+			options.Sort = "updatedAt"
+		}
 	}
-	return s.repository.ListContent(ctx, module, page, size, status)
+	if options.Sort != "updatedAt" &&
+		!(module == ModuleNews && options.Sort == "displayDate") &&
+		!(module == ModuleHistory && options.Sort == "sortOrder") {
+		return Page{}, ErrInvalid
+	}
+	if options.Direction == "" {
+		options.Direction = "desc"
+		if options.Sort == "sortOrder" {
+			options.Direction = "asc"
+		}
+	}
+	if options.Direction != "asc" && options.Direction != "desc" {
+		return Page{}, ErrInvalid
+	}
+	if options.Page < 1 {
+		options.Page = 1
+	}
+	if options.PageSize < 1 || options.PageSize > 100 {
+		options.PageSize = 20
+	}
+	return s.repository.ListContent(ctx, module, options)
 }
 func (s *Service) GetContent(ctx context.Context, module Module, id string) (Item, error) {
 	if !validModule(module) {
@@ -104,6 +132,15 @@ func validModule(module Module) bool {
 }
 func validLocale(locale string) bool {
 	return locale == "zh-Hant" || locale == "zh-Hans" || locale == "en"
+}
+func validStatus(status string) bool {
+	switch status {
+	case "", StatusDraft, StatusPublishing, StatusPublished, StatusPublishFailed,
+		StatusUnpublishing, StatusUnpublishFailed, StatusUnpublished, StatusArchived:
+		return true
+	default:
+		return false
+	}
 }
 func valid(module Module, input WriteInput) bool {
 	if !validModule(module) || len(input.Translations) == 0 || len(input.Translations) > 3 {

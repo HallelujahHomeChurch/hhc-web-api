@@ -65,37 +65,77 @@ func (r *Repository) CreateContent(ctx context.Context, module content.Module, i
 	return item, tx.Commit()
 }
 
-func (r *Repository) ListContent(ctx context.Context, module content.Module, page, size int, status string) (content.Page, error) {
+func (r *Repository) ListContent(ctx context.Context, module content.Module, options content.ListOptions) (content.Page, error) {
 	where := ` WHERE e.module=$1`
 	args := []any{module}
-	if status != "" {
-		args = append(args, status)
+	if options.Status != "" {
+		args = append(args, options.Status)
 		where += fmt.Sprintf(" AND e.status=$%d", len(args))
+	}
+	if options.Query != "" {
+		args = append(args, options.Query)
+		where += fmt.Sprintf(" AND EXISTS(SELECT 1 FROM hhc_web.content_translation search WHERE search.entry_id=e.id AND strpos(lower(search.title),lower($%d))>0)", len(args))
 	}
 	var total int64
 	if err := r.db.QueryRowContext(ctx, `SELECT count(*) FROM hhc_web.content_entry e`+where, args...).Scan(&total); err != nil {
 		return content.Page{}, err
 	}
-	order, join := contentOrdering(module)
-	args = append(args, size, (page-1)*size)
-	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`SELECT e.id::text FROM hhc_web.content_entry e %s %s ORDER BY %s LIMIT $%d OFFSET $%d`, join, where, order, len(args)-1, len(args)), args...)
+	order, join := contentOrdering(module, options.Sort, options.Direction)
+	args = append(args, options.PageSize, (options.Page-1)*options.PageSize)
+	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`
+		WITH selected AS (
+			SELECT e.id,row_number() OVER (ORDER BY %s) AS ordinal
+			FROM hhc_web.content_entry e
+			%s
+			%s
+			ORDER BY %s
+			LIMIT $%d OFFSET $%d
+		)
+		SELECT e.id::text,e.module,e.status,e.version,e.created_by,e.updated_by,e.published_at,e.created_at,e.updated_at,
+			COALESCE(n.slug,''),COALESCE(n.display_date::text,''),COALESCE(n.cover_asset_id,''),COALESCE(n.featured,false),
+			COALESCE(n.public_grant_id,''),COALESCE(n.published_cover_asset_id,''),
+			COALESCE(h.sort_order,0),COALESCE(v.youtube_video_id,''),COALESCE(v.home_eligible,false),
+			p.published_version,t.locale,t.title,t.summary,t.body,t.date_label,t.image_alt
+		FROM selected s
+		JOIN hhc_web.content_entry e ON e.id=s.id
+		LEFT JOIN hhc_web.news_item n ON n.entry_id=e.id
+		LEFT JOIN hhc_web.history_event h ON h.entry_id=e.id
+		LEFT JOIN hhc_web.video_item v ON v.entry_id=e.id
+		LEFT JOIN LATERAL (
+			SELECT COALESCE(MAX(version),0) AS published_version
+			FROM hhc_web.public_projection
+			WHERE resource_type=e.module AND resource_id=e.id
+		) p ON true
+		JOIN hhc_web.content_translation t ON t.entry_id=e.id
+		ORDER BY s.ordinal,t.locale`,
+		order, join, where, order, len(args)-1, len(args)), args...)
 	if err != nil {
 		return content.Page{}, err
 	}
 	defer rows.Close()
 	items := []content.Item{}
+	indexes := map[string]int{}
 	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
+		var item content.Item
+		var translation content.Translation
+		if err := rows.Scan(
+			&item.ID, &item.Module, &item.Status, &item.Version, &item.CreatedBy, &item.UpdatedBy, &item.PublishedAt, &item.CreatedAt, &item.UpdatedAt,
+			&item.Slug, &item.DisplayDate, &item.CoverAssetID, &item.Featured, &item.PublicGrantID, &item.PublishedCoverID,
+			&item.SortOrder, &item.YouTubeVideoID, &item.HomeEligible, &item.PublishedVersion,
+			&translation.Locale, &translation.Title, &translation.Summary, &translation.Body, &translation.DateLabel, &translation.ImageAlt,
+		); err != nil {
 			return content.Page{}, err
 		}
-		item, err := loadContent(ctx, r.db, module, id)
-		if err != nil {
-			return content.Page{}, err
+		item.IsPublished = item.PublishedVersion > 0
+		index, exists := indexes[item.ID]
+		if !exists {
+			index = len(items)
+			indexes[item.ID] = index
+			items = append(items, item)
 		}
-		items = append(items, item)
+		items[index].Translations = append(items[index].Translations, translation)
 	}
-	return content.Page{Items: items, Page: page, PageSize: size, Total: total}, rows.Err()
+	return content.Page{Items: items, Page: options.Page, PageSize: options.PageSize, Total: total}, rows.Err()
 }
 
 func (r *Repository) GetContent(ctx context.Context, module content.Module, id string) (content.Item, error) {
@@ -503,7 +543,7 @@ func (r *Repository) PublicContent(ctx context.Context, module content.Module, l
 		}
 		values = append(values, value)
 	}
-	return values, nil
+	return values, rows.Err()
 }
 
 func lockContent(ctx context.Context, tx *sql.Tx, module content.Module, id string) (int64, string, error) {
@@ -581,15 +621,18 @@ func loadContent(ctx context.Context, query contentQueryer, module content.Modul
 	return item, rows.Err()
 }
 
-func contentOrdering(module content.Module) (string, string) {
-	switch module {
-	case content.ModuleNews:
-		return "n.display_date DESC", "JOIN hhc_web.news_item n ON n.entry_id=e.id"
-	case content.ModuleHistory:
-		return "h.sort_order", "JOIN hhc_web.history_event h ON h.entry_id=e.id"
-	default:
-		return "e.updated_at DESC", ""
+func contentOrdering(module content.Module, sort, direction string) (string, string) {
+	column, join := "e.updated_at", ""
+	switch {
+	case module == content.ModuleNews && sort == "displayDate":
+		column, join = "n.display_date", "JOIN hhc_web.news_item n ON n.entry_id=e.id"
+	case module == content.ModuleHistory && sort == "sortOrder":
+		column, join = "h.sort_order", "JOIN hhc_web.history_event h ON h.entry_id=e.id"
 	}
+	if direction != "asc" {
+		direction = "desc"
+	}
+	return column + " " + strings.ToUpper(direction) + ",e.id " + strings.ToUpper(direction), join
 }
 
 func mapContentConflict(err error) error {
