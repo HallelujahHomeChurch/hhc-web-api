@@ -55,16 +55,25 @@ func TestPublicNewsDetailUsesProjectionETag(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/api/news/announcement?locale=zh-Hant", nil)
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
-	if response.Code != http.StatusOK || response.Header().Get("ETag") != `"news-etag"` {
+	if response.Code != http.StatusOK || response.Header().Get("ETag") != `"news-etag"` ||
+		response.Header().Get("Cache-Control") != "public, no-cache" {
 		t.Fatalf("status=%d etag=%q body=%s", response.Code, response.Header().Get("ETag"), response.Body.String())
 	}
 
 	request = httptest.NewRequest(http.MethodGet, "/api/news/announcement?locale=zh-Hant", nil)
-	request.Header.Set("If-None-Match", `"news-etag"`)
+	request.Header.Set("If-None-Match", `"other", W/"news-etag"`)
 	response = httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusNotModified || response.Body.Len() != 0 {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+
+	request = httptest.NewRequest(http.MethodGet, "/api/news/announcement?locale=zh-Hant", nil)
+	request.Header.Set("If-None-Match", "*")
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusNotModified {
+		t.Fatalf("wildcard status=%d", response.Code)
 	}
 
 	repo.publicNewsErr = content.ErrNotFound

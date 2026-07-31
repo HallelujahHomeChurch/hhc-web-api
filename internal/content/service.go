@@ -59,6 +59,9 @@ func (s *Service) ListContent(ctx context.Context, module Module, options ListOp
 	if options.Direction != "asc" && options.Direction != "desc" {
 		return Page{}, ErrInvalid
 	}
+	if options.Page > 10_000 {
+		return Page{}, ErrInvalid
+	}
 	if options.Page < 1 {
 		options.Page = 1
 	}
@@ -127,7 +130,7 @@ func (s *Service) PublicContent(ctx context.Context, module Module, locale strin
 	return s.repository.PublicContent(ctx, module, locale, limit)
 }
 func (s *Service) PublicNews(ctx context.Context, locale, slug string) (PublicItem, string, error) {
-	if !validLocale(locale) || !contentSlug.MatchString(slug) {
+	if !validLocale(locale) || len(slug) > 120 || !contentSlug.MatchString(slug) {
 		return PublicItem{}, "", ErrInvalid
 	}
 	return s.repository.PublicNews(ctx, locale, slug)

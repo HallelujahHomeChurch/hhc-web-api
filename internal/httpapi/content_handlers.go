@@ -44,9 +44,9 @@ func (h *Handler) publicNews(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	etag = `"` + etag + `"`
-	w.Header().Set("Cache-Control", "public, max-age=300, stale-while-revalidate=600")
+	w.Header().Set("Cache-Control", "public, no-cache")
 	w.Header().Set("ETag", etag)
-	if r.Header.Get("If-None-Match") == etag {
+	if etagMatches(r.Header.Get("If-None-Match"), etag) {
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}
@@ -60,7 +60,7 @@ func (h *Handler) publicContent(module content.Module, limit int) http.HandlerFu
 			handleContentError(w, err)
 			return
 		}
-		w.Header().Set("Cache-Control", "public, max-age=60, stale-while-revalidate=300")
+		w.Header().Set("Cache-Control", "public, max-age=30, must-revalidate")
 		writeData(w, http.StatusOK, values, nil)
 	}
 }
@@ -78,8 +78,19 @@ func (h *Handler) publicHome(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	seed := time.Now().UTC().Format("2006-01-02") + ":" + requestedLocale
-	w.Header().Set("Cache-Control", "public, max-age=60, stale-while-revalidate=300")
+	w.Header().Set("Cache-Control", "public, max-age=30, must-revalidate")
 	writeData(w, http.StatusOK, map[string]any{"news": featuredNews(news, 3), "videos": eligibleVideos(videos, 3, seed)}, nil)
+}
+
+func etagMatches(header, target string) bool {
+	target = strings.TrimPrefix(target, "W/")
+	for _, candidate := range strings.Split(header, ",") {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "*" || strings.TrimPrefix(candidate, "W/") == target {
+			return true
+		}
+	}
+	return false
 }
 
 func featuredNews(values []content.PublicItem, limit int) []content.PublicItem {

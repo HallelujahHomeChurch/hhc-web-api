@@ -146,6 +146,11 @@ func TestServiceValidatesAndNormalizesContentList(t *testing.T) {
 	}); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("invalid module sort err=%v", err)
 	}
+	if _, err := service.ListContent(context.Background(), ModuleNews, ListOptions{
+		Page: 10_001,
+	}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("oversized page err=%v", err)
+	}
 
 	if _, err := service.ListContent(context.Background(), ModuleHistory, ListOptions{
 		Query: "  milestone  ",
@@ -163,6 +168,9 @@ func TestServiceRejectsInvalidPublicNewsSlug(t *testing.T) {
 	service := NewService(&serviceRepository{}, time.Now)
 	if _, _, err := service.PublicNews(context.Background(), "zh-Hant", "Invalid Slug"); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("err=%v", err)
+	}
+	if _, _, err := service.PublicNews(context.Background(), "zh-Hant", strings.Repeat("a", 121)); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("oversized slug err=%v", err)
 	}
 }
 

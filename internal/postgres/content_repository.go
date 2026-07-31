@@ -95,7 +95,7 @@ func (r *Repository) ListContent(ctx context.Context, module content.Module, opt
 			COALESCE(n.slug,''),COALESCE(n.display_date::text,''),COALESCE(n.cover_asset_id,''),COALESCE(n.featured,false),
 			COALESCE(n.public_grant_id,''),COALESCE(n.published_cover_asset_id,''),
 			COALESCE(h.sort_order,0),COALESCE(v.youtube_video_id,''),COALESCE(v.home_eligible,false),
-			p.published_version,t.locale,t.title,t.summary,t.body,t.date_label,t.image_alt
+			p.published_version,t.locale,t.title,t.summary,'' AS body,t.date_label,t.image_alt
 		FROM selected s
 		JOIN hhc_web.content_entry e ON e.id=s.id
 		LEFT JOIN hhc_web.news_item n ON n.entry_id=e.id

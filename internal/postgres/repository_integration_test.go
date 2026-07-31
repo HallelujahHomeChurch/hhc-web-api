@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -474,13 +475,81 @@ func TestContentArchiveRequiresUnpublishedStateAndRestoresDraft(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := db.ExecContext(ctx, `UPDATE hhc_web.content_entry SET status='unpublish_failed' WHERE id=$1`, item.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.ArchiveContent(ctx, content.ModuleVideos, item.ID, item.Version, "user-1", now); !errors.Is(err, content.ErrConflict) {
+		t.Fatalf("unpublish_failed archive error=%v", err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE hhc_web.content_entry SET status='unpublished' WHERE id=$1`, item.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.ArchiveContent(ctx, content.ModuleVideos, item.ID, item.Version-1, "user-1", now); !errors.Is(err, content.ErrPrecondition) {
+		t.Fatalf("stale archive error=%v", err)
+	}
 	item, err = repository.ArchiveContent(ctx, content.ModuleVideos, item.ID, item.Version, "user-1", now)
 	if err != nil || item.Status != content.StatusArchived {
 		t.Fatalf("archived=%#v err=%v", item, err)
 	}
+	if _, err := repository.RestoreArchivedContent(ctx, content.ModuleVideos, item.ID, item.Version-1, "user-1", now); !errors.Is(err, content.ErrPrecondition) {
+		t.Fatalf("stale restore error=%v", err)
+	}
 	item, err = repository.RestoreArchivedContent(ctx, content.ModuleVideos, item.ID, item.Version, "user-1", now)
 	if err != nil || item.Status != content.StatusDraft {
 		t.Fatalf("restored=%#v err=%v", item, err)
+	}
+}
+
+func TestNewsArchiveRejectsProjectionOrGrantState(t *testing.T) {
+	databaseURL := os.Getenv("HHW_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("HHW_TEST_DATABASE_URL is not configured")
+	}
+	db, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	if err := migrations.Run(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `TRUNCATE hhc_web.public_projection,hhc_web.content_revision,hhc_web.content_translation,hhc_web.news_item,hhc_web.content_entry CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+
+	repository := New(db)
+	now := time.Now().UTC()
+	item, err := repository.CreateContent(ctx, content.ModuleNews, content.WriteInput{
+		Slug:        "archive-guard",
+		DisplayDate: "2026-07-31",
+		Translations: []content.Translation{{
+			Locale: "zh-Hant",
+			Title:  "封存保護",
+		}},
+	}, "user-1", "news-archive-guard", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO hhc_web.public_projection(
+			projection_key,resource_type,resource_id,locale,route_path,version,etag,payload_json,updated_at
+		) VALUES('news:archive-guard','news',$1,'zh-Hant','/zh-Hant/news/archive-guard',1,'etag','{}',$2)`,
+		item.ID, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.ArchiveContent(ctx, content.ModuleNews, item.ID, item.Version, "user-1", now); !errors.Is(err, content.ErrConflict) {
+		t.Fatalf("projection archive error=%v", err)
+	}
+	if _, err := db.ExecContext(ctx, `DELETE FROM hhc_web.public_projection WHERE resource_id=$1`, item.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE hhc_web.news_item SET public_grant_id='grant-1' WHERE entry_id=$1`, item.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.ArchiveContent(ctx, content.ModuleNews, item.ID, item.Version, "user-1", now); !errors.Is(err, content.ErrConflict) {
+		t.Fatalf("grant archive error=%v", err)
 	}
 }
 
@@ -505,7 +574,7 @@ func TestContentListSearchesTitlesAndUsesStableTypedSorting(t *testing.T) {
 	repository := New(db)
 	now := time.Now().UTC()
 	values := []content.WriteInput{
-		{Slug: "alpha-old", DisplayDate: "2026-07-01", Translations: []content.Translation{{Locale: "zh-Hant", Title: "Alpha 舊消息"}, {Locale: "en", Title: "Alpha old"}}},
+		{Slug: "alpha-old", DisplayDate: "2026-07-01", Translations: []content.Translation{{Locale: "zh-Hant", Title: "Alpha 舊消息", Body: strings.Repeat("x", 1000)}, {Locale: "en", Title: "Alpha old"}}},
 		{Slug: "beta", DisplayDate: "2026-07-02", Translations: []content.Translation{{Locale: "zh-Hant", Title: "Beta 消息"}}},
 		{Slug: "alpha-new", DisplayDate: "2026-07-03", Translations: []content.Translation{{Locale: "zh-Hant", Title: "最新 ALPHA"}}},
 	}
@@ -523,6 +592,9 @@ func TestContentListSearchesTitlesAndUsesStableTypedSorting(t *testing.T) {
 	}
 	if page.Total != 2 || len(page.Items) != 1 || page.Items[0].Slug != "alpha-old" || len(page.Items[0].Translations) != 2 {
 		t.Fatalf("page=%#v", page)
+	}
+	if page.Items[0].Translations[1].Body != "" {
+		t.Fatalf("list response includes body")
 	}
 	page, err = repository.ListContent(ctx, content.ModuleNews, content.ListOptions{
 		Query: "alpha", Status: content.StatusDraft, Sort: "displayDate", Direction: "asc", Page: 2, PageSize: 1,

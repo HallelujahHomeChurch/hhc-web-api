@@ -44,6 +44,7 @@ paths:
       parameters:
         - { name: slug, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 120, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$' } }
         - $ref: '#/components/parameters/Locale'
+        - { name: If-None-Match, in: header, schema: { type: string } }
       responses:
         '200': { $ref: '#/components/responses/PublicContentItem' }
         '304': { description: Content has not changed }
@@ -354,7 +355,7 @@ components:
     bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
   parameters:
     Locale: { name: locale, in: query, schema: { $ref: '#/components/schemas/Locale' } }
-    Page: { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+    Page: { name: page, in: query, schema: { type: integer, minimum: 1, maximum: 10000, default: 1 } }
     PageSize: { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
     IssueID: { name: issueId, in: path, required: true, schema: { type: string, format: uuid } }
     IdempotencyKey: { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 1 } }
