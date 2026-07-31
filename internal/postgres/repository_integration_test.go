@@ -406,8 +406,13 @@ func TestNewsPublicationKeepsLiveProjectionUntilReplacement(t *testing.T) {
 	if err != nil || detail.ID != item.ID || etag == "" {
 		t.Fatalf("detail=%#v etag=%q err=%v", detail, etag, err)
 	}
-	if _, _, err := repository.PublicNews(ctx, "en", "first-news"); !errors.Is(err, content.ErrNotFound) {
-		t.Fatalf("wrong locale detail err=%v", err)
+	fallback, fallbackETag, err := repository.PublicNews(ctx, "en", "first-news")
+	if err != nil || fallback.Title != "最新消息" || fallbackETag != etag {
+		t.Fatalf("fallback detail=%#v etag=%q err=%v", fallback, fallbackETag, err)
+	}
+	english, err := repository.PublicContent(ctx, content.ModuleNews, "en", 20)
+	if err != nil || len(english) != 1 || english[0].Title != "最新消息" {
+		t.Fatalf("fallback list=%#v err=%v", english, err)
 	}
 
 	input.CoverAssetID = "asset-2"
@@ -525,8 +530,8 @@ func TestContentRepublishRemovesDeletedLocaleProjection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(english) != 0 {
-		t.Fatalf("stale English projection=%#v", english)
+	if len(english) != 1 || english[0].Title != "影片" {
+		t.Fatalf("English fallback=%#v", english)
 	}
 }
 
