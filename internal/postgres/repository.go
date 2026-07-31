@@ -373,13 +373,48 @@ func (r *Repository) Retry(ctx context.Context, id, detail string, nextAttempt, 
 }
 
 func (r *Repository) Fail(ctx context.Context, event publication.Event, detail string, now time.Time) error {
-	var payload publication.PublishPayload
-	_ = json.Unmarshal(event.Payload, &payload)
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
+	if err := failEvent(ctx, tx, event, detail, now); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (r *Repository) FailPublish(ctx context.Context, event publication.Event, assetID, grantID, detail string, now time.Time) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := failEvent(ctx, tx, event, detail, now); err != nil {
+		return err
+	}
+	payload, err := json.Marshal(publication.ContentUnpublishPayload{AssetID: assetID, GrantID: grantID, AggregateVersion: event.AggregateVersion})
+	if err != nil {
+		return err
+	}
+	aggregateType := "bulletin"
+	if strings.HasPrefix(event.EventType, "news.") {
+		aggregateType = "news"
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO hhc_web.outbox_event(id,destination,event_type,aggregate_type,aggregate_id,aggregate_version,payload_json,idempotency_key,status,next_attempt_at,created_at,updated_at)
+		VALUES($1,'asset-api','asset.grant.revoke',$2,$3,$4,$5,$6,'pending',$7,$7,$7)
+		ON CONFLICT(destination,idempotency_key) DO NOTHING`,
+		platform.NewID(), aggregateType, event.AggregateID, event.AggregateVersion, payload,
+		fmt.Sprintf("publication:%s:revoke:%s", event.ID, grantID), now); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func failEvent(ctx context.Context, tx *sql.Tx, event publication.Event, detail string, now time.Time) error {
+	var payload publication.PublishPayload
+	_ = json.Unmarshal(event.Payload, &payload)
 	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.outbox_event SET status='failed',claimed_until=NULL,last_error=$2,updated_at=$3 WHERE id=$1`, event.ID, detail, now); err != nil {
 		return err
 	}
@@ -403,7 +438,7 @@ func (r *Repository) Fail(ctx context.Context, event publication.Event, detail s
 		if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.content_entry SET status=$3,updated_at=$4 WHERE id=$1 AND version=$2`, contentID, version, nextStatus, now); err != nil {
 			return err
 		}
-		return tx.Commit()
+		return nil
 	}
 	if payload.WorkflowID != "" {
 		if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.publication_workflow SET status='failed',error_code='PUBLICATION_FAILED',error_detail=$2,updated_at=$3 WHERE id=$1`, payload.WorkflowID, detail, now); err != nil {
@@ -425,7 +460,7 @@ func (r *Repository) Fail(ctx context.Context, event publication.Event, detail s
 			}
 		}
 	}
-	return tx.Commit()
+	return nil
 }
 
 func (r *Repository) CompletePublish(ctx context.Context, event publication.Event, grantID, downloadURL string, now time.Time) error {

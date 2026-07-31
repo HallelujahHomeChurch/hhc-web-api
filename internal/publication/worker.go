@@ -92,10 +92,10 @@ func (w *Worker) publish(ctx context.Context, event Event, now time.Time) error 
 	}
 	grant, err := w.assets.CreatePublicGrant(ctx, payload.AssetID, "bulletin:"+payload.IssueID+":"+payload.Locale+":v"+fmt.Sprint(payload.AggregateVersion))
 	if err != nil {
-		return err
+		return compensationError{err}
 	}
 	if err := w.repository.CompletePublish(ctx, event, grant.ID, w.assets.PublicURL(payload.AssetID), now); err != nil {
-		return w.handlePublishFailure(ctx, event, payload.AssetID, grant.ID, err)
+		return w.handlePublishFailure(ctx, event, payload.AssetID, grant.ID, err, now)
 	}
 	return nil
 }
@@ -132,15 +132,15 @@ func (w *Worker) publishNews(ctx context.Context, event Event, now time.Time) er
 	}
 	grant, err := w.assets.CreatePublicGrant(ctx, payload.AssetID, "news:"+payload.ContentID+":publish:v"+fmt.Sprint(payload.AggregateVersion))
 	if err != nil {
-		return err
+		return compensationError{err}
 	}
 	if err := w.repository.CompleteContentPublish(ctx, event, grant.ID, w.assets.PublicURL(payload.AssetID), now); err != nil {
-		return w.handlePublishFailure(ctx, event, payload.AssetID, grant.ID, err)
+		return w.handlePublishFailure(ctx, event, payload.AssetID, grant.ID, err, now)
 	}
 	return nil
 }
 
-func (w *Worker) handlePublishFailure(ctx context.Context, event Event, assetID, grantID string, cause error) error {
+func (w *Worker) handlePublishFailure(ctx context.Context, event Event, assetID, grantID string, cause error, now time.Time) error {
 	if !errors.Is(cause, ErrStalePublication) {
 		if event.Attempts < w.maxAttempts {
 			return cause
@@ -153,10 +153,10 @@ func (w *Worker) handlePublishFailure(ctx context.Context, event Event, assetID,
 			return nil
 		}
 	}
-	if err := w.assets.RevokeGrant(ctx, assetID, grantID); err != nil && !errors.Is(err, ErrGrantNotFound) {
-		return compensationError{fmt.Errorf("revoke failed publication grant: %w", err)}
+	if err := w.repository.FailPublish(ctx, event, assetID, grantID, safeError(cause), now); err != nil {
+		return compensationError{fmt.Errorf("persist publication compensation: %w", err)}
 	}
-	return terminalError{cause}
+	return nil
 }
 
 func (w *Worker) unpublish(ctx context.Context, event Event, now time.Time) error {

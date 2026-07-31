@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"os"
 	"testing"
@@ -191,6 +192,66 @@ func TestBulletinRejectsCrossLocaleMutationDuringPublication(t *testing.T) {
 	}, "user-1", now)
 	if !errors.Is(err, bulletins.ErrNotPublishable) {
 		t.Fatalf("cross-locale mutation error=%v", err)
+	}
+}
+
+func TestFailedPublishPersistsGrantCompensation(t *testing.T) {
+	databaseURL := os.Getenv("HHW_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("HHW_TEST_DATABASE_URL is not configured")
+	}
+	db, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	if err := migrations.Run(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `TRUNCATE hhc_web.outbox_event,hhc_web.publication_workflow,hhc_web.public_projection,hhc_web.bulletin_version,hhc_web.bulletin_issue CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+	repository := New(db)
+	now := time.Now().UTC()
+	issue, err := repository.CreateIssue(ctx, "2026-08-09", "user-1", "compensation-issue", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	issue, err = repository.PutVersion(ctx, issue.ID, issue.Version, bulletins.PutVersionInput{
+		Locale: "zh-Hant", Title: "週報", PDFAssetID: "asset-1", PDFFileName: "weekly.pdf",
+	}, "user-1", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.StartPublish(ctx, issue.ID, "zh-Hant", issue.Version, "user-1", now); err != nil {
+		t.Fatal(err)
+	}
+	event, found, err := repository.Claim(ctx, now, 30*time.Second)
+	if err != nil || !found {
+		t.Fatalf("claim found=%v err=%v", found, err)
+	}
+	if err := repository.FailPublish(ctx, event, "asset-1", "grant-1", "database unavailable", now); err != nil {
+		t.Fatal(err)
+	}
+
+	var originalStatus string
+	if err := db.QueryRowContext(ctx, `SELECT status FROM hhc_web.outbox_event WHERE id=$1`, event.ID).Scan(&originalStatus); err != nil {
+		t.Fatal(err)
+	}
+	if originalStatus != "failed" {
+		t.Fatalf("original status=%q", originalStatus)
+	}
+	compensation, found, err := repository.Claim(ctx, now, 30*time.Second)
+	if err != nil || !found || compensation.EventType != "asset.grant.revoke" {
+		t.Fatalf("compensation=%#v found=%v err=%v", compensation, found, err)
+	}
+	var payload publication.ContentUnpublishPayload
+	if err := json.Unmarshal(compensation.Payload, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.AssetID != "asset-1" || payload.GrantID != "grant-1" {
+		t.Fatalf("payload=%#v", payload)
 	}
 }
 
