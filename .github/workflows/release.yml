@@ -1,19 +1,12 @@
 name: Production Release
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/**
-      - Dockerfile
-      - go.mod
-      - go.sum
-      - cmd/**
-      - internal/**
-      - migrations/**
-      - infra/**
-      - scripts/**
   workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type deploy-hhc-web-api-production
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -51,12 +44,14 @@ jobs:
           ./scripts/bootstrap-database.test.sh
           go test -race ./... -count=1 -p=1
           go vet ./...
+          ./scripts/test-release-policy.sh
           docker build -t hhc-web-api:verify .
 
   deploy:
     needs: verify
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    environment: production
     permissions:
       contents: read
       id-token: write
@@ -71,10 +66,13 @@ jobs:
       AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
       AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
       AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      RELEASE_CONFIRMATION: ${{ inputs.confirmation }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Validate release configuration
         run: |
+          [[ "$GITHUB_REF" == "refs/heads/main" ]]
+          [[ "$RELEASE_CONFIRMATION" == "deploy-hhc-web-api-production" ]]
           for name in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID; do
             test -n "${!name:-}" || { echo "Missing repository variable: ${name}" >&2; exit 1; }
           done
@@ -89,6 +87,22 @@ jobs:
       - run: az extension add --name containerapp --upgrade --yes
       - name: Capture rollback revision
         run: |
+          resolve_image_ref() {
+            local image="$1"
+            if [[ "$image" == *@sha256:* ]]; then
+              printf '%s\n' "$image"
+              return
+            fi
+            [[ "$image" == "${ACR_LOGIN_SERVER}/"* ]]
+            local image_spec="${image#${ACR_LOGIN_SERVER}/}"
+            local repository="${image_spec%:*}"
+            local digest
+            digest="$(az acr repository show --name "$ACR_NAME" --image "$image_spec" \
+              --query digest -o tsv --only-show-errors)"
+            [[ "$digest" == sha256:* ]]
+            printf '%s/%s@%s\n' "$ACR_LOGIN_SERVER" "$repository" "$digest"
+          }
+
           revision="$(az containerapp show -g "$RESOURCE_GROUP" -n "$API_APP_NAME" \
             --query properties.latestReadyRevisionName -o tsv --only-show-errors)"
           test -n "$revision"
@@ -98,7 +112,7 @@ jobs:
           test -n "$image"
           {
             echo "PREVIOUS_READY_REVISION=$revision"
-            echo "PREVIOUS_IMAGE=$image"
+            echo "PREVIOUS_IMAGE_REF=$(resolve_image_ref "$image")"
           } >> "$GITHUB_ENV"
       - name: Build and push image
         run: |
@@ -107,14 +121,33 @@ jobs:
             --image "${IMAGE_REPOSITORY}:${IMAGE_TAG}" \
             --file Dockerfile \
             .
-      - name: Update migration job
+      - name: Resolve immutable image digest
         run: |
-          image_ref="${ACR_LOGIN_SERVER}/${IMAGE_REPOSITORY}:${IMAGE_TAG}"
+          digest="$(az acr repository show \
+            --name "$ACR_NAME" \
+            --image "${IMAGE_REPOSITORY}:${IMAGE_TAG}" \
+            --query digest -o tsv --only-show-errors)"
+          [[ "$digest" == sha256:* ]]
+          echo "IMAGE_REF=${ACR_LOGIN_SERVER}/${IMAGE_REPOSITORY}@${digest}" >> "$GITHUB_ENV"
+      - name: Reject destructive infrastructure changes
+        run: |
+          az deployment group what-if \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file infra/main.bicep \
+            --parameters migrationImage="$IMAGE_REF" runtimeImage="$IMAGE_REF" deployRuntime=true provisionPermissions=false \
+            --validation-level Provider \
+            --result-format FullResourcePayloads \
+            --only-show-errors \
+            --output json > what-if.json
+          jq -e '[.changes[] | select(.changeType == "Delete" or .changeType == "Unsupported")] | length == 0' what-if.json
+      - name: Update migration job
+        id: update_migration
+        run: |
           az deployment group create \
             --name "hhc-web-migrate-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
             --resource-group "$RESOURCE_GROUP" \
             --template-file infra/main.bicep \
-            --parameters migrationImage="$image_ref" runtimeImage="$image_ref" deployRuntime=false provisionPermissions=false \
+            --parameters migrationImage="$IMAGE_REF" runtimeImage="$IMAGE_REF" deployRuntime=false provisionPermissions=false \
             --only-show-errors --output none
       - name: Run migrations
         run: |
@@ -125,7 +158,12 @@ jobs:
               --query "[?name=='${execution_name}'].properties.status | [0]" -o tsv --only-show-errors)"
             case "$status" in
               Succeeded) exit 0 ;;
-              Failed|Canceled|Cancelled|Stopped) echo "Migration ${execution_name}: ${status}" >&2; exit 1 ;;
+              Failed|Canceled|Cancelled|Stopped)
+                az containerapp job logs show -g "$RESOURCE_GROUP" -n "$MIGRATION_JOB_NAME" \
+                  --execution "$execution_name" --container hhc-web-migrate --tail 200 || true
+                echo "Migration ${execution_name}: ${status}" >&2
+                exit 1
+                ;;
             esac
             sleep 10
           done
@@ -134,37 +172,28 @@ jobs:
       - name: Deploy API
         id: deploy_runtime
         run: |
-          image_ref="${ACR_LOGIN_SERVER}/${IMAGE_REPOSITORY}:${IMAGE_TAG}"
           az deployment group create \
             --name "hhc-web-runtime-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
             --resource-group "$RESOURCE_GROUP" \
             --template-file infra/main.bicep \
-            --parameters migrationImage="$image_ref" runtimeImage="$image_ref" deployRuntime=true provisionPermissions=false \
+            --parameters migrationImage="$IMAGE_REF" runtimeImage="$IMAGE_REF" deployRuntime=true provisionPermissions=false \
             --only-show-errors --output none
       - name: Wait for API revision
         run: |
-          image_ref="${ACR_LOGIN_SERVER}/${IMAGE_REPOSITORY}:${IMAGE_TAG}"
           for attempt in {1..60}; do
             latest="$(az containerapp show -g "$RESOURCE_GROUP" -n "$API_APP_NAME" --query properties.latestRevisionName -o tsv --only-show-errors)"
             ready="$(az containerapp show -g "$RESOURCE_GROUP" -n "$API_APP_NAME" --query properties.latestReadyRevisionName -o tsv --only-show-errors)"
             if [[ -n "$latest" && "$latest" == "$ready" ]]; then
               image="$(az containerapp revision show -g "$RESOURCE_GROUP" -n "$API_APP_NAME" --revision "$ready" \
                 --query properties.template.containers[0].image -o tsv --only-show-errors)"
-              [[ "$image" == "$image_ref" ]] && exit 0
+              [[ "$image" == "$IMAGE_REF" ]] && exit 0
             fi
             sleep 10
           done
           echo "HHC web API did not become ready" >&2
           exit 1
-      - name: Verify Dapr API through gateway
-        run: |
-          output="$(timeout 60s script -q -e -c \
-            "az containerapp exec -g \"$RESOURCE_GROUP\" -n \"$API_GATEWAY_APP_NAME\" --command \"/bin/sh -c \\\"/usr/bin/wget -qO- http://localhost:3500/v1.0/invoke/hhc-web-api/method/api/home?locale=zh-Hant >/dev/null && echo PUBLIC_OK; /usr/bin/wget -S -O- http://localhost:3500/v1.0/invoke/hhc-web-api/method/api/admin/bulletins 2>&1 || true\\\"\"" \
-            /dev/null 2>&1)"
-          output="${output//$'\r'/}"
-          printf '%s\n' "$output"
-          grep -Fq 'PUBLIC_OK' <<< "$output"
-          grep -Eq 'HTTP/1\.[01][[:space:]]+401' <<< "$output"
+      - name: Smoke HHC web API release
+        run: ./scripts/smoke-release.sh
       - name: Roll back failed runtime
         if: ${{ failure() && steps.deploy_runtime.outcome != 'skipped' }}
         run: |
@@ -172,6 +201,7 @@ jobs:
             -g "$RESOURCE_GROUP" \
             -n "$API_APP_NAME" \
             --from-revision "$PREVIOUS_READY_REVISION" \
+            --image "$PREVIOUS_IMAGE_REF" \
             --revision-suffix "rollback-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
             --only-show-errors \
             --output none
@@ -185,9 +215,12 @@ jobs:
               image="$(az containerapp revision show -g "$RESOURCE_GROUP" -n "$API_APP_NAME" \
                 --revision "$ready" \
                 --query properties.template.containers[0].image -o tsv --only-show-errors)"
-              [[ "$image" == "$PREVIOUS_IMAGE" ]] && exit 0
+              [[ "$image" == "$PREVIOUS_IMAGE_REF" ]] && exit 0
             fi
             sleep 10
           done
           echo "HHC web API rollback did not become ready" >&2
           exit 1
+      - name: Verify rolled back runtime
+        if: ${{ failure() && steps.deploy_runtime.outcome != 'skipped' }}
+        run: ./scripts/smoke-release.sh

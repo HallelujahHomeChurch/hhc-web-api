@@ -44,10 +44,13 @@ func NewWithContent(service *bulletins.Service, contentService *content.Service,
 }
 func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
+	live := func(w http.ResponseWriter, _ *http.Request) {
 		writeData(w, http.StatusOK, map[string]string{"status": "healthy"}, nil)
-	})
+	}
+	mux.HandleFunc("GET /health", live)
+	mux.HandleFunc("GET /health/live", live)
 	mux.HandleFunc("GET /ready", h.ready)
+	mux.HandleFunc("GET /health/ready", h.ready)
 	mux.HandleFunc("GET /api/bulletins/latest", h.publicLatest)
 	mux.HandleFunc("GET /api/bulletins/{issueDate}", h.publicByDate)
 	mux.HandleFunc("GET /api/bulletins", h.publicList)
@@ -357,7 +360,7 @@ func (w *statusWriter) Write(body []byte) (int, error) {
 
 func accessLog(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/health" || r.URL.Path == "/ready" {
+		if strings.HasPrefix(r.URL.Path, "/health") || r.URL.Path == "/ready" {
 			next.ServeHTTP(w, r)
 			return
 		}

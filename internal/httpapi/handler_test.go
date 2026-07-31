@@ -40,6 +40,14 @@ func TestAdminRoutesRequireTrustedIdentityAndScope(t *testing.T) {
 	}
 }
 
+func TestLivenessRouteDoesNotRequireDependencies(t *testing.T) {
+	response := httptest.NewRecorder()
+	testHandler(&apiRepository{}).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/health/live", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
 func TestAdminRoutesRequireDaprAPITokenWhenConfigured(t *testing.T) {
 	handler := NewWithContent(
 		bulletins.NewService(&apiRepository{}, time.Now),

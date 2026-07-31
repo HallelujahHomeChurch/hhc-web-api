@@ -117,16 +117,28 @@ resource api 'Microsoft.App/containerApps@2025-01-01' = if (deployRuntime) {
           }
           probes: [
             {
+              type: 'Startup'
+              httpGet: { path: '/health/live', port: 8082 }
+              initialDelaySeconds: 1
+              periodSeconds: 2
+              timeoutSeconds: 3
+              failureThreshold: 30
+            }
+            {
               type: 'Liveness'
-              httpGet: { path: '/health', port: 8082 }
+              httpGet: { path: '/health/live', port: 8082 }
               initialDelaySeconds: 10
               periodSeconds: 30
+              timeoutSeconds: 3
+              failureThreshold: 3
             }
             {
               type: 'Readiness'
-              httpGet: { path: '/ready', port: 8082 }
+              httpGet: { path: '/health/ready', port: 8082 }
               initialDelaySeconds: 10
               periodSeconds: 10
+              timeoutSeconds: 3
+              failureThreshold: 3
             }
           ]
         }

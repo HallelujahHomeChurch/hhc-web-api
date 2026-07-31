@@ -36,4 +36,5 @@ jobs:
           ./scripts/bootstrap-database.test.sh
           go test -race ./... -count=1 -p=1
           go vet ./...
+          ./scripts/test-release-policy.sh
           docker build -t hhc-web-api:verify .
