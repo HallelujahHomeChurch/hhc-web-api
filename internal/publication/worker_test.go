@@ -66,6 +66,7 @@ func TestWorkerFailsClosedForInvalidAssetStates(t *testing.T) {
 }
 
 func TestWorkerDefersWhileAssetScanIsPendingWithoutConsumingRetry(t *testing.T) {
+	now := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
 	repository := &workerRepository{event: publishEvent(20)}
 	assets := &workerAssets{asset: Asset{
 		ID:               "asset-1",
@@ -79,6 +80,7 @@ func TestWorkerDefersWhileAssetScanIsPendingWithoutConsumingRetry(t *testing.T) 
 		ProcessingStatus: "pending",
 	}}
 	worker := NewWorker(repository, assets, 5)
+	worker.now = func() time.Time { return now }
 
 	if _, err := worker.processNext(context.Background()); err != nil {
 		t.Fatal(err)
