@@ -43,6 +43,26 @@ func TestServiceDeletesIssue(t *testing.T) {
 	}
 }
 
+func TestServiceUpdatesAndDeletesVersion(t *testing.T) {
+	repo := &repositoryStub{}
+	service := NewService(repo, func() time.Time { return time.Unix(123, 0) })
+	if _, err := service.UpdateVersion(context.Background(), "issue-1", "fr", 2, UpdateVersionInput{Title: "Title"}, "user-1"); err != ErrInvalid {
+		t.Fatalf("invalid update error=%v", err)
+	}
+	if _, err := service.UpdateVersion(context.Background(), "issue-1", "en", 2, UpdateVersionInput{Title: " Title "}, "user-1"); err != nil {
+		t.Fatal(err)
+	}
+	if repo.locale != "en" || repo.title != "Title" {
+		t.Fatalf("locale=%q title=%q", repo.locale, repo.title)
+	}
+	if _, err := service.DeleteVersion(context.Background(), "issue-1", "en", 2, "user-1"); err != nil {
+		t.Fatal(err)
+	}
+	if repo.deletedLocale != "en" {
+		t.Fatalf("deleted locale=%q", repo.deletedLocale)
+	}
+}
+
 func TestServiceListsAndRestoresIssueRevision(t *testing.T) {
 	repo := &repositoryStub{}
 	service := NewService(repo, func() time.Time { return time.Unix(123, 0) })
@@ -70,6 +90,9 @@ type repositoryStub struct {
 	actor          string
 	deletedID      string
 	revision       int64
+	locale         string
+	title          string
+	deletedLocale  string
 	now            time.Time
 }
 
@@ -83,6 +106,14 @@ func (r *repositoryStub) ListIssues(_ context.Context, p, s int, _ string) (Page
 }
 func (r *repositoryStub) GetIssue(context.Context, string) (Issue, error) { return Issue{}, nil }
 func (r *repositoryStub) PutVersion(context.Context, string, int64, PutVersionInput, string, time.Time) (Issue, error) {
+	return Issue{}, nil
+}
+func (r *repositoryStub) UpdateVersion(_ context.Context, _ string, locale string, _ int64, title, _ string, _ time.Time) (Issue, error) {
+	r.locale, r.title = locale, title
+	return Issue{}, nil
+}
+func (r *repositoryStub) DeleteVersion(_ context.Context, _ string, locale string, _ int64, _ string, _ time.Time) (Issue, error) {
+	r.deletedLocale = locale
 	return Issue{}, nil
 }
 func (r *repositoryStub) StartPublish(context.Context, string, string, int64, string, time.Time) (Workflow, error) {

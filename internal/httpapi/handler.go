@@ -59,6 +59,8 @@ func (h *Handler) Routes() http.Handler {
 	admin.HandleFunc("GET /api/admin/bulletins", requireScope("cms:read", h.adminList))
 	admin.HandleFunc("POST /api/admin/bulletins", requireScope("cms:write", h.adminCreate))
 	admin.HandleFunc("GET /api/admin/bulletins/{issueID}", requireScope("cms:read", h.adminGet))
+	admin.HandleFunc("PUT /api/admin/bulletins/{issueID}/versions/{locale}", requireScope("cms:write", h.adminUpdateVersion))
+	admin.HandleFunc("DELETE /api/admin/bulletins/{issueID}/versions/{locale}", requireScope("cms:write", h.adminDeleteVersion))
 	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/upload-sessions", requireScopes([]string{"cms:write", "assets:write"}, h.adminCreateUpload))
 	admin.HandleFunc("GET /api/admin/bulletins/{issueID}/assets/{assetID}", requireScope("cms:read", h.adminAssetStatus))
 	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/assets/{assetID}/scan/retry", requireScopes([]string{"cms:write", "assets:write"}, h.adminRetryAssetScan))
@@ -88,6 +90,9 @@ type completeUploadInput struct {
 	MIMEType       string `json:"mimeType"`
 	SizeBytes      int64  `json:"sizeBytes"`
 	ChecksumSHA256 string `json:"checksumSha256"`
+}
+type updateVersionInput struct {
+	Title string `json:"title"`
 }
 
 type assetStatusResponse struct {
@@ -343,6 +348,36 @@ func (h *Handler) adminDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+func (h *Handler) adminUpdateVersion(w http.ResponseWriter, r *http.Request) {
+	expected, ok := ifMatch(w, r)
+	if !ok {
+		return
+	}
+	var input updateVersionInput
+	if !decode(w, r, &input) {
+		return
+	}
+	value, err := h.service.UpdateVersion(r.Context(), r.PathValue("issueID"), r.PathValue("locale"), expected, bulletins.UpdateVersionInput{Title: input.Title}, actor(r))
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+	w.Header().Set("ETag", fmt.Sprintf(`"%d"`, value.Version))
+	writeData(w, http.StatusOK, value, nil)
+}
+func (h *Handler) adminDeleteVersion(w http.ResponseWriter, r *http.Request) {
+	expected, ok := ifMatch(w, r)
+	if !ok {
+		return
+	}
+	value, err := h.service.DeleteVersion(r.Context(), r.PathValue("issueID"), r.PathValue("locale"), expected, actor(r))
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+	w.Header().Set("ETag", fmt.Sprintf(`"%d"`, value.Version))
+	writeData(w, http.StatusOK, value, nil)
 }
 func (h *Handler) adminIssueRevisions(w http.ResponseWriter, r *http.Request) {
 	values, err := h.service.IssueRevisions(r.Context(), r.PathValue("issueID"))

@@ -138,6 +138,37 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/CreatedUploadEnvelope' }
+  /admin/bulletins/{issueId}/versions/{locale}:
+    put:
+      operationId: updateBulletinVersion
+      security: [{ bearerAuth: [] }]
+      x-required-scopes: ['cms:write']
+      parameters:
+        - $ref: '#/components/parameters/IssueID'
+        - { name: locale, in: path, required: true, schema: { $ref: '#/components/schemas/Locale' } }
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateBulletinVersionInput' }
+      responses:
+        '200': { $ref: '#/components/responses/BulletinIssue' }
+        '409': { $ref: '#/components/responses/Error' }
+        '412': { $ref: '#/components/responses/Error' }
+    delete:
+      operationId: deleteBulletinVersion
+      security: [{ bearerAuth: [] }]
+      x-required-scopes: ['cms:write']
+      parameters:
+        - $ref: '#/components/parameters/IssueID'
+        - { name: locale, in: path, required: true, schema: { $ref: '#/components/schemas/Locale' } }
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '200': { $ref: '#/components/responses/BulletinIssue' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '412': { $ref: '#/components/responses/Error' }
   /admin/bulletins/{issueId}/assets/{assetId}:
     get:
       operationId: getBulletinAssetStatus
@@ -610,6 +641,12 @@ components:
         fileName: { type: string, minLength: 1 }
         mimeType: { type: string, const: application/pdf }
         sizeBytes: { type: integer, format: int64, minimum: 1, maximum: 20971520 }
+    UpdateBulletinVersionInput:
+      type: object
+      additionalProperties: false
+      required: [title]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 200 }
     CompleteBulletinUploadInput:
       type: object
       additionalProperties: false

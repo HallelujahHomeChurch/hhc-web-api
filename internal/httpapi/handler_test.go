@@ -147,6 +147,28 @@ func TestDeleteIssueRequiresWriteScopeAndVersion(t *testing.T) {
 	}
 }
 
+func TestBulletinVersionUpdateAndDeleteUseIssueVersion(t *testing.T) {
+	repo := &apiRepository{issue: bulletinIssue()}
+	handler := testHandler(repo)
+	request := httptest.NewRequest(http.MethodPut, "/api/admin/bulletins/issue-1/versions/en", bytes.NewBufferString(`{"title":"Weekly"}`))
+	trusted(request, "cms:write")
+	request.Header.Set("If-Match", `"1"`)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || response.Header().Get("ETag") != `"2"` {
+		t.Fatalf("update status=%d etag=%q body=%s", response.Code, response.Header().Get("ETag"), response.Body.String())
+	}
+
+	request = httptest.NewRequest(http.MethodDelete, "/api/admin/bulletins/issue-1/versions/en", nil)
+	trusted(request, "cms:write")
+	request.Header.Set("If-Match", `"2"`)
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || repo.deletedLocale != "en" {
+		t.Fatalf("delete status=%d locale=%q body=%s", response.Code, repo.deletedLocale, response.Body.String())
+	}
+}
+
 func TestBulletinRevisionRoutesListAndRestoreDraft(t *testing.T) {
 	repo := &apiRepository{
 		issue: bulletinIssue(),
@@ -368,6 +390,7 @@ type apiRepository struct {
 	restoredRevision   int64
 	restoreError       error
 	deleted            bool
+	deletedLocale      string
 }
 
 func (r *apiRepository) CreateIssue(_ context.Context, date, actor, key string, now time.Time) (bulletins.Issue, error) {
@@ -430,6 +453,19 @@ func (*apiRepository) Unpublish(context.Context, string, string, int64, string, 
 func (r *apiRepository) DeleteIssue(context.Context, string, int64, string, time.Time) error {
 	r.deleted = true
 	return nil
+}
+func (r *apiRepository) UpdateVersion(_ context.Context, _ string, locale string, _ int64, title, _ string, _ time.Time) (bulletins.Issue, error) {
+	r.issue = bulletinIssue()
+	r.issue.Version++
+	r.issue.Versions = []bulletins.Version{{Locale: locale, Title: title}}
+	return r.issue, nil
+}
+func (r *apiRepository) DeleteVersion(_ context.Context, _ string, locale string, _ int64, _ string, _ time.Time) (bulletins.Issue, error) {
+	r.issue = bulletinIssue()
+	r.issue.Version++
+	r.issue.Versions = nil
+	r.deletedLocale = locale
+	return r.issue, nil
 }
 func (r *apiRepository) IssueRevisions(context.Context, string) ([]bulletins.Revision, error) {
 	return r.revisions, nil

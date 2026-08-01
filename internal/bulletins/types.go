@@ -81,6 +81,9 @@ type PutVersionInput struct {
 	PDFAssetID  string `json:"pdfAssetId"`
 	PDFFileName string `json:"pdfFileName"`
 }
+type UpdateVersionInput struct {
+	Title string `json:"title"`
+}
 type PublishInput struct {
 	Locale string `json:"locale"`
 }
@@ -102,6 +105,8 @@ type Repository interface {
 	ListIssues(context.Context, int, int, string) (Page, error)
 	GetIssue(context.Context, string) (Issue, error)
 	PutVersion(context.Context, string, int64, PutVersionInput, string, time.Time) (Issue, error)
+	UpdateVersion(context.Context, string, string, int64, string, string, time.Time) (Issue, error)
+	DeleteVersion(context.Context, string, string, int64, string, time.Time) (Issue, error)
 	StartPublish(context.Context, string, string, int64, string, time.Time) (Workflow, error)
 	Unpublish(context.Context, string, string, int64, string, time.Time) (Issue, error)
 	DeleteIssue(context.Context, string, int64, string, time.Time) error

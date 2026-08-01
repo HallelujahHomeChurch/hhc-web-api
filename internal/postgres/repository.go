@@ -224,6 +224,86 @@ func (r *Repository) PutVersion(ctx context.Context, id string, expected int64, 
 	return issue, nil
 }
 
+func (r *Repository) UpdateVersion(ctx context.Context, id, locale string, expected int64, title, actor string, now time.Time) (bulletins.Issue, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return bulletins.Issue{}, err
+	}
+	defer tx.Rollback()
+	if err := lockMutableIssue(ctx, tx, id, expected); err != nil {
+		return bulletins.Issue{}, err
+	}
+	result, err := tx.ExecContext(ctx, `UPDATE hhc_web.bulletin_version SET title=$3,status='draft',version=version+1,updated_by=$4,updated_at=$5 WHERE issue_id=$1 AND locale=$2 AND status IN ('draft','unpublished') AND COALESCE(public_grant_id,'')='' AND COALESCE(retiring_grant_id,'')=''`, id, locale, title, actor, now)
+	if err != nil {
+		return bulletins.Issue{}, err
+	}
+	if affected, _ := result.RowsAffected(); affected != 1 {
+		return bulletins.Issue{}, bulletins.ErrConflict
+	}
+	return finishIssueDraft(ctx, tx, id, actor, now)
+}
+
+func (r *Repository) DeleteVersion(ctx context.Context, id, locale string, expected int64, actor string, now time.Time) (bulletins.Issue, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return bulletins.Issue{}, err
+	}
+	defer tx.Rollback()
+	if err := lockMutableIssue(ctx, tx, id, expected); err != nil {
+		return bulletins.Issue{}, err
+	}
+	var assetID, status, publicGrantID, retiringGrantID string
+	if err := tx.QueryRowContext(ctx, `SELECT pdf_asset_id,status,COALESCE(public_grant_id,''),COALESCE(retiring_grant_id,'') FROM hhc_web.bulletin_version WHERE issue_id=$1 AND locale=$2 FOR UPDATE`, id, locale).Scan(&assetID, &status, &publicGrantID, &retiringGrantID); errors.Is(err, sql.ErrNoRows) {
+		return bulletins.Issue{}, bulletins.ErrNotFound
+	} else if err != nil {
+		return bulletins.Issue{}, err
+	}
+	if status != "draft" && status != "unpublished" || publicGrantID != "" || retiringGrantID != "" {
+		return bulletins.Issue{}, bulletins.ErrConflict
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM hhc_web.bulletin_version WHERE issue_id=$1 AND locale=$2`, id, locale); err != nil {
+		return bulletins.Issue{}, err
+	}
+	if err := enqueueAssetDeletes(ctx, tx, "bulletin", id, expected, []string{assetID}, now); err != nil {
+		return bulletins.Issue{}, err
+	}
+	return finishIssueDraft(ctx, tx, id, actor, now)
+}
+
+func lockMutableIssue(ctx context.Context, tx *sql.Tx, id string, expected int64) error {
+	var current int64
+	var status string
+	if err := tx.QueryRowContext(ctx, `SELECT version,status FROM hhc_web.bulletin_issue WHERE id=$1 FOR UPDATE`, id).Scan(&current, &status); errors.Is(err, sql.ErrNoRows) {
+		return bulletins.ErrNotFound
+	} else if err != nil {
+		return err
+	}
+	if current != expected {
+		return bulletins.ErrPrecondition
+	}
+	if status == "publishing" || status == "unpublishing" {
+		return bulletins.ErrConflict
+	}
+	return nil
+}
+
+func finishIssueDraft(ctx context.Context, tx *sql.Tx, id, actor string, now time.Time) (bulletins.Issue, error) {
+	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.bulletin_issue SET status='draft',version=version+1,updated_by=$2,updated_at=$3 WHERE id=$1`, id, actor, now); err != nil {
+		return bulletins.Issue{}, err
+	}
+	issue, err := loadIssue(ctx, tx, id)
+	if err != nil {
+		return bulletins.Issue{}, err
+	}
+	if err := insertBulletinRevision(ctx, tx, issue, actor, now); err != nil {
+		return bulletins.Issue{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return bulletins.Issue{}, err
+	}
+	return issue, nil
+}
+
 func (r *Repository) IssueRevisions(ctx context.Context, id string) ([]bulletins.Revision, error) {
 	var exists bool
 	if err := r.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM hhc_web.bulletin_issue WHERE id=$1)`, id).Scan(&exists); err != nil {
