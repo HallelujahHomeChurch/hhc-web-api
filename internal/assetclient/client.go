@@ -118,6 +118,9 @@ func (c *Client) Delete(ctx context.Context, assetID string) error {
 	}
 	return err
 }
+func (c *Client) RequeueScan(ctx context.Context, assetID string) error {
+	return c.request(ctx, http.MethodPost, "/priv/assets/"+url.PathEscape(assetID)+"/scan/requeue", nil, "", nil)
+}
 func (c *Client) PublicURL(assetID string) string {
 	return c.publicBaseURL + "/assets/public/" + url.PathEscape(assetID)
 }
@@ -149,6 +152,9 @@ func (c *Client) request(ctx context.Context, method, path string, body any, ide
 	defer response.Body.Close()
 	if response.StatusCode == http.StatusNotFound {
 		return ErrNotFound
+	}
+	if response.StatusCode >= http.StatusInternalServerError {
+		return fmt.Errorf("%w: asset api status %d", ErrUnavailable, response.StatusCode)
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		payload, _ := io.ReadAll(io.LimitReader(response.Body, 4096))

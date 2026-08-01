@@ -38,6 +38,19 @@ func TestClientMapsNotFound(t *testing.T) {
 	}
 }
 
+func TestClientMapsServerFailureToUnavailable(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+	client := New(server.URL, "hhc-web-api", "https://www.alive.org.tw/api")
+
+	_, err := client.Get(context.Background(), "asset-1")
+	if !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 func TestClientDeletesOwnedAsset(t *testing.T) {
 	var method, path string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -51,6 +64,23 @@ func TestClientDeletesOwnedAsset(t *testing.T) {
 		t.Fatal(err)
 	}
 	if method != http.MethodDelete || path != "/priv/assets/asset-1" {
+		t.Fatalf("method=%s path=%s", method, path)
+	}
+}
+
+func TestClientRequeuesFailedScan(t *testing.T) {
+	var method, path string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		method, path = r.Method, r.URL.Path
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer server.Close()
+	client := New(server.URL, "hhc-web-api", "https://www.alive.org.tw/api")
+
+	if err := client.RequeueScan(context.Background(), "asset-1"); err != nil {
+		t.Fatal(err)
+	}
+	if method != http.MethodPost || path != "/priv/assets/asset-1/scan/requeue" {
 		t.Fatalf("method=%s path=%s", method, path)
 	}
 }

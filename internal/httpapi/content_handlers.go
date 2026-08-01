@@ -32,6 +32,7 @@ func (h *Handler) contentRoutes(public, admin *http.ServeMux) {
 	admin.HandleFunc("POST /api/admin/content/news/{contentID}/upload-sessions", requireScopes([]string{"cms:write", "assets:write"}, h.adminNewsCoverUpload))
 	admin.HandleFunc("POST /api/admin/content/news/{contentID}/assets/{assetID}/complete", requireScopes([]string{"cms:write", "assets:write"}, h.adminNewsCoverComplete))
 	admin.HandleFunc("GET /api/admin/content/news/{contentID}/assets/{assetID}", requireScope("cms:read", h.adminNewsCoverStatus))
+	admin.HandleFunc("POST /api/admin/content/news/{contentID}/assets/{assetID}/scan/retry", requireScopes([]string{"cms:write", "assets:write"}, h.adminNewsCoverRetry))
 }
 
 func (h *Handler) publicNews(w http.ResponseWriter, r *http.Request) {
@@ -216,7 +217,7 @@ func (h *Handler) changeContentPublication(w http.ResponseWriter, r *http.Reques
 			}
 			asset, assetErr := h.uploads.Get(r.Context(), current.CoverAssetID)
 			if assetErr != nil || asset.Namespace != "cms.news.cover" || asset.OwnerService != "hhc-web-api" || asset.OwnerType != "news" || asset.OwnerID != id ||
-				asset.UploadStatus != "completed" || asset.ScanStatus != "clean" || asset.ProcessingStatus != "ready" {
+				asset.UploadStatus != "completed" || asset.ScanStatus == "infected" || asset.ScanStatus == "failed" || asset.ProcessingStatus == "failed" {
 				handleContentError(w, content.ErrNotPublishable)
 				return
 			}
@@ -328,11 +329,44 @@ func (h *Handler) adminNewsCoverStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	asset, err := h.uploads.Get(r.Context(), r.PathValue("assetID"))
+	if errors.Is(err, assetclient.ErrUnavailable) {
+		writeError(w, http.StatusServiceUnavailable, "asset_service_unavailable", "Asset status is unavailable.")
+		return
+	}
 	if err != nil || !ownedNewsAsset(asset, r.PathValue("contentID"), r.PathValue("assetID")) {
 		writeError(w, http.StatusNotFound, "not_found", "The cover image was not found.")
 		return
 	}
-	writeData(w, http.StatusOK, asset, nil)
+	writeData(w, http.StatusOK, cmsAssetStatus(asset), nil)
+}
+func (h *Handler) adminNewsCoverRetry(w http.ResponseWriter, r *http.Request) {
+	if h.uploads == nil {
+		writeError(w, http.StatusServiceUnavailable, "asset_service_unavailable", "Asset status is unavailable.")
+		return
+	}
+	asset, err := h.uploads.Get(r.Context(), r.PathValue("assetID"))
+	if errors.Is(err, assetclient.ErrUnavailable) {
+		writeError(w, http.StatusServiceUnavailable, "asset_service_unavailable", "Asset status is unavailable.")
+		return
+	}
+	if err != nil || !ownedNewsAsset(asset, r.PathValue("contentID"), r.PathValue("assetID")) {
+		writeError(w, http.StatusNotFound, "not_found", "The cover image was not found.")
+		return
+	}
+	if asset.ScanStatus != "failed" {
+		writeError(w, http.StatusConflict, "asset_not_retryable", "The asset scan cannot be retried.")
+		return
+	}
+	if err := h.uploads.RequeueScan(r.Context(), asset.ID); err != nil {
+		if errors.Is(err, assetclient.ErrUnavailable) {
+			writeError(w, http.StatusServiceUnavailable, "asset_service_unavailable", "Asset status is unavailable.")
+		} else {
+			writeError(w, http.StatusConflict, "asset_not_retryable", "The asset scan state changed.")
+		}
+		return
+	}
+	asset.ScanStatus = "pending"
+	writeData(w, http.StatusOK, cmsAssetStatus(asset), nil)
 }
 func ownedNewsAsset(asset assetclient.Asset, contentID, assetID string) bool {
 	return asset.ID == assetID && asset.Namespace == "cms.news.cover" && asset.OwnerService == "hhc-web-api" && asset.OwnerType == "news" && asset.OwnerID == contentID

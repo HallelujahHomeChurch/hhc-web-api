@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -111,9 +112,9 @@ func TestPublicHomeIsCacheableAndSelectsVideosDeterministically(t *testing.T) {
 	}
 }
 
-func TestNewsPublishQueuesOwnedCleanProcessedCover(t *testing.T) {
+func TestNewsPublishQueuesOwnedCoverWhileScanIsPending(t *testing.T) {
 	repo := &contentRepository{item: content.Item{ID: "news-1", Module: content.ModuleNews, Status: content.StatusDraft, Version: 2, Slug: "news", DisplayDate: "2026-07-13", CoverAssetID: "asset-1", Translations: []content.Translation{{Locale: "zh-Hant", Title: "消息", Summary: "消息摘要"}}}}
-	uploads := &apiUploads{completed: assetclient.Asset{ID: "asset-1", Namespace: "cms.news.cover", OwnerService: "hhc-web-api", OwnerType: "news", OwnerID: "news-1", UploadStatus: "completed", ScanStatus: "clean", ProcessingStatus: "ready"}}
+	uploads := &apiUploads{completed: assetclient.Asset{ID: "asset-1", Namespace: "cms.news.cover", OwnerService: "hhc-web-api", OwnerType: "news", OwnerID: "news-1", UploadStatus: "completed", ScanStatus: "pending", ProcessingStatus: "pending"}}
 	request := httptest.NewRequest(http.MethodPost, "/api/admin/content/news/news-1/publish", nil)
 	trusted(request, "cms:publish")
 	request.Header.Set("If-Match", `"2"`)
@@ -152,6 +153,31 @@ func TestCompleteNewsCoverReportsAssetServiceUnavailable(t *testing.T) {
 	contentTestHandlerWithAssets(&contentRepository{item: content.Item{ID: "news-1", Module: content.ModuleNews, Version: 1}}, uploads).ServeHTTP(response, request)
 	if response.Code != http.StatusServiceUnavailable || uploads.completeCalls != 0 {
 		t.Fatalf("status=%d completeCalls=%d", response.Code, uploads.completeCalls)
+	}
+}
+
+func TestNewsCoverStatusIsSafeAndFailedScanCanBeRetried(t *testing.T) {
+	uploads := &apiUploads{completed: assetclient.Asset{
+		ID: "asset-1", Namespace: "cms.news.cover", OwnerService: "hhc-web-api",
+		OwnerType: "news", OwnerID: "news-1", UploadStatus: "completed",
+		ScanStatus: "failed", ProcessingStatus: "pending",
+	}}
+	handler := contentTestHandlerWithAssets(&contentRepository{}, uploads)
+
+	request := httptest.NewRequest(http.MethodGet, "/api/admin/content/news/news-1/assets/asset-1", nil)
+	trusted(request, "cms:read")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || strings.Contains(response.Body.String(), "ownerService") || !strings.Contains(response.Body.String(), `"retryable":true`) {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+
+	request = httptest.NewRequest(http.MethodPost, "/api/admin/content/news/news-1/assets/asset-1/scan/retry", nil)
+	trusted(request, "cms:write assets:write")
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || uploads.requeueCalls != 1 || !strings.Contains(response.Body.String(), `"scanStatus":"pending"`) {
+		t.Fatalf("status=%d requeueCalls=%d body=%s", response.Code, uploads.requeueCalls, response.Body.String())
 	}
 }
 

@@ -24,6 +24,7 @@ type assetUploads interface {
 	CreateNewsCoverUpload(context.Context, string, string, string, int64, string) (assetclient.CreatedUpload, error)
 	CompleteUpload(context.Context, string, assetclient.CompleteUploadInput) (assetclient.Asset, error)
 	Get(context.Context, string) (assetclient.Asset, error)
+	RequeueScan(context.Context, string) error
 }
 
 type Handler struct {
@@ -59,6 +60,8 @@ func (h *Handler) Routes() http.Handler {
 	admin.HandleFunc("POST /api/admin/bulletins", requireScope("cms:write", h.adminCreate))
 	admin.HandleFunc("GET /api/admin/bulletins/{issueID}", requireScope("cms:read", h.adminGet))
 	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/upload-sessions", requireScopes([]string{"cms:write", "assets:write"}, h.adminCreateUpload))
+	admin.HandleFunc("GET /api/admin/bulletins/{issueID}/assets/{assetID}", requireScope("cms:read", h.adminAssetStatus))
+	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/assets/{assetID}/scan/retry", requireScopes([]string{"cms:write", "assets:write"}, h.adminRetryAssetScan))
 	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/assets/{assetID}/complete", requireScopes([]string{"cms:write", "assets:write"}, h.adminCompleteUpload))
 	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/publish", requireScope("cms:publish", h.adminPublish))
 	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/unpublish", requireScope("cms:publish", h.adminUnpublish))
@@ -84,6 +87,21 @@ type completeUploadInput struct {
 	MIMEType       string `json:"mimeType"`
 	SizeBytes      int64  `json:"sizeBytes"`
 	ChecksumSHA256 string `json:"checksumSha256"`
+}
+
+type assetStatusResponse struct {
+	ID               string `json:"id"`
+	UploadStatus     string `json:"uploadStatus"`
+	ScanStatus       string `json:"scanStatus"`
+	ProcessingStatus string `json:"processingStatus"`
+	Retryable        bool   `json:"retryable"`
+}
+
+func cmsAssetStatus(asset assetclient.Asset) assetStatusResponse {
+	return assetStatusResponse{
+		ID: asset.ID, UploadStatus: asset.UploadStatus, ScanStatus: asset.ScanStatus,
+		ProcessingStatus: asset.ProcessingStatus, Retryable: asset.ScanStatus == "failed",
+	}
 }
 
 func (h *Handler) adminCreateUpload(w http.ResponseWriter, r *http.Request) {
@@ -171,6 +189,53 @@ func (h *Handler) adminCompleteUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("ETag", fmt.Sprintf(`"%d"`, value.Version))
 	writeData(w, http.StatusOK, value, nil)
+}
+func (h *Handler) adminAssetStatus(w http.ResponseWriter, r *http.Request) {
+	if h.uploads == nil {
+		writeError(w, http.StatusServiceUnavailable, "asset_service_unavailable", "Asset status is unavailable.")
+		return
+	}
+	asset, err := h.uploads.Get(r.Context(), r.PathValue("assetID"))
+	if errors.Is(err, assetclient.ErrUnavailable) {
+		writeError(w, http.StatusServiceUnavailable, "asset_service_unavailable", "Asset status is unavailable.")
+		return
+	}
+	if err != nil || asset.ID != r.PathValue("assetID") || asset.Namespace != "cms.weekly.pdf" ||
+		asset.OwnerService != "hhc-web-api" || asset.OwnerType != "bulletin_issue" || asset.OwnerID != r.PathValue("issueID") {
+		writeError(w, http.StatusNotFound, "not_found", "The bulletin asset was not found.")
+		return
+	}
+	writeData(w, http.StatusOK, cmsAssetStatus(asset), nil)
+}
+func (h *Handler) adminRetryAssetScan(w http.ResponseWriter, r *http.Request) {
+	if h.uploads == nil {
+		writeError(w, http.StatusServiceUnavailable, "asset_service_unavailable", "Asset status is unavailable.")
+		return
+	}
+	asset, err := h.uploads.Get(r.Context(), r.PathValue("assetID"))
+	if errors.Is(err, assetclient.ErrUnavailable) {
+		writeError(w, http.StatusServiceUnavailable, "asset_service_unavailable", "Asset status is unavailable.")
+		return
+	}
+	if err != nil || asset.ID != r.PathValue("assetID") || asset.Namespace != "cms.weekly.pdf" ||
+		asset.OwnerService != "hhc-web-api" || asset.OwnerType != "bulletin_issue" || asset.OwnerID != r.PathValue("issueID") {
+		writeError(w, http.StatusNotFound, "not_found", "The bulletin asset was not found.")
+		return
+	}
+	if asset.ScanStatus != "failed" {
+		writeError(w, http.StatusConflict, "asset_not_retryable", "The asset scan cannot be retried.")
+		return
+	}
+	if err := h.uploads.RequeueScan(r.Context(), asset.ID); err != nil {
+		if errors.Is(err, assetclient.ErrUnavailable) {
+			writeError(w, http.StatusServiceUnavailable, "asset_service_unavailable", "Asset status is unavailable.")
+		} else {
+			writeError(w, http.StatusConflict, "asset_not_retryable", "The asset scan state changed.")
+		}
+		return
+	}
+	asset.ScanStatus = "pending"
+	writeData(w, http.StatusOK, cmsAssetStatus(asset), nil)
 }
 func ownedBulletinAsset(asset assetclient.Asset, issueID, assetID, locale string) bool {
 	return asset.ID == assetID && asset.Namespace == "cms.weekly.pdf" &&

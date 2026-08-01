@@ -127,6 +127,36 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/CreatedUploadEnvelope' }
+  /admin/bulletins/{issueId}/assets/{assetId}:
+    get:
+      operationId: getBulletinAssetStatus
+      security: [{ bearerAuth: [] }]
+      x-required-scopes: ['cms:read']
+      parameters:
+        - $ref: '#/components/parameters/IssueID'
+        - { name: assetId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Bulletin PDF scan status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AssetStatusEnvelope' }
+        '404': { $ref: '#/components/responses/Error' }
+  /admin/bulletins/{issueId}/assets/{assetId}/scan/retry:
+    post:
+      operationId: retryBulletinAssetScan
+      security: [{ bearerAuth: [] }]
+      x-required-scopes: ['cms:write', 'assets:write']
+      parameters:
+        - $ref: '#/components/parameters/IssueID'
+        - { name: assetId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Bulletin PDF scan requeued
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AssetStatusEnvelope' }
+        '409': { $ref: '#/components/responses/Error' }
   /admin/bulletins/{issueId}/assets/{assetId}/complete:
     post:
       operationId: completeBulletinUpload
@@ -358,6 +388,21 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/AssetStatusEnvelope' }
+  /admin/content/news/{contentId}/assets/{assetId}/scan/retry:
+    post:
+      operationId: retryNewsCoverScan
+      security: [{ bearerAuth: [] }]
+      x-required-scopes: ['cms:write', 'assets:write']
+      parameters:
+        - { name: contentId, in: path, required: true, schema: { type: string } }
+        - { name: assetId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: News cover scan requeued
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AssetStatusEnvelope' }
+        '409': { $ref: '#/components/responses/Error' }
   /admin/content/news/{contentId}/assets/{assetId}/complete:
     post:
       operationId: completeNewsCoverUpload
@@ -589,17 +634,14 @@ components:
         checksumSha256: { type: string, pattern: '^[a-fA-F0-9]{64}$' }
     AssetStatus:
       type: object
-      required: [id, namespace, ownerService, ownerType, ownerId, uploadStatus, scanStatus, processingStatus, visibility]
+      additionalProperties: false
+      required: [id, uploadStatus, scanStatus, processingStatus, retryable]
       properties:
         id: { type: string }
-        namespace: { type: string }
-        ownerService: { type: string }
-        ownerType: { type: string }
-        ownerId: { type: string }
         uploadStatus: { type: string, enum: [created, completed, failed] }
         scanStatus: { type: string, enum: [pending, clean, infected, failed] }
         processingStatus: { type: string, enum: [pending, ready, not_required, failed] }
-        visibility: { type: string }
+        retryable: { type: boolean }
     PublicationInput:
       type: object
       additionalProperties: false

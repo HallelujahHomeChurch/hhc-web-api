@@ -220,6 +220,55 @@ func TestCompleteBulletinUploadAttachesOwnedAsset(t *testing.T) {
 	}
 }
 
+func TestBulletinAssetStatusReturnsOnlyOwnedAsset(t *testing.T) {
+	uploads := &apiUploads{completed: assetclient.Asset{
+		ID: "asset-1", Namespace: "cms.weekly.pdf", OwnerService: "hhc-web-api",
+		OwnerType: "bulletin_issue", OwnerID: "issue-1", Locale: "zh-Hant",
+		UploadStatus: "completed", ScanStatus: "pending", ProcessingStatus: "pending",
+	}}
+	handler := testHandlerWithUploads(&apiRepository{issue: bulletinIssue()}, uploads)
+	request := httptest.NewRequest(http.MethodGet, "/api/admin/bulletins/issue-1/assets/asset-1", nil)
+	trusted(request, "cms:read")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"scanStatus":"pending"`) {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	if strings.Contains(response.Body.String(), "ownerService") || !strings.Contains(response.Body.String(), `"retryable":false`) {
+		t.Fatalf("unsafe status body=%s", response.Body.String())
+	}
+
+	uploads.completed.OwnerID = "another-issue"
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("owner mismatch status=%d body=%s", response.Code, response.Body.String())
+	}
+
+	uploads.getError = assetclient.ErrUnavailable
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("unavailable status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestBulletinFailedAssetCanBeRetriedByAssetWriter(t *testing.T) {
+	uploads := &apiUploads{completed: assetclient.Asset{
+		ID: "asset-1", Namespace: "cms.weekly.pdf", OwnerService: "hhc-web-api",
+		OwnerType: "bulletin_issue", OwnerID: "issue-1", Locale: "zh-Hant",
+		UploadStatus: "completed", ScanStatus: "failed", ProcessingStatus: "not_required",
+	}}
+	handler := testHandlerWithUploads(&apiRepository{issue: bulletinIssue()}, uploads)
+	request := httptest.NewRequest(http.MethodPost, "/api/admin/bulletins/issue-1/assets/asset-1/scan/retry", nil)
+	trusted(request, "cms:write assets:write")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || uploads.requeueCalls != 1 || !strings.Contains(response.Body.String(), `"scanStatus":"pending"`) {
+		t.Fatalf("status=%d requeues=%d body=%s", response.Code, uploads.requeueCalls, response.Body.String())
+	}
+}
+
 func TestCompleteBulletinUploadRejectsOwnerBeforeMutation(t *testing.T) {
 	repo := &apiRepository{issue: bulletinIssue()}
 	uploads := &apiUploads{completed: assetclient.Asset{
@@ -312,6 +361,7 @@ type apiUploads struct {
 	completed                   assetclient.Asset
 	completeCalls               int
 	getError                    error
+	requeueCalls                int
 }
 
 func (u *apiUploads) CreateBulletinUpload(_ context.Context, issueID, locale, fileName, mimeType string, sizeBytes int64, key string) (assetclient.CreatedUpload, error) {
@@ -328,6 +378,10 @@ func (u *apiUploads) CompleteUpload(context.Context, string, assetclient.Complet
 }
 func (u *apiUploads) Get(context.Context, string) (assetclient.Asset, error) {
 	return u.completed, u.getError
+}
+func (u *apiUploads) RequeueScan(context.Context, string) error {
+	u.requeueCalls++
+	return nil
 }
 func (*apiRepository) StartPublish(context.Context, string, string, int64, string, time.Time) (bulletins.Workflow, error) {
 	return bulletins.Workflow{}, nil
