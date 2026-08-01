@@ -108,6 +108,17 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/BulletinIssue' }
         '404': { $ref: '#/components/responses/Error' }
+    delete:
+      operationId: deleteBulletin
+      security: [{ bearerAuth: [] }]
+      x-required-scopes: ['cms:write']
+      parameters:
+        - $ref: '#/components/parameters/IssueID'
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204': { description: Bulletin and its revisions deleted }
+        '409': { $ref: '#/components/responses/Error' }
+        '412': { $ref: '#/components/responses/Error' }
   /admin/bulletins/{issueId}/upload-sessions:
     post:
       operationId: createBulletinUploadSession
@@ -202,29 +213,30 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/BulletinIssue' }
         '412': { $ref: '#/components/responses/Error' }
-  /admin/bulletins/{issueId}/archive:
+  /admin/bulletins/{issueId}/revisions:
+    get:
+      operationId: listBulletinRevisions
+      security: [{ bearerAuth: [] }]
+      x-required-scopes: ['cms:read']
+      parameters: [{ $ref: '#/components/parameters/IssueID' }]
+      responses:
+        '200':
+          description: Bulletin revisions
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BulletinRevisionListEnvelope' }
+  /admin/bulletins/{issueId}/revisions/{revision}/restore:
     post:
-      operationId: archiveBulletin
+      operationId: restoreBulletinRevision
       security: [{ bearerAuth: [] }]
       x-required-scopes: ['cms:write']
       parameters:
         - $ref: '#/components/parameters/IssueID'
+        - $ref: '#/components/parameters/Revision'
         - $ref: '#/components/parameters/IfMatch'
       responses:
         '200': { $ref: '#/components/responses/BulletinIssue' }
-        '409': { $ref: '#/components/responses/Error' }
-        '412': { $ref: '#/components/responses/Error' }
-  /admin/bulletins/{issueId}/restore:
-    post:
-      operationId: restoreBulletin
-      security: [{ bearerAuth: [] }]
-      x-required-scopes: ['cms:write']
-      parameters:
-        - $ref: '#/components/parameters/IssueID'
-        - $ref: '#/components/parameters/IfMatch'
-      responses:
-        '200': { $ref: '#/components/responses/BulletinIssue' }
-        '409': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
         '412': { $ref: '#/components/responses/Error' }
   /admin/content/{module}:
     get:
@@ -237,7 +249,7 @@ paths:
         - $ref: '#/components/parameters/PageSize'
         - { name: q, in: query, schema: { type: string, maxLength: 200 } }
         - { name: status, in: query, schema: { $ref: '#/components/schemas/ContentStatus' } }
-        - { name: sort, in: query, schema: { type: string, enum: [updatedAt, displayDate, sortOrder] } }
+        - { name: sort, in: query, schema: { type: string, enum: [updatedAt, displayDate, eventDate] } }
         - { name: direction, in: query, schema: { type: string, enum: [asc, desc] } }
       responses:
         '200':
@@ -280,6 +292,18 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/ContentItem' }
         '412': { $ref: '#/components/responses/Error' }
+    delete:
+      operationId: deleteContent
+      security: [{ bearerAuth: [] }]
+      x-required-scopes: ['cms:write']
+      parameters:
+        - $ref: '#/components/parameters/ContentModule'
+        - $ref: '#/components/parameters/ContentID'
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204': { description: Content and its revisions deleted }
+        '409': { $ref: '#/components/responses/Error' }
+        '412': { $ref: '#/components/responses/Error' }
   /admin/content/{module}/{contentId}/publish:
     post:
       operationId: publishContent
@@ -303,32 +327,6 @@ paths:
         - $ref: '#/components/parameters/IfMatch'
       responses:
         '200': { $ref: '#/components/responses/ContentItem' }
-  /admin/content/{module}/{contentId}/archive:
-    post:
-      operationId: archiveContent
-      security: [{ bearerAuth: [] }]
-      x-required-scopes: ['cms:write']
-      parameters:
-        - $ref: '#/components/parameters/ContentModule'
-        - $ref: '#/components/parameters/ContentID'
-        - $ref: '#/components/parameters/IfMatch'
-      responses:
-        '200': { $ref: '#/components/responses/ContentItem' }
-        '409': { $ref: '#/components/responses/Error' }
-        '412': { $ref: '#/components/responses/Error' }
-  /admin/content/{module}/{contentId}/restore:
-    post:
-      operationId: restoreArchivedContent
-      security: [{ bearerAuth: [] }]
-      x-required-scopes: ['cms:write']
-      parameters:
-        - $ref: '#/components/parameters/ContentModule'
-        - $ref: '#/components/parameters/ContentID'
-        - $ref: '#/components/parameters/IfMatch'
-      responses:
-        '200': { $ref: '#/components/responses/ContentItem' }
-        '409': { $ref: '#/components/responses/Error' }
-        '412': { $ref: '#/components/responses/Error' }
   /admin/content/{module}/{contentId}/revisions:
     get:
       operationId: listContentRevisions
@@ -487,7 +485,7 @@ components:
       default: zh-Hant
     BulletinStatus:
       type: string
-      enum: [draft, publishing, published, unpublishing, unpublish_failed, unpublished, archived]
+      enum: [draft, publishing, published, unpublishing, unpublish_failed, unpublished]
     BulletinVersionStatus:
       type: string
       enum: [draft, publishing, published, unpublishing, unpublish_failed, unpublished]
@@ -496,7 +494,7 @@ components:
       enum: [news, history, videos]
     ContentStatus:
       type: string
-      enum: [draft, publishing, published, publish_failed, unpublishing, unpublish_failed, unpublished, archived]
+      enum: [draft, publishing, published, publish_failed, unpublishing, unpublish_failed, unpublished]
     PageMeta:
       type: object
       required: [page, pageSize, total]
@@ -544,6 +542,14 @@ components:
         versions:
           type: array
           items: { $ref: '#/components/schemas/BulletinVersion' }
+    BulletinRevision:
+      type: object
+      required: [version, snapshot, createdBy, createdAt]
+      properties:
+        version: { type: integer, format: int64 }
+        snapshot: { $ref: '#/components/schemas/BulletinIssue' }
+        createdBy: { type: string }
+        createdAt: { type: string, format: date-time }
     PublicBulletin:
       type: object
       required: [issueDate, locale, title, downloadUrl, publishedAt, version]
@@ -666,7 +672,7 @@ components:
       properties:
         slug: { type: string, minLength: 1, maxLength: 120, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$' }
         displayDate: { type: string, format: date }
-        sortOrder: { type: integer, minimum: 1 }
+        eventDate: { type: string, pattern: '^\d{4}(?:-\d{2}(?:-\d{2})?)?$' }
         youtubeVideoId: { type: string, pattern: '^[A-Za-z0-9_-]{11}$' }
         coverAssetId: { type: string, maxLength: 200 }
         featured: { type: boolean }
@@ -712,11 +718,11 @@ components:
         body: { type: string }
         dateLabel: { type: string }
         displayDate: { type: string, format: date }
+        eventDate: { type: string, pattern: '^\d{4}(?:-\d{2}(?:-\d{2})?)?$' }
         imageAlt: { type: string }
         imageUrl: { type: string }
         href: { type: string }
         youtubeVideoId: { type: string }
-        sortOrder: { type: integer }
         featured: { type: boolean }
         homeEligible: { type: boolean }
     BulletinIssueEnvelope:
@@ -732,6 +738,13 @@ components:
       properties:
         data: { type: array, items: { $ref: '#/components/schemas/BulletinIssue' } }
         meta: { $ref: '#/components/schemas/PageMeta' }
+        error: { type: ['null'] }
+    BulletinRevisionListEnvelope:
+      type: object
+      required: [data, meta]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/BulletinRevision' } }
+        meta: { type: object, additionalProperties: true }
         error: { type: ['null'] }
     PublicBulletinEnvelope:
       type: object
