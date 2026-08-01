@@ -216,8 +216,7 @@ func (h *Handler) changeContentPublication(w http.ResponseWriter, r *http.Reques
 				return
 			}
 			asset, assetErr := h.uploads.Get(r.Context(), current.CoverAssetID)
-			if assetErr != nil || asset.Namespace != "cms.news.cover" || asset.OwnerService != "hhc-web-api" || asset.OwnerType != "news" || asset.OwnerID != id ||
-				asset.UploadStatus != "completed" || asset.ScanStatus == "infected" || asset.ScanStatus == "failed" || asset.ProcessingStatus == "failed" {
+			if assetErr != nil || asset.Namespace != "cms.news.cover" || asset.OwnerService != "hhc-web-api" || asset.OwnerType != "news" || asset.OwnerID != id || !assetCanEnterPublication(asset) {
 				handleContentError(w, content.ErrNotPublishable)
 				return
 			}
@@ -235,6 +234,13 @@ func (h *Handler) changeContentPublication(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeContentItem(w, value)
+}
+
+func assetCanEnterPublication(asset assetclient.Asset) bool {
+	if asset.UploadStatus != "completed" || (asset.ScanStatus != "pending" && asset.ScanStatus != "clean") {
+		return false
+	}
+	return asset.ProcessingStatus == "pending" || asset.ProcessingStatus == "ready" || asset.ProcessingStatus == "not_required"
 }
 
 type newsCoverUploadInput struct {

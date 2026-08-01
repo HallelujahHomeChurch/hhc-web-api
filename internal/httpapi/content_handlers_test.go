@@ -128,6 +128,31 @@ func TestNewsPublishQueuesOwnedCoverWhileScanIsPending(t *testing.T) {
 	}
 }
 
+func TestNewsPublishRejectsUnknownAssetStates(t *testing.T) {
+	tests := []struct {
+		name       string
+		scan       string
+		processing string
+	}{
+		{name: "unknown scan", scan: "unknown", processing: "pending"},
+		{name: "unknown processing", scan: "clean", processing: "unknown"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			repo := &contentRepository{item: content.Item{ID: "news-1", Module: content.ModuleNews, Status: content.StatusDraft, Version: 2, Slug: "news", DisplayDate: "2026-07-13", CoverAssetID: "asset-1", Translations: []content.Translation{{Locale: "zh-Hant", Title: "消息", Summary: "消息摘要"}}}}
+			uploads := &apiUploads{completed: assetclient.Asset{ID: "asset-1", Namespace: "cms.news.cover", OwnerService: "hhc-web-api", OwnerType: "news", OwnerID: "news-1", UploadStatus: "completed", ScanStatus: test.scan, ProcessingStatus: test.processing}}
+			request := httptest.NewRequest(http.MethodPost, "/api/admin/content/news/news-1/publish", nil)
+			trusted(request, "cms:publish")
+			request.Header.Set("If-Match", `"2"`)
+			response := httptest.NewRecorder()
+			contentTestHandlerWithAssets(repo, uploads).ServeHTTP(response, request)
+			if response.Code != http.StatusUnprocessableEntity || repo.item.Status != content.StatusDraft {
+				t.Fatalf("status=%d contentStatus=%q body=%s", response.Code, repo.item.Status, response.Body.String())
+			}
+		})
+	}
+}
+
 func TestCompleteNewsCoverRejectsOwnerBeforeMutation(t *testing.T) {
 	repo := &contentRepository{item: content.Item{ID: "news-1", Module: content.ModuleNews, Version: 1}}
 	uploads := &apiUploads{completed: assetclient.Asset{
