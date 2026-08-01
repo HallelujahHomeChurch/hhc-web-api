@@ -66,6 +66,18 @@ func (s *Service) RestoreIssue(ctx context.Context, id string, expected int64, a
 	}
 	return s.repository.RestoreIssue(ctx, id, expected, actor, s.now().UTC())
 }
+func (s *Service) IssueRevisions(ctx context.Context, id string) ([]Revision, error) {
+	if strings.TrimSpace(id) == "" {
+		return nil, ErrInvalid
+	}
+	return s.repository.IssueRevisions(ctx, id)
+}
+func (s *Service) RestoreIssueRevision(ctx context.Context, id string, revision, expected int64, actor string) (Issue, error) {
+	if strings.TrimSpace(id) == "" || revision < 1 || expected < 1 || strings.TrimSpace(actor) == "" {
+		return Issue{}, ErrInvalid
+	}
+	return s.repository.RestoreIssueRevision(ctx, id, revision, expected, actor, s.now().UTC())
+}
 func (s *Service) GetPublicLatest(ctx context.Context, locale string) (PublicBulletin, error) {
 	if !validLocale(locale) {
 		return PublicBulletin{}, ErrInvalid

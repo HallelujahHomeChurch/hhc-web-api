@@ -65,6 +65,13 @@ type Workflow struct {
 	CreatedAt        time.Time `json:"createdAt"`
 }
 
+type Revision struct {
+	Version   int64     `json:"version"`
+	Snapshot  Issue     `json:"snapshot"`
+	CreatedBy string    `json:"createdBy"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
 type CreateIssueInput struct {
 	IssueDate string `json:"issueDate"`
 }
@@ -99,6 +106,8 @@ type Repository interface {
 	Unpublish(context.Context, string, string, int64, string, time.Time) (Issue, error)
 	ArchiveIssue(context.Context, string, int64, string, time.Time) (Issue, error)
 	RestoreIssue(context.Context, string, int64, string, time.Time) (Issue, error)
+	IssueRevisions(context.Context, string) ([]Revision, error)
+	RestoreIssueRevision(context.Context, string, int64, int64, string, time.Time) (Issue, error)
 	GetPublicLatest(context.Context, string) (PublicBulletin, error)
 	GetPublicByDate(context.Context, string, string) (PublicBulletin, error)
 	ListPublic(context.Context, int, int) (PublicPage, error)

@@ -3,6 +3,7 @@ package httpapi
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -146,6 +147,72 @@ func TestArchiveIssueRequiresWriteScopeAndReturnsETag(t *testing.T) {
 	}
 	if repo.issue.Status != "archived" {
 		t.Fatalf("issue=%#v", repo.issue)
+	}
+}
+
+func TestBulletinRevisionRoutesListAndRestoreDraft(t *testing.T) {
+	repo := &apiRepository{
+		issue: bulletinIssue(),
+		revisions: []bulletins.Revision{{
+			Version: 1,
+			Snapshot: bulletins.Issue{ID: "issue-1", IssueDate: "2026-07-13", Versions: []bulletins.Version{{
+				ID: "version-1", IssueID: "issue-1", Locale: "zh-Hant", Title: "舊週報", PDFAssetID: "asset-1", PDFFileName: "weekly.pdf",
+			}}},
+		}},
+	}
+	uploads := &apiUploads{completed: assetclient.Asset{ID: "asset-1", Namespace: "cms.weekly.pdf", OwnerService: "hhc-web-api", OwnerType: "bulletin_issue", OwnerID: "issue-1", Locale: "zh-Hant"}}
+	handler := testHandlerWithUploads(repo, uploads)
+
+	request := httptest.NewRequest(http.MethodGet, "/api/admin/bulletins/issue-1/revisions", nil)
+	trusted(request, "cms:read")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("list status=%d body=%s", response.Code, response.Body.String())
+	}
+	var listed envelope
+	if err := json.Unmarshal(response.Body.Bytes(), &listed); err != nil {
+		t.Fatal(err)
+	}
+
+	request = httptest.NewRequest(http.MethodPost, "/api/admin/bulletins/issue-1/revisions/1/restore", nil)
+	trusted(request, "cms:write")
+	request.Header.Set("If-Match", `"1"`)
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || response.Header().Get("ETag") != `"2"` {
+		t.Fatalf("restore status=%d etag=%q body=%s", response.Code, response.Header().Get("ETag"), response.Body.String())
+	}
+	if repo.restoredRevision != 1 || repo.issue.Status != "draft" {
+		t.Fatalf("repo=%#v", repo)
+	}
+}
+
+func TestBulletinRevisionRestoreRejectsMissingAssetBeforeMutation(t *testing.T) {
+	repo := &apiRepository{issue: bulletinIssue(), revisions: []bulletins.Revision{{
+		Version:  1,
+		Snapshot: bulletins.Issue{ID: "issue-1", Versions: []bulletins.Version{{IssueID: "issue-1", Locale: "zh-Hant", PDFAssetID: "missing-asset"}}},
+	}}}
+	uploads := &apiUploads{getError: assetclient.ErrNotFound}
+	request := httptest.NewRequest(http.MethodPost, "/api/admin/bulletins/issue-1/revisions/1/restore", nil)
+	trusted(request, "cms:write")
+	request.Header.Set("If-Match", `"1"`)
+	response := httptest.NewRecorder()
+	testHandlerWithUploads(repo, uploads).ServeHTTP(response, request)
+	if response.Code != http.StatusUnprocessableEntity || repo.restoredRevision != 0 {
+		t.Fatalf("status=%d restored=%d body=%s", response.Code, repo.restoredRevision, response.Body.String())
+	}
+}
+
+func TestBulletinRevisionRestoreMapsStaleVersion(t *testing.T) {
+	repo := &apiRepository{issue: bulletinIssue(), revisions: []bulletins.Revision{{Version: 1, Snapshot: bulletins.Issue{ID: "issue-1"}}}, restoreError: bulletins.ErrPrecondition}
+	request := httptest.NewRequest(http.MethodPost, "/api/admin/bulletins/issue-1/revisions/1/restore", nil)
+	trusted(request, "cms:write")
+	request.Header.Set("If-Match", `"1"`)
+	response := httptest.NewRecorder()
+	testHandlerWithUploads(repo, &apiUploads{}).ServeHTTP(response, request)
+	if response.Code != http.StatusPreconditionFailed {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 
@@ -330,6 +397,9 @@ type apiRepository struct {
 	public             bulletins.PublicBulletin
 	issue              bulletins.Issue
 	put                bulletins.PutVersionInput
+	revisions          []bulletins.Revision
+	restoredRevision   int64
+	restoreError       error
 }
 
 func (r *apiRepository) CreateIssue(_ context.Context, date, actor, key string, now time.Time) (bulletins.Issue, error) {
@@ -396,6 +466,19 @@ func (r *apiRepository) ArchiveIssue(_ context.Context, _ string, _ int64, actor
 	return r.issue, nil
 }
 func (r *apiRepository) RestoreIssue(_ context.Context, _ string, _ int64, actor string, _ time.Time) (bulletins.Issue, error) {
+	r.issue.Status = "draft"
+	r.issue.Version++
+	r.issue.UpdatedBy = actor
+	return r.issue, nil
+}
+func (r *apiRepository) IssueRevisions(context.Context, string) ([]bulletins.Revision, error) {
+	return r.revisions, nil
+}
+func (r *apiRepository) RestoreIssueRevision(_ context.Context, _ string, revision, _ int64, actor string, _ time.Time) (bulletins.Issue, error) {
+	r.restoredRevision = revision
+	if r.restoreError != nil {
+		return bulletins.Issue{}, r.restoreError
+	}
 	r.issue.Status = "draft"
 	r.issue.Version++
 	r.issue.UpdatedBy = actor

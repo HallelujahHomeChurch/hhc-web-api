@@ -49,11 +49,34 @@ func TestServiceArchivesAndRestoresIssue(t *testing.T) {
 	}
 }
 
+func TestServiceListsAndRestoresIssueRevision(t *testing.T) {
+	repo := &repositoryStub{}
+	service := NewService(repo, func() time.Time { return time.Unix(123, 0) })
+
+	if _, err := service.IssueRevisions(context.Background(), ""); err != ErrInvalid {
+		t.Fatalf("invalid list error=%v", err)
+	}
+	if _, err := service.RestoreIssueRevision(context.Background(), "issue-1", 0, 2, "user-1"); err != ErrInvalid {
+		t.Fatalf("invalid revision error=%v", err)
+	}
+	if _, err := service.RestoreIssueRevision(context.Background(), "issue-1", 1, 0, "user-1"); err != ErrInvalid {
+		t.Fatalf("invalid expected error=%v", err)
+	}
+	if _, err := service.RestoreIssueRevision(context.Background(), "issue-1", 1, 2, "user-1"); err != nil {
+		t.Fatal(err)
+	}
+	if repo.revision != 1 || repo.expected != 2 || repo.actor != "user-1" || !repo.now.Equal(time.Unix(123, 0).UTC()) {
+		t.Fatalf("restore forwarding=%#v", repo)
+	}
+}
+
 type repositoryStub struct {
 	page, pageSize       int
 	expected             int64
 	actor                string
 	archiveID, restoreID string
+	revision             int64
+	now                  time.Time
 }
 
 func (r *repositoryStub) CreateIssue(context.Context, string, string, string, time.Time) (Issue, error) {
@@ -80,6 +103,13 @@ func (r *repositoryStub) ArchiveIssue(_ context.Context, id string, expected int
 }
 func (r *repositoryStub) RestoreIssue(_ context.Context, id string, expected int64, actor string, _ time.Time) (Issue, error) {
 	r.restoreID, r.expected, r.actor = id, expected, actor
+	return Issue{}, nil
+}
+func (*repositoryStub) IssueRevisions(context.Context, string) ([]Revision, error) {
+	return []Revision{}, nil
+}
+func (r *repositoryStub) RestoreIssueRevision(_ context.Context, _ string, revision, expected int64, actor string, now time.Time) (Issue, error) {
+	r.revision, r.expected, r.actor, r.now = revision, expected, actor, now
 	return Issue{}, nil
 }
 func (r *repositoryStub) GetPublicLatest(context.Context, string) (PublicBulletin, error) {

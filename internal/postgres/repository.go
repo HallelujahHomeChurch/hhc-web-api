@@ -90,14 +90,23 @@ func (r *Repository) ListIssues(ctx context.Context, page, size int, status stri
 }
 
 func (r *Repository) GetIssue(ctx context.Context, id string) (bulletins.Issue, error) {
-	issue, err := scanIssue(r.db.QueryRowContext(ctx, `SELECT id::text,issue_date::text,status,version,created_by,updated_by,published_at,created_at,updated_at FROM hhc_web.bulletin_issue WHERE id=$1`, id))
+	return loadIssue(ctx, r.db, id)
+}
+
+type bulletinQueryer interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}
+
+func loadIssue(ctx context.Context, query bulletinQueryer, id string) (bulletins.Issue, error) {
+	issue, err := scanIssue(query.QueryRowContext(ctx, `SELECT id::text,issue_date::text,status,version,created_by,updated_by,published_at,created_at,updated_at FROM hhc_web.bulletin_issue WHERE id=$1`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return bulletins.Issue{}, bulletins.ErrNotFound
 	}
 	if err != nil {
 		return bulletins.Issue{}, err
 	}
-	issue.Versions, err = r.versions(ctx, id)
+	issue.Versions, err = queryVersions(ctx, query, id)
 	return issue, err
 }
 
@@ -114,6 +123,9 @@ func scanIssue(row scanner) (bulletins.Issue, error) {
 	return v, err
 }
 func (r *Repository) versions(ctx context.Context, ids ...string) ([]bulletins.Version, error) {
+	return queryVersions(ctx, r.db, ids...)
+}
+func queryVersions(ctx context.Context, query bulletinQueryer, ids ...string) ([]bulletins.Version, error) {
 	if len(ids) == 0 {
 		return []bulletins.Version{}, nil
 	}
@@ -123,7 +135,7 @@ func (r *Repository) versions(ctx context.Context, ids ...string) ([]bulletins.V
 		args[index] = id
 		placeholders[index] = fmt.Sprintf("$%d", index+1)
 	}
-	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`
+	rows, err := query.QueryContext(ctx, fmt.Sprintf(`
 		SELECT v.id::text,v.issue_id::text,v.locale,v.title,v.pdf_asset_id,v.pdf_file_name,
 		       COALESCE(v.public_grant_id,''),v.status,COALESCE(w.status,''),COALESCE(w.error_detail,''),
 		       v.version,v.published_at,v.created_at,v.updated_at
@@ -202,10 +214,149 @@ func (r *Repository) PutVersion(ctx context.Context, id string, expected int64, 
 	if _, err = tx.ExecContext(ctx, `UPDATE hhc_web.bulletin_issue SET status='draft',version=version+1,updated_by=$2,updated_at=$3 WHERE id=$1`, id, actor, now); err != nil {
 		return bulletins.Issue{}, err
 	}
+	issue, err := loadIssue(ctx, tx, id)
+	if err != nil {
+		return bulletins.Issue{}, err
+	}
+	if err := insertBulletinRevision(ctx, tx, issue, actor, now); err != nil {
+		return bulletins.Issue{}, err
+	}
 	if err := tx.Commit(); err != nil {
 		return bulletins.Issue{}, err
 	}
-	return r.GetIssue(ctx, id)
+	return issue, nil
+}
+
+func (r *Repository) IssueRevisions(ctx context.Context, id string) ([]bulletins.Revision, error) {
+	var exists bool
+	if err := r.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM hhc_web.bulletin_issue WHERE id=$1)`, id).Scan(&exists); err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, bulletins.ErrNotFound
+	}
+	rows, err := r.db.QueryContext(ctx, `SELECT version,snapshot_json,created_by,created_at FROM hhc_web.bulletin_revision WHERE issue_id=$1 ORDER BY version DESC`, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	values := []bulletins.Revision{}
+	for rows.Next() {
+		var value bulletins.Revision
+		var payload []byte
+		if err := rows.Scan(&value.Version, &payload, &value.CreatedBy, &value.CreatedAt); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(payload, &value.Snapshot); err != nil {
+			return nil, err
+		}
+		values = append(values, value)
+	}
+	return values, rows.Err()
+}
+
+func (r *Repository) RestoreIssueRevision(ctx context.Context, id string, revision, expected int64, actor string, now time.Time) (bulletins.Issue, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return bulletins.Issue{}, err
+	}
+	defer tx.Rollback()
+	var current int64
+	var status string
+	if err := tx.QueryRowContext(ctx, `SELECT version,status FROM hhc_web.bulletin_issue WHERE id=$1 FOR UPDATE`, id).Scan(&current, &status); errors.Is(err, sql.ErrNoRows) {
+		return bulletins.Issue{}, bulletins.ErrNotFound
+	} else if err != nil {
+		return bulletins.Issue{}, err
+	}
+	if current != expected {
+		return bulletins.Issue{}, bulletins.ErrPrecondition
+	}
+	if status == "publishing" || status == "unpublishing" || status == "archived" {
+		return bulletins.Issue{}, bulletins.ErrConflict
+	}
+	var payload []byte
+	if err := tx.QueryRowContext(ctx, `SELECT snapshot_json FROM hhc_web.bulletin_revision WHERE issue_id=$1 AND version=$2`, id, revision).Scan(&payload); errors.Is(err, sql.ErrNoRows) {
+		return bulletins.Issue{}, bulletins.ErrNotFound
+	} else if err != nil {
+		return bulletins.Issue{}, err
+	}
+	var snapshot bulletins.Issue
+	if err := json.Unmarshal(payload, &snapshot); err != nil {
+		return bulletins.Issue{}, err
+	}
+	if snapshot.ID != id || !validStoredIssueDate(snapshot.IssueDate) {
+		return bulletins.Issue{}, bulletins.ErrConflict
+	}
+	locales := make([]string, len(snapshot.Versions))
+	args := []any{id}
+	for index, version := range snapshot.Versions {
+		locales[index] = version.Locale
+		args = append(args, version.Locale)
+	}
+	missingClause := ""
+	if len(locales) > 0 {
+		placeholders := make([]string, len(locales))
+		for index := range locales {
+			placeholders[index] = fmt.Sprintf("$%d", index+2)
+		}
+		missingClause = " AND locale NOT IN (" + strings.Join(placeholders, ",") + ")"
+	}
+	var hasPublicVersion bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM hhc_web.bulletin_version WHERE issue_id=$1`+missingClause+` AND (COALESCE(public_grant_id,'')<>'' OR COALESCE(retiring_grant_id,'')<>'' OR status IN ('published','unpublishing','unpublish_failed')))`, args...).Scan(&hasPublicVersion); err != nil {
+		return bulletins.Issue{}, err
+	}
+	if hasPublicVersion {
+		return bulletins.Issue{}, bulletins.ErrConflict
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM hhc_web.bulletin_version WHERE issue_id=$1`+missingClause, args...); err != nil {
+		return bulletins.Issue{}, err
+	}
+	for _, version := range snapshot.Versions {
+		versionID := version.ID
+		if versionID == "" {
+			versionID = platform.NewID()
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO hhc_web.bulletin_version(id,issue_id,locale,title,pdf_asset_id,pdf_file_name,status,version,created_by,updated_by,created_at,updated_at)
+			VALUES($1,$2,$3,$4,$5,$6,'draft',1,$7,$7,$8,$8)
+			ON CONFLICT(issue_id,locale) DO UPDATE SET
+				retiring_asset_id=CASE WHEN hhc_web.bulletin_version.status='published' THEN hhc_web.bulletin_version.pdf_asset_id ELSE hhc_web.bulletin_version.retiring_asset_id END,
+				retiring_grant_id=CASE WHEN hhc_web.bulletin_version.status='published' THEN hhc_web.bulletin_version.public_grant_id ELSE hhc_web.bulletin_version.retiring_grant_id END,
+				title=EXCLUDED.title,pdf_asset_id=EXCLUDED.pdf_asset_id,pdf_file_name=EXCLUDED.pdf_file_name,status='draft',
+				version=hhc_web.bulletin_version.version+1,updated_by=EXCLUDED.updated_by,updated_at=EXCLUDED.updated_at`,
+			versionID, id, version.Locale, version.Title, version.PDFAssetID, version.PDFFileName, actor, now); err != nil {
+			return bulletins.Issue{}, err
+		}
+	}
+	next := current + 1
+	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.bulletin_issue SET issue_date=$2,status='draft',version=$3,updated_by=$4,updated_at=$5 WHERE id=$1`, id, snapshot.IssueDate, next, actor, now); err != nil {
+		return bulletins.Issue{}, mapConflict(err)
+	}
+	restored, err := loadIssue(ctx, tx, id)
+	if err != nil {
+		return bulletins.Issue{}, err
+	}
+	if err := insertBulletinRevision(ctx, tx, restored, actor, now); err != nil {
+		return bulletins.Issue{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return bulletins.Issue{}, err
+	}
+	return restored, nil
+}
+
+func insertBulletinRevision(ctx context.Context, tx *sql.Tx, issue bulletins.Issue, actor string, now time.Time) error {
+	payload, err := json.Marshal(issue)
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO hhc_web.bulletin_revision(issue_id,version,snapshot_json,created_by,created_at) VALUES($1,$2,$3,$4,$5)`, issue.ID, issue.Version, payload, actor, now)
+	return err
+}
+
+func validStoredIssueDate(value string) bool {
+	parsed, err := time.Parse("2006-01-02", value)
+	return err == nil && parsed.Format("2006-01-02") == value
 }
 
 func (r *Repository) StartPublish(ctx context.Context, id, locale string, expected int64, actor string, now time.Time) (bulletins.Workflow, error) {
