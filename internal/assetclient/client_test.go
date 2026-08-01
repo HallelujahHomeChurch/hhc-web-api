@@ -17,12 +17,12 @@ func TestClientUsesInternalIdentityAndStablePublicURL(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(Asset{ID: "asset-1", OwnerService: "hhc-web-api", ScanStatus: "clean"})
 	}))
 	defer server.Close()
-	client := New(server.URL, "hhc-web-api", "https://www.alive.org.tw/api")
+	client := New(server.URL, "hhc-web-api", "https://www.alive.org.tw/assets")
 	asset, err := client.Get(context.Background(), "asset-1")
 	if err != nil || asset.ScanStatus != "clean" {
 		t.Fatalf("asset=%#v err=%v", asset, err)
 	}
-	if got := client.PublicURL("asset-1"); got != "https://www.alive.org.tw/api/assets/public/asset-1" {
+	if got := client.PublicURL("asset-1"); got != "https://www.alive.org.tw/assets/asset-1" {
 		t.Fatalf("url=%s", got)
 	}
 }

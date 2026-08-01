@@ -33,7 +33,7 @@ func Load() (Config, error) {
 		InternalCallerAppID: value("INTERNAL_CALLER_APP_ID", "hhc-web-api"), AdminAllowedCaller: value("ADMIN_ALLOWED_CALLER_APP_ID", "api-gateway"),
 		DaprAPIToken:      strings.TrimSpace(os.Getenv("APP_API_TOKEN")),
 		AllowDevCaller:    strings.EqualFold(strings.TrimSpace(os.Getenv("ALLOW_DEV_CALLER_HEADER")), "true"),
-		PublicBaseURL:     value("PUBLIC_BASE_URL", "http://127.0.0.1:8082/api"),
+		PublicBaseURL:     value("PUBLIC_BASE_URL", "http://127.0.0.1:8082/assets"),
 		OutboxMaxAttempts: 20,
 	}
 	if cfg.DatabaseURL == "" {

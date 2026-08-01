@@ -122,7 +122,7 @@ func (c *Client) RequeueScan(ctx context.Context, assetID string) error {
 	return c.request(ctx, http.MethodPost, "/priv/assets/"+url.PathEscape(assetID)+"/scan/requeue", nil, "", nil)
 }
 func (c *Client) PublicURL(assetID string) string {
-	return c.publicBaseURL + "/assets/public/" + url.PathEscape(assetID)
+	return c.publicBaseURL + "/" + url.PathEscape(assetID)
 }
 func (c *Client) request(ctx context.Context, method, path string, body any, idempotency string, destination any) error {
 	var reader io.Reader
