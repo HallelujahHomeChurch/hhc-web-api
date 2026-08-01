@@ -602,9 +602,9 @@ func bulletinAssetIDs(ctx context.Context, tx *sql.Tx, id string) ([]string, err
 		SELECT asset_id FROM (
 			SELECT pdf_asset_id AS asset_id FROM hhc_web.bulletin_version WHERE issue_id=$1
 			UNION
-			SELECT version->>'pdfAssetId'
+			SELECT snapshot_version->>'pdfAssetId'
 			FROM hhc_web.bulletin_revision revision
-			CROSS JOIN LATERAL jsonb_array_elements(revision.snapshot_json->'versions') version
+			CROSS JOIN LATERAL jsonb_array_elements(revision.snapshot_json->'versions') snapshot_version
 			WHERE revision.issue_id=$1
 		) assets WHERE COALESCE(asset_id,'')<>'' ORDER BY asset_id`, id)
 	if err != nil {

@@ -741,7 +741,11 @@ func writeTypedContent(ctx context.Context, tx *sql.Tx, module content.Module, i
 		return err
 	case content.ModuleHistory:
 		if verb == "INSERT" {
-			_, err := tx.ExecContext(ctx, `INSERT INTO hhc_web.history_event(entry_id,event_date) VALUES($1,NULLIF($2,''))`, id, input.EventDate)
+			// Retain a unique legacy sort_order until a later contract migration removes it.
+			if _, err := tx.ExecContext(ctx, `LOCK TABLE hhc_web.history_event IN SHARE ROW EXCLUSIVE MODE`); err != nil {
+				return err
+			}
+			_, err := tx.ExecContext(ctx, `INSERT INTO hhc_web.history_event(entry_id,event_date,sort_order) SELECT $1,NULLIF($2,''),COALESCE(MAX(sort_order),0)+1 FROM hhc_web.history_event`, id, input.EventDate)
 			return err
 		}
 		_, err := tx.ExecContext(ctx, `UPDATE hhc_web.history_event SET event_date=NULLIF($2,'') WHERE entry_id=$1`, id, input.EventDate)
