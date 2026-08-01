@@ -60,13 +60,33 @@ func (r *Repository) ListIssues(ctx context.Context, page, size int, status stri
 		if err != nil {
 			return bulletins.Page{}, err
 		}
-		issue.Versions, err = r.versions(ctx, issue.ID)
-		if err != nil {
-			return bulletins.Page{}, err
-		}
 		items = append(items, issue)
 	}
-	return bulletins.Page{Items: items, Page: page, PageSize: size, Total: total}, rows.Err()
+	if err := rows.Err(); err != nil {
+		return bulletins.Page{}, err
+	}
+	if err := rows.Close(); err != nil {
+		return bulletins.Page{}, err
+	}
+	ids := make([]string, len(items))
+	for index := range items {
+		ids[index] = items[index].ID
+	}
+	versions, err := r.versions(ctx, ids...)
+	if err != nil {
+		return bulletins.Page{}, err
+	}
+	byIssue := make(map[string][]bulletins.Version, len(items))
+	for _, version := range versions {
+		byIssue[version.IssueID] = append(byIssue[version.IssueID], version)
+	}
+	for index := range items {
+		items[index].Versions = byIssue[items[index].ID]
+		if items[index].Versions == nil {
+			items[index].Versions = []bulletins.Version{}
+		}
+	}
+	return bulletins.Page{Items: items, Page: page, PageSize: size, Total: total}, nil
 }
 
 func (r *Repository) GetIssue(ctx context.Context, id string) (bulletins.Issue, error) {
@@ -93,8 +113,17 @@ func scanIssue(row scanner) (bulletins.Issue, error) {
 	}
 	return v, err
 }
-func (r *Repository) versions(ctx context.Context, id string) ([]bulletins.Version, error) {
-	rows, err := r.db.QueryContext(ctx, `
+func (r *Repository) versions(ctx context.Context, ids ...string) ([]bulletins.Version, error) {
+	if len(ids) == 0 {
+		return []bulletins.Version{}, nil
+	}
+	args := make([]any, len(ids))
+	placeholders := make([]string, len(ids))
+	for index, id := range ids {
+		args[index] = id
+		placeholders[index] = fmt.Sprintf("$%d", index+1)
+	}
+	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT v.id::text,v.issue_id::text,v.locale,v.title,v.pdf_asset_id,v.pdf_file_name,
 		       COALESCE(v.public_grant_id,''),v.status,COALESCE(w.status,''),COALESCE(w.error_detail,''),
 		       v.version,v.published_at,v.created_at,v.updated_at
@@ -106,8 +135,8 @@ func (r *Repository) versions(ctx context.Context, id string) ([]bulletins.Versi
 			ORDER BY created_at DESC
 			LIMIT 1
 		) w ON true
-		WHERE v.issue_id=$1
-		ORDER BY v.locale`, id)
+		WHERE v.issue_id IN (%s)
+		ORDER BY v.issue_id,v.locale`, strings.Join(placeholders, ",")), args...)
 	if err != nil {
 		return nil, err
 	}
