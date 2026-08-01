@@ -36,8 +36,37 @@ func TestWorkerCompletesPublishForCleanAsset(t *testing.T) {
 	}
 }
 
-func TestWorkerRetriesWhileAssetScanIsPending(t *testing.T) {
-	repository := &workerRepository{event: publishEvent(1)}
+func TestWorkerFailsClosedForInvalidAssetStates(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		upload     string
+		scan       string
+		processing string
+	}{
+		{name: "failed upload", upload: "failed", scan: "pending", processing: "pending"},
+		{name: "unknown scan", upload: "completed", scan: "unknown", processing: "pending"},
+		{name: "failed processing", upload: "completed", scan: "clean", processing: "failed"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			repository := &workerRepository{event: publishEvent(1)}
+			assets := &workerAssets{asset: Asset{
+				ID: "asset-1", OwnerService: "hhc-web-api", Namespace: "cms.weekly.pdf",
+				OwnerType: "bulletin_issue", OwnerID: "issue-1", Locale: "zh-Hant",
+				UploadStatus: test.upload, ScanStatus: test.scan, ProcessingStatus: test.processing,
+			}}
+			worker := NewWorker(repository, assets, 5)
+			if _, err := worker.processNext(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if repository.failCount != 1 || repository.deferCount != 0 {
+				t.Fatalf("fail=%d defer=%d", repository.failCount, repository.deferCount)
+			}
+		})
+	}
+}
+
+func TestWorkerDefersWhileAssetScanIsPendingWithoutConsumingRetry(t *testing.T) {
+	repository := &workerRepository{event: publishEvent(20)}
 	assets := &workerAssets{asset: Asset{
 		ID:               "asset-1",
 		OwnerService:     "hhc-web-api",
@@ -54,8 +83,29 @@ func TestWorkerRetriesWhileAssetScanIsPending(t *testing.T) {
 	if _, err := worker.processNext(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if repository.retryCount != 1 || repository.failCount != 0 {
-		t.Fatalf("retry=%d fail=%d", repository.retryCount, repository.failCount)
+	if repository.deferCount != 1 || repository.retryCount != 0 || repository.failCount != 0 {
+		t.Fatalf("defer=%d retry=%d fail=%d", repository.deferCount, repository.retryCount, repository.failCount)
+	}
+}
+
+func TestWorkerFailsWhenAssetWaitDeadlineExpires(t *testing.T) {
+	now := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+	event := publishEvent(1)
+	event.CreatedAt = now.Add(-31 * time.Minute)
+	repository := &workerRepository{event: event}
+	assets := &workerAssets{asset: Asset{
+		ID: "asset-1", OwnerService: "hhc-web-api", Namespace: "cms.weekly.pdf",
+		OwnerType: "bulletin_issue", OwnerID: "issue-1", Locale: "zh-Hant",
+		UploadStatus: "completed", ScanStatus: "pending", ProcessingStatus: "pending",
+	}}
+	worker := NewWorker(repository, assets, 5)
+	worker.now = func() time.Time { return now }
+
+	if _, err := worker.processNext(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if repository.failCount != 1 || repository.deferCount != 0 {
+		t.Fatalf("fail=%d defer=%d", repository.failCount, repository.deferCount)
 	}
 }
 
@@ -308,6 +358,7 @@ func publishEvent(attempts int) Event {
 		AggregateVersion: 3,
 		Payload:          []byte(`{"workflowId":"workflow-1","issueId":"issue-1","locale":"zh-Hant","assetId":"asset-1","aggregateVersion":3}`),
 		Attempts:         attempts,
+		CreatedAt:        time.Date(2026, 8, 1, 11, 55, 0, 0, time.UTC),
 	}
 }
 
@@ -315,6 +366,7 @@ type workerRepository struct {
 	event                         Event
 	claimed                       bool
 	retryCount                    int
+	deferCount                    int
 	failCount                     int
 	completeCount                 int
 	completeUnpublishCount        int
@@ -338,6 +390,10 @@ func (r *workerRepository) Claim(context.Context, time.Time, time.Duration) (Eve
 }
 func (r *workerRepository) Retry(context.Context, string, string, time.Time, time.Time) error {
 	r.retryCount++
+	return nil
+}
+func (r *workerRepository) Defer(context.Context, string, string, time.Time, time.Time) error {
+	r.deferCount++
 	return nil
 }
 func (r *workerRepository) Fail(context.Context, Event, string, time.Time) error {

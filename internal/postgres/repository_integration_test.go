@@ -68,10 +68,27 @@ func TestRepositoryPublishWaitsForAssetWorkflow(t *testing.T) {
 	if err != nil || !found {
 		t.Fatalf("claim found=%v err=%v", found, err)
 	}
-	if err := repository.CompletePublish(ctx, event, "grant-1", "https://www.alive.org.tw/api/assets/public/asset-1", now.Add(time.Minute)); err != nil {
+	if event.CreatedAt.IsZero() {
+		t.Fatal("claimed event is missing its workflow start time")
+	}
+	if err := repository.Defer(ctx, event.ID, "asset scan pending", now.Add(time.Minute), now); err != nil {
 		t.Fatal(err)
 	}
-	if err := repository.CompletePublish(ctx, event, "grant-1", "https://www.alive.org.tw/api/assets/public/asset-1", now.Add(time.Minute)); err != nil {
+	var attempts int
+	if err := db.QueryRowContext(ctx, `SELECT attempts FROM hhc_web.outbox_event WHERE id=$1`, event.ID).Scan(&attempts); err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 0 {
+		t.Fatalf("deferred attempts = %d", attempts)
+	}
+	event, found, err = repository.Claim(ctx, now.Add(2*time.Minute), 30*time.Second)
+	if err != nil || !found {
+		t.Fatalf("reclaim found=%v err=%v", found, err)
+	}
+	if err := repository.CompletePublish(ctx, event, "grant-1", "https://www.alive.org.tw/api/assets/public/asset-1", now.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.CompletePublish(ctx, event, "grant-1", "https://www.alive.org.tw/api/assets/public/asset-1", now.Add(2*time.Minute)); err != nil {
 		t.Fatalf("replayed publish completion: %v", err)
 	}
 	public, err := repository.GetPublicLatest(ctx, "zh-Hant")

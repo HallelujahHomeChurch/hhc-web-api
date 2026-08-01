@@ -16,6 +16,8 @@ type Worker struct {
 	now         func() time.Time
 }
 
+const assetReadinessDeadline = 30 * time.Minute
+
 func NewWorker(repository Repository, assets AssetClient, maxAttempts int) *Worker {
 	return &Worker{repository: repository, assets: assets, maxAttempts: maxAttempts, now: time.Now}
 }
@@ -65,6 +67,13 @@ func (w *Worker) processNext(ctx context.Context) (bool, error) {
 	if err == nil {
 		return true, nil
 	}
+	var pending assetPendingError
+	if errors.As(err, &pending) {
+		if !event.CreatedAt.IsZero() && now.Sub(event.CreatedAt) >= assetReadinessDeadline {
+			return true, w.repository.Fail(ctx, event, "asset readiness deadline exceeded", now)
+		}
+		return true, w.repository.Defer(ctx, event.ID, safeError(err), now.Add(10*time.Second), now)
+	}
 	var terminal terminalError
 	var compensation compensationError
 	if errors.As(err, &terminal) || (event.Attempts >= w.maxAttempts && !errors.As(err, &compensation)) {
@@ -101,17 +110,26 @@ func (w *Worker) publish(ctx context.Context, event Event, now time.Time) error 
 }
 
 func readyAsset(asset Asset) error {
+	if asset.UploadStatus != "completed" {
+		return terminalError{fmt.Errorf("asset upload status %s", asset.UploadStatus)}
+	}
 	switch asset.ScanStatus {
 	case "infected", "failed":
 		return terminalError{fmt.Errorf("asset scan status %s", asset.ScanStatus)}
+	case "pending":
+		return assetPendingError{fmt.Errorf("asset scan pending")}
 	case "clean":
 	default:
-		return fmt.Errorf("asset scan pending")
+		return terminalError{fmt.Errorf("asset scan status %s", asset.ScanStatus)}
 	}
-	if asset.UploadStatus != "completed" || (asset.ProcessingStatus != "ready" && asset.ProcessingStatus != "not_required") {
-		return fmt.Errorf("asset processing pending")
+	switch asset.ProcessingStatus {
+	case "ready", "not_required":
+		return nil
+	case "pending":
+		return assetPendingError{fmt.Errorf("asset processing pending")}
+	default:
+		return terminalError{fmt.Errorf("asset processing status %s", asset.ProcessingStatus)}
 	}
-	return nil
 }
 
 func (w *Worker) publishNews(ctx context.Context, event Event, now time.Time) error {
@@ -222,6 +240,7 @@ func (w *Worker) retire(ctx context.Context, event Event, now time.Time) error {
 
 type terminalError struct{ error }
 type compensationError struct{ error }
+type assetPendingError struct{ error }
 
 var ErrGrantNotFound = errors.New("grant not found")
 

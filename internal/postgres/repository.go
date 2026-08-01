@@ -425,8 +425,8 @@ func (r *Repository) Claim(ctx context.Context, now time.Time, lease time.Durati
 		SET status='processing',attempts=e.attempts+1,claimed_until=$2,updated_at=$1
 		FROM candidate
 		WHERE e.id=candidate.id
-		RETURNING e.id::text,e.event_type,e.aggregate_id::text,e.aggregate_version,e.payload_json,e.attempts`, now, now.Add(lease)).Scan(
-		&event.ID, &event.EventType, &event.AggregateID, &event.AggregateVersion, &event.Payload, &event.Attempts,
+		RETURNING e.id::text,e.event_type,e.aggregate_id::text,e.aggregate_version,e.payload_json,e.attempts,e.created_at`, now, now.Add(lease)).Scan(
+		&event.ID, &event.EventType, &event.AggregateID, &event.AggregateVersion, &event.Payload, &event.Attempts, &event.CreatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return publication.Event{}, false, nil
@@ -436,6 +436,11 @@ func (r *Repository) Claim(ctx context.Context, now time.Time, lease time.Durati
 
 func (r *Repository) Retry(ctx context.Context, id, detail string, nextAttempt, now time.Time) error {
 	_, err := r.db.ExecContext(ctx, `UPDATE hhc_web.outbox_event SET status='pending',next_attempt_at=$2,claimed_until=NULL,last_error=$3,updated_at=$4 WHERE id=$1 AND status='processing'`, id, nextAttempt, detail, now)
+	return err
+}
+
+func (r *Repository) Defer(ctx context.Context, id, detail string, nextAttempt, now time.Time) error {
+	_, err := r.db.ExecContext(ctx, `UPDATE hhc_web.outbox_event SET status='pending',attempts=GREATEST(attempts-1,0),next_attempt_at=$2,claimed_until=NULL,last_error=$3,updated_at=$4 WHERE id=$1 AND status='processing'`, id, nextAttempt, detail, now)
 	return err
 }
 
