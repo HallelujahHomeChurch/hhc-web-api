@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -720,6 +721,109 @@ func TestContentListSearchesTitlesAndUsesStableTypedSorting(t *testing.T) {
 	if len(page.Items) != 1 || page.Items[0].Slug != "alpha-new" {
 		t.Fatalf("page=%#v", page)
 	}
+}
+
+func TestHistoryUsesCanonicalEventDateOrderingAndIndex(t *testing.T) {
+	databaseURL := os.Getenv("HHW_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("HHW_TEST_DATABASE_URL is not configured")
+	}
+	db, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	if err := migrations.Run(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `TRUNCATE hhc_web.public_projection,hhc_web.content_revision,hhc_web.content_translation,hhc_web.content_entry CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+
+	repository := New(db)
+	now := time.Now().UTC()
+	dates := []string{"1988", "", "1990-09-02", "1988-03"}
+	for index, eventDate := range dates {
+		item, err := repository.CreateContent(ctx, content.ModuleHistory, content.WriteInput{
+			EventDate: eventDate,
+			Translations: []content.Translation{{
+				Locale: "zh-Hant", Title: "事件 " + eventDate, Body: "內容", DateLabel: "顯示日期",
+			}},
+		}, "user-1", fmt.Sprintf("history-%d", index), now.Add(time.Duration(index)*time.Minute))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := repository.PublishContent(ctx, content.ModuleHistory, item.ID, item.Version, "user-1", now); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	admin, err := repository.ListContent(ctx, content.ModuleHistory, content.ListOptions{
+		Sort: "eventDate", Direction: "desc", Page: 1, PageSize: 20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := historyDates(admin.Items); strings.Join(got, ",") != "1990-09-02,1988-03,1988," {
+		t.Fatalf("admin dates=%v", got)
+	}
+
+	public, err := repository.PublicContent(ctx, content.ModuleHistory, "zh-Hant", 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := publicHistoryDates(public); strings.Join(got, ",") != "1988,1988-03,1990-09-02," {
+		t.Fatalf("public dates=%v", got)
+	}
+
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `SET LOCAL enable_seqscan=off`); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := tx.QueryContext(ctx, `
+		EXPLAIN (COSTS OFF)
+		SELECT e.id
+		FROM hhc_web.content_entry e
+		JOIN hhc_web.history_event h ON h.entry_id=e.id
+		WHERE e.module='history'
+		ORDER BY h.event_date DESC NULLS LAST,e.id DESC
+		LIMIT 20`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	plan := ""
+	for rows.Next() {
+		var line string
+		if err := rows.Scan(&line); err != nil {
+			t.Fatal(err)
+		}
+		plan += line + "\n"
+	}
+	if !strings.Contains(plan, "history_event_event_date_idx") {
+		t.Fatalf("query does not use history event date index:\n%s", plan)
+	}
+}
+
+func historyDates(items []content.Item) []string {
+	values := make([]string, len(items))
+	for index := range items {
+		values[index] = items[index].EventDate
+	}
+	return values
+}
+
+func publicHistoryDates(items []content.PublicItem) []string {
+	values := make([]string, len(items))
+	for index := range items {
+		values[index] = items[index].EventDate
+	}
+	return values
 }
 
 var _ publication.Repository = (*Repository)(nil)

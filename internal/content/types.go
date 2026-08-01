@@ -45,7 +45,7 @@ type Translation struct {
 type WriteInput struct {
 	Slug           string        `json:"slug,omitempty"`
 	DisplayDate    string        `json:"displayDate,omitempty"`
-	SortOrder      int           `json:"sortOrder,omitempty"`
+	EventDate      string        `json:"eventDate,omitempty"`
 	YouTubeVideoID string        `json:"youtubeVideoId,omitempty"`
 	CoverAssetID   string        `json:"coverAssetId,omitempty"`
 	Featured       bool          `json:"featured,omitempty"`
@@ -60,7 +60,7 @@ type Item struct {
 	Version          int64         `json:"version"`
 	Slug             string        `json:"slug,omitempty"`
 	DisplayDate      string        `json:"displayDate,omitempty"`
-	SortOrder        int           `json:"sortOrder,omitempty"`
+	EventDate        string        `json:"eventDate,omitempty"`
 	YouTubeVideoID   string        `json:"youtubeVideoId,omitempty"`
 	CoverAssetID     string        `json:"coverAssetId,omitempty"`
 	CoverURL         string        `json:"coverUrl,omitempty"`
@@ -92,11 +92,11 @@ type PublicItem struct {
 	Body           string `json:"body,omitempty"`
 	DateLabel      string `json:"dateLabel,omitempty"`
 	DisplayDate    string `json:"displayDate,omitempty"`
+	EventDate      string `json:"eventDate,omitempty"`
 	ImageAlt       string `json:"imageAlt,omitempty"`
 	ImageURL       string `json:"imageUrl,omitempty"`
 	Href           string `json:"href,omitempty"`
 	YouTubeVideoID string `json:"youtubeVideoId,omitempty"`
-	SortOrder      int    `json:"sortOrder,omitempty"`
 	Featured       bool   `json:"featured,omitempty"`
 	HomeEligible   bool   `json:"homeEligible,omitempty"`
 }

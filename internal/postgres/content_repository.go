@@ -94,7 +94,7 @@ func (r *Repository) ListContent(ctx context.Context, module content.Module, opt
 		SELECT e.id::text,e.module,e.status,e.version,e.created_by,e.updated_by,e.published_at,e.created_at,e.updated_at,
 			COALESCE(n.slug,''),COALESCE(n.display_date::text,''),COALESCE(n.cover_asset_id,''),COALESCE(n.featured,false),
 			COALESCE(n.public_grant_id,''),COALESCE(n.published_cover_asset_id,''),
-			COALESCE(h.sort_order,0),COALESCE(v.youtube_video_id,''),COALESCE(v.home_eligible,false),
+			COALESCE(h.event_date,''),COALESCE(v.youtube_video_id,''),COALESCE(v.home_eligible,false),
 			p.published_version,t.locale,t.title,t.summary,'' AS body,t.date_label,t.image_alt
 		FROM selected s
 		JOIN hhc_web.content_entry e ON e.id=s.id
@@ -121,7 +121,7 @@ func (r *Repository) ListContent(ctx context.Context, module content.Module, opt
 		if err := rows.Scan(
 			&item.ID, &item.Module, &item.Status, &item.Version, &item.CreatedBy, &item.UpdatedBy, &item.PublishedAt, &item.CreatedAt, &item.UpdatedAt,
 			&item.Slug, &item.DisplayDate, &item.CoverAssetID, &item.Featured, &item.PublicGrantID, &item.PublishedCoverID,
-			&item.SortOrder, &item.YouTubeVideoID, &item.HomeEligible, &item.PublishedVersion,
+			&item.EventDate, &item.YouTubeVideoID, &item.HomeEligible, &item.PublishedVersion,
 			&translation.Locale, &translation.Title, &translation.Summary, &translation.Body, &translation.DateLabel, &translation.ImageAlt,
 		); err != nil {
 			return content.Page{}, err
@@ -464,7 +464,7 @@ func (r *Repository) RestoreContent(ctx context.Context, module content.Module, 
 	if err := json.Unmarshal(payload, &snapshot); err != nil {
 		return content.Item{}, err
 	}
-	input := content.WriteInput{Slug: snapshot.Slug, DisplayDate: snapshot.DisplayDate, SortOrder: snapshot.SortOrder, YouTubeVideoID: snapshot.YouTubeVideoID, CoverAssetID: snapshot.CoverAssetID, Featured: snapshot.Featured, HomeEligible: snapshot.HomeEligible, Translations: snapshot.Translations}
+	input := content.WriteInput{Slug: snapshot.Slug, DisplayDate: snapshot.DisplayDate, EventDate: snapshot.EventDate, YouTubeVideoID: snapshot.YouTubeVideoID, CoverAssetID: snapshot.CoverAssetID, Featured: snapshot.Featured, HomeEligible: snapshot.HomeEligible, Translations: snapshot.Translations}
 	return r.UpdateContent(ctx, module, id, expected, input, actor, now)
 }
 
@@ -519,13 +519,7 @@ func (r *Repository) changeArchiveStatus(ctx context.Context, module content.Mod
 }
 
 func (r *Repository) PublicContent(ctx context.Context, module content.Module, locale string, limit int) ([]content.PublicItem, error) {
-	order := "updated_at DESC, resource_id"
-	switch module {
-	case content.ModuleNews:
-		order = "payload_json->>'displayDate' DESC, resource_id"
-	case content.ModuleHistory:
-		order = "(payload_json->>'sortOrder')::integer, resource_id"
-	}
+	order := publicContentOrdering(module)
 	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT payload_json
 		FROM (
@@ -627,7 +621,7 @@ func loadContent(ctx context.Context, query contentQueryer, module content.Modul
 			item.PublishedVersion = publishedVersion.Int64
 		}
 	case content.ModuleHistory:
-		err = query.QueryRowContext(ctx, `SELECT sort_order FROM hhc_web.history_event WHERE entry_id=$1`, id).Scan(&item.SortOrder)
+		err = query.QueryRowContext(ctx, `SELECT COALESCE(event_date,'') FROM hhc_web.history_event WHERE entry_id=$1`, id).Scan(&item.EventDate)
 	case content.ModuleVideos:
 		err = query.QueryRowContext(ctx, `SELECT youtube_video_id,home_eligible FROM hhc_web.video_item WHERE entry_id=$1`, id).Scan(&item.YouTubeVideoID, &item.HomeEligible)
 	}
@@ -659,13 +653,28 @@ func contentOrdering(module content.Module, sort, direction string) (string, str
 	switch {
 	case module == content.ModuleNews && sort == "displayDate":
 		column, join = "n.display_date", "JOIN hhc_web.news_item n ON n.entry_id=e.id"
-	case module == content.ModuleHistory && sort == "sortOrder":
-		column, join = "h.sort_order", "JOIN hhc_web.history_event h ON h.entry_id=e.id"
+	case module == content.ModuleHistory && sort == "eventDate":
+		column, join = "h.event_date", "JOIN hhc_web.history_event h ON h.entry_id=e.id"
 	}
 	if direction != "asc" {
 		direction = "desc"
 	}
-	return column + " " + strings.ToUpper(direction) + ",e.id " + strings.ToUpper(direction), join
+	nulls := ""
+	if module == content.ModuleHistory && sort == "eventDate" {
+		nulls = " NULLS LAST"
+	}
+	return column + " " + strings.ToUpper(direction) + nulls + ",e.id " + strings.ToUpper(direction), join
+}
+
+func publicContentOrdering(module content.Module) string {
+	switch module {
+	case content.ModuleNews:
+		return "payload_json->>'displayDate' DESC, resource_id"
+	case content.ModuleHistory:
+		return "payload_json->>'eventDate' ASC NULLS LAST, resource_id ASC"
+	default:
+		return "updated_at DESC, resource_id"
+	}
 }
 
 func mapContentConflict(err error) error {
@@ -689,10 +698,10 @@ func writeTypedContent(ctx context.Context, tx *sql.Tx, module content.Module, i
 		return err
 	case content.ModuleHistory:
 		if verb == "INSERT" {
-			_, err := tx.ExecContext(ctx, `INSERT INTO hhc_web.history_event(entry_id,sort_order) VALUES($1,$2)`, id, input.SortOrder)
+			_, err := tx.ExecContext(ctx, `INSERT INTO hhc_web.history_event(entry_id,event_date) VALUES($1,NULLIF($2,''))`, id, input.EventDate)
 			return err
 		}
-		_, err := tx.ExecContext(ctx, `UPDATE hhc_web.history_event SET sort_order=$2 WHERE entry_id=$1`, id, input.SortOrder)
+		_, err := tx.ExecContext(ctx, `UPDATE hhc_web.history_event SET event_date=NULLIF($2,'') WHERE entry_id=$1`, id, input.EventDate)
 		return err
 	case content.ModuleVideos:
 		if verb == "INSERT" {
@@ -742,7 +751,7 @@ func insertRevision(ctx context.Context, tx *sql.Tx, item content.Item, actor st
 	return err
 }
 func publicContent(item content.Item, translation content.Translation) content.PublicItem {
-	value := content.PublicItem{ID: item.ID, Title: translation.Title, Summary: translation.Summary, Body: translation.Body, DateLabel: translation.DateLabel, DisplayDate: item.DisplayDate, ImageAlt: translation.ImageAlt, YouTubeVideoID: item.YouTubeVideoID, SortOrder: item.SortOrder, Featured: item.Featured, HomeEligible: item.HomeEligible}
+	value := content.PublicItem{ID: item.ID, Title: translation.Title, Summary: translation.Summary, Body: translation.Body, DateLabel: translation.DateLabel, DisplayDate: item.DisplayDate, EventDate: item.EventDate, ImageAlt: translation.ImageAlt, YouTubeVideoID: item.YouTubeVideoID, Featured: item.Featured, HomeEligible: item.HomeEligible}
 	switch item.Module {
 	case content.ModuleNews:
 		value.ImageURL = item.CoverURL + "/large"

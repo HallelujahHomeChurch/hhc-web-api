@@ -381,7 +381,7 @@ func validImageMIME(value string) bool {
 	return value == "image/jpeg" || value == "image/png" || value == "image/webp"
 }
 func writeInput(item content.Item) content.WriteInput {
-	return content.WriteInput{Slug: item.Slug, DisplayDate: item.DisplayDate, SortOrder: item.SortOrder, YouTubeVideoID: item.YouTubeVideoID, CoverAssetID: item.CoverAssetID, Featured: item.Featured, HomeEligible: item.HomeEligible, Translations: item.Translations}
+	return content.WriteInput{Slug: item.Slug, DisplayDate: item.DisplayDate, EventDate: item.EventDate, YouTubeVideoID: item.YouTubeVideoID, CoverAssetID: item.CoverAssetID, Featured: item.Featured, HomeEligible: item.HomeEligible, Translations: item.Translations}
 }
 func (h *Handler) adminContentRevisions(w http.ResponseWriter, r *http.Request) {
 	values, err := h.content.ContentRevisions(r.Context(), content.Module(r.PathValue("module")), r.PathValue("contentID"))
