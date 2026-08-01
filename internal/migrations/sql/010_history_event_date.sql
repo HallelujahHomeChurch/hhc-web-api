@@ -10,7 +10,5 @@ ALTER TABLE hhc_web.history_event
     END
   );
 
-ALTER TABLE hhc_web.history_event DROP COLUMN sort_order;
-
 CREATE INDEX history_event_event_date_idx
   ON hhc_web.history_event(event_date DESC NULLS LAST,entry_id DESC);
