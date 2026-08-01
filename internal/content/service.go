@@ -2,6 +2,7 @@ package content
 
 import (
 	"context"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -180,7 +181,7 @@ func publishable(item Item) bool {
 				return false
 			}
 		case ModuleHistory:
-			if value.DateLabel == "" || value.Body == "" {
+			if value.Body == "" {
 				return false
 			}
 		}
@@ -212,7 +213,7 @@ func validText(value string, min, max int) bool {
 func normalize(input WriteInput) WriteInput {
 	input.Slug = strings.TrimSpace(input.Slug)
 	input.DisplayDate = strings.TrimSpace(input.DisplayDate)
-	input.YouTubeVideoID = strings.TrimSpace(input.YouTubeVideoID)
+	input.YouTubeVideoID = normalizeYouTubeVideoID(input.YouTubeVideoID)
 	input.CoverAssetID = strings.TrimSpace(input.CoverAssetID)
 	for index := range input.Translations {
 		input.Translations[index].Locale = strings.TrimSpace(input.Translations[index].Locale)
@@ -223,4 +224,30 @@ func normalize(input WriteInput) WriteInput {
 		input.Translations[index].ImageAlt = strings.TrimSpace(input.Translations[index].ImageAlt)
 	}
 	return input
+}
+
+func normalizeYouTubeVideoID(value string) string {
+	value = strings.TrimSpace(value)
+	if youtubeID.MatchString(value) {
+		return value
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") {
+		return value
+	}
+	host := strings.TrimPrefix(strings.ToLower(parsed.Hostname()), "www.")
+	if host == "youtu.be" {
+		return strings.Trim(strings.Split(strings.Trim(parsed.Path, "/"), "/")[0], " ")
+	}
+	if host != "youtube.com" && host != "m.youtube.com" && host != "youtube-nocookie.com" {
+		return value
+	}
+	if id := parsed.Query().Get("v"); id != "" {
+		return id
+	}
+	parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+	if len(parts) == 2 && (parts[0] == "shorts" || parts[0] == "embed") {
+		return parts[1]
+	}
+	return value
 }

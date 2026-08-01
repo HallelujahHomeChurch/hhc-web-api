@@ -104,7 +104,6 @@ func TestPublishRequiresPublicContent(t *testing.T) {
 		t.Fatalf("history error=%v", err)
 	}
 
-	repo.item.Translations[0].DateLabel = "2026"
 	repo.item.Translations[0].Body = "Milestone"
 	if _, err := service.PublishContent(context.Background(), ModuleHistory, repo.item.ID, 1, "user-1"); err != nil {
 		t.Fatal(err)
@@ -137,6 +136,29 @@ func TestServiceAcceptsTypedDrafts(t *testing.T) {
 		if _, err := service.CreateContent(context.Background(), module, input, "user-1", string(module)+"-1"); err != nil {
 			t.Fatalf("module=%s err=%v", module, err)
 		}
+	}
+}
+
+func TestServiceNormalizesYouTubeURLsToVideoIDs(t *testing.T) {
+	tests := map[string]string{
+		"https://youtu.be/K3ckFWeSQ-k?si=abc":                  "K3ckFWeSQ-k",
+		"https://www.youtube.com/watch?v=K3ckFWeSQ-k&t=12s":    "K3ckFWeSQ-k",
+		"https://youtube.com/shorts/K3ckFWeSQ-k?feature=share": "K3ckFWeSQ-k",
+		"https://youtube.com/embed/K3ckFWeSQ-k":                "K3ckFWeSQ-k",
+		"K3ckFWeSQ-k":                                          "K3ckFWeSQ-k",
+	}
+	for value, want := range tests {
+		t.Run(value, func(t *testing.T) {
+			repo := &serviceRepository{}
+			service := NewService(repo, time.Now)
+			_, err := service.CreateContent(context.Background(), ModuleVideos, WriteInput{YouTubeVideoID: value, Translations: translations()}, "user-1", value)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if repo.item.YouTubeVideoID != want {
+				t.Fatalf("youtubeVideoId=%q want=%q", repo.item.YouTubeVideoID, want)
+			}
+		})
 	}
 }
 
@@ -212,7 +234,7 @@ func historyInput(eventDate string) WriteInput {
 	return WriteInput{
 		EventDate: eventDate,
 		Translations: []Translation{{
-			Locale: "zh-Hant", Title: "沿革", Body: "事件", DateLabel: "日期",
+			Locale: "zh-Hant", Title: "沿革", Body: "事件",
 		}},
 	}
 }
