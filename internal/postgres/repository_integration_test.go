@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -68,10 +69,27 @@ func TestRepositoryPublishWaitsForAssetWorkflow(t *testing.T) {
 	if err != nil || !found {
 		t.Fatalf("claim found=%v err=%v", found, err)
 	}
-	if err := repository.CompletePublish(ctx, event, "grant-1", "https://www.alive.org.tw/api/assets/public/asset-1", now.Add(time.Minute)); err != nil {
+	if event.CreatedAt.IsZero() {
+		t.Fatal("claimed event is missing its workflow start time")
+	}
+	if err := repository.Defer(ctx, event.ID, "asset scan pending", now.Add(time.Minute), now); err != nil {
 		t.Fatal(err)
 	}
-	if err := repository.CompletePublish(ctx, event, "grant-1", "https://www.alive.org.tw/api/assets/public/asset-1", now.Add(time.Minute)); err != nil {
+	var attempts int
+	if err := db.QueryRowContext(ctx, `SELECT attempts FROM hhc_web.outbox_event WHERE id=$1`, event.ID).Scan(&attempts); err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 0 {
+		t.Fatalf("deferred attempts = %d", attempts)
+	}
+	event, found, err = repository.Claim(ctx, now.Add(2*time.Minute), 30*time.Second)
+	if err != nil || !found {
+		t.Fatalf("reclaim found=%v err=%v", found, err)
+	}
+	if err := repository.CompletePublish(ctx, event, "grant-1", "https://www.alive.org.tw/api/assets/public/asset-1", now.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.CompletePublish(ctx, event, "grant-1", "https://www.alive.org.tw/api/assets/public/asset-1", now.Add(2*time.Minute)); err != nil {
 		t.Fatalf("replayed publish completion: %v", err)
 	}
 	public, err := repository.GetPublicLatest(ctx, "zh-Hant")
@@ -152,7 +170,7 @@ func TestRepositoryPublishWaitsForAssetWorkflow(t *testing.T) {
 	}
 }
 
-func TestBulletinArchivePreservesPrivateAssetsAndRejectsPublicState(t *testing.T) {
+func TestBulletinDeleteCascadesAndQueuesReferencedAssets(t *testing.T) {
 	databaseURL := os.Getenv("HHW_TEST_DATABASE_URL")
 	if databaseURL == "" {
 		t.Skip("HHW_TEST_DATABASE_URL is not configured")
@@ -166,82 +184,41 @@ func TestBulletinArchivePreservesPrivateAssetsAndRejectsPublicState(t *testing.T
 	if err := migrations.Run(ctx, db); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.ExecContext(ctx, `TRUNCATE hhc_web.outbox_event,hhc_web.publication_workflow,hhc_web.public_projection,hhc_web.bulletin_version,hhc_web.bulletin_issue CASCADE`); err != nil {
+	if _, err := db.ExecContext(ctx, `TRUNCATE hhc_web.cms_audit_event,hhc_web.outbox_event,hhc_web.publication_workflow,hhc_web.public_projection,hhc_web.bulletin_revision,hhc_web.bulletin_version,hhc_web.bulletin_issue CASCADE`); err != nil {
 		t.Fatal(err)
 	}
 	repository := New(db)
 	now := time.Now().UTC()
-	issue, err := repository.CreateIssue(ctx, "2026-08-23", "user-1", "archive-issue", now)
+	issue, err := repository.CreateIssue(ctx, "2026-08-23", "user-1", "delete-issue", now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	issue, err = repository.PutVersion(ctx, issue.ID, issue.Version, bulletins.PutVersionInput{
-		Locale: "zh-Hant", Title: "週報", PDFAssetID: "asset-private", PDFFileName: "weekly.pdf",
+		Locale: "zh-Hant", Title: "週報", PDFAssetID: "asset-current", PDFFileName: "weekly.pdf",
 	}, "user-1", now)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	archived, err := repository.ArchiveIssue(ctx, issue.ID, issue.Version, "user-1", now)
-	if err != nil {
+	snapshot := issue
+	snapshot.Versions[0].PDFAssetID = "asset-revision"
+	payload, _ := json.Marshal(snapshot)
+	if _, err := db.ExecContext(ctx, `INSERT INTO hhc_web.bulletin_revision(issue_id,version,snapshot_json,created_by,created_at) VALUES($1,99,$2,'user-1',$3)`, issue.ID, payload, now); err != nil {
 		t.Fatal(err)
 	}
-	if archived.Status != "archived" || archived.Version != issue.Version+1 {
-		t.Fatalf("archived=%#v", archived)
+	if err := repository.DeleteIssue(ctx, issue.ID, issue.Version-1, "user-1", now); !errors.Is(err, bulletins.ErrPrecondition) {
+		t.Fatalf("stale delete error=%v", err)
 	}
-	if _, err := repository.RestoreIssue(ctx, issue.ID, issue.Version, "user-1", now); !errors.Is(err, bulletins.ErrPrecondition) {
-		t.Fatalf("stale restore error=%v", err)
-	}
-	if _, err := repository.PutVersion(ctx, issue.ID, archived.Version, bulletins.PutVersionInput{
-		Locale: "en", Title: "Weekly", PDFAssetID: "asset-2", PDFFileName: "weekly-en.pdf",
-	}, "user-1", now); !errors.Is(err, bulletins.ErrConflict) {
-		t.Fatalf("archived edit error=%v", err)
-	}
-	if _, err := repository.StartPublish(ctx, issue.ID, "zh-Hant", archived.Version, "user-1", now); !errors.Is(err, bulletins.ErrConflict) {
-		t.Fatalf("archived publish error=%v", err)
-	}
-	if _, err := repository.Unpublish(ctx, issue.ID, "zh-Hant", archived.Version, "user-1", now); !errors.Is(err, bulletins.ErrConflict) {
-		t.Fatalf("archived unpublish error=%v", err)
-	}
-
-	restored, err := repository.RestoreIssue(ctx, issue.ID, archived.Version, "user-2", now)
-	if err != nil {
+	if err := repository.DeleteIssue(ctx, issue.ID, issue.Version, "user-1", now); err != nil {
 		t.Fatal(err)
 	}
-	if restored.Status != "draft" || restored.Version != archived.Version+1 || len(restored.Versions) != 1 || restored.Versions[0].PDFAssetID != "asset-private" {
-		t.Fatalf("restored=%#v", restored)
-	}
-	var outboxCount, versionCount int
-	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM hhc_web.outbox_event`).Scan(&outboxCount); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM hhc_web.bulletin_version WHERE issue_id=$1`, issue.ID).Scan(&versionCount); err != nil {
-		t.Fatal(err)
-	}
-	if outboxCount != 0 || versionCount != 1 {
-		t.Fatalf("outbox=%d versions=%d", outboxCount, versionCount)
-	}
-
-	if _, err := db.ExecContext(ctx, `INSERT INTO hhc_web.public_projection(projection_key,resource_type,resource_id,locale,route_path,version,etag,payload_json,updated_at) VALUES('archive-test','bulletin_issue',$1,'zh-Hant','/bulletins/test',1,'etag','{}',$2)`, issue.ID, now); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := repository.ArchiveIssue(ctx, issue.ID, restored.Version, "user-1", now); !errors.Is(err, bulletins.ErrConflict) {
-		t.Fatalf("projection archive error=%v", err)
-	}
-	if _, err := db.ExecContext(ctx, `DELETE FROM hhc_web.public_projection WHERE projection_key='archive-test'`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.ExecContext(ctx, `UPDATE hhc_web.bulletin_version SET public_grant_id='grant-public' WHERE issue_id=$1`, issue.ID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := repository.ArchiveIssue(ctx, issue.ID, restored.Version, "user-1", now); !errors.Is(err, bulletins.ErrConflict) {
-		t.Fatalf("grant archive error=%v", err)
-	}
-	if _, err := db.ExecContext(ctx, `UPDATE hhc_web.bulletin_version SET public_grant_id=NULL,retiring_grant_id='grant-retiring' WHERE issue_id=$1`, issue.ID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := repository.ArchiveIssue(ctx, issue.ID, restored.Version, "user-1", now); !errors.Is(err, bulletins.ErrConflict) {
-		t.Fatalf("retiring grant archive error=%v", err)
+	var issues, revisions, audit, cleanup int
+	_ = db.QueryRowContext(ctx, `SELECT count(*) FROM hhc_web.bulletin_issue WHERE id=$1`, issue.ID).Scan(&issues)
+	_ = db.QueryRowContext(ctx, `SELECT count(*) FROM hhc_web.bulletin_revision WHERE issue_id=$1`, issue.ID).Scan(&revisions)
+	_ = db.QueryRowContext(ctx, `SELECT count(*) FROM hhc_web.cms_audit_event WHERE resource_id=$1 AND action='delete'`, issue.ID).Scan(&audit)
+	_ = db.QueryRowContext(ctx, `SELECT count(*) FROM hhc_web.outbox_event WHERE aggregate_id=$1 AND event_type='asset.owner.delete'`, issue.ID).Scan(&cleanup)
+	if issues != 0 || revisions != 0 || audit != 1 || cleanup != 2 {
+		t.Fatalf("issues=%d revisions=%d audit=%d cleanup=%d", issues, revisions, audit, cleanup)
 	}
 }
 
@@ -535,7 +512,7 @@ func TestContentRepublishRemovesDeletedLocaleProjection(t *testing.T) {
 	}
 }
 
-func TestContentArchiveRequiresUnpublishedStateAndRestoresDraft(t *testing.T) {
+func TestContentDeleteCascadesRevisionsAndKeepsAudit(t *testing.T) {
 	databaseURL := os.Getenv("HHW_TEST_DATABASE_URL")
 	if databaseURL == "" {
 		t.Skip("HHW_TEST_DATABASE_URL is not configured")
@@ -549,7 +526,7 @@ func TestContentArchiveRequiresUnpublishedStateAndRestoresDraft(t *testing.T) {
 	if err := migrations.Run(ctx, db); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.ExecContext(ctx, `TRUNCATE hhc_web.public_projection,hhc_web.content_revision,hhc_web.content_translation,hhc_web.video_item,hhc_web.content_entry CASCADE`); err != nil {
+	if _, err := db.ExecContext(ctx, `TRUNCATE hhc_web.cms_audit_event,hhc_web.outbox_event,hhc_web.public_projection,hhc_web.content_revision,hhc_web.content_translation,hhc_web.video_item,hhc_web.content_entry CASCADE`); err != nil {
 		t.Fatal(err)
 	}
 
@@ -558,47 +535,26 @@ func TestContentArchiveRequiresUnpublishedStateAndRestoresDraft(t *testing.T) {
 	item, err := repository.CreateContent(ctx, content.ModuleVideos, content.WriteInput{
 		YouTubeVideoID: "K3ckFWeSQ-k",
 		Translations:   []content.Translation{{Locale: "zh-Hant", Title: "影片"}},
-	}, "user-1", "video-archive", now)
+	}, "user-1", "video-delete", now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	item, err = repository.PublishContent(ctx, content.ModuleVideos, item.ID, item.Version, "user-1", now)
-	if err != nil {
+	if err := repository.DeleteContent(ctx, content.ModuleVideos, item.ID, item.Version-1, "user-1", now); !errors.Is(err, content.ErrPrecondition) {
+		t.Fatalf("stale delete error=%v", err)
+	}
+	if err := repository.DeleteContent(ctx, content.ModuleVideos, item.ID, item.Version, "user-1", now); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := repository.ArchiveContent(ctx, content.ModuleVideos, item.ID, item.Version, "user-1", now); !errors.Is(err, content.ErrConflict) {
-		t.Fatalf("published archive error=%v", err)
-	}
-	item, err = repository.UnpublishContent(ctx, content.ModuleVideos, item.ID, item.Version, "user-1", now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.ExecContext(ctx, `UPDATE hhc_web.content_entry SET status='unpublish_failed' WHERE id=$1`, item.ID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := repository.ArchiveContent(ctx, content.ModuleVideos, item.ID, item.Version, "user-1", now); !errors.Is(err, content.ErrConflict) {
-		t.Fatalf("unpublish_failed archive error=%v", err)
-	}
-	if _, err := db.ExecContext(ctx, `UPDATE hhc_web.content_entry SET status='unpublished' WHERE id=$1`, item.ID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := repository.ArchiveContent(ctx, content.ModuleVideos, item.ID, item.Version-1, "user-1", now); !errors.Is(err, content.ErrPrecondition) {
-		t.Fatalf("stale archive error=%v", err)
-	}
-	item, err = repository.ArchiveContent(ctx, content.ModuleVideos, item.ID, item.Version, "user-1", now)
-	if err != nil || item.Status != content.StatusArchived {
-		t.Fatalf("archived=%#v err=%v", item, err)
-	}
-	if _, err := repository.RestoreArchivedContent(ctx, content.ModuleVideos, item.ID, item.Version-1, "user-1", now); !errors.Is(err, content.ErrPrecondition) {
-		t.Fatalf("stale restore error=%v", err)
-	}
-	item, err = repository.RestoreArchivedContent(ctx, content.ModuleVideos, item.ID, item.Version, "user-1", now)
-	if err != nil || item.Status != content.StatusDraft {
-		t.Fatalf("restored=%#v err=%v", item, err)
+	var entries, revisions, audit int
+	_ = db.QueryRowContext(ctx, `SELECT count(*) FROM hhc_web.content_entry WHERE id=$1`, item.ID).Scan(&entries)
+	_ = db.QueryRowContext(ctx, `SELECT count(*) FROM hhc_web.content_revision WHERE entry_id=$1`, item.ID).Scan(&revisions)
+	_ = db.QueryRowContext(ctx, `SELECT count(*) FROM hhc_web.cms_audit_event WHERE resource_id=$1 AND action='delete'`, item.ID).Scan(&audit)
+	if entries != 0 || revisions != 0 || audit != 1 {
+		t.Fatalf("entries=%d revisions=%d audit=%d", entries, revisions, audit)
 	}
 }
 
-func TestNewsArchiveRejectsProjectionOrGrantState(t *testing.T) {
+func TestNewsDeleteRejectsPublicState(t *testing.T) {
 	databaseURL := os.Getenv("HHW_TEST_DATABASE_URL")
 	if databaseURL == "" {
 		t.Skip("HHW_TEST_DATABASE_URL is not configured")
@@ -619,13 +575,13 @@ func TestNewsArchiveRejectsProjectionOrGrantState(t *testing.T) {
 	repository := New(db)
 	now := time.Now().UTC()
 	item, err := repository.CreateContent(ctx, content.ModuleNews, content.WriteInput{
-		Slug:        "archive-guard",
+		Slug:        "delete-guard",
 		DisplayDate: "2026-07-31",
 		Translations: []content.Translation{{
 			Locale: "zh-Hant",
-			Title:  "封存保護",
+			Title:  "刪除保護",
 		}},
-	}, "user-1", "news-archive-guard", now)
+	}, "user-1", "news-delete-guard", now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -633,12 +589,12 @@ func TestNewsArchiveRejectsProjectionOrGrantState(t *testing.T) {
 	if _, err := db.ExecContext(ctx, `
 		INSERT INTO hhc_web.public_projection(
 			projection_key,resource_type,resource_id,locale,route_path,version,etag,payload_json,updated_at
-		) VALUES('news:archive-guard','news',$1,'zh-Hant','/zh-Hant/news/archive-guard',1,'etag','{}',$2)`,
+		) VALUES('news:delete-guard','news',$1,'zh-Hant','/zh-Hant/news/delete-guard',1,'etag','{}',$2)`,
 		item.ID, now); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := repository.ArchiveContent(ctx, content.ModuleNews, item.ID, item.Version, "user-1", now); !errors.Is(err, content.ErrConflict) {
-		t.Fatalf("projection archive error=%v", err)
+	if err := repository.DeleteContent(ctx, content.ModuleNews, item.ID, item.Version, "user-1", now); !errors.Is(err, content.ErrConflict) {
+		t.Fatalf("projection delete error=%v", err)
 	}
 	if _, err := db.ExecContext(ctx, `DELETE FROM hhc_web.public_projection WHERE resource_id=$1`, item.ID); err != nil {
 		t.Fatal(err)
@@ -646,8 +602,8 @@ func TestNewsArchiveRejectsProjectionOrGrantState(t *testing.T) {
 	if _, err := db.ExecContext(ctx, `UPDATE hhc_web.news_item SET public_grant_id='grant-1' WHERE entry_id=$1`, item.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := repository.ArchiveContent(ctx, content.ModuleNews, item.ID, item.Version, "user-1", now); !errors.Is(err, content.ErrConflict) {
-		t.Fatalf("grant archive error=%v", err)
+	if err := repository.DeleteContent(ctx, content.ModuleNews, item.ID, item.Version, "user-1", now); !errors.Is(err, content.ErrConflict) {
+		t.Fatalf("grant delete error=%v", err)
 	}
 }
 
@@ -703,6 +659,85 @@ func TestContentListSearchesTitlesAndUsesStableTypedSorting(t *testing.T) {
 	if len(page.Items) != 1 || page.Items[0].Slug != "alpha-new" {
 		t.Fatalf("page=%#v", page)
 	}
+}
+
+func TestHistoryUsesCanonicalEventDateOrderingAndIndex(t *testing.T) {
+	databaseURL := os.Getenv("HHW_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("HHW_TEST_DATABASE_URL is not configured")
+	}
+	db, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	if err := migrations.Run(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `TRUNCATE hhc_web.public_projection,hhc_web.content_revision,hhc_web.content_translation,hhc_web.content_entry CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+
+	repository := New(db)
+	now := time.Now().UTC()
+	dates := []string{"1988", "", "1990-09-02", "1988-03"}
+	for index, eventDate := range dates {
+		item, err := repository.CreateContent(ctx, content.ModuleHistory, content.WriteInput{
+			EventDate: eventDate,
+			Translations: []content.Translation{{
+				Locale: "zh-Hant", Title: "事件 " + eventDate, Body: "內容", DateLabel: "顯示日期",
+			}},
+		}, "user-1", fmt.Sprintf("history-%d", index), now.Add(time.Duration(index)*time.Minute))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := repository.PublishContent(ctx, content.ModuleHistory, item.ID, item.Version, "user-1", now); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	admin, err := repository.ListContent(ctx, content.ModuleHistory, content.ListOptions{
+		Sort: "eventDate", Direction: "desc", Page: 1, PageSize: 20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := historyDates(admin.Items); strings.Join(got, ",") != "1990-09-02,1988-03,1988," {
+		t.Fatalf("admin dates=%v", got)
+	}
+
+	public, err := repository.PublicContent(ctx, content.ModuleHistory, "zh-Hant", 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := publicHistoryDates(public); strings.Join(got, ",") != "1988,1988-03,1990-09-02," {
+		t.Fatalf("public dates=%v", got)
+	}
+
+	var indexDefinition string
+	if err := db.QueryRowContext(ctx, `SELECT indexdef FROM pg_indexes WHERE schemaname='hhc_web' AND indexname='history_event_event_date_idx'`).Scan(&indexDefinition); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(indexDefinition, "event_date DESC NULLS LAST, entry_id DESC") {
+		t.Fatalf("unexpected history date index: %s", indexDefinition)
+	}
+}
+
+func historyDates(items []content.Item) []string {
+	values := make([]string, len(items))
+	for index := range items {
+		values[index] = items[index].EventDate
+	}
+	return values
+}
+
+func publicHistoryDates(items []content.PublicItem) []string {
+	values := make([]string, len(items))
+	for index := range items {
+		values[index] = items[index].EventDate
+	}
+	return values
 }
 
 var _ publication.Repository = (*Repository)(nil)

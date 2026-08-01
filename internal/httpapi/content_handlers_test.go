@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -111,9 +112,9 @@ func TestPublicHomeIsCacheableAndSelectsVideosDeterministically(t *testing.T) {
 	}
 }
 
-func TestNewsPublishQueuesOwnedCleanProcessedCover(t *testing.T) {
+func TestNewsPublishQueuesOwnedCoverWhileScanIsPending(t *testing.T) {
 	repo := &contentRepository{item: content.Item{ID: "news-1", Module: content.ModuleNews, Status: content.StatusDraft, Version: 2, Slug: "news", DisplayDate: "2026-07-13", CoverAssetID: "asset-1", Translations: []content.Translation{{Locale: "zh-Hant", Title: "消息", Summary: "消息摘要"}}}}
-	uploads := &apiUploads{completed: assetclient.Asset{ID: "asset-1", Namespace: "cms.news.cover", OwnerService: "hhc-web-api", OwnerType: "news", OwnerID: "news-1", UploadStatus: "completed", ScanStatus: "clean", ProcessingStatus: "ready"}}
+	uploads := &apiUploads{completed: assetclient.Asset{ID: "asset-1", Namespace: "cms.news.cover", OwnerService: "hhc-web-api", OwnerType: "news", OwnerID: "news-1", UploadStatus: "completed", ScanStatus: "pending", ProcessingStatus: "pending"}}
 	request := httptest.NewRequest(http.MethodPost, "/api/admin/content/news/news-1/publish", nil)
 	trusted(request, "cms:publish")
 	request.Header.Set("If-Match", `"2"`)
@@ -124,6 +125,31 @@ func TestNewsPublishQueuesOwnedCleanProcessedCover(t *testing.T) {
 	}
 	if repo.item.Status != content.StatusPublishing {
 		t.Fatalf("status=%q", repo.item.Status)
+	}
+}
+
+func TestNewsPublishRejectsUnknownAssetStates(t *testing.T) {
+	tests := []struct {
+		name       string
+		scan       string
+		processing string
+	}{
+		{name: "unknown scan", scan: "unknown", processing: "pending"},
+		{name: "unknown processing", scan: "clean", processing: "unknown"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			repo := &contentRepository{item: content.Item{ID: "news-1", Module: content.ModuleNews, Status: content.StatusDraft, Version: 2, Slug: "news", DisplayDate: "2026-07-13", CoverAssetID: "asset-1", Translations: []content.Translation{{Locale: "zh-Hant", Title: "消息", Summary: "消息摘要"}}}}
+			uploads := &apiUploads{completed: assetclient.Asset{ID: "asset-1", Namespace: "cms.news.cover", OwnerService: "hhc-web-api", OwnerType: "news", OwnerID: "news-1", UploadStatus: "completed", ScanStatus: test.scan, ProcessingStatus: test.processing}}
+			request := httptest.NewRequest(http.MethodPost, "/api/admin/content/news/news-1/publish", nil)
+			trusted(request, "cms:publish")
+			request.Header.Set("If-Match", `"2"`)
+			response := httptest.NewRecorder()
+			contentTestHandlerWithAssets(repo, uploads).ServeHTTP(response, request)
+			if response.Code != http.StatusUnprocessableEntity || repo.item.Status != content.StatusDraft {
+				t.Fatalf("status=%d contentStatus=%q body=%s", response.Code, repo.item.Status, response.Body.String())
+			}
+		})
 	}
 }
 
@@ -155,6 +181,31 @@ func TestCompleteNewsCoverReportsAssetServiceUnavailable(t *testing.T) {
 	}
 }
 
+func TestNewsCoverStatusIsSafeAndFailedScanCanBeRetried(t *testing.T) {
+	uploads := &apiUploads{completed: assetclient.Asset{
+		ID: "asset-1", Namespace: "cms.news.cover", OwnerService: "hhc-web-api",
+		OwnerType: "news", OwnerID: "news-1", UploadStatus: "completed",
+		ScanStatus: "failed", ProcessingStatus: "pending",
+	}}
+	handler := contentTestHandlerWithAssets(&contentRepository{}, uploads)
+
+	request := httptest.NewRequest(http.MethodGet, "/api/admin/content/news/news-1/assets/asset-1", nil)
+	trusted(request, "cms:read")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || strings.Contains(response.Body.String(), "ownerService") || !strings.Contains(response.Body.String(), `"retryable":true`) {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+
+	request = httptest.NewRequest(http.MethodPost, "/api/admin/content/news/news-1/assets/asset-1/scan/retry", nil)
+	trusted(request, "cms:write assets:write")
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || uploads.requeueCalls != 1 || !strings.Contains(response.Body.String(), `"scanStatus":"pending"`) {
+		t.Fatalf("status=%d requeueCalls=%d body=%s", response.Code, uploads.requeueCalls, response.Body.String())
+	}
+}
+
 func TestNewsUnpublishDoesNotDependOnCurrentDraftCover(t *testing.T) {
 	repo := &contentRepository{item: content.Item{
 		ID: "news-1", Module: content.ModuleNews, Status: content.StatusDraft, Version: 3,
@@ -171,27 +222,18 @@ func TestNewsUnpublishDoesNotDependOnCurrentDraftCover(t *testing.T) {
 	}
 }
 
-func TestContentArchiveAndRestoreRequireWriteScopeAndVersion(t *testing.T) {
+func TestContentDeleteRequiresWriteScopeAndVersion(t *testing.T) {
 	repo := &contentRepository{
 		item: content.Item{ID: "video-1", Module: content.ModuleVideos, Status: content.StatusDraft, Version: 2},
 	}
 	handler := contentTestHandler(repo)
 
-	archive := httptest.NewRequest(http.MethodPost, "/api/admin/content/videos/video-1/archive", nil)
-	trusted(archive, "cms:write")
-	archive.Header.Set("If-Match", `"2"`)
+	deleteRequest := httptest.NewRequest(http.MethodDelete, "/api/admin/content/videos/video-1", nil)
+	trusted(deleteRequest, "cms:write")
+	deleteRequest.Header.Set("If-Match", `"2"`)
 	response := httptest.NewRecorder()
-	handler.ServeHTTP(response, archive)
-	if response.Code != http.StatusOK || repo.item.Status != content.StatusArchived || repo.item.Version != 3 {
-		t.Fatalf("status=%d item=%#v body=%s", response.Code, repo.item, response.Body.String())
-	}
-
-	restore := httptest.NewRequest(http.MethodPost, "/api/admin/content/videos/video-1/restore", nil)
-	trusted(restore, "cms:write")
-	restore.Header.Set("If-Match", `"3"`)
-	response = httptest.NewRecorder()
-	handler.ServeHTTP(response, restore)
-	if response.Code != http.StatusOK || repo.item.Status != content.StatusDraft || repo.item.Version != 4 {
+	handler.ServeHTTP(response, deleteRequest)
+	if response.Code != http.StatusNoContent || !repo.deleted {
 		t.Fatalf("status=%d item=%#v body=%s", response.Code, repo.item, response.Body.String())
 	}
 }
@@ -220,6 +262,7 @@ type contentRepository struct {
 	publicNews    content.PublicItem
 	publicETag    string
 	publicNewsErr error
+	deleted       bool
 }
 
 func (r *contentRepository) CreateContent(_ context.Context, module content.Module, input content.WriteInput, actor, key string, now time.Time) (content.Item, error) {
@@ -249,15 +292,9 @@ func (r *contentRepository) ContentRevisions(context.Context, content.Module, st
 func (r *contentRepository) RestoreContent(context.Context, content.Module, string, int64, int64, string, time.Time) (content.Item, error) {
 	return r.item, nil
 }
-func (r *contentRepository) ArchiveContent(context.Context, content.Module, string, int64, string, time.Time) (content.Item, error) {
-	r.item.Status = content.StatusArchived
-	r.item.Version++
-	return r.item, nil
-}
-func (r *contentRepository) RestoreArchivedContent(context.Context, content.Module, string, int64, string, time.Time) (content.Item, error) {
-	r.item.Status = content.StatusDraft
-	r.item.Version++
-	return r.item, nil
+func (r *contentRepository) DeleteContent(context.Context, content.Module, string, int64, string, time.Time) error {
+	r.deleted = true
+	return nil
 }
 func (r *contentRepository) PublicContent(context.Context, content.Module, string, int) ([]content.PublicItem, error) {
 	return r.public, nil

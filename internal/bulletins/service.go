@@ -42,6 +42,19 @@ func (s *Service) PutVersion(ctx context.Context, id string, expected int64, inp
 	}
 	return s.repository.PutVersion(ctx, id, expected, input, actor, s.now().UTC())
 }
+func (s *Service) UpdateVersion(ctx context.Context, id, locale string, expected int64, input UpdateVersionInput, actor string) (Issue, error) {
+	input.Title = strings.TrimSpace(input.Title)
+	if strings.TrimSpace(id) == "" || !validLocale(locale) || expected < 1 || input.Title == "" || len(input.Title) > 200 || strings.TrimSpace(actor) == "" {
+		return Issue{}, ErrInvalid
+	}
+	return s.repository.UpdateVersion(ctx, id, locale, expected, input.Title, actor, s.now().UTC())
+}
+func (s *Service) DeleteVersion(ctx context.Context, id, locale string, expected int64, actor string) (Issue, error) {
+	if strings.TrimSpace(id) == "" || !validLocale(locale) || expected < 1 || strings.TrimSpace(actor) == "" {
+		return Issue{}, ErrInvalid
+	}
+	return s.repository.DeleteVersion(ctx, id, locale, expected, actor, s.now().UTC())
+}
 func (s *Service) Publish(ctx context.Context, id, locale string, expected int64, actor string) (Workflow, error) {
 	if id == "" || !validLocale(locale) || expected <= 0 || actor == "" {
 		return Workflow{}, ErrInvalid
@@ -54,17 +67,23 @@ func (s *Service) Unpublish(ctx context.Context, id, locale string, expected int
 	}
 	return s.repository.Unpublish(ctx, id, locale, expected, actor, s.now().UTC())
 }
-func (s *Service) ArchiveIssue(ctx context.Context, id string, expected int64, actor string) (Issue, error) {
+func (s *Service) DeleteIssue(ctx context.Context, id string, expected int64, actor string) error {
 	if strings.TrimSpace(id) == "" || expected <= 0 || strings.TrimSpace(actor) == "" {
-		return Issue{}, ErrInvalid
+		return ErrInvalid
 	}
-	return s.repository.ArchiveIssue(ctx, id, expected, actor, s.now().UTC())
+	return s.repository.DeleteIssue(ctx, id, expected, actor, s.now().UTC())
 }
-func (s *Service) RestoreIssue(ctx context.Context, id string, expected int64, actor string) (Issue, error) {
-	if strings.TrimSpace(id) == "" || expected <= 0 || strings.TrimSpace(actor) == "" {
+func (s *Service) IssueRevisions(ctx context.Context, id string) ([]Revision, error) {
+	if strings.TrimSpace(id) == "" {
+		return nil, ErrInvalid
+	}
+	return s.repository.IssueRevisions(ctx, id)
+}
+func (s *Service) RestoreIssueRevision(ctx context.Context, id string, revision, expected int64, actor string) (Issue, error) {
+	if strings.TrimSpace(id) == "" || revision < 1 || expected < 1 || strings.TrimSpace(actor) == "" {
 		return Issue{}, ErrInvalid
 	}
-	return s.repository.RestoreIssue(ctx, id, expected, actor, s.now().UTC())
+	return s.repository.RestoreIssueRevision(ctx, id, revision, expected, actor, s.now().UTC())
 }
 func (s *Service) GetPublicLatest(ctx context.Context, locale string) (PublicBulletin, error) {
 	if !validLocale(locale) {

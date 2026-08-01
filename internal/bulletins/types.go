@@ -65,6 +65,13 @@ type Workflow struct {
 	CreatedAt        time.Time `json:"createdAt"`
 }
 
+type Revision struct {
+	Version   int64     `json:"version"`
+	Snapshot  Issue     `json:"snapshot"`
+	CreatedBy string    `json:"createdBy"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
 type CreateIssueInput struct {
 	IssueDate string `json:"issueDate"`
 }
@@ -73,6 +80,9 @@ type PutVersionInput struct {
 	Title       string `json:"title"`
 	PDFAssetID  string `json:"pdfAssetId"`
 	PDFFileName string `json:"pdfFileName"`
+}
+type UpdateVersionInput struct {
+	Title string `json:"title"`
 }
 type PublishInput struct {
 	Locale string `json:"locale"`
@@ -95,10 +105,13 @@ type Repository interface {
 	ListIssues(context.Context, int, int, string) (Page, error)
 	GetIssue(context.Context, string) (Issue, error)
 	PutVersion(context.Context, string, int64, PutVersionInput, string, time.Time) (Issue, error)
+	UpdateVersion(context.Context, string, string, int64, string, string, time.Time) (Issue, error)
+	DeleteVersion(context.Context, string, string, int64, string, time.Time) (Issue, error)
 	StartPublish(context.Context, string, string, int64, string, time.Time) (Workflow, error)
 	Unpublish(context.Context, string, string, int64, string, time.Time) (Issue, error)
-	ArchiveIssue(context.Context, string, int64, string, time.Time) (Issue, error)
-	RestoreIssue(context.Context, string, int64, string, time.Time) (Issue, error)
+	DeleteIssue(context.Context, string, int64, string, time.Time) error
+	IssueRevisions(context.Context, string) ([]Revision, error)
+	RestoreIssueRevision(context.Context, string, int64, int64, string, time.Time) (Issue, error)
 	GetPublicLatest(context.Context, string) (PublicBulletin, error)
 	GetPublicByDate(context.Context, string, string) (PublicBulletin, error)
 	ListPublic(context.Context, int, int) (PublicPage, error)

@@ -108,6 +108,17 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/BulletinIssue' }
         '404': { $ref: '#/components/responses/Error' }
+    delete:
+      operationId: deleteBulletin
+      security: [{ bearerAuth: [] }]
+      x-required-scopes: ['cms:write']
+      parameters:
+        - $ref: '#/components/parameters/IssueID'
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204': { description: Bulletin and its revisions deleted }
+        '409': { $ref: '#/components/responses/Error' }
+        '412': { $ref: '#/components/responses/Error' }
   /admin/bulletins/{issueId}/upload-sessions:
     post:
       operationId: createBulletinUploadSession
@@ -127,6 +138,67 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/CreatedUploadEnvelope' }
+  /admin/bulletins/{issueId}/versions/{locale}:
+    put:
+      operationId: updateBulletinVersion
+      security: [{ bearerAuth: [] }]
+      x-required-scopes: ['cms:write']
+      parameters:
+        - $ref: '#/components/parameters/IssueID'
+        - { name: locale, in: path, required: true, schema: { $ref: '#/components/schemas/Locale' } }
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateBulletinVersionInput' }
+      responses:
+        '200': { $ref: '#/components/responses/BulletinIssue' }
+        '409': { $ref: '#/components/responses/Error' }
+        '412': { $ref: '#/components/responses/Error' }
+    delete:
+      operationId: deleteBulletinVersion
+      security: [{ bearerAuth: [] }]
+      x-required-scopes: ['cms:write']
+      parameters:
+        - $ref: '#/components/parameters/IssueID'
+        - { name: locale, in: path, required: true, schema: { $ref: '#/components/schemas/Locale' } }
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '200': { $ref: '#/components/responses/BulletinIssue' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '412': { $ref: '#/components/responses/Error' }
+  /admin/bulletins/{issueId}/assets/{assetId}:
+    get:
+      operationId: getBulletinAssetStatus
+      security: [{ bearerAuth: [] }]
+      x-required-scopes: ['cms:read']
+      parameters:
+        - $ref: '#/components/parameters/IssueID'
+        - { name: assetId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Bulletin PDF scan status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AssetStatusEnvelope' }
+        '404': { $ref: '#/components/responses/Error' }
+  /admin/bulletins/{issueId}/assets/{assetId}/scan/retry:
+    post:
+      operationId: retryBulletinAssetScan
+      security: [{ bearerAuth: [] }]
+      x-required-scopes: ['cms:write', 'assets:write']
+      parameters:
+        - $ref: '#/components/parameters/IssueID'
+        - { name: assetId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Bulletin PDF scan requeued
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AssetStatusEnvelope' }
+        '409': { $ref: '#/components/responses/Error' }
   /admin/bulletins/{issueId}/assets/{assetId}/complete:
     post:
       operationId: completeBulletinUpload
@@ -172,29 +244,30 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/BulletinIssue' }
         '412': { $ref: '#/components/responses/Error' }
-  /admin/bulletins/{issueId}/archive:
+  /admin/bulletins/{issueId}/revisions:
+    get:
+      operationId: listBulletinRevisions
+      security: [{ bearerAuth: [] }]
+      x-required-scopes: ['cms:read']
+      parameters: [{ $ref: '#/components/parameters/IssueID' }]
+      responses:
+        '200':
+          description: Bulletin revisions
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BulletinRevisionListEnvelope' }
+  /admin/bulletins/{issueId}/revisions/{revision}/restore:
     post:
-      operationId: archiveBulletin
+      operationId: restoreBulletinRevision
       security: [{ bearerAuth: [] }]
       x-required-scopes: ['cms:write']
       parameters:
         - $ref: '#/components/parameters/IssueID'
+        - $ref: '#/components/parameters/Revision'
         - $ref: '#/components/parameters/IfMatch'
       responses:
         '200': { $ref: '#/components/responses/BulletinIssue' }
-        '409': { $ref: '#/components/responses/Error' }
-        '412': { $ref: '#/components/responses/Error' }
-  /admin/bulletins/{issueId}/restore:
-    post:
-      operationId: restoreBulletin
-      security: [{ bearerAuth: [] }]
-      x-required-scopes: ['cms:write']
-      parameters:
-        - $ref: '#/components/parameters/IssueID'
-        - $ref: '#/components/parameters/IfMatch'
-      responses:
-        '200': { $ref: '#/components/responses/BulletinIssue' }
-        '409': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
         '412': { $ref: '#/components/responses/Error' }
   /admin/content/{module}:
     get:
@@ -207,7 +280,7 @@ paths:
         - $ref: '#/components/parameters/PageSize'
         - { name: q, in: query, schema: { type: string, maxLength: 200 } }
         - { name: status, in: query, schema: { $ref: '#/components/schemas/ContentStatus' } }
-        - { name: sort, in: query, schema: { type: string, enum: [updatedAt, displayDate, sortOrder] } }
+        - { name: sort, in: query, schema: { type: string, enum: [updatedAt, displayDate, eventDate] } }
         - { name: direction, in: query, schema: { type: string, enum: [asc, desc] } }
       responses:
         '200':
@@ -250,6 +323,18 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/ContentItem' }
         '412': { $ref: '#/components/responses/Error' }
+    delete:
+      operationId: deleteContent
+      security: [{ bearerAuth: [] }]
+      x-required-scopes: ['cms:write']
+      parameters:
+        - $ref: '#/components/parameters/ContentModule'
+        - $ref: '#/components/parameters/ContentID'
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204': { description: Content and its revisions deleted }
+        '409': { $ref: '#/components/responses/Error' }
+        '412': { $ref: '#/components/responses/Error' }
   /admin/content/{module}/{contentId}/publish:
     post:
       operationId: publishContent
@@ -273,32 +358,6 @@ paths:
         - $ref: '#/components/parameters/IfMatch'
       responses:
         '200': { $ref: '#/components/responses/ContentItem' }
-  /admin/content/{module}/{contentId}/archive:
-    post:
-      operationId: archiveContent
-      security: [{ bearerAuth: [] }]
-      x-required-scopes: ['cms:write']
-      parameters:
-        - $ref: '#/components/parameters/ContentModule'
-        - $ref: '#/components/parameters/ContentID'
-        - $ref: '#/components/parameters/IfMatch'
-      responses:
-        '200': { $ref: '#/components/responses/ContentItem' }
-        '409': { $ref: '#/components/responses/Error' }
-        '412': { $ref: '#/components/responses/Error' }
-  /admin/content/{module}/{contentId}/restore:
-    post:
-      operationId: restoreArchivedContent
-      security: [{ bearerAuth: [] }]
-      x-required-scopes: ['cms:write']
-      parameters:
-        - $ref: '#/components/parameters/ContentModule'
-        - $ref: '#/components/parameters/ContentID'
-        - $ref: '#/components/parameters/IfMatch'
-      responses:
-        '200': { $ref: '#/components/responses/ContentItem' }
-        '409': { $ref: '#/components/responses/Error' }
-        '412': { $ref: '#/components/responses/Error' }
   /admin/content/{module}/{contentId}/revisions:
     get:
       operationId: listContentRevisions
@@ -358,6 +417,21 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/AssetStatusEnvelope' }
+  /admin/content/news/{contentId}/assets/{assetId}/scan/retry:
+    post:
+      operationId: retryNewsCoverScan
+      security: [{ bearerAuth: [] }]
+      x-required-scopes: ['cms:write', 'assets:write']
+      parameters:
+        - { name: contentId, in: path, required: true, schema: { type: string } }
+        - { name: assetId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: News cover scan requeued
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AssetStatusEnvelope' }
+        '409': { $ref: '#/components/responses/Error' }
   /admin/content/news/{contentId}/assets/{assetId}/complete:
     post:
       operationId: completeNewsCoverUpload
@@ -442,7 +516,7 @@ components:
       default: zh-Hant
     BulletinStatus:
       type: string
-      enum: [draft, publishing, published, unpublishing, unpublish_failed, unpublished, archived]
+      enum: [draft, publishing, published, unpublishing, unpublish_failed, unpublished]
     BulletinVersionStatus:
       type: string
       enum: [draft, publishing, published, unpublishing, unpublish_failed, unpublished]
@@ -451,7 +525,7 @@ components:
       enum: [news, history, videos]
     ContentStatus:
       type: string
-      enum: [draft, publishing, published, publish_failed, unpublishing, unpublish_failed, unpublished, archived]
+      enum: [draft, publishing, published, publish_failed, unpublishing, unpublish_failed, unpublished]
     PageMeta:
       type: object
       required: [page, pageSize, total]
@@ -499,6 +573,14 @@ components:
         versions:
           type: array
           items: { $ref: '#/components/schemas/BulletinVersion' }
+    BulletinRevision:
+      type: object
+      required: [version, snapshot, createdBy, createdAt]
+      properties:
+        version: { type: integer, format: int64 }
+        snapshot: { $ref: '#/components/schemas/BulletinIssue' }
+        createdBy: { type: string }
+        createdAt: { type: string, format: date-time }
     PublicBulletin:
       type: object
       required: [issueDate, locale, title, downloadUrl, publishedAt, version]
@@ -559,6 +641,12 @@ components:
         fileName: { type: string, minLength: 1 }
         mimeType: { type: string, const: application/pdf }
         sizeBytes: { type: integer, format: int64, minimum: 1, maximum: 20971520 }
+    UpdateBulletinVersionInput:
+      type: object
+      additionalProperties: false
+      required: [title]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 200 }
     CompleteBulletinUploadInput:
       type: object
       additionalProperties: false
@@ -589,17 +677,14 @@ components:
         checksumSha256: { type: string, pattern: '^[a-fA-F0-9]{64}$' }
     AssetStatus:
       type: object
-      required: [id, namespace, ownerService, ownerType, ownerId, uploadStatus, scanStatus, processingStatus, visibility]
+      additionalProperties: false
+      required: [id, uploadStatus, scanStatus, processingStatus, retryable]
       properties:
         id: { type: string }
-        namespace: { type: string }
-        ownerService: { type: string }
-        ownerType: { type: string }
-        ownerId: { type: string }
         uploadStatus: { type: string, enum: [created, completed, failed] }
         scanStatus: { type: string, enum: [pending, clean, infected, failed] }
         processingStatus: { type: string, enum: [pending, ready, not_required, failed] }
-        visibility: { type: string }
+        retryable: { type: boolean }
     PublicationInput:
       type: object
       additionalProperties: false
@@ -624,7 +709,7 @@ components:
       properties:
         slug: { type: string, minLength: 1, maxLength: 120, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$' }
         displayDate: { type: string, format: date }
-        sortOrder: { type: integer, minimum: 1 }
+        eventDate: { type: string, pattern: '^\d{4}(?:-\d{2}(?:-\d{2})?)?$' }
         youtubeVideoId: { type: string, pattern: '^[A-Za-z0-9_-]{11}$' }
         coverAssetId: { type: string, maxLength: 200 }
         featured: { type: boolean }
@@ -670,11 +755,11 @@ components:
         body: { type: string }
         dateLabel: { type: string }
         displayDate: { type: string, format: date }
+        eventDate: { type: string, pattern: '^\d{4}(?:-\d{2}(?:-\d{2})?)?$' }
         imageAlt: { type: string }
         imageUrl: { type: string }
         href: { type: string }
         youtubeVideoId: { type: string }
-        sortOrder: { type: integer }
         featured: { type: boolean }
         homeEligible: { type: boolean }
     BulletinIssueEnvelope:
@@ -690,6 +775,13 @@ components:
       properties:
         data: { type: array, items: { $ref: '#/components/schemas/BulletinIssue' } }
         meta: { $ref: '#/components/schemas/PageMeta' }
+        error: { type: ['null'] }
+    BulletinRevisionListEnvelope:
+      type: object
+      required: [data, meta]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/BulletinRevision' } }
+        meta: { type: object, additionalProperties: true }
         error: { type: ['null'] }
     PublicBulletinEnvelope:
       type: object

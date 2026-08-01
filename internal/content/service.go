@@ -40,21 +40,18 @@ func (s *Service) ListContent(ctx context.Context, module Module, options ListOp
 		case ModuleNews:
 			options.Sort = "displayDate"
 		case ModuleHistory:
-			options.Sort = "sortOrder"
+			options.Sort = "eventDate"
 		default:
 			options.Sort = "updatedAt"
 		}
 	}
 	if options.Sort != "updatedAt" &&
 		!(module == ModuleNews && options.Sort == "displayDate") &&
-		!(module == ModuleHistory && options.Sort == "sortOrder") {
+		!(module == ModuleHistory && options.Sort == "eventDate") {
 		return Page{}, ErrInvalid
 	}
 	if options.Direction == "" {
 		options.Direction = "desc"
-		if options.Sort == "sortOrder" {
-			options.Direction = "asc"
-		}
 	}
 	if options.Direction != "asc" && options.Direction != "desc" {
 		return Page{}, ErrInvalid
@@ -108,17 +105,11 @@ func (s *Service) RestoreContent(ctx context.Context, module Module, id string, 
 	}
 	return s.repository.RestoreContent(ctx, module, id, revision, expected, actor, s.now().UTC())
 }
-func (s *Service) ArchiveContent(ctx context.Context, module Module, id string, expected int64, actor string) (Item, error) {
-	if !validModule(module) || expected < 1 {
-		return Item{}, ErrInvalid
+func (s *Service) DeleteContent(ctx context.Context, module Module, id string, expected int64, actor string) error {
+	if !validModule(module) || strings.TrimSpace(id) == "" || expected < 1 || strings.TrimSpace(actor) == "" {
+		return ErrInvalid
 	}
-	return s.repository.ArchiveContent(ctx, module, id, expected, actor, s.now().UTC())
-}
-func (s *Service) RestoreArchivedContent(ctx context.Context, module Module, id string, expected int64, actor string) (Item, error) {
-	if !validModule(module) || expected < 1 {
-		return Item{}, ErrInvalid
-	}
-	return s.repository.RestoreArchivedContent(ctx, module, id, expected, actor, s.now().UTC())
+	return s.repository.DeleteContent(ctx, module, id, expected, actor, s.now().UTC())
 }
 func (s *Service) PublicContent(ctx context.Context, module Module, locale string, limit int) ([]PublicItem, error) {
 	if !validModule(module) || !validLocale(locale) {
@@ -145,7 +136,7 @@ func validLocale(locale string) bool {
 func validStatus(status string) bool {
 	switch status {
 	case "", StatusDraft, StatusPublishing, StatusPublished, StatusPublishFailed,
-		StatusUnpublishing, StatusUnpublishFailed, StatusUnpublished, StatusArchived:
+		StatusUnpublishing, StatusUnpublishFailed, StatusUnpublished:
 		return true
 	default:
 		return false
@@ -171,7 +162,7 @@ func valid(module Module, input WriteInput) bool {
 	case ModuleNews:
 		return len(input.Slug) <= 120 && contentSlug.MatchString(input.Slug) && validDate(input.DisplayDate) && len(input.CoverAssetID) <= 200
 	case ModuleHistory:
-		return input.SortOrder > 0
+		return validHistoryDate(input.EventDate)
 	case ModuleVideos:
 		return youtubeID.MatchString(input.YouTubeVideoID)
 	default:
@@ -179,7 +170,7 @@ func valid(module Module, input WriteInput) bool {
 	}
 }
 func publishable(item Item) bool {
-	if !valid(item.Module, WriteInput{Slug: item.Slug, DisplayDate: item.DisplayDate, SortOrder: item.SortOrder, YouTubeVideoID: item.YouTubeVideoID, CoverAssetID: item.CoverAssetID, Translations: item.Translations}) {
+	if !valid(item.Module, WriteInput{Slug: item.Slug, DisplayDate: item.DisplayDate, EventDate: item.EventDate, YouTubeVideoID: item.YouTubeVideoID, CoverAssetID: item.CoverAssetID, Translations: item.Translations}) {
 		return false
 	}
 	for _, value := range item.Translations {
@@ -199,6 +190,17 @@ func publishable(item Item) bool {
 func validDate(value string) bool {
 	parsed, err := time.Parse("2006-01-02", value)
 	return err == nil && parsed.Format("2006-01-02") == value
+}
+func validHistoryDate(value string) bool {
+	if value == "" {
+		return true
+	}
+	layout := map[int]string{4: "2006", 7: "2006-01", 10: "2006-01-02"}[len(value)]
+	if layout == "" {
+		return false
+	}
+	parsed, err := time.Parse(layout, value)
+	return err == nil && parsed.Year() > 0 && parsed.Format(layout) == value
 }
 func validText(value string, min, max int) bool {
 	if !utf8.ValidString(value) {

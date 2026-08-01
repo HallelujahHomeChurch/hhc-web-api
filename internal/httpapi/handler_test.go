@@ -3,6 +3,7 @@ package httpapi
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -123,11 +124,11 @@ func TestMutationRequiresIfMatch(t *testing.T) {
 	}
 }
 
-func TestArchiveIssueRequiresWriteScopeAndReturnsETag(t *testing.T) {
+func TestDeleteIssueRequiresWriteScopeAndVersion(t *testing.T) {
 	repo := &apiRepository{issue: bulletinIssue()}
 	handler := testHandler(repo)
 
-	request := httptest.NewRequest(http.MethodPost, "/api/admin/bulletins/issue-1/archive", nil)
+	request := httptest.NewRequest(http.MethodDelete, "/api/admin/bulletins/issue-1", nil)
 	trusted(request, "cms:read")
 	request.Header.Set("If-Match", `"1"`)
 	response := httptest.NewRecorder()
@@ -136,16 +137,101 @@ func TestArchiveIssueRequiresWriteScopeAndReturnsETag(t *testing.T) {
 		t.Fatalf("read-only status=%d", response.Code)
 	}
 
-	request = httptest.NewRequest(http.MethodPost, "/api/admin/bulletins/issue-1/archive", nil)
+	request = httptest.NewRequest(http.MethodDelete, "/api/admin/bulletins/issue-1", nil)
+	trusted(request, "cms:write")
+	request.Header.Set("If-Match", `"1"`)
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusNoContent || !repo.deleted {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestBulletinVersionUpdateAndDeleteUseIssueVersion(t *testing.T) {
+	repo := &apiRepository{issue: bulletinIssue()}
+	handler := testHandler(repo)
+	request := httptest.NewRequest(http.MethodPut, "/api/admin/bulletins/issue-1/versions/en", bytes.NewBufferString(`{"title":"Weekly"}`))
+	trusted(request, "cms:write")
+	request.Header.Set("If-Match", `"1"`)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || response.Header().Get("ETag") != `"2"` {
+		t.Fatalf("update status=%d etag=%q body=%s", response.Code, response.Header().Get("ETag"), response.Body.String())
+	}
+
+	request = httptest.NewRequest(http.MethodDelete, "/api/admin/bulletins/issue-1/versions/en", nil)
+	trusted(request, "cms:write")
+	request.Header.Set("If-Match", `"2"`)
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || repo.deletedLocale != "en" {
+		t.Fatalf("delete status=%d locale=%q body=%s", response.Code, repo.deletedLocale, response.Body.String())
+	}
+}
+
+func TestBulletinRevisionRoutesListAndRestoreDraft(t *testing.T) {
+	repo := &apiRepository{
+		issue: bulletinIssue(),
+		revisions: []bulletins.Revision{{
+			Version: 1,
+			Snapshot: bulletins.Issue{ID: "issue-1", IssueDate: "2026-07-13", Versions: []bulletins.Version{{
+				ID: "version-1", IssueID: "issue-1", Locale: "zh-Hant", Title: "舊週報", PDFAssetID: "asset-1", PDFFileName: "weekly.pdf",
+			}}},
+		}},
+	}
+	uploads := &apiUploads{completed: assetclient.Asset{ID: "asset-1", Namespace: "cms.weekly.pdf", OwnerService: "hhc-web-api", OwnerType: "bulletin_issue", OwnerID: "issue-1", Locale: "zh-Hant"}}
+	handler := testHandlerWithUploads(repo, uploads)
+
+	request := httptest.NewRequest(http.MethodGet, "/api/admin/bulletins/issue-1/revisions", nil)
+	trusted(request, "cms:read")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("list status=%d body=%s", response.Code, response.Body.String())
+	}
+	var listed envelope
+	if err := json.Unmarshal(response.Body.Bytes(), &listed); err != nil {
+		t.Fatal(err)
+	}
+
+	request = httptest.NewRequest(http.MethodPost, "/api/admin/bulletins/issue-1/revisions/1/restore", nil)
 	trusted(request, "cms:write")
 	request.Header.Set("If-Match", `"1"`)
 	response = httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusOK || response.Header().Get("ETag") != `"2"` {
-		t.Fatalf("status=%d etag=%q body=%s", response.Code, response.Header().Get("ETag"), response.Body.String())
+		t.Fatalf("restore status=%d etag=%q body=%s", response.Code, response.Header().Get("ETag"), response.Body.String())
 	}
-	if repo.issue.Status != "archived" {
-		t.Fatalf("issue=%#v", repo.issue)
+	if repo.restoredRevision != 1 || repo.issue.Status != "draft" {
+		t.Fatalf("repo=%#v", repo)
+	}
+}
+
+func TestBulletinRevisionRestoreRejectsMissingAssetBeforeMutation(t *testing.T) {
+	repo := &apiRepository{issue: bulletinIssue(), revisions: []bulletins.Revision{{
+		Version:  1,
+		Snapshot: bulletins.Issue{ID: "issue-1", Versions: []bulletins.Version{{IssueID: "issue-1", Locale: "zh-Hant", PDFAssetID: "missing-asset"}}},
+	}}}
+	uploads := &apiUploads{getError: assetclient.ErrNotFound}
+	request := httptest.NewRequest(http.MethodPost, "/api/admin/bulletins/issue-1/revisions/1/restore", nil)
+	trusted(request, "cms:write")
+	request.Header.Set("If-Match", `"1"`)
+	response := httptest.NewRecorder()
+	testHandlerWithUploads(repo, uploads).ServeHTTP(response, request)
+	if response.Code != http.StatusUnprocessableEntity || repo.restoredRevision != 0 {
+		t.Fatalf("status=%d restored=%d body=%s", response.Code, repo.restoredRevision, response.Body.String())
+	}
+}
+
+func TestBulletinRevisionRestoreMapsStaleVersion(t *testing.T) {
+	repo := &apiRepository{issue: bulletinIssue(), revisions: []bulletins.Revision{{Version: 1, Snapshot: bulletins.Issue{ID: "issue-1"}}}, restoreError: bulletins.ErrPrecondition}
+	request := httptest.NewRequest(http.MethodPost, "/api/admin/bulletins/issue-1/revisions/1/restore", nil)
+	trusted(request, "cms:write")
+	request.Header.Set("If-Match", `"1"`)
+	response := httptest.NewRecorder()
+	testHandlerWithUploads(repo, &apiUploads{}).ServeHTTP(response, request)
+	if response.Code != http.StatusPreconditionFailed {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 
@@ -188,21 +274,6 @@ func TestBulletinUploadSessionRequiresBothCMSAndAssetScopes(t *testing.T) {
 	}
 }
 
-func TestBulletinUploadSessionRejectsArchivedIssueBeforeCreatingAsset(t *testing.T) {
-	repo := &apiRepository{issue: bulletinIssue()}
-	repo.issue.Status = "archived"
-	uploads := &apiUploads{}
-	request := httptest.NewRequest(http.MethodPost, "/api/admin/bulletins/issue-1/upload-sessions", bytes.NewBufferString(`{"locale":"zh-Hant","fileName":"weekly.pdf","mimeType":"application/pdf","sizeBytes":128}`))
-	trusted(request, "cms:write assets:write")
-	request.Header.Set("Idempotency-Key", "upload-archived")
-	response := httptest.NewRecorder()
-	testHandlerWithUploads(repo, uploads).ServeHTTP(response, request)
-
-	if response.Code != http.StatusUnprocessableEntity || uploads.createdIssue != "" {
-		t.Fatalf("status=%d createdIssue=%q", response.Code, uploads.createdIssue)
-	}
-}
-
 func TestCompleteBulletinUploadAttachesOwnedAsset(t *testing.T) {
 	repo := &apiRepository{issue: bulletinIssue()}
 	uploads := &apiUploads{completed: assetclient.Asset{ID: "asset-1", Namespace: "cms.weekly.pdf", OwnerService: "hhc-web-api", OwnerType: "bulletin_issue", OwnerID: "issue-1", Locale: "zh-Hant", OriginalFileName: "weekly.pdf"}}
@@ -220,6 +291,55 @@ func TestCompleteBulletinUploadAttachesOwnedAsset(t *testing.T) {
 	}
 }
 
+func TestBulletinAssetStatusReturnsOnlyOwnedAsset(t *testing.T) {
+	uploads := &apiUploads{completed: assetclient.Asset{
+		ID: "asset-1", Namespace: "cms.weekly.pdf", OwnerService: "hhc-web-api",
+		OwnerType: "bulletin_issue", OwnerID: "issue-1", Locale: "zh-Hant",
+		UploadStatus: "completed", ScanStatus: "pending", ProcessingStatus: "pending",
+	}}
+	handler := testHandlerWithUploads(&apiRepository{issue: bulletinIssue()}, uploads)
+	request := httptest.NewRequest(http.MethodGet, "/api/admin/bulletins/issue-1/assets/asset-1", nil)
+	trusted(request, "cms:read")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"scanStatus":"pending"`) {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	if strings.Contains(response.Body.String(), "ownerService") || !strings.Contains(response.Body.String(), `"retryable":false`) {
+		t.Fatalf("unsafe status body=%s", response.Body.String())
+	}
+
+	uploads.completed.OwnerID = "another-issue"
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("owner mismatch status=%d body=%s", response.Code, response.Body.String())
+	}
+
+	uploads.getError = assetclient.ErrUnavailable
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("unavailable status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestBulletinFailedAssetCanBeRetriedByAssetWriter(t *testing.T) {
+	uploads := &apiUploads{completed: assetclient.Asset{
+		ID: "asset-1", Namespace: "cms.weekly.pdf", OwnerService: "hhc-web-api",
+		OwnerType: "bulletin_issue", OwnerID: "issue-1", Locale: "zh-Hant",
+		UploadStatus: "completed", ScanStatus: "failed", ProcessingStatus: "not_required",
+	}}
+	handler := testHandlerWithUploads(&apiRepository{issue: bulletinIssue()}, uploads)
+	request := httptest.NewRequest(http.MethodPost, "/api/admin/bulletins/issue-1/assets/asset-1/scan/retry", nil)
+	trusted(request, "cms:write assets:write")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || uploads.requeueCalls != 1 || !strings.Contains(response.Body.String(), `"scanStatus":"pending"`) {
+		t.Fatalf("status=%d requeues=%d body=%s", response.Code, uploads.requeueCalls, response.Body.String())
+	}
+}
+
 func TestCompleteBulletinUploadRejectsOwnerBeforeMutation(t *testing.T) {
 	repo := &apiRepository{issue: bulletinIssue()}
 	uploads := &apiUploads{completed: assetclient.Asset{
@@ -232,21 +352,6 @@ func TestCompleteBulletinUploadRejectsOwnerBeforeMutation(t *testing.T) {
 	response := httptest.NewRecorder()
 	testHandlerWithUploads(repo, uploads).ServeHTTP(response, request)
 	if response.Code != http.StatusForbidden || uploads.completeCalls != 0 {
-		t.Fatalf("status=%d completeCalls=%d", response.Code, uploads.completeCalls)
-	}
-}
-
-func TestCompleteBulletinUploadRejectsArchivedIssueBeforeAssetMutation(t *testing.T) {
-	issue := bulletinIssue()
-	issue.Status = "archived"
-	uploads := &apiUploads{completed: assetclient.Asset{ID: "asset-1"}}
-	request := httptest.NewRequest(http.MethodPost, "/api/admin/bulletins/issue-1/assets/asset-1/complete", bytes.NewBufferString(`{"locale":"zh-Hant","title":"週報","fileName":"weekly.pdf","mimeType":"application/pdf","sizeBytes":128,"checksumSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`))
-	trusted(request, "cms:write assets:write")
-	request.Header.Set("If-Match", `"1"`)
-	response := httptest.NewRecorder()
-	testHandlerWithUploads(&apiRepository{issue: issue}, uploads).ServeHTTP(response, request)
-
-	if response.Code != http.StatusUnprocessableEntity || uploads.completeCalls != 0 {
 		t.Fatalf("status=%d completeCalls=%d", response.Code, uploads.completeCalls)
 	}
 }
@@ -281,6 +386,11 @@ type apiRepository struct {
 	public             bulletins.PublicBulletin
 	issue              bulletins.Issue
 	put                bulletins.PutVersionInput
+	revisions          []bulletins.Revision
+	restoredRevision   int64
+	restoreError       error
+	deleted            bool
+	deletedLocale      string
 }
 
 func (r *apiRepository) CreateIssue(_ context.Context, date, actor, key string, now time.Time) (bulletins.Issue, error) {
@@ -312,6 +422,7 @@ type apiUploads struct {
 	completed                   assetclient.Asset
 	completeCalls               int
 	getError                    error
+	requeueCalls                int
 }
 
 func (u *apiUploads) CreateBulletinUpload(_ context.Context, issueID, locale, fileName, mimeType string, sizeBytes int64, key string) (assetclient.CreatedUpload, error) {
@@ -329,19 +440,41 @@ func (u *apiUploads) CompleteUpload(context.Context, string, assetclient.Complet
 func (u *apiUploads) Get(context.Context, string) (assetclient.Asset, error) {
 	return u.completed, u.getError
 }
+func (u *apiUploads) RequeueScan(context.Context, string) error {
+	u.requeueCalls++
+	return nil
+}
 func (*apiRepository) StartPublish(context.Context, string, string, int64, string, time.Time) (bulletins.Workflow, error) {
 	return bulletins.Workflow{}, nil
 }
 func (*apiRepository) Unpublish(context.Context, string, string, int64, string, time.Time) (bulletins.Issue, error) {
 	return bulletins.Issue{}, nil
 }
-func (r *apiRepository) ArchiveIssue(_ context.Context, _ string, _ int64, actor string, _ time.Time) (bulletins.Issue, error) {
-	r.issue.Status = "archived"
+func (r *apiRepository) DeleteIssue(context.Context, string, int64, string, time.Time) error {
+	r.deleted = true
+	return nil
+}
+func (r *apiRepository) UpdateVersion(_ context.Context, _ string, locale string, _ int64, title, _ string, _ time.Time) (bulletins.Issue, error) {
+	r.issue = bulletinIssue()
 	r.issue.Version++
-	r.issue.UpdatedBy = actor
+	r.issue.Versions = []bulletins.Version{{Locale: locale, Title: title}}
 	return r.issue, nil
 }
-func (r *apiRepository) RestoreIssue(_ context.Context, _ string, _ int64, actor string, _ time.Time) (bulletins.Issue, error) {
+func (r *apiRepository) DeleteVersion(_ context.Context, _ string, locale string, _ int64, _ string, _ time.Time) (bulletins.Issue, error) {
+	r.issue = bulletinIssue()
+	r.issue.Version++
+	r.issue.Versions = nil
+	r.deletedLocale = locale
+	return r.issue, nil
+}
+func (r *apiRepository) IssueRevisions(context.Context, string) ([]bulletins.Revision, error) {
+	return r.revisions, nil
+}
+func (r *apiRepository) RestoreIssueRevision(_ context.Context, _ string, revision, _ int64, actor string, _ time.Time) (bulletins.Issue, error) {
+	r.restoredRevision = revision
+	if r.restoreError != nil {
+		return bulletins.Issue{}, r.restoreError
+	}
 	r.issue.Status = "draft"
 	r.issue.Version++
 	r.issue.UpdatedBy = actor

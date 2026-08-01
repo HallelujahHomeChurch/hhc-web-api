@@ -24,6 +24,7 @@ type assetUploads interface {
 	CreateNewsCoverUpload(context.Context, string, string, string, int64, string) (assetclient.CreatedUpload, error)
 	CompleteUpload(context.Context, string, assetclient.CompleteUploadInput) (assetclient.Asset, error)
 	Get(context.Context, string) (assetclient.Asset, error)
+	RequeueScan(context.Context, string) error
 }
 
 type Handler struct {
@@ -58,12 +59,17 @@ func (h *Handler) Routes() http.Handler {
 	admin.HandleFunc("GET /api/admin/bulletins", requireScope("cms:read", h.adminList))
 	admin.HandleFunc("POST /api/admin/bulletins", requireScope("cms:write", h.adminCreate))
 	admin.HandleFunc("GET /api/admin/bulletins/{issueID}", requireScope("cms:read", h.adminGet))
+	admin.HandleFunc("PUT /api/admin/bulletins/{issueID}/versions/{locale}", requireScope("cms:write", h.adminUpdateVersion))
+	admin.HandleFunc("DELETE /api/admin/bulletins/{issueID}/versions/{locale}", requireScope("cms:write", h.adminDeleteVersion))
 	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/upload-sessions", requireScopes([]string{"cms:write", "assets:write"}, h.adminCreateUpload))
+	admin.HandleFunc("GET /api/admin/bulletins/{issueID}/assets/{assetID}", requireScope("cms:read", h.adminAssetStatus))
+	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/assets/{assetID}/scan/retry", requireScopes([]string{"cms:write", "assets:write"}, h.adminRetryAssetScan))
 	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/assets/{assetID}/complete", requireScopes([]string{"cms:write", "assets:write"}, h.adminCompleteUpload))
 	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/publish", requireScope("cms:publish", h.adminPublish))
 	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/unpublish", requireScope("cms:publish", h.adminUnpublish))
-	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/archive", requireScope("cms:write", h.adminArchive))
-	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/restore", requireScope("cms:write", h.adminRestore))
+	admin.HandleFunc("DELETE /api/admin/bulletins/{issueID}", requireScope("cms:write", h.adminDelete))
+	admin.HandleFunc("GET /api/admin/bulletins/{issueID}/revisions", requireScope("cms:read", h.adminIssueRevisions))
+	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/revisions/{revision}/restore", requireScope("cms:write", h.adminRestoreIssueRevision))
 	if h.content != nil {
 		h.contentRoutes(mux, admin)
 	}
@@ -85,6 +91,24 @@ type completeUploadInput struct {
 	SizeBytes      int64  `json:"sizeBytes"`
 	ChecksumSHA256 string `json:"checksumSha256"`
 }
+type updateVersionInput struct {
+	Title string `json:"title"`
+}
+
+type assetStatusResponse struct {
+	ID               string `json:"id"`
+	UploadStatus     string `json:"uploadStatus"`
+	ScanStatus       string `json:"scanStatus"`
+	ProcessingStatus string `json:"processingStatus"`
+	Retryable        bool   `json:"retryable"`
+}
+
+func cmsAssetStatus(asset assetclient.Asset) assetStatusResponse {
+	return assetStatusResponse{
+		ID: asset.ID, UploadStatus: asset.UploadStatus, ScanStatus: asset.ScanStatus,
+		ProcessingStatus: asset.ProcessingStatus, Retryable: asset.ScanStatus == "failed",
+	}
+}
 
 func (h *Handler) adminCreateUpload(w http.ResponseWriter, r *http.Request) {
 	if h.uploads == nil {
@@ -99,13 +123,9 @@ func (h *Handler) adminCreateUpload(w http.ResponseWriter, r *http.Request) {
 		handleError(w, bulletins.ErrInvalid)
 		return
 	}
-	issue, err := h.service.GetIssue(r.Context(), r.PathValue("issueID"))
+	_, err := h.service.GetIssue(r.Context(), r.PathValue("issueID"))
 	if err != nil {
 		handleError(w, err)
-		return
-	}
-	if issue.Status == "archived" {
-		handleError(w, bulletins.ErrNotPublishable)
 		return
 	}
 	created, err := h.uploads.CreateBulletinUpload(r.Context(), r.PathValue("issueID"), input.Locale, input.FileName, input.MIMEType, input.SizeBytes, r.Header.Get("Idempotency-Key"))
@@ -132,13 +152,9 @@ func (h *Handler) adminCompleteUpload(w http.ResponseWriter, r *http.Request) {
 		handleError(w, bulletins.ErrInvalid)
 		return
 	}
-	issue, err := h.service.GetIssue(r.Context(), r.PathValue("issueID"))
+	_, err := h.service.GetIssue(r.Context(), r.PathValue("issueID"))
 	if err != nil {
 		handleError(w, err)
-		return
-	}
-	if issue.Status == "archived" {
-		handleError(w, bulletins.ErrNotPublishable)
 		return
 	}
 	assetID := r.PathValue("assetID")
@@ -171,6 +187,53 @@ func (h *Handler) adminCompleteUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("ETag", fmt.Sprintf(`"%d"`, value.Version))
 	writeData(w, http.StatusOK, value, nil)
+}
+func (h *Handler) adminAssetStatus(w http.ResponseWriter, r *http.Request) {
+	if h.uploads == nil {
+		writeError(w, http.StatusServiceUnavailable, "asset_service_unavailable", "Asset status is unavailable.")
+		return
+	}
+	asset, err := h.uploads.Get(r.Context(), r.PathValue("assetID"))
+	if errors.Is(err, assetclient.ErrUnavailable) {
+		writeError(w, http.StatusServiceUnavailable, "asset_service_unavailable", "Asset status is unavailable.")
+		return
+	}
+	if err != nil || asset.ID != r.PathValue("assetID") || asset.Namespace != "cms.weekly.pdf" ||
+		asset.OwnerService != "hhc-web-api" || asset.OwnerType != "bulletin_issue" || asset.OwnerID != r.PathValue("issueID") {
+		writeError(w, http.StatusNotFound, "not_found", "The bulletin asset was not found.")
+		return
+	}
+	writeData(w, http.StatusOK, cmsAssetStatus(asset), nil)
+}
+func (h *Handler) adminRetryAssetScan(w http.ResponseWriter, r *http.Request) {
+	if h.uploads == nil {
+		writeError(w, http.StatusServiceUnavailable, "asset_service_unavailable", "Asset status is unavailable.")
+		return
+	}
+	asset, err := h.uploads.Get(r.Context(), r.PathValue("assetID"))
+	if errors.Is(err, assetclient.ErrUnavailable) {
+		writeError(w, http.StatusServiceUnavailable, "asset_service_unavailable", "Asset status is unavailable.")
+		return
+	}
+	if err != nil || asset.ID != r.PathValue("assetID") || asset.Namespace != "cms.weekly.pdf" ||
+		asset.OwnerService != "hhc-web-api" || asset.OwnerType != "bulletin_issue" || asset.OwnerID != r.PathValue("issueID") {
+		writeError(w, http.StatusNotFound, "not_found", "The bulletin asset was not found.")
+		return
+	}
+	if asset.ScanStatus != "failed" {
+		writeError(w, http.StatusConflict, "asset_not_retryable", "The asset scan cannot be retried.")
+		return
+	}
+	if err := h.uploads.RequeueScan(r.Context(), asset.ID); err != nil {
+		if errors.Is(err, assetclient.ErrUnavailable) {
+			writeError(w, http.StatusServiceUnavailable, "asset_service_unavailable", "Asset status is unavailable.")
+		} else {
+			writeError(w, http.StatusConflict, "asset_not_retryable", "The asset scan state changed.")
+		}
+		return
+	}
+	asset.ScanStatus = "pending"
+	writeData(w, http.StatusOK, cmsAssetStatus(asset), nil)
 }
 func ownedBulletinAsset(asset assetclient.Asset, issueID, assetID, locale string) bool {
 	return asset.ID == assetID && asset.Namespace == "cms.weekly.pdf" &&
@@ -275,24 +338,97 @@ func (h *Handler) adminUnpublish(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("ETag", fmt.Sprintf(`"%d"`, value.Version))
 	writeData(w, http.StatusOK, value, nil)
 }
-func (h *Handler) adminArchive(w http.ResponseWriter, r *http.Request) {
-	h.changeArchive(w, r, true)
-}
-func (h *Handler) adminRestore(w http.ResponseWriter, r *http.Request) {
-	h.changeArchive(w, r, false)
-}
-func (h *Handler) changeArchive(w http.ResponseWriter, r *http.Request, archive bool) {
+func (h *Handler) adminDelete(w http.ResponseWriter, r *http.Request) {
 	expected, ok := ifMatch(w, r)
 	if !ok {
 		return
 	}
-	var value bulletins.Issue
-	var err error
-	if archive {
-		value, err = h.service.ArchiveIssue(r.Context(), r.PathValue("issueID"), expected, actor(r))
-	} else {
-		value, err = h.service.RestoreIssue(r.Context(), r.PathValue("issueID"), expected, actor(r))
+	if err := h.service.DeleteIssue(r.Context(), r.PathValue("issueID"), expected, actor(r)); err != nil {
+		handleError(w, err)
+		return
 	}
+	w.WriteHeader(http.StatusNoContent)
+}
+func (h *Handler) adminUpdateVersion(w http.ResponseWriter, r *http.Request) {
+	expected, ok := ifMatch(w, r)
+	if !ok {
+		return
+	}
+	var input updateVersionInput
+	if !decode(w, r, &input) {
+		return
+	}
+	value, err := h.service.UpdateVersion(r.Context(), r.PathValue("issueID"), r.PathValue("locale"), expected, bulletins.UpdateVersionInput{Title: input.Title}, actor(r))
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+	w.Header().Set("ETag", fmt.Sprintf(`"%d"`, value.Version))
+	writeData(w, http.StatusOK, value, nil)
+}
+func (h *Handler) adminDeleteVersion(w http.ResponseWriter, r *http.Request) {
+	expected, ok := ifMatch(w, r)
+	if !ok {
+		return
+	}
+	value, err := h.service.DeleteVersion(r.Context(), r.PathValue("issueID"), r.PathValue("locale"), expected, actor(r))
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+	w.Header().Set("ETag", fmt.Sprintf(`"%d"`, value.Version))
+	writeData(w, http.StatusOK, value, nil)
+}
+func (h *Handler) adminIssueRevisions(w http.ResponseWriter, r *http.Request) {
+	values, err := h.service.IssueRevisions(r.Context(), r.PathValue("issueID"))
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, values, nil)
+}
+func (h *Handler) adminRestoreIssueRevision(w http.ResponseWriter, r *http.Request) {
+	expected, ok := ifMatch(w, r)
+	if !ok {
+		return
+	}
+	revision, err := strconv.ParseInt(r.PathValue("revision"), 10, 64)
+	if err != nil || revision < 1 {
+		handleError(w, bulletins.ErrInvalid)
+		return
+	}
+	values, err := h.service.IssueRevisions(r.Context(), r.PathValue("issueID"))
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+	var snapshot *bulletins.Issue
+	for index := range values {
+		if values[index].Version == revision {
+			snapshot = &values[index].Snapshot
+			break
+		}
+	}
+	if snapshot == nil {
+		handleError(w, bulletins.ErrNotFound)
+		return
+	}
+	if h.uploads == nil {
+		handleError(w, assetclient.ErrUnavailable)
+		return
+	}
+	for _, version := range snapshot.Versions {
+		asset, assetErr := h.uploads.Get(r.Context(), version.PDFAssetID)
+		if assetErr != nil || !ownedBulletinAsset(asset, r.PathValue("issueID"), version.PDFAssetID, version.Locale) {
+			if errors.Is(assetErr, assetclient.ErrUnavailable) {
+				handleError(w, assetErr)
+			} else {
+				handleError(w, bulletins.ErrNotPublishable)
+			}
+			return
+		}
+	}
+	value, err := h.service.RestoreIssueRevision(r.Context(), r.PathValue("issueID"), revision, expected, actor(r))
 	if err != nil {
 		handleError(w, err)
 		return
