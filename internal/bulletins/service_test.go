@@ -25,27 +25,21 @@ func TestServiceNormalizesPagination(t *testing.T) {
 	}
 }
 
-func TestServiceArchivesAndRestoresIssue(t *testing.T) {
+func TestServiceDeletesIssue(t *testing.T) {
 	repo := &repositoryStub{}
 	service := NewService(repo, func() time.Time { return time.Unix(123, 0) })
 
-	if _, err := service.ArchiveIssue(context.Background(), "", 1, "user-1"); err != ErrInvalid {
-		t.Fatalf("invalid archive error=%v", err)
+	if err := service.DeleteIssue(context.Background(), "", 1, "user-1"); err != ErrInvalid {
+		t.Fatalf("invalid delete error=%v", err)
 	}
-	if _, err := service.RestoreIssue(context.Background(), "issue-1", 0, "user-1"); err != ErrInvalid {
-		t.Fatalf("invalid restore error=%v", err)
+	if err := service.DeleteIssue(context.Background(), "issue-1", 0, "user-1"); err != ErrInvalid {
+		t.Fatalf("invalid version error=%v", err)
 	}
-	if _, err := service.ArchiveIssue(context.Background(), "issue-1", 2, "user-1"); err != nil {
+	if err := service.DeleteIssue(context.Background(), "issue-1", 2, "user-1"); err != nil {
 		t.Fatal(err)
 	}
-	if repo.archiveID != "issue-1" || repo.expected != 2 || repo.actor != "user-1" {
-		t.Fatalf("archive forwarding=%#v", repo)
-	}
-	if _, err := service.RestoreIssue(context.Background(), "issue-1", 3, "user-2"); err != nil {
-		t.Fatal(err)
-	}
-	if repo.restoreID != "issue-1" || repo.expected != 3 || repo.actor != "user-2" {
-		t.Fatalf("restore forwarding=%#v", repo)
+	if repo.deletedID != "issue-1" || repo.expected != 2 || repo.actor != "user-1" || !repo.now.Equal(time.Unix(123, 0).UTC()) {
+		t.Fatalf("delete forwarding=%#v", repo)
 	}
 }
 
@@ -71,12 +65,12 @@ func TestServiceListsAndRestoresIssueRevision(t *testing.T) {
 }
 
 type repositoryStub struct {
-	page, pageSize       int
-	expected             int64
-	actor                string
-	archiveID, restoreID string
-	revision             int64
-	now                  time.Time
+	page, pageSize int
+	expected       int64
+	actor          string
+	deletedID      string
+	revision       int64
+	now            time.Time
 }
 
 func (r *repositoryStub) CreateIssue(context.Context, string, string, string, time.Time) (Issue, error) {
@@ -97,13 +91,9 @@ func (r *repositoryStub) StartPublish(context.Context, string, string, int64, st
 func (r *repositoryStub) Unpublish(context.Context, string, string, int64, string, time.Time) (Issue, error) {
 	return Issue{}, nil
 }
-func (r *repositoryStub) ArchiveIssue(_ context.Context, id string, expected int64, actor string, _ time.Time) (Issue, error) {
-	r.archiveID, r.expected, r.actor = id, expected, actor
-	return Issue{}, nil
-}
-func (r *repositoryStub) RestoreIssue(_ context.Context, id string, expected int64, actor string, _ time.Time) (Issue, error) {
-	r.restoreID, r.expected, r.actor = id, expected, actor
-	return Issue{}, nil
+func (r *repositoryStub) DeleteIssue(_ context.Context, id string, expected int64, actor string, now time.Time) error {
+	r.deletedID, r.expected, r.actor, r.now = id, expected, actor, now
+	return nil
 }
 func (*repositoryStub) IssueRevisions(context.Context, string) ([]Revision, error) {
 	return []Revision{}, nil

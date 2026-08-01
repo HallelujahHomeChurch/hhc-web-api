@@ -54,17 +54,11 @@ func (s *Service) Unpublish(ctx context.Context, id, locale string, expected int
 	}
 	return s.repository.Unpublish(ctx, id, locale, expected, actor, s.now().UTC())
 }
-func (s *Service) ArchiveIssue(ctx context.Context, id string, expected int64, actor string) (Issue, error) {
+func (s *Service) DeleteIssue(ctx context.Context, id string, expected int64, actor string) error {
 	if strings.TrimSpace(id) == "" || expected <= 0 || strings.TrimSpace(actor) == "" {
-		return Issue{}, ErrInvalid
+		return ErrInvalid
 	}
-	return s.repository.ArchiveIssue(ctx, id, expected, actor, s.now().UTC())
-}
-func (s *Service) RestoreIssue(ctx context.Context, id string, expected int64, actor string) (Issue, error) {
-	if strings.TrimSpace(id) == "" || expected <= 0 || strings.TrimSpace(actor) == "" {
-		return Issue{}, ErrInvalid
-	}
-	return s.repository.RestoreIssue(ctx, id, expected, actor, s.now().UTC())
+	return s.repository.DeleteIssue(ctx, id, expected, actor, s.now().UTC())
 }
 func (s *Service) IssueRevisions(ctx context.Context, id string) ([]Revision, error) {
 	if strings.TrimSpace(id) == "" {

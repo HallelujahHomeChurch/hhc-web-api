@@ -248,7 +248,7 @@ func (r *Repository) startNewsPublish(ctx context.Context, id string, expected i
 	if err != nil {
 		return content.Item{}, err
 	}
-	if current.CoverAssetID == "" || current.Status == content.StatusPublishing || current.Status == content.StatusUnpublishing || current.Status == content.StatusArchived {
+	if current.CoverAssetID == "" || current.Status == content.StatusPublishing || current.Status == content.StatusUnpublishing {
 		return content.Item{}, content.ErrNotPublishable
 	}
 	next := expected + 1
@@ -468,54 +468,97 @@ func (r *Repository) RestoreContent(ctx context.Context, module content.Module, 
 	return r.UpdateContent(ctx, module, id, expected, input, actor, now)
 }
 
-func (r *Repository) ArchiveContent(ctx context.Context, module content.Module, id string, expected int64, actor string, now time.Time) (content.Item, error) {
-	return r.changeArchiveStatus(ctx, module, id, expected, actor, content.StatusArchived, now)
-}
-
-func (r *Repository) RestoreArchivedContent(ctx context.Context, module content.Module, id string, expected int64, actor string, now time.Time) (content.Item, error) {
-	return r.changeArchiveStatus(ctx, module, id, expected, actor, content.StatusDraft, now)
-}
-
-func (r *Repository) changeArchiveStatus(ctx context.Context, module content.Module, id string, expected int64, actor, target string, now time.Time) (content.Item, error) {
+func (r *Repository) DeleteContent(ctx context.Context, module content.Module, id string, expected int64, actor string, now time.Time) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
-		return content.Item{}, err
+		return err
 	}
 	defer tx.Rollback()
 
 	current, status, err := lockContent(ctx, tx, module, id)
 	if err != nil {
-		return content.Item{}, err
+		return err
 	}
 	if current != expected {
-		return content.Item{}, content.ErrPrecondition
+		return content.ErrPrecondition
 	}
-	if target == content.StatusArchived {
-		if status == content.StatusArchived || status == content.StatusPublishing || status == content.StatusPublished ||
-			status == content.StatusUnpublishing || status == content.StatusUnpublishFailed {
-			return content.Item{}, content.ErrConflict
-		}
-	} else if status != content.StatusArchived {
-		return content.Item{}, content.ErrConflict
+	if status == content.StatusPublishing || status == content.StatusPublished || status == content.StatusUnpublishing || status == content.StatusUnpublishFailed {
+		return content.ErrConflict
 	}
 	hasPublicState, err := hasPublicContentState(ctx, tx, module, id)
 	if err != nil {
-		return content.Item{}, err
+		return err
 	}
 	if hasPublicState {
-		return content.Item{}, content.ErrConflict
+		return content.ErrConflict
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.content_entry SET status=$2,version=version+1,updated_by=$3,updated_at=$4 WHERE id=$1`, id, target, actor, now); err != nil {
-		return content.Item{}, err
-	}
-	item, err := loadContent(ctx, tx, module, id)
+	assetIDs, err := contentAssetIDs(ctx, tx, module, id)
 	if err != nil {
-		return content.Item{}, err
+		return err
 	}
-	if err := insertRevision(ctx, tx, item, actor, now); err != nil {
-		return content.Item{}, err
+	if err := insertDeleteAudit(ctx, tx, string(module), id, current, actor, assetIDs, now); err != nil {
+		return err
 	}
-	return item, tx.Commit()
+	if err := enqueueAssetDeletes(ctx, tx, string(module), id, current, assetIDs, now); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM hhc_web.public_projection WHERE resource_type=$1 AND resource_id=$2`, module, id); err != nil {
+		return err
+	}
+	if result, err := tx.ExecContext(ctx, `DELETE FROM hhc_web.content_entry WHERE id=$1 AND module=$2`, id, module); err != nil {
+		return err
+	} else if affected, _ := result.RowsAffected(); affected != 1 {
+		return content.ErrNotFound
+	}
+	return tx.Commit()
+}
+
+func contentAssetIDs(ctx context.Context, tx *sql.Tx, module content.Module, id string) ([]string, error) {
+	if module != content.ModuleNews {
+		return nil, nil
+	}
+	rows, err := tx.QueryContext(ctx, `
+		SELECT asset_id FROM (
+			SELECT cover_asset_id AS asset_id FROM hhc_web.news_item WHERE entry_id=$1
+			UNION
+			SELECT snapshot_json->>'coverAssetId' FROM hhc_web.content_revision WHERE entry_id=$1
+		) assets WHERE COALESCE(asset_id,'')<>'' ORDER BY asset_id`, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var values []string
+	for rows.Next() {
+		var value string
+		if err := rows.Scan(&value); err != nil {
+			return nil, err
+		}
+		values = append(values, value)
+	}
+	return values, rows.Err()
+}
+
+func insertDeleteAudit(ctx context.Context, tx *sql.Tx, resourceType, resourceID string, version int64, actor string, assetIDs []string, now time.Time) error {
+	payload, err := json.Marshal(map[string]any{"version": version, "assetIds": assetIDs})
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO hhc_web.cms_audit_event(id,action,resource_type,resource_id,actor,payload_json,created_at) VALUES($1,'delete',$2,$3,$4,$5,$6)`, platform.NewID(), resourceType, resourceID, actor, payload, now)
+	return err
+}
+
+func enqueueAssetDeletes(ctx context.Context, tx *sql.Tx, resourceType, resourceID string, version int64, assetIDs []string, now time.Time) error {
+	for _, assetID := range assetIDs {
+		payload, _ := json.Marshal(map[string]any{"assetId": assetID})
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO hhc_web.outbox_event(id,destination,event_type,aggregate_type,aggregate_id,aggregate_version,payload_json,idempotency_key,status,next_attempt_at,created_at,updated_at)
+			VALUES($1,'asset-api','asset.owner.delete',$2,$3,$4,$5,$6,'pending',$7,$7,$7)
+			ON CONFLICT(destination,idempotency_key) DO NOTHING`,
+			platform.NewID(), resourceType, resourceID, version, payload, fmt.Sprintf("%s:%s:delete:%s", resourceType, resourceID, assetID), now); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *Repository) PublicContent(ctx context.Context, module content.Module, locale string, limit int) ([]content.PublicItem, error) {
@@ -737,7 +780,7 @@ func lockContentVersion(ctx context.Context, tx *sql.Tx, module content.Module, 
 	if current != expected {
 		return content.ErrPrecondition
 	}
-	if status == content.StatusPublishing || status == content.StatusUnpublishing || status == content.StatusArchived {
+	if status == content.StatusPublishing || status == content.StatusUnpublishing {
 		return content.ErrConflict
 	}
 	return nil

@@ -185,9 +185,6 @@ func (r *Repository) PutVersion(ctx context.Context, id string, expected int64, 
 	if current != expected {
 		return bulletins.Issue{}, bulletins.ErrPrecondition
 	}
-	if issueStatus == "archived" {
-		return bulletins.Issue{}, bulletins.ErrConflict
-	}
 	if issueStatus == "publishing" || issueStatus == "unpublishing" {
 		return bulletins.Issue{}, bulletins.ErrNotPublishable
 	}
@@ -271,7 +268,7 @@ func (r *Repository) RestoreIssueRevision(ctx context.Context, id string, revisi
 	if current != expected {
 		return bulletins.Issue{}, bulletins.ErrPrecondition
 	}
-	if status == "publishing" || status == "unpublishing" || status == "archived" {
+	if status == "publishing" || status == "unpublishing" {
 		return bulletins.Issue{}, bulletins.ErrConflict
 	}
 	var payload []byte
@@ -375,9 +372,6 @@ func (r *Repository) StartPublish(ctx context.Context, id, locale string, expect
 	if current != expected {
 		return bulletins.Workflow{}, bulletins.ErrPrecondition
 	}
-	if issueStatus == "archived" {
-		return bulletins.Workflow{}, bulletins.ErrConflict
-	}
 	if issueStatus == "publishing" || issueStatus == "unpublishing" {
 		return bulletins.Workflow{}, bulletins.ErrNotPublishable
 	}
@@ -424,9 +418,6 @@ func (r *Repository) Unpublish(ctx context.Context, id, locale string, expected 
 	if current != expected {
 		return bulletins.Issue{}, bulletins.ErrPrecondition
 	}
-	if issueStatus == "archived" {
-		return bulletins.Issue{}, bulletins.ErrConflict
-	}
 	if issueStatus == "publishing" || issueStatus == "unpublishing" {
 		return bulletins.Issue{}, bulletins.ErrNotPublishable
 	}
@@ -468,62 +459,87 @@ func (r *Repository) Unpublish(ctx context.Context, id, locale string, expected 
 	return r.GetIssue(ctx, id)
 }
 
-func (r *Repository) ArchiveIssue(ctx context.Context, id string, expected int64, actor string, now time.Time) (bulletins.Issue, error) {
-	return r.changeIssueArchiveStatus(ctx, id, expected, actor, "archived", now)
-}
-
-func (r *Repository) RestoreIssue(ctx context.Context, id string, expected int64, actor string, now time.Time) (bulletins.Issue, error) {
-	return r.changeIssueArchiveStatus(ctx, id, expected, actor, "draft", now)
-}
-
-func (r *Repository) changeIssueArchiveStatus(ctx context.Context, id string, expected int64, actor, target string, now time.Time) (bulletins.Issue, error) {
+func (r *Repository) DeleteIssue(ctx context.Context, id string, expected int64, actor string, now time.Time) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
-		return bulletins.Issue{}, err
+		return err
 	}
 	defer tx.Rollback()
 
 	var current int64
 	var status string
 	if err := tx.QueryRowContext(ctx, `SELECT version,status FROM hhc_web.bulletin_issue WHERE id=$1 FOR UPDATE`, id).Scan(&current, &status); errors.Is(err, sql.ErrNoRows) {
-		return bulletins.Issue{}, bulletins.ErrNotFound
+		return bulletins.ErrNotFound
 	} else if err != nil {
-		return bulletins.Issue{}, err
+		return err
 	}
 	if current != expected {
-		return bulletins.Issue{}, bulletins.ErrPrecondition
+		return bulletins.ErrPrecondition
 	}
-	if target == "archived" {
-		if status != "draft" && status != "unpublished" {
-			return bulletins.Issue{}, bulletins.ErrConflict
-		}
-	} else if status != "archived" {
-		return bulletins.Issue{}, bulletins.ErrConflict
+	if status == "publishing" || status == "published" || status == "unpublishing" || status == "unpublish_failed" {
+		return bulletins.ErrConflict
 	}
 
 	var hasPublicState bool
 	if err := tx.QueryRowContext(ctx, `
 		SELECT EXISTS(
 			SELECT 1 FROM hhc_web.public_projection
-			WHERE resource_type='bulletin_issue' AND resource_id=$1
+			WHERE resource_type IN ('bulletin_issue','bulletin_latest') AND resource_id=$1
 		) OR EXISTS(
 			SELECT 1 FROM hhc_web.bulletin_version
 			WHERE issue_id=$1 AND (
 				COALESCE(public_grant_id,'')<>'' OR COALESCE(retiring_grant_id,'')<>''
 			)
 		)`, id).Scan(&hasPublicState); err != nil {
-		return bulletins.Issue{}, err
+		return err
 	}
 	if hasPublicState {
-		return bulletins.Issue{}, bulletins.ErrConflict
+		return bulletins.ErrConflict
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.bulletin_issue SET status=$2,version=version+1,updated_by=$3,updated_at=$4 WHERE id=$1`, id, target, actor, now); err != nil {
-		return bulletins.Issue{}, err
+	assetIDs, err := bulletinAssetIDs(ctx, tx, id)
+	if err != nil {
+		return err
 	}
-	if err := tx.Commit(); err != nil {
-		return bulletins.Issue{}, err
+	if err := insertDeleteAudit(ctx, tx, "bulletin", id, current, actor, assetIDs, now); err != nil {
+		return err
 	}
-	return r.GetIssue(ctx, id)
+	if err := enqueueAssetDeletes(ctx, tx, "bulletin", id, current, assetIDs, now); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM hhc_web.public_projection WHERE resource_type IN ('bulletin_issue','bulletin_latest') AND resource_id=$1`, id); err != nil {
+		return err
+	}
+	if result, err := tx.ExecContext(ctx, `DELETE FROM hhc_web.bulletin_issue WHERE id=$1`, id); err != nil {
+		return err
+	} else if affected, _ := result.RowsAffected(); affected != 1 {
+		return bulletins.ErrNotFound
+	}
+	return tx.Commit()
+}
+
+func bulletinAssetIDs(ctx context.Context, tx *sql.Tx, id string) ([]string, error) {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT asset_id FROM (
+			SELECT pdf_asset_id AS asset_id FROM hhc_web.bulletin_version WHERE issue_id=$1
+			UNION
+			SELECT version->>'pdfAssetId'
+			FROM hhc_web.bulletin_revision revision
+			CROSS JOIN LATERAL jsonb_array_elements(revision.snapshot_json->'versions') version
+			WHERE revision.issue_id=$1
+		) assets WHERE COALESCE(asset_id,'')<>'' ORDER BY asset_id`, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var values []string
+	for rows.Next() {
+		var value string
+		if err := rows.Scan(&value); err != nil {
+			return nil, err
+		}
+		values = append(values, value)
+	}
+	return values, rows.Err()
 }
 
 func (r *Repository) GetPublicLatest(ctx context.Context, locale string) (bulletins.PublicBulletin, error) {

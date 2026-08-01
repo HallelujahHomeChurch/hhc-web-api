@@ -65,8 +65,7 @@ func (h *Handler) Routes() http.Handler {
 	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/assets/{assetID}/complete", requireScopes([]string{"cms:write", "assets:write"}, h.adminCompleteUpload))
 	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/publish", requireScope("cms:publish", h.adminPublish))
 	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/unpublish", requireScope("cms:publish", h.adminUnpublish))
-	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/archive", requireScope("cms:write", h.adminArchive))
-	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/restore", requireScope("cms:write", h.adminRestore))
+	admin.HandleFunc("DELETE /api/admin/bulletins/{issueID}", requireScope("cms:write", h.adminDelete))
 	admin.HandleFunc("GET /api/admin/bulletins/{issueID}/revisions", requireScope("cms:read", h.adminIssueRevisions))
 	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/revisions/{revision}/restore", requireScope("cms:write", h.adminRestoreIssueRevision))
 	if h.content != nil {
@@ -119,13 +118,9 @@ func (h *Handler) adminCreateUpload(w http.ResponseWriter, r *http.Request) {
 		handleError(w, bulletins.ErrInvalid)
 		return
 	}
-	issue, err := h.service.GetIssue(r.Context(), r.PathValue("issueID"))
+	_, err := h.service.GetIssue(r.Context(), r.PathValue("issueID"))
 	if err != nil {
 		handleError(w, err)
-		return
-	}
-	if issue.Status == "archived" {
-		handleError(w, bulletins.ErrNotPublishable)
 		return
 	}
 	created, err := h.uploads.CreateBulletinUpload(r.Context(), r.PathValue("issueID"), input.Locale, input.FileName, input.MIMEType, input.SizeBytes, r.Header.Get("Idempotency-Key"))
@@ -152,13 +147,9 @@ func (h *Handler) adminCompleteUpload(w http.ResponseWriter, r *http.Request) {
 		handleError(w, bulletins.ErrInvalid)
 		return
 	}
-	issue, err := h.service.GetIssue(r.Context(), r.PathValue("issueID"))
+	_, err := h.service.GetIssue(r.Context(), r.PathValue("issueID"))
 	if err != nil {
 		handleError(w, err)
-		return
-	}
-	if issue.Status == "archived" {
-		handleError(w, bulletins.ErrNotPublishable)
 		return
 	}
 	assetID := r.PathValue("assetID")
@@ -342,30 +333,16 @@ func (h *Handler) adminUnpublish(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("ETag", fmt.Sprintf(`"%d"`, value.Version))
 	writeData(w, http.StatusOK, value, nil)
 }
-func (h *Handler) adminArchive(w http.ResponseWriter, r *http.Request) {
-	h.changeArchive(w, r, true)
-}
-func (h *Handler) adminRestore(w http.ResponseWriter, r *http.Request) {
-	h.changeArchive(w, r, false)
-}
-func (h *Handler) changeArchive(w http.ResponseWriter, r *http.Request, archive bool) {
+func (h *Handler) adminDelete(w http.ResponseWriter, r *http.Request) {
 	expected, ok := ifMatch(w, r)
 	if !ok {
 		return
 	}
-	var value bulletins.Issue
-	var err error
-	if archive {
-		value, err = h.service.ArchiveIssue(r.Context(), r.PathValue("issueID"), expected, actor(r))
-	} else {
-		value, err = h.service.RestoreIssue(r.Context(), r.PathValue("issueID"), expected, actor(r))
-	}
-	if err != nil {
+	if err := h.service.DeleteIssue(r.Context(), r.PathValue("issueID"), expected, actor(r)); err != nil {
 		handleError(w, err)
 		return
 	}
-	w.Header().Set("ETag", fmt.Sprintf(`"%d"`, value.Version))
-	writeData(w, http.StatusOK, value, nil)
+	w.WriteHeader(http.StatusNoContent)
 }
 func (h *Handler) adminIssueRevisions(w http.ResponseWriter, r *http.Request) {
 	values, err := h.service.IssueRevisions(r.Context(), r.PathValue("issueID"))

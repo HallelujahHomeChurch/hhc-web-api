@@ -140,28 +140,20 @@ func TestServiceAcceptsTypedDrafts(t *testing.T) {
 	}
 }
 
-func TestServiceArchivesAndRestoresDraftContent(t *testing.T) {
-	repo := &serviceRepository{
-		item: Item{ID: "item-1", Module: ModuleVideos, Status: StatusDraft, Version: 2},
+func TestServiceDeletesContent(t *testing.T) {
+	repo := &serviceRepository{}
+	service := NewService(repo, func() time.Time { return time.Unix(123, 0) })
+	if err := service.DeleteContent(context.Background(), "invalid", "item-1", 2, "user-1"); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("invalid module error=%v", err)
 	}
-	service := NewService(repo, func() time.Time {
-		return time.Date(2026, 7, 31, 0, 0, 0, 0, time.UTC)
-	})
-
-	archived, err := service.ArchiveContent(context.Background(), ModuleVideos, repo.item.ID, 2, "user-1")
-	if err != nil {
+	if err := service.DeleteContent(context.Background(), ModuleVideos, "", 2, "user-1"); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("invalid id error=%v", err)
+	}
+	if err := service.DeleteContent(context.Background(), ModuleVideos, "item-1", 2, "user-1"); err != nil {
 		t.Fatal(err)
 	}
-	if archived.Status != StatusArchived || archived.Version != 3 {
-		t.Fatalf("archived=%#v", archived)
-	}
-
-	restored, err := service.RestoreArchivedContent(context.Background(), ModuleVideos, repo.item.ID, 3, "user-1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if restored.Status != StatusDraft || restored.Version != 4 {
-		t.Fatalf("restored=%#v", restored)
+	if repo.deletedID != "item-1" || repo.expected != 2 || repo.actor != "user-1" || !repo.now.Equal(time.Unix(123, 0).UTC()) {
+		t.Fatalf("delete forwarding=%#v", repo)
 	}
 }
 
@@ -228,6 +220,10 @@ func historyInput(eventDate string) WriteInput {
 type serviceRepository struct {
 	item        Item
 	listOptions ListOptions
+	deletedID   string
+	expected    int64
+	actor       string
+	now         time.Time
 }
 
 func (r *serviceRepository) CreateContent(_ context.Context, module Module, input WriteInput, actor, key string, now time.Time) (Item, error) {
@@ -257,15 +253,9 @@ func (r *serviceRepository) ContentRevisions(context.Context, Module, string) ([
 func (r *serviceRepository) RestoreContent(context.Context, Module, string, int64, int64, string, time.Time) (Item, error) {
 	return r.item, nil
 }
-func (r *serviceRepository) ArchiveContent(context.Context, Module, string, int64, string, time.Time) (Item, error) {
-	r.item.Status = StatusArchived
-	r.item.Version++
-	return r.item, nil
-}
-func (r *serviceRepository) RestoreArchivedContent(context.Context, Module, string, int64, string, time.Time) (Item, error) {
-	r.item.Status = StatusDraft
-	r.item.Version++
-	return r.item, nil
+func (r *serviceRepository) DeleteContent(_ context.Context, _ Module, id string, expected int64, actor string, now time.Time) error {
+	r.deletedID, r.expected, r.actor, r.now = id, expected, actor, now
+	return nil
 }
 func (r *serviceRepository) PublicContent(context.Context, Module, string, int) ([]PublicItem, error) {
 	return nil, nil

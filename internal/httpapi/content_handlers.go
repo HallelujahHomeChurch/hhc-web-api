@@ -25,8 +25,7 @@ func (h *Handler) contentRoutes(public, admin *http.ServeMux) {
 	admin.HandleFunc("PUT /api/admin/content/{module}/{contentID}", requireScope("cms:write", h.adminContentUpdate))
 	admin.HandleFunc("POST /api/admin/content/{module}/{contentID}/publish", requireScope("cms:publish", h.adminContentPublish))
 	admin.HandleFunc("POST /api/admin/content/{module}/{contentID}/unpublish", requireScope("cms:publish", h.adminContentUnpublish))
-	admin.HandleFunc("POST /api/admin/content/{module}/{contentID}/archive", requireScope("cms:write", h.adminContentArchive))
-	admin.HandleFunc("POST /api/admin/content/{module}/{contentID}/restore", requireScope("cms:write", h.adminContentRestoreArchived))
+	admin.HandleFunc("DELETE /api/admin/content/{module}/{contentID}", requireScope("cms:write", h.adminContentDelete))
 	admin.HandleFunc("GET /api/admin/content/{module}/{contentID}/revisions", requireScope("cms:read", h.adminContentRevisions))
 	admin.HandleFunc("POST /api/admin/content/{module}/{contentID}/revisions/{revision}/restore", requireScope("cms:write", h.adminContentRestore))
 	admin.HandleFunc("POST /api/admin/content/news/{contentID}/upload-sessions", requireScopes([]string{"cms:write", "assets:write"}, h.adminNewsCoverUpload))
@@ -408,30 +407,17 @@ func (h *Handler) adminContentRestore(w http.ResponseWriter, r *http.Request) {
 	}
 	writeContentItem(w, value)
 }
-func (h *Handler) adminContentArchive(w http.ResponseWriter, r *http.Request) {
-	h.changeContentArchive(w, r, true)
-}
-func (h *Handler) adminContentRestoreArchived(w http.ResponseWriter, r *http.Request) {
-	h.changeContentArchive(w, r, false)
-}
-func (h *Handler) changeContentArchive(w http.ResponseWriter, r *http.Request, archive bool) {
+func (h *Handler) adminContentDelete(w http.ResponseWriter, r *http.Request) {
 	expected, ok := ifMatch(w, r)
 	if !ok {
 		return
 	}
 	module, id := content.Module(r.PathValue("module")), r.PathValue("contentID")
-	var value content.Item
-	var err error
-	if archive {
-		value, err = h.content.ArchiveContent(r.Context(), module, id, expected, actor(r))
-	} else {
-		value, err = h.content.RestoreArchivedContent(r.Context(), module, id, expected, actor(r))
-	}
-	if err != nil {
+	if err := h.content.DeleteContent(r.Context(), module, id, expected, actor(r)); err != nil {
 		handleContentError(w, err)
 		return
 	}
-	writeContentItem(w, value)
+	w.WriteHeader(http.StatusNoContent)
 }
 func writeContentItem(w http.ResponseWriter, value content.Item) {
 	w.Header().Set("ETag", `"`+strconv.FormatInt(value.Version, 10)+`"`)

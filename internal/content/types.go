@@ -30,7 +30,6 @@ const (
 	StatusPublishFailed   = "publish_failed"
 	StatusUnpublishFailed = "unpublish_failed"
 	StatusUnpublished     = "unpublished"
-	StatusArchived        = "archived"
 )
 
 type Translation struct {
@@ -126,8 +125,7 @@ type Repository interface {
 	UnpublishContent(context.Context, Module, string, int64, string, time.Time) (Item, error)
 	ContentRevisions(context.Context, Module, string) ([]Revision, error)
 	RestoreContent(context.Context, Module, string, int64, int64, string, time.Time) (Item, error)
-	ArchiveContent(context.Context, Module, string, int64, string, time.Time) (Item, error)
-	RestoreArchivedContent(context.Context, Module, string, int64, string, time.Time) (Item, error)
+	DeleteContent(context.Context, Module, string, int64, string, time.Time) error
 	PublicContent(context.Context, Module, string, int) ([]PublicItem, error)
 	PublicNews(context.Context, string, string) (PublicItem, string, error)
 }

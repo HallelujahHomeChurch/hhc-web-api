@@ -55,6 +55,8 @@ func (w *Worker) processNext(ctx context.Context) (bool, error) {
 		err = w.unpublish(ctx, event, now)
 	case "bulletin.asset.retire":
 		err = w.retire(ctx, event, now)
+	case "asset.owner.delete":
+		err = w.retire(ctx, event, now)
 	case "news.publish.ensure_asset":
 		err = w.publishNews(ctx, event, now)
 	case "news.unpublish.revoke_asset":

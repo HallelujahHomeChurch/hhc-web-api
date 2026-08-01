@@ -245,6 +245,25 @@ func TestWorkerRetiresReplacedAsset(t *testing.T) {
 	}
 }
 
+func TestWorkerDeletesOwnedAssetAfterContentDeletion(t *testing.T) {
+	repository := &workerRepository{event: Event{
+		ID:          "event-delete",
+		EventType:   "asset.owner.delete",
+		AggregateID: "content-1",
+		Payload:     []byte(`{"assetId":"asset-old"}`),
+		Attempts:    1,
+	}}
+	assets := &workerAssets{}
+	worker := NewWorker(repository, assets, 5)
+
+	if _, err := worker.processNext(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if assets.deletedAsset != "asset-old" || repository.completeCount != 1 {
+		t.Fatalf("deleted=%q complete=%d", assets.deletedAsset, repository.completeCount)
+	}
+}
+
 func TestWorkerQueuesGrantRevocationWhenPublishWasSuperseded(t *testing.T) {
 	repository := &workerRepository{event: publishEvent(1), completePublishError: ErrStalePublication}
 	assets := &workerAssets{asset: Asset{
