@@ -182,7 +182,7 @@ func valid(module Module, input WriteInput) bool {
 	}
 	switch module {
 	case ModuleNews:
-		return len(input.Slug) <= 120 && contentSlug.MatchString(input.Slug) && validDate(input.DisplayDate) && len(input.CoverAssetID) <= 200
+		return len(input.Slug) <= 120 && contentSlug.MatchString(input.Slug) && validDate(input.DisplayDate) && len(input.CoverAssetID) <= 200 && len(input.HomeCoverAssetID) <= 200
 	case ModuleHistory:
 		return validHistoryDate(input.EventDate)
 	case ModuleVideos:
@@ -192,7 +192,7 @@ func valid(module Module, input WriteInput) bool {
 	}
 }
 func publishable(item Item) bool {
-	if !valid(item.Module, WriteInput{Slug: item.Slug, DisplayDate: item.DisplayDate, EventDate: item.EventDate, YouTubeVideoID: item.YouTubeVideoID, CoverAssetID: item.CoverAssetID, Translations: item.Translations}) {
+	if !valid(item.Module, WriteInput{Slug: item.Slug, DisplayDate: item.DisplayDate, EventDate: item.EventDate, YouTubeVideoID: item.YouTubeVideoID, CoverAssetID: item.CoverAssetID, HomeCoverAssetID: item.HomeCoverAssetID, Translations: item.Translations}) {
 		return false
 	}
 	for _, value := range item.Translations {
@@ -207,7 +207,7 @@ func publishable(item Item) bool {
 			}
 		}
 	}
-	return item.Module != ModuleNews || item.CoverAssetID != ""
+	return true
 }
 func validDate(value string) bool {
 	parsed, err := time.Parse("2006-01-02", value)
@@ -237,6 +237,7 @@ func normalize(input WriteInput) WriteInput {
 	input.EventDate = strings.TrimSpace(input.EventDate)
 	input.YouTubeVideoID = normalizeYouTubeVideoID(input.YouTubeVideoID)
 	input.CoverAssetID = strings.TrimSpace(input.CoverAssetID)
+	input.HomeCoverAssetID = strings.TrimSpace(input.HomeCoverAssetID)
 	for index := range input.Translations {
 		input.Translations[index].Locale = strings.TrimSpace(input.Translations[index].Locale)
 		input.Translations[index].Title = strings.TrimSpace(input.Translations[index].Title)

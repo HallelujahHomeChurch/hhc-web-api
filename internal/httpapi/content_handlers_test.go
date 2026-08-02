@@ -170,7 +170,7 @@ func TestNewsPublishRejectsUnknownAssetStates(t *testing.T) {
 }
 
 func TestCompleteNewsCoverRejectsOwnerBeforeMutation(t *testing.T) {
-	repo := &contentRepository{item: content.Item{ID: "news-1", Module: content.ModuleNews, Version: 1}}
+	repo := &contentRepository{item: content.Item{ID: "news-1", Module: content.ModuleNews, Version: 1, Slug: "news", DisplayDate: "2026-08-02", Translations: []content.Translation{{Locale: "zh-Hant", Title: "消息", Body: "內容"}}}}
 	uploads := &apiUploads{completed: assetclient.Asset{
 		ID: "asset-1", Namespace: "cms.news.cover", OwnerService: "hhc-web-api",
 		OwnerType: "news", OwnerID: "another-news",
@@ -182,6 +182,48 @@ func TestCompleteNewsCoverRejectsOwnerBeforeMutation(t *testing.T) {
 	contentTestHandlerWithAssets(repo, uploads).ServeHTTP(response, request)
 	if response.Code != http.StatusForbidden || uploads.completeCalls != 0 {
 		t.Fatalf("status=%d completeCalls=%d", response.Code, uploads.completeCalls)
+	}
+}
+
+func TestNewsCoverUploadDefaultsToDetailAndAcceptsHomeUsage(t *testing.T) {
+	uploads := &apiUploads{}
+	handler := contentTestHandlerWithAssets(&contentRepository{item: content.Item{ID: "news-1", Module: content.ModuleNews}}, uploads)
+
+	for _, test := range []struct {
+		body    string
+		purpose string
+	}{
+		{body: `{"fileName":"detail.jpg","mimeType":"image/jpeg","sizeBytes":128}`, purpose: "news_detail_cover"},
+		{body: `{"usage":"home","fileName":"home.jpg","mimeType":"image/jpeg","sizeBytes":128}`, purpose: "news_home_cover"},
+	} {
+		request := httptest.NewRequest(http.MethodPost, "/api/admin/content/news/news-1/upload-sessions", bytes.NewBufferString(test.body))
+		trusted(request, "cms:write assets:write")
+		request.Header.Set("Idempotency-Key", test.purpose)
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusCreated || uploads.createdPurpose != test.purpose {
+			t.Fatalf("status=%d purpose=%q body=%s", response.Code, uploads.createdPurpose, response.Body.String())
+		}
+	}
+}
+
+func TestCompleteNewsCoverUsesAssetPurpose(t *testing.T) {
+	repo := &contentRepository{item: content.Item{
+		ID: "news-1", Module: content.ModuleNews, Version: 1, Slug: "news",
+		DisplayDate:  "2026-08-02",
+		Translations: []content.Translation{{Locale: "zh-Hant", Title: "News", Body: "Body"}},
+	}}
+	uploads := &apiUploads{completed: assetclient.Asset{
+		ID: "asset-home", Namespace: "cms.news.cover", OwnerService: "hhc-web-api", OwnerType: "news", OwnerID: "news-1", Purpose: "news_home_cover",
+	}}
+	request := httptest.NewRequest(http.MethodPost, "/api/admin/content/news/news-1/assets/asset-home/complete", bytes.NewBufferString(`{"fileName":"home.jpg","mimeType":"image/jpeg","sizeBytes":128,"checksumSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`))
+	trusted(request, "cms:write assets:write")
+	request.Header.Set("If-Match", `"1"`)
+	response := httptest.NewRecorder()
+	contentTestHandlerWithAssets(repo, uploads).ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK || repo.item.HomeCoverAssetID != "asset-home" || repo.item.CoverAssetID != "" {
+		t.Fatalf("status=%d item=%#v body=%s", response.Code, repo.item, response.Body.String())
 	}
 }
 
@@ -292,7 +334,10 @@ func (r *contentRepository) ListContent(context.Context, content.Module, content
 func (r *contentRepository) GetContent(context.Context, content.Module, string) (content.Item, error) {
 	return r.item, nil
 }
-func (r *contentRepository) UpdateContent(context.Context, content.Module, string, int64, content.WriteInput, string, time.Time) (content.Item, error) {
+
+func (r *contentRepository) UpdateContent(_ context.Context, _ content.Module, _ string, _ int64, input content.WriteInput, _ string, _ time.Time) (content.Item, error) {
+	r.item.CoverAssetID = input.CoverAssetID
+	r.item.HomeCoverAssetID = input.HomeCoverAssetID
 	return r.item, nil
 }
 func (r *contentRepository) PublishContent(_ context.Context, _ content.Module, _ string, _ int64, _ string, _ time.Time) (content.Item, error) {

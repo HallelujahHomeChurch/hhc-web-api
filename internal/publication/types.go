@@ -32,14 +32,22 @@ type UnpublishPayload struct {
 }
 type ContentPublishPayload struct {
 	ContentID        string `json:"contentId"`
-	AssetID          string `json:"assetId"`
+	AssetID          string `json:"assetId,omitempty"`
+	HomeAssetID      string `json:"homeAssetId,omitempty"`
 	AggregateVersion int64  `json:"aggregateVersion"`
 }
+type PublishedAsset struct {
+	Usage     string `json:"usage"`
+	AssetID   string `json:"assetId"`
+	GrantID   string `json:"grantId"`
+	PublicURL string `json:"publicUrl,omitempty"`
+}
 type ContentUnpublishPayload struct {
-	ContentID        string `json:"contentId"`
-	AssetID          string `json:"assetId"`
-	GrantID          string `json:"grantId"`
-	AggregateVersion int64  `json:"aggregateVersion"`
+	ContentID        string           `json:"contentId"`
+	AssetID          string           `json:"assetId,omitempty"`
+	GrantID          string           `json:"grantId,omitempty"`
+	Assets           []PublishedAsset `json:"assets,omitempty"`
+	AggregateVersion int64            `json:"aggregateVersion"`
 }
 
 type Repository interface {
@@ -48,10 +56,11 @@ type Repository interface {
 	Defer(context.Context, string, string, time.Time, time.Time) error
 	Fail(context.Context, Event, string, time.Time) error
 	FailPublish(context.Context, Event, string, string, string, time.Time) error
+	FailContentPublish(context.Context, Event, []PublishedAsset, string, time.Time) error
 	EventDelivered(context.Context, string) (bool, error)
 	CompletePublish(context.Context, Event, string, string, time.Time) error
 	CompleteUnpublish(context.Context, Event, time.Time) error
-	CompleteContentPublish(context.Context, Event, string, string, time.Time) error
+	CompleteContentPublish(context.Context, Event, []PublishedAsset, time.Time) error
 	CompleteContentUnpublish(context.Context, Event, time.Time) error
 	Complete(context.Context, string, time.Time) error
 }
@@ -63,7 +72,7 @@ type AssetClient interface {
 	PublicURL(string) string
 }
 type Asset struct {
-	ID, Namespace, OwnerService, OwnerType, OwnerID, Locale string
-	UploadStatus, ScanStatus, ProcessingStatus              string
+	ID, Namespace, OwnerService, OwnerType, OwnerID, Locale, Purpose string
+	UploadStatus, ScanStatus, ProcessingStatus                       string
 }
 type Grant struct{ ID string }

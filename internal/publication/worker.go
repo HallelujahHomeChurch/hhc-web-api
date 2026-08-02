@@ -139,23 +139,63 @@ func (w *Worker) publishNews(ctx context.Context, event Event, now time.Time) er
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
 		return terminalError{err}
 	}
-	asset, err := w.assets.Get(ctx, payload.AssetID)
-	if err != nil {
-		return err
+	references := newsPublishReferences(payload)
+	for _, reference := range references {
+		asset, err := w.assets.Get(ctx, reference.AssetID)
+		if err != nil {
+			return err
+		}
+		if err := validNewsAsset(asset, payload.ContentID, reference.Usage); err != nil {
+			return err
+		}
+		if err := readyAsset(asset); err != nil {
+			return err
+		}
 	}
-	if asset.OwnerService != "hhc-web-api" || asset.Namespace != "cms.news.cover" ||
-		asset.OwnerType != "news" || asset.OwnerID != payload.ContentID {
+	published := make([]PublishedAsset, 0, len(references))
+	for _, reference := range references {
+		key := "news:" + payload.ContentID + ":publish:v" + fmt.Sprint(payload.AggregateVersion)
+		if reference.Usage == "home" {
+			key = "news:" + payload.ContentID + ":publish:home:v" + fmt.Sprint(payload.AggregateVersion)
+		}
+		grant, err := w.assets.CreatePublicGrant(ctx, reference.AssetID, key)
+		if err != nil {
+			return w.handleContentPublishFailure(ctx, event, published, err, now)
+		}
+		published = append(published, PublishedAsset{Usage: reference.Usage, AssetID: reference.AssetID, GrantID: grant.ID, PublicURL: w.assets.PublicURL(reference.AssetID)})
+	}
+	if err := w.repository.CompleteContentPublish(ctx, event, published, now); err != nil {
+		return w.handleContentPublishFailure(ctx, event, published, err, now)
+	}
+	return nil
+}
+
+func newsPublishReferences(payload ContentPublishPayload) []PublishedAsset {
+	references := make([]PublishedAsset, 0, 2)
+	if payload.AssetID != "" {
+		references = append(references, PublishedAsset{Usage: "detail", AssetID: payload.AssetID})
+	}
+	if payload.HomeAssetID != "" {
+		references = append(references, PublishedAsset{Usage: "home", AssetID: payload.HomeAssetID})
+	}
+	return references
+}
+
+func validNewsAsset(asset Asset, contentID, usage string) error {
+	if asset.OwnerService != "hhc-web-api" || asset.Namespace != "cms.news.cover" || asset.OwnerType != "news" || asset.OwnerID != contentID {
 		return terminalError{fmt.Errorf("asset owner mismatch")}
 	}
-	if err := readyAsset(asset); err != nil {
-		return err
-	}
-	grant, err := w.assets.CreatePublicGrant(ctx, payload.AssetID, "news:"+payload.ContentID+":publish:v"+fmt.Sprint(payload.AggregateVersion))
-	if err != nil {
-		return compensationError{err}
-	}
-	if err := w.repository.CompleteContentPublish(ctx, event, grant.ID, w.assets.PublicURL(payload.AssetID), now); err != nil {
-		return w.handlePublishFailure(ctx, event, payload.AssetID, grant.ID, err, now)
+	switch usage {
+	case "detail":
+		if asset.Purpose != "" && asset.Purpose != "news_cover" && asset.Purpose != "news_detail_cover" {
+			return terminalError{fmt.Errorf("asset purpose mismatch")}
+		}
+	case "home":
+		if asset.Purpose != "news_home_cover" {
+			return terminalError{fmt.Errorf("asset purpose mismatch")}
+		}
+	default:
+		return terminalError{fmt.Errorf("asset usage is invalid")}
 	}
 	return nil
 }
@@ -174,6 +214,25 @@ func (w *Worker) handlePublishFailure(ctx context.Context, event Event, assetID,
 		}
 	}
 	if err := w.repository.FailPublish(ctx, event, assetID, grantID, safeError(cause), now); err != nil {
+		return compensationError{fmt.Errorf("persist publication compensation: %w", err)}
+	}
+	return nil
+}
+
+func (w *Worker) handleContentPublishFailure(ctx context.Context, event Event, assets []PublishedAsset, cause error, now time.Time) error {
+	if !errors.Is(cause, ErrStalePublication) {
+		if event.Attempts < w.maxAttempts {
+			return cause
+		}
+		delivered, err := w.repository.EventDelivered(ctx, event.ID)
+		if err != nil {
+			return compensationError{fmt.Errorf("confirm publication before compensation: %w", err)}
+		}
+		if delivered {
+			return nil
+		}
+	}
+	if err := w.repository.FailContentPublish(ctx, event, assets, safeError(cause), now); err != nil {
 		return compensationError{fmt.Errorf("persist publication compensation: %w", err)}
 	}
 	return nil
@@ -198,11 +257,17 @@ func (w *Worker) unpublishNews(ctx context.Context, event Event, now time.Time) 
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
 		return terminalError{err}
 	}
-	if payload.GrantID == "" {
-		return terminalError{fmt.Errorf("published grant id is missing")}
+	assets := payload.Assets
+	if len(assets) == 0 && (payload.AssetID != "" || payload.GrantID != "") {
+		assets = []PublishedAsset{{Usage: "detail", AssetID: payload.AssetID, GrantID: payload.GrantID}}
 	}
-	if err := w.assets.RevokeGrant(ctx, payload.AssetID, payload.GrantID); err != nil && !errors.Is(err, ErrGrantNotFound) {
-		return compensationError{err}
+	for _, asset := range assets {
+		if asset.AssetID == "" || asset.GrantID == "" {
+			return terminalError{fmt.Errorf("published grant reference is missing")}
+		}
+		if err := w.assets.RevokeGrant(ctx, asset.AssetID, asset.GrantID); err != nil && !errors.Is(err, ErrGrantNotFound) {
+			return compensationError{err}
+		}
 	}
 	return w.repository.CompleteContentUnpublish(ctx, event, now)
 }

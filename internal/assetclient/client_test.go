@@ -27,6 +27,24 @@ func TestClientUsesInternalIdentityAndStablePublicURL(t *testing.T) {
 	}
 }
 
+func TestClientCreatesNewsUploadWithPurpose(t *testing.T) {
+	var purpose string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		purpose, _ = body["purpose"].(string)
+		_ = json.NewEncoder(w).Encode(CreatedUpload{Asset: Asset{ID: "asset-1"}, UploadTarget: UploadTarget{URL: "https://upload.test", Method: http.MethodPut}})
+	}))
+	defer server.Close()
+	client := New(server.URL, "hhc-web-api", "https://www.alive.org.tw/assets")
+	if _, err := client.CreateNewsCoverUpload(context.Background(), "news-1", "news_home_cover", "home.jpg", "image/jpeg", 128, "key"); err != nil {
+		t.Fatal(err)
+	}
+	if purpose != "news_home_cover" {
+		t.Fatalf("purpose=%q", purpose)
+	}
+}
+
 func TestClientMapsNotFound(t *testing.T) {
 	server := httptest.NewServer(http.NotFoundHandler())
 	defer server.Close()

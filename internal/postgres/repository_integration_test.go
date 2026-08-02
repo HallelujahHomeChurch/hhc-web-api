@@ -369,10 +369,11 @@ func TestNewsPublicationKeepsLiveProjectionUntilReplacement(t *testing.T) {
 	if err != nil || !found || event.EventType != "news.publish.ensure_asset" {
 		t.Fatalf("event=%#v found=%v err=%v", event, found, err)
 	}
-	if err := repository.CompleteContentPublish(ctx, event, "grant-1", "/api/assets/public/asset-1", now.Add(2*time.Minute)); err != nil {
+	published := []publication.PublishedAsset{{Usage: "detail", AssetID: "asset-1", GrantID: "grant-1", PublicURL: "/api/assets/public/asset-1"}}
+	if err := repository.CompleteContentPublish(ctx, event, published, now.Add(2*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	if err := repository.CompleteContentPublish(ctx, event, "grant-1", "/api/assets/public/asset-1", now.Add(2*time.Minute)); err != nil {
+	if err := repository.CompleteContentPublish(ctx, event, published, now.Add(2*time.Minute)); err != nil {
 		t.Fatalf("replayed news publish completion: %v", err)
 	}
 	public, err := repository.PublicContent(ctx, content.ModuleNews, "zh-Hant", 1, 20)
@@ -413,7 +414,8 @@ func TestNewsPublicationKeepsLiveProjectionUntilReplacement(t *testing.T) {
 	if err != nil || !found || replacement.EventType != "news.publish.ensure_asset" {
 		t.Fatalf("replacement=%#v found=%v err=%v", replacement, found, err)
 	}
-	if err := repository.CompleteContentPublish(ctx, replacement, "grant-2", "/api/assets/public/asset-2", now.Add(5*time.Minute)); err != nil {
+	replacementAssets := []publication.PublishedAsset{{Usage: "detail", AssetID: "asset-2", GrantID: "grant-2", PublicURL: "/api/assets/public/asset-2"}}
+	if err := repository.CompleteContentPublish(ctx, replacement, replacementAssets, now.Add(5*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
 	detail, replacementETag, err := repository.PublicNews(ctx, "zh-Hant", "first-news")
@@ -459,6 +461,93 @@ func TestNewsPublicationKeepsLiveProjectionUntilReplacement(t *testing.T) {
 	if err != nil || item.IsPublished || item.Status != content.StatusUnpublished {
 		t.Fatalf("unpublished=%#v err=%v", item, err)
 	}
+}
+
+func TestNewsPublicationSupportsZeroOrTwoImages(t *testing.T) {
+	databaseURL := os.Getenv("HHW_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("HHW_TEST_DATABASE_URL is not configured")
+	}
+	db, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	if err := migrations.Run(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, test := range []struct {
+		name, detailID, homeID, detailURL, homeURL string
+		expectedAssets                             int
+	}{
+		{name: "without images"},
+		{name: "with detail and home images", detailID: "asset-detail", homeID: "asset-home", detailURL: "/assets/asset-detail", homeURL: "/assets/asset-home", expectedAssets: 2},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := db.ExecContext(ctx, `TRUNCATE hhc_web.outbox_event,hhc_web.public_projection,hhc_web.content_revision,hhc_web.content_translation,hhc_web.news_item,hhc_web.content_entry CASCADE`); err != nil {
+				t.Fatal(err)
+			}
+			repository := New(db)
+			now := time.Now().UTC()
+			input := content.WriteInput{
+				Slug: "optional-images", DisplayDate: "2026-08-03", CoverAssetID: test.detailID, HomeCoverAssetID: test.homeID,
+				Translations: []content.Translation{{Locale: "zh-Hant", Title: "消息"}},
+			}
+			item, err := repository.CreateContent(ctx, content.ModuleNews, input, "user-1", "optional-images-"+test.name, now)
+			if err != nil {
+				t.Fatal(err)
+			}
+			item, err = repository.PublishContent(ctx, content.ModuleNews, item.ID, item.Version, "user-1", now)
+			if err != nil {
+				t.Fatal(err)
+			}
+			event, found, err := repository.Claim(ctx, now, 30*time.Second)
+			if err != nil || !found {
+				t.Fatalf("claim found=%v err=%v", found, err)
+			}
+			assets := []publication.PublishedAsset{}
+			if test.detailID != "" {
+				assets = append(assets, publication.PublishedAsset{Usage: "detail", AssetID: test.detailID, GrantID: "grant-detail", PublicURL: test.detailURL})
+			}
+			if test.homeID != "" {
+				assets = append(assets, publication.PublishedAsset{Usage: "home", AssetID: test.homeID, GrantID: "grant-home", PublicURL: test.homeURL})
+			}
+			if err := repository.CompleteContentPublish(ctx, event, assets, now); err != nil {
+				t.Fatal(err)
+			}
+			public, err := repository.PublicContent(ctx, content.ModuleNews, "zh-Hant", 1, 20)
+			if err != nil || len(public.Items) != 1 || public.Items[0].ImageURL != suffixLarge(test.detailURL) || public.Items[0].HomeImageURL != suffixLarge(test.homeURL) {
+				t.Fatalf("public=%#v err=%v", public, err)
+			}
+			item, err = repository.GetContent(ctx, content.ModuleNews, item.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := repository.UnpublishContent(ctx, content.ModuleNews, item.ID, item.Version, "user-1", now); err != nil {
+				t.Fatal(err)
+			}
+			unpublish, found, err := repository.Claim(ctx, now, 30*time.Second)
+			if err != nil || !found {
+				t.Fatalf("unpublish claim found=%v err=%v", found, err)
+			}
+			var payload publication.ContentUnpublishPayload
+			if err := json.Unmarshal(unpublish.Payload, &payload); err != nil {
+				t.Fatal(err)
+			}
+			if len(payload.Assets) != test.expectedAssets {
+				t.Fatalf("assets=%#v", payload.Assets)
+			}
+		})
+	}
+}
+
+func suffixLarge(value string) string {
+	if value == "" {
+		return ""
+	}
+	return value + "/large"
 }
 
 func TestContentRepublishRemovesDeletedLocaleProjection(t *testing.T) {

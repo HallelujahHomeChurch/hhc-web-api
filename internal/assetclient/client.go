@@ -24,6 +24,7 @@ type Asset struct {
 	OwnerService     string `json:"ownerService"`
 	OwnerType        string `json:"ownerType"`
 	OwnerID          string `json:"ownerId"`
+	Purpose          string `json:"purpose"`
 	Locale           string `json:"locale"`
 	OriginalFileName string `json:"originalFileName"`
 	UploadStatus     string `json:"uploadStatus"`
@@ -87,10 +88,10 @@ func (c *Client) CreateBulletinUpload(ctx context.Context, issueID, locale, file
 	err := c.request(ctx, http.MethodPost, "/priv/assets/upload-sessions", body, key, &value)
 	return value, err
 }
-func (c *Client) CreateNewsCoverUpload(ctx context.Context, newsID, fileName, mimeType string, sizeBytes int64, key string) (CreatedUpload, error) {
+func (c *Client) CreateNewsCoverUpload(ctx context.Context, newsID, purpose, fileName, mimeType string, sizeBytes int64, key string) (CreatedUpload, error) {
 	body := map[string]any{
 		"namespace": "cms.news.cover", "ownerService": "hhc-web-api", "ownerType": "news", "ownerId": newsID,
-		"purpose": "news_cover", "originalFileName": fileName, "expectedMimeType": mimeType,
+		"purpose": purpose, "originalFileName": fileName, "expectedMimeType": mimeType,
 		"maxSizeBytes": sizeBytes, "visibility": "public",
 	}
 	var value CreatedUpload

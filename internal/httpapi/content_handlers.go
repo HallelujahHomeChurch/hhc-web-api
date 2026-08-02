@@ -228,6 +228,7 @@ func assetCanEnterPublication(asset assetclient.Asset) bool {
 }
 
 type newsCoverUploadInput struct {
+	Usage     string `json:"usage,omitempty"`
 	FileName  string `json:"fileName"`
 	MIMEType  string `json:"mimeType"`
 	SizeBytes int64  `json:"sizeBytes"`
@@ -248,6 +249,11 @@ func (h *Handler) adminNewsCoverUpload(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &input) {
 		return
 	}
+	purpose, ok := newsImagePurpose(input.Usage)
+	if !ok {
+		handleContentError(w, content.ErrInvalid)
+		return
+	}
 	if !validImageMIME(input.MIMEType) || strings.TrimSpace(input.FileName) == "" || input.SizeBytes < 1 || input.SizeBytes > 10<<20 || strings.TrimSpace(r.Header.Get("Idempotency-Key")) == "" {
 		handleContentError(w, content.ErrInvalid)
 		return
@@ -256,7 +262,7 @@ func (h *Handler) adminNewsCoverUpload(w http.ResponseWriter, r *http.Request) {
 		handleContentError(w, err)
 		return
 	}
-	created, err := h.uploads.CreateNewsCoverUpload(r.Context(), r.PathValue("contentID"), input.FileName, input.MIMEType, input.SizeBytes, r.Header.Get("Idempotency-Key"))
+	created, err := h.uploads.CreateNewsCoverUpload(r.Context(), r.PathValue("contentID"), purpose, input.FileName, input.MIMEType, input.SizeBytes, r.Header.Get("Idempotency-Key"))
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, "asset_service_unavailable", "The upload session could not be created.")
 		return
@@ -305,7 +311,15 @@ func (h *Handler) adminNewsCoverComplete(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	write := writeInput(current)
-	write.CoverAssetID = asset.ID
+	switch asset.Purpose {
+	case "", "news_detail_cover", "news_cover":
+		write.CoverAssetID = asset.ID
+	case "news_home_cover":
+		write.HomeCoverAssetID = asset.ID
+	default:
+		writeError(w, http.StatusForbidden, "asset_purpose_mismatch", "The uploaded asset has an unsupported purpose.")
+		return
+	}
 	updated, err := h.content.UpdateContent(r.Context(), content.ModuleNews, current.ID, expected, write, actor(r))
 	if err != nil {
 		handleContentError(w, err)
@@ -359,13 +373,28 @@ func (h *Handler) adminNewsCoverRetry(w http.ResponseWriter, r *http.Request) {
 	writeData(w, http.StatusOK, cmsAssetStatus(asset), nil)
 }
 func ownedNewsAsset(asset assetclient.Asset, contentID, assetID string) bool {
-	return asset.ID == assetID && asset.Namespace == "cms.news.cover" && asset.OwnerService == "hhc-web-api" && asset.OwnerType == "news" && asset.OwnerID == contentID
+	return asset.ID == assetID && asset.Namespace == "cms.news.cover" && asset.OwnerService == "hhc-web-api" && asset.OwnerType == "news" && asset.OwnerID == contentID && validNewsImagePurpose(asset.Purpose)
+}
+
+func newsImagePurpose(usage string) (string, bool) {
+	switch strings.TrimSpace(usage) {
+	case "", "detail":
+		return "news_detail_cover", true
+	case "home":
+		return "news_home_cover", true
+	default:
+		return "", false
+	}
+}
+
+func validNewsImagePurpose(purpose string) bool {
+	return purpose == "" || purpose == "news_cover" || purpose == "news_detail_cover" || purpose == "news_home_cover"
 }
 func validImageMIME(value string) bool {
 	return value == "image/jpeg" || value == "image/png" || value == "image/webp"
 }
 func writeInput(item content.Item) content.WriteInput {
-	return content.WriteInput{Slug: item.Slug, DisplayDate: item.DisplayDate, EventDate: item.EventDate, YouTubeVideoID: item.YouTubeVideoID, CoverAssetID: item.CoverAssetID, Featured: item.Featured, HomeEligible: item.HomeEligible, Translations: item.Translations}
+	return content.WriteInput{Slug: item.Slug, DisplayDate: item.DisplayDate, EventDate: item.EventDate, YouTubeVideoID: item.YouTubeVideoID, CoverAssetID: item.CoverAssetID, HomeCoverAssetID: item.HomeCoverAssetID, Featured: item.Featured, HomeEligible: item.HomeEligible, Translations: item.Translations}
 }
 func (h *Handler) adminContentRevisions(w http.ResponseWriter, r *http.Request) {
 	values, err := h.content.ContentRevisions(r.Context(), content.Module(r.PathValue("module")), r.PathValue("contentID"))
