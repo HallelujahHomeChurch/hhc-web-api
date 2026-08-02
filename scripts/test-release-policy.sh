@@ -3,6 +3,8 @@ set -eu
 
 workflow=.github/workflows/release.yml
 
+grep -q '^trigger: none$' azure-pipelines.yml
+grep -q '^pr: none$' azure-pipelines.yml
 grep -q 'workflow_dispatch:' "$workflow"
 grep -q '^  push:' "$workflow"
 grep -q 'branches: \[main\]' "$workflow"
