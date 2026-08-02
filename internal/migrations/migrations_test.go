@@ -83,3 +83,16 @@ func TestYouTubeThumbnailMigrationRewritesUnavailableMaxResolutionURLs(t *testin
 		}
 	}
 }
+
+func TestHistoryProjectionMigrationPublishesBackfilledEventDates(t *testing.T) {
+	contents, err := files.ReadFile("sql/017_history_projection_event_dates.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := string(contents)
+	for _, expected := range []string{"resource_type = 'history'", "'{eventDate}'", "history.event_date", "etag = md5"} {
+		if !strings.Contains(sql, expected) {
+			t.Fatalf("migration missing %q", expected)
+		}
+	}
+}
