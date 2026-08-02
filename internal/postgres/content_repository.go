@@ -807,7 +807,7 @@ func publicContent(item content.Item, translation content.Translation) content.P
 		}
 		value.Href = "/" + translation.Locale + "/news/" + item.Slug
 	case content.ModuleVideos:
-		value.ImageURL = "https://img.youtube.com/vi/" + item.YouTubeVideoID + "/maxresdefault.jpg"
+		value.ImageURL = "https://i.ytimg.com/vi/" + item.YouTubeVideoID + "/hqdefault.jpg"
 		value.Href = "https://www.youtube.com/watch?v=" + item.YouTubeVideoID
 	}
 	return value

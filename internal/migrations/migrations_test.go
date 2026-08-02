@@ -57,3 +57,29 @@ func TestCanonicalAssetURLMigrationRewritesExistingPublicProjections(t *testing.
 		}
 	}
 }
+
+func TestImportedHistoryDateBackfillRunsAfterLegacyDataImport(t *testing.T) {
+	contents, err := files.ReadFile("sql/015_imported_history_event_date_backfill.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := string(contents)
+	for _, expected := range []string{"history.event_date IS NULL", "translation.locale = 'zh-Hant'", "SET event_date = canonical.event_date"} {
+		if !strings.Contains(sql, expected) {
+			t.Fatalf("migration missing %q", expected)
+		}
+	}
+}
+
+func TestYouTubeThumbnailMigrationRewritesUnavailableMaxResolutionURLs(t *testing.T) {
+	contents, err := files.ReadFile("sql/016_youtube_thumbnail_fallback.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := string(contents)
+	for _, expected := range []string{"resource_type = 'videos'", "maxresdefault.jpg", "hqdefault.jpg"} {
+		if !strings.Contains(sql, expected) {
+			t.Fatalf("migration missing %q", expected)
+		}
+	}
+}

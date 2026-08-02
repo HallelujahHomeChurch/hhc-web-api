@@ -32,3 +32,12 @@ func TestPublicNewsFallbackUsesCanonicalAssetPath(t *testing.T) {
 		t.Fatalf("image URL = %q", got.ImageURL)
 	}
 }
+
+func TestPublicVideoUsesWidelyAvailableYouTubeThumbnail(t *testing.T) {
+	item := content.Item{Module: content.ModuleVideos, YouTubeVideoID: "BlBhGrxS9sI"}
+	got := publicContent(item, content.Translation{Locale: "zh-Hant", Title: "約沙法大軍"})
+
+	if got.ImageURL != "https://i.ytimg.com/vi/BlBhGrxS9sI/hqdefault.jpg" {
+		t.Fatalf("image URL = %q", got.ImageURL)
+	}
+}
