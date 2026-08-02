@@ -80,6 +80,9 @@ paths:
         - name: status
           in: query
           schema: { $ref: '#/components/schemas/BulletinStatus' }
+        - name: q
+          in: query
+          schema: { type: string, maxLength: 200 }
       responses:
         '200':
           description: CMS bulletin list
@@ -108,6 +111,22 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/BulletinIssue' }
         '404': { $ref: '#/components/responses/Error' }
+    put:
+      operationId: updateBulletinIssue
+      security: [{ bearerAuth: [] }]
+      x-required-scopes: ['cms:write']
+      parameters:
+        - $ref: '#/components/parameters/IssueID'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateBulletinInput' }
+      responses:
+        '200': { $ref: '#/components/responses/BulletinIssue' }
+        '409': { $ref: '#/components/responses/Error' }
+        '412': { $ref: '#/components/responses/Error' }
     delete:
       operationId: deleteBulletin
       security: [{ bearerAuth: [] }]
@@ -541,12 +560,13 @@ components:
         message: { type: string }
     BulletinVersion:
       type: object
-      required: [id, issueId, locale, title, pdfAssetId, pdfFileName, status, version, createdAt, updatedAt]
+      required: [id, issueId, locale, title, subtitle, pdfAssetId, pdfFileName, status, version, createdAt, updatedAt]
       properties:
         id: { type: string, format: uuid }
         issueId: { type: string, format: uuid }
         locale: { $ref: '#/components/schemas/Locale' }
         title: { type: string }
+        subtitle: { type: string }
         pdfAssetId: { type: string }
         pdfFileName: { type: string }
         publicGrantId: { type: string }
@@ -562,6 +582,7 @@ components:
       required: [id, issueDate, status, version, createdBy, updatedBy, createdAt, updatedAt, versions]
       properties:
         id: { type: string, format: uuid }
+        issueNumber: { type: integer, minimum: 1 }
         issueDate: { type: string, format: date }
         status: { $ref: '#/components/schemas/BulletinStatus' }
         version: { type: integer, format: int64 }
@@ -583,12 +604,15 @@ components:
         createdAt: { type: string, format: date-time }
     PublicBulletin:
       type: object
-      required: [issueDate, locale, title, downloadUrl, publishedAt, version]
+      required: [issueDate, locale, title, subtitle, downloadUrl, downloadFileName, publishedAt, version]
       properties:
         issueDate: { type: string, format: date }
+        issueNumber: { type: integer, minimum: 1 }
         locale: { $ref: '#/components/schemas/Locale' }
         title: { type: string }
+        subtitle: { type: string }
         downloadUrl: { type: string }
+        downloadFileName: { type: string }
         publishedAt: { type: string, format: date-time }
         version: { type: integer, format: int64 }
     PublicBulletinIssue:
@@ -596,6 +620,7 @@ components:
       required: [issueDate, versions]
       properties:
         issueDate: { type: string, format: date }
+        issueNumber: { type: integer, minimum: 1 }
         versions:
           type: array
           items: { $ref: '#/components/schemas/PublicBulletin' }
@@ -629,8 +654,16 @@ components:
     CreateBulletinInput:
       type: object
       additionalProperties: false
-      required: [issueDate]
+      required: [issueNumber, issueDate]
       properties:
+        issueNumber: { type: integer, minimum: 1 }
+        issueDate: { type: string, format: date }
+    UpdateBulletinInput:
+      type: object
+      additionalProperties: false
+      required: [issueNumber, issueDate]
+      properties:
+        issueNumber: { type: integer, minimum: 1 }
         issueDate: { type: string, format: date }
     CreateBulletinUploadInput:
       type: object
@@ -644,16 +677,18 @@ components:
     UpdateBulletinVersionInput:
       type: object
       additionalProperties: false
-      required: [title]
+      required: [title, subtitle]
       properties:
         title: { type: string, minLength: 1, maxLength: 200 }
+        subtitle: { type: string, maxLength: 300 }
     CompleteBulletinUploadInput:
       type: object
       additionalProperties: false
-      required: [locale, title, fileName, mimeType, sizeBytes, checksumSha256]
+      required: [locale, title, subtitle, fileName, mimeType, sizeBytes, checksumSha256]
       properties:
         locale: { $ref: '#/components/schemas/Locale' }
         title: { type: string, minLength: 1 }
+        subtitle: { type: string, maxLength: 300 }
         fileName: { type: string, minLength: 1 }
         mimeType: { type: string, const: application/pdf }
         sizeBytes: { type: integer, format: int64, minimum: 1, maximum: 20971520 }

@@ -16,6 +16,7 @@ var (
 
 type Issue struct {
 	ID          string     `json:"id"`
+	IssueNumber *int       `json:"issueNumber,omitempty"`
 	IssueDate   string     `json:"issueDate"`
 	Status      string     `json:"status"`
 	Version     int64      `json:"version"`
@@ -32,6 +33,7 @@ type Version struct {
 	IssueID        string     `json:"issueId"`
 	Locale         string     `json:"locale"`
 	Title          string     `json:"title"`
+	Subtitle       string     `json:"subtitle"`
 	PDFAssetID     string     `json:"pdfAssetId"`
 	PDFFileName    string     `json:"pdfFileName"`
 	PublicGrantID  string     `json:"publicGrantId,omitempty"`
@@ -45,17 +47,21 @@ type Version struct {
 }
 
 type PublicBulletin struct {
-	IssueDate   string    `json:"issueDate"`
-	Locale      string    `json:"locale"`
-	Title       string    `json:"title"`
-	DownloadURL string    `json:"downloadUrl"`
-	PublishedAt time.Time `json:"publishedAt"`
-	Version     int64     `json:"version"`
+	IssueNumber      *int      `json:"issueNumber,omitempty"`
+	IssueDate        string    `json:"issueDate"`
+	Locale           string    `json:"locale"`
+	Title            string    `json:"title"`
+	Subtitle         string    `json:"subtitle"`
+	DownloadURL      string    `json:"downloadUrl"`
+	DownloadFileName string    `json:"downloadFileName"`
+	PublishedAt      time.Time `json:"publishedAt"`
+	Version          int64     `json:"version"`
 }
 
 type PublicIssue struct {
-	IssueDate string           `json:"issueDate"`
-	Versions  []PublicBulletin `json:"versions"`
+	IssueNumber *int             `json:"issueNumber,omitempty"`
+	IssueDate   string           `json:"issueDate"`
+	Versions    []PublicBulletin `json:"versions"`
 }
 
 type Workflow struct {
@@ -73,16 +79,23 @@ type Revision struct {
 }
 
 type CreateIssueInput struct {
-	IssueDate string `json:"issueDate"`
+	IssueNumber int    `json:"issueNumber"`
+	IssueDate   string `json:"issueDate"`
+}
+type UpdateIssueInput struct {
+	IssueNumber int    `json:"issueNumber"`
+	IssueDate   string `json:"issueDate"`
 }
 type PutVersionInput struct {
 	Locale      string `json:"locale"`
 	Title       string `json:"title"`
+	Subtitle    string `json:"subtitle"`
 	PDFAssetID  string `json:"pdfAssetId"`
 	PDFFileName string `json:"pdfFileName"`
 }
 type UpdateVersionInput struct {
-	Title string `json:"title"`
+	Title    string `json:"title"`
+	Subtitle string `json:"subtitle"`
 }
 type PublishInput struct {
 	Locale string `json:"locale"`
@@ -101,11 +114,12 @@ type PublicPage struct {
 }
 
 type Repository interface {
-	CreateIssue(context.Context, string, string, string, time.Time) (Issue, error)
-	ListIssues(context.Context, int, int, string) (Page, error)
+	CreateIssue(context.Context, int, string, string, string, time.Time) (Issue, error)
+	ListIssues(context.Context, int, int, string, string) (Page, error)
 	GetIssue(context.Context, string) (Issue, error)
+	UpdateIssue(context.Context, string, int64, UpdateIssueInput, string, time.Time) (Issue, error)
 	PutVersion(context.Context, string, int64, PutVersionInput, string, time.Time) (Issue, error)
-	UpdateVersion(context.Context, string, string, int64, string, string, time.Time) (Issue, error)
+	UpdateVersion(context.Context, string, string, int64, string, string, string, time.Time) (Issue, error)
 	DeleteVersion(context.Context, string, string, int64, string, time.Time) (Issue, error)
 	StartPublish(context.Context, string, string, int64, string, time.Time) (Workflow, error)
 	Unpublish(context.Context, string, string, int64, string, time.Time) (Issue, error)

@@ -33,7 +33,7 @@ func TestBulletinRevisionRestoreKeepsPublicProjectionAndCreatesDraft(t *testing.
 
 	repository := New(db)
 	now := time.Now().UTC()
-	issue, err := repository.CreateIssue(ctx, "2026-08-02", "user-1", "revision-issue", now)
+	issue, err := repository.CreateIssue(ctx, 1732, "2026-08-02", "user-1", "revision-issue", now)
 	if err != nil {
 		t.Fatal(err)
 	}

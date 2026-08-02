@@ -97,7 +97,7 @@ func TestRequestsAreLoggedWithStatusAndRequestID(t *testing.T) {
 func TestCreateIssueRequiresIdempotencyAndReturnsETag(t *testing.T) {
 	repo := &apiRepository{}
 	handler := testHandler(repo)
-	request := httptest.NewRequest(http.MethodPost, "/api/admin/bulletins", bytes.NewBufferString(`{"issueDate":"2026-07-12"}`))
+	request := httptest.NewRequest(http.MethodPost, "/api/admin/bulletins", bytes.NewBufferString(`{"issueNumber":1732,"issueDate":"2026-07-12"}`))
 	trusted(request, "cms:write")
 	request.Header.Set("Idempotency-Key", "create-1")
 	response := httptest.NewRecorder()
@@ -393,18 +393,25 @@ type apiRepository struct {
 	deletedLocale      string
 }
 
-func (r *apiRepository) CreateIssue(_ context.Context, date, actor, key string, now time.Time) (bulletins.Issue, error) {
+func (r *apiRepository) CreateIssue(_ context.Context, number int, date, actor, key string, now time.Time) (bulletins.Issue, error) {
 	r.actor = actor
 	r.idempotency = key
-	return bulletins.Issue{ID: "issue-1", IssueDate: date, Status: "draft", Version: 1, CreatedBy: actor, UpdatedBy: actor, CreatedAt: now, UpdatedAt: now, Versions: []bulletins.Version{}}, nil
+	return bulletins.Issue{ID: "issue-1", IssueNumber: &number, IssueDate: date, Status: "draft", Version: 1, CreatedBy: actor, UpdatedBy: actor, CreatedAt: now, UpdatedAt: now, Versions: []bulletins.Version{}}, nil
 }
-func (*apiRepository) ListIssues(context.Context, int, int, string) (bulletins.Page, error) {
+func (*apiRepository) ListIssues(context.Context, int, int, string, string) (bulletins.Page, error) {
 	return bulletins.Page{Items: []bulletins.Issue{}, Page: 1, PageSize: 20}, nil
 }
 func (r *apiRepository) GetIssue(context.Context, string) (bulletins.Issue, error) {
 	if r.issue.ID == "" {
 		return bulletins.Issue{}, bulletins.ErrNotFound
 	}
+	return r.issue, nil
+}
+func (r *apiRepository) UpdateIssue(_ context.Context, _ string, _ int64, input bulletins.UpdateIssueInput, _ string, _ time.Time) (bulletins.Issue, error) {
+	r.issue = bulletinIssue()
+	r.issue.IssueNumber = &input.IssueNumber
+	r.issue.IssueDate = input.IssueDate
+	r.issue.Version++
 	return r.issue, nil
 }
 func (r *apiRepository) PutVersion(_ context.Context, _ string, _ int64, input bulletins.PutVersionInput, _ string, _ time.Time) (bulletins.Issue, error) {
@@ -454,10 +461,10 @@ func (r *apiRepository) DeleteIssue(context.Context, string, int64, string, time
 	r.deleted = true
 	return nil
 }
-func (r *apiRepository) UpdateVersion(_ context.Context, _ string, locale string, _ int64, title, _ string, _ time.Time) (bulletins.Issue, error) {
+func (r *apiRepository) UpdateVersion(_ context.Context, _ string, locale string, _ int64, title, subtitle, _ string, _ time.Time) (bulletins.Issue, error) {
 	r.issue = bulletinIssue()
 	r.issue.Version++
-	r.issue.Versions = []bulletins.Version{{Locale: locale, Title: title}}
+	r.issue.Versions = []bulletins.Version{{Locale: locale, Title: title, Subtitle: subtitle}}
 	return r.issue, nil
 }
 func (r *apiRepository) DeleteVersion(_ context.Context, _ string, locale string, _ int64, _ string, _ time.Time) (bulletins.Issue, error) {
