@@ -2,6 +2,8 @@ package content
 
 import (
 	"context"
+	"crypto/sha256"
+	"fmt"
 	"net/url"
 	"regexp"
 	"strings"
@@ -23,6 +25,9 @@ func NewService(repository Repository, now func() time.Time) *Service {
 
 func (s *Service) CreateContent(ctx context.Context, module Module, input WriteInput, actor, key string) (Item, error) {
 	input = normalize(input)
+	if module == ModuleNews {
+		input = normalizeNews(input, key)
+	}
 	if !valid(module, input) || strings.TrimSpace(key) == "" {
 		return Item{}, ErrInvalid
 	}
@@ -76,6 +81,16 @@ func (s *Service) GetContent(ctx context.Context, module Module, id string) (Ite
 }
 func (s *Service) UpdateContent(ctx context.Context, module Module, id string, expected int64, input WriteInput, actor string) (Item, error) {
 	input = normalize(input)
+	if module == ModuleNews {
+		if input.Slug == "" {
+			current, err := s.repository.GetContent(ctx, module, id)
+			if err != nil {
+				return Item{}, err
+			}
+			input.Slug = current.Slug
+		}
+		input = normalizeNews(input, "")
+	}
 	if expected < 1 || !valid(module, input) {
 		return Item{}, ErrInvalid
 	}
@@ -112,14 +127,20 @@ func (s *Service) DeleteContent(ctx context.Context, module Module, id string, e
 	}
 	return s.repository.DeleteContent(ctx, module, id, expected, actor, s.now().UTC())
 }
-func (s *Service) PublicContent(ctx context.Context, module Module, locale string, limit int) ([]PublicItem, error) {
+func (s *Service) PublicContent(ctx context.Context, module Module, locale string, page, pageSize int) (PublicPage, error) {
 	if !validModule(module) || !validLocale(locale) {
-		return nil, ErrInvalid
+		return PublicPage{}, ErrInvalid
 	}
-	if limit < 1 || limit > 100 {
-		limit = 20
+	if page > 10_000 {
+		return PublicPage{}, ErrInvalid
 	}
-	return s.repository.PublicContent(ctx, module, locale, limit)
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 20
+	}
+	return s.repository.PublicContent(ctx, module, locale, page, pageSize)
 }
 func (s *Service) PublicNews(ctx context.Context, locale, slug string) (PublicItem, string, error) {
 	if !validLocale(locale) || len(slug) > 120 || !contentSlug.MatchString(slug) {
@@ -213,6 +234,7 @@ func validText(value string, min, max int) bool {
 func normalize(input WriteInput) WriteInput {
 	input.Slug = strings.TrimSpace(input.Slug)
 	input.DisplayDate = strings.TrimSpace(input.DisplayDate)
+	input.EventDate = strings.TrimSpace(input.EventDate)
 	input.YouTubeVideoID = normalizeYouTubeVideoID(input.YouTubeVideoID)
 	input.CoverAssetID = strings.TrimSpace(input.CoverAssetID)
 	for index := range input.Translations {
@@ -224,6 +246,27 @@ func normalize(input WriteInput) WriteInput {
 		input.Translations[index].ImageAlt = strings.TrimSpace(input.Translations[index].ImageAlt)
 	}
 	return input
+}
+
+func normalizeNews(input WriteInput, slugSeed string) WriteInput {
+	if input.Slug == "" && slugSeed != "" {
+		digest := sha256.Sum256([]byte(slugSeed))
+		input.Slug = "news-" + strings.ReplaceAll(input.DisplayDate, "-", "") + "-" + fmt.Sprintf("%x", digest[:4])
+	}
+	for index := range input.Translations {
+		if input.Translations[index].Summary == "" {
+			input.Translations[index].Summary = excerpt(input.Translations[index].Body, 160)
+		}
+	}
+	return input
+}
+
+func excerpt(value string, limit int) string {
+	runes := []rune(strings.TrimSpace(value))
+	if len(runes) > limit {
+		runes = runes[:limit]
+	}
+	return string(runes)
 }
 
 func normalizeYouTubeVideoID(value string) string {

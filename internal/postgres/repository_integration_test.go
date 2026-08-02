@@ -375,8 +375,8 @@ func TestNewsPublicationKeepsLiveProjectionUntilReplacement(t *testing.T) {
 	if err := repository.CompleteContentPublish(ctx, event, "grant-1", "/api/assets/public/asset-1", now.Add(2*time.Minute)); err != nil {
 		t.Fatalf("replayed news publish completion: %v", err)
 	}
-	public, err := repository.PublicContent(ctx, content.ModuleNews, "zh-Hant", 20)
-	if err != nil || len(public) != 1 || public[0].ImageURL != "/api/assets/public/asset-1/large" {
+	public, err := repository.PublicContent(ctx, content.ModuleNews, "zh-Hant", 1, 20)
+	if err != nil || len(public.Items) != 1 || public.Items[0].ImageURL != "/api/assets/public/asset-1/large" || public.Total != 1 {
 		t.Fatalf("public=%#v err=%v", public, err)
 	}
 	detail, etag, err := repository.PublicNews(ctx, "zh-Hant", "first-news")
@@ -387,8 +387,8 @@ func TestNewsPublicationKeepsLiveProjectionUntilReplacement(t *testing.T) {
 	if err != nil || fallback.Title != "最新消息" || fallbackETag != etag {
 		t.Fatalf("fallback detail=%#v etag=%q err=%v", fallback, fallbackETag, err)
 	}
-	english, err := repository.PublicContent(ctx, content.ModuleNews, "en", 20)
-	if err != nil || len(english) != 1 || english[0].Title != "最新消息" {
+	english, err := repository.PublicContent(ctx, content.ModuleNews, "en", 1, 20)
+	if err != nil || len(english.Items) != 1 || english.Items[0].Title != "最新消息" {
 		t.Fatalf("fallback list=%#v err=%v", english, err)
 	}
 
@@ -405,8 +405,8 @@ func TestNewsPublicationKeepsLiveProjectionUntilReplacement(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	stillPublic, err := repository.PublicContent(ctx, content.ModuleNews, "zh-Hant", 20)
-	if err != nil || len(stillPublic) != 1 || stillPublic[0].ImageURL != "/api/assets/public/asset-1/large" {
+	stillPublic, err := repository.PublicContent(ctx, content.ModuleNews, "zh-Hant", 1, 20)
+	if err != nil || len(stillPublic.Items) != 1 || stillPublic.Items[0].ImageURL != "/api/assets/public/asset-1/large" {
 		t.Fatalf("public during replacement=%#v err=%v", stillPublic, err)
 	}
 	replacement, found, err := repository.Claim(ctx, now.Add(4*time.Minute), 30*time.Second)
@@ -439,7 +439,7 @@ func TestNewsPublicationKeepsLiveProjectionUntilReplacement(t *testing.T) {
 	if item.Status != content.StatusUnpublishing {
 		t.Fatalf("status=%q", item.Status)
 	}
-	if values, err := repository.PublicContent(ctx, content.ModuleNews, "zh-Hant", 20); err != nil || len(values) != 0 {
+	if values, err := repository.PublicContent(ctx, content.ModuleNews, "zh-Hant", 1, 20); err != nil || len(values.Items) != 0 {
 		t.Fatalf("public after unpublish request=%#v err=%v", values, err)
 	}
 	if _, _, err := repository.PublicNews(ctx, "zh-Hant", "first-news"); !errors.Is(err, content.ErrNotFound) {
@@ -503,11 +503,11 @@ func TestContentRepublishRemovesDeletedLocaleProjection(t *testing.T) {
 	if _, err := repository.PublishContent(ctx, content.ModuleVideos, item.ID, item.Version, "user-1", now); err != nil {
 		t.Fatal(err)
 	}
-	english, err := repository.PublicContent(ctx, content.ModuleVideos, "en", 20)
+	english, err := repository.PublicContent(ctx, content.ModuleVideos, "en", 1, 20)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(english) != 1 || english[0].Title != "影片" {
+	if len(english.Items) != 1 || english.Items[0].Title != "影片" {
 		t.Fatalf("English fallback=%#v", english)
 	}
 }
@@ -707,11 +707,11 @@ func TestHistoryUsesCanonicalEventDateOrderingAndIndex(t *testing.T) {
 		t.Fatalf("admin dates=%v", got)
 	}
 
-	public, err := repository.PublicContent(ctx, content.ModuleHistory, "zh-Hant", 20)
+	public, err := repository.PublicContent(ctx, content.ModuleHistory, "zh-Hant", 1, 20)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := publicHistoryDates(public); strings.Join(got, ",") != "1988,1988-03,1990-09-02," {
+	if got := publicHistoryDates(public.Items); strings.Join(got, ",") != "1988,1988-03,1990-09-02," {
 		t.Fatalf("public dates=%v", got)
 	}
 

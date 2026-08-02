@@ -36,14 +36,17 @@ func TestContentRoutesEnforceScopeAndConcurrency(t *testing.T) {
 }
 
 func TestPublicContentReadsProjectionWithoutAuthentication(t *testing.T) {
-	repo := &contentRepository{public: []content.PublicItem{{ID: "video-1", Title: "為祢而闖"}}}
+	repo := &contentRepository{public: []content.PublicItem{{ID: "video-1", Title: "為祢而闖"}}, publicTotal: 6}
 	response := httptest.NewRecorder()
-	contentTestHandler(repo).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/videos?locale=zh-Hant", nil))
+	contentTestHandler(repo).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/videos?locale=zh-Hant&page=2&pageSize=5", nil))
 	if response.Code != http.StatusOK {
 		t.Fatalf("status=%d", response.Code)
 	}
 	if response.Header().Get("Cache-Control") == "" {
 		t.Fatal("missing cache policy")
+	}
+	if !strings.Contains(response.Body.String(), `"meta":{"page":2,"pageSize":5,"total":6}`) {
+		t.Fatalf("body=%s", response.Body.String())
 	}
 }
 
@@ -109,6 +112,19 @@ func TestPublicHomeIsCacheableAndSelectsVideosDeterministically(t *testing.T) {
 	contentTestHandler(repo).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/home?locale=zh-Hant", nil))
 	if response.Code != http.StatusOK || response.Header().Get("Cache-Control") == "" {
 		t.Fatalf("status=%d cache=%q", response.Code, response.Header().Get("Cache-Control"))
+	}
+}
+
+func TestPublicHomeUsesLatestNewsOrder(t *testing.T) {
+	values := []content.PublicItem{
+		{ID: "newest"},
+		{ID: "older", Featured: true},
+		{ID: "oldest"},
+		{ID: "ignored", Featured: true},
+	}
+	got := latestNews(values, 3)
+	if len(got) != 3 || got[0].ID != "newest" || got[2].ID != "oldest" {
+		t.Fatalf("news=%#v", got)
 	}
 }
 
@@ -259,6 +275,7 @@ func contentTestHandlerWithAssets(repo content.Repository, uploads assetUploads)
 type contentRepository struct {
 	item          content.Item
 	public        []content.PublicItem
+	publicTotal   int64
 	publicNews    content.PublicItem
 	publicETag    string
 	publicNewsErr error
@@ -296,8 +313,8 @@ func (r *contentRepository) DeleteContent(context.Context, content.Module, strin
 	r.deleted = true
 	return nil
 }
-func (r *contentRepository) PublicContent(context.Context, content.Module, string, int) ([]content.PublicItem, error) {
-	return r.public, nil
+func (r *contentRepository) PublicContent(_ context.Context, _ content.Module, _ string, page, pageSize int) (content.PublicPage, error) {
+	return content.PublicPage{Items: r.public, Page: page, PageSize: pageSize, Total: r.publicTotal}, nil
 }
 func (r *contentRepository) PublicNews(context.Context, string, string) (content.PublicItem, string, error) {
 	return r.publicNews, r.publicETag, r.publicNewsErr
