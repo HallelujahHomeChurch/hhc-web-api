@@ -95,8 +95,8 @@ func (r *Repository) ListContent(ctx context.Context, module content.Module, opt
 			LIMIT $%d OFFSET $%d
 		)
 		SELECT e.id::text,e.module,e.status,e.version,e.created_by,e.updated_by,e.published_at,e.created_at,e.updated_at,
-			COALESCE(n.slug,''),COALESCE(n.display_date::text,''),COALESCE(n.cover_asset_id,''),COALESCE(n.featured,false),
-			COALESCE(n.public_grant_id,''),COALESCE(n.published_cover_asset_id,''),
+			COALESCE(n.slug,''),COALESCE(n.display_date::text,''),COALESCE(n.cover_asset_id,''),COALESCE(n.home_cover_asset_id,''),COALESCE(n.featured,false),
+			COALESCE(n.public_grant_id,''),COALESCE(n.home_public_grant_id,''),COALESCE(n.published_cover_asset_id,''),COALESCE(n.published_home_cover_asset_id,''),
 			COALESCE(h.event_date,''),COALESCE(v.youtube_video_id,''),COALESCE(v.home_eligible,false),
 			p.published_version,t.locale,t.title,t.summary,'' AS body,t.date_label,t.image_alt
 		FROM selected s
@@ -123,7 +123,7 @@ func (r *Repository) ListContent(ctx context.Context, module content.Module, opt
 		var translation content.Translation
 		if err := rows.Scan(
 			&item.ID, &item.Module, &item.Status, &item.Version, &item.CreatedBy, &item.UpdatedBy, &item.PublishedAt, &item.CreatedAt, &item.UpdatedAt,
-			&item.Slug, &item.DisplayDate, &item.CoverAssetID, &item.Featured, &item.PublicGrantID, &item.PublishedCoverID,
+			&item.Slug, &item.DisplayDate, &item.CoverAssetID, &item.HomeCoverAssetID, &item.Featured, &item.PublicGrantID, &item.HomePublicGrantID, &item.PublishedCoverID, &item.PublishedHomeCoverID,
 			&item.EventDate, &item.YouTubeVideoID, &item.HomeEligible, &item.PublishedVersion,
 			&translation.Locale, &translation.Title, &translation.Summary, &translation.Body, &translation.DateLabel, &translation.ImageAlt,
 		); err != nil {
@@ -251,14 +251,14 @@ func (r *Repository) startNewsPublish(ctx context.Context, id string, expected i
 	if err != nil {
 		return content.Item{}, err
 	}
-	if current.CoverAssetID == "" || current.Status == content.StatusPublishing || current.Status == content.StatusUnpublishing {
+	if current.Status == content.StatusPublishing || current.Status == content.StatusUnpublishing {
 		return content.Item{}, content.ErrNotPublishable
 	}
 	next := expected + 1
 	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.content_entry SET status='publishing',version=$2,updated_by=$3,updated_at=$4 WHERE id=$1`, id, next, actor, now); err != nil {
 		return content.Item{}, err
 	}
-	payload, _ := json.Marshal(publication.ContentPublishPayload{ContentID: id, AssetID: current.CoverAssetID, AggregateVersion: next})
+	payload, _ := json.Marshal(publication.ContentPublishPayload{ContentID: id, AssetID: current.CoverAssetID, HomeAssetID: current.HomeCoverAssetID, AggregateVersion: next})
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO hhc_web.outbox_event(id,destination,event_type,aggregate_type,aggregate_id,aggregate_version,payload_json,idempotency_key,status,next_attempt_at,created_at,updated_at)
 		VALUES($1,'asset-api','news.publish.ensure_asset','news',$2,$3,$4,$5,'pending',$6,$6,$6)`,
@@ -288,8 +288,7 @@ func (r *Repository) startNewsUnpublish(ctx context.Context, id string, expected
 	if err != nil {
 		return content.Item{}, err
 	}
-	if !current.IsPublished || current.PublishedCoverID == "" || current.PublicGrantID == "" ||
-		current.Status == content.StatusPublishing || current.Status == content.StatusUnpublishing {
+	if !current.IsPublished || current.Status == content.StatusPublishing || current.Status == content.StatusUnpublishing {
 		return content.Item{}, content.ErrNotPublishable
 	}
 	next := expected + 1
@@ -299,9 +298,8 @@ func (r *Repository) startNewsUnpublish(ctx context.Context, id string, expected
 	if _, err := tx.ExecContext(ctx, `DELETE FROM hhc_web.public_projection WHERE resource_type='news' AND resource_id=$1`, id); err != nil {
 		return content.Item{}, err
 	}
-	payload, _ := json.Marshal(publication.ContentUnpublishPayload{
-		ContentID: id, AssetID: current.PublishedCoverID, GrantID: current.PublicGrantID, AggregateVersion: next,
-	})
+	assets := publishedAssets(current)
+	payload, _ := json.Marshal(publication.ContentUnpublishPayload{ContentID: id, Assets: assets, AggregateVersion: next})
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO hhc_web.outbox_event(id,destination,event_type,aggregate_type,aggregate_id,aggregate_version,payload_json,idempotency_key,status,next_attempt_at,created_at,updated_at)
 		VALUES($1,'asset-api','news.unpublish.revoke_asset','news',$2,$3,$4,$5,'pending',$6,$6,$6)`,
@@ -315,7 +313,7 @@ func (r *Repository) startNewsUnpublish(ctx context.Context, id string, expected
 	return item, tx.Commit()
 }
 
-func (r *Repository) CompleteContentPublish(ctx context.Context, event publication.Event, grantID, publicURL string, now time.Time) error {
+func (r *Repository) CompleteContentPublish(ctx context.Context, event publication.Event, assets []publication.PublishedAsset, now time.Time) error {
 	var payload publication.ContentPublishPayload
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
 		return err
@@ -332,14 +330,14 @@ func (r *Repository) CompleteContentPublish(ctx context.Context, event publicati
 	if delivered {
 		return nil
 	}
-	var status, oldAssetID, oldGrantID string
+	var status, oldAssetID, oldGrantID, oldHomeAssetID, oldHomeGrantID string
 	var version int64
 	if err := tx.QueryRowContext(ctx, `
-		SELECT e.status,e.version,n.published_cover_asset_id,n.public_grant_id
+		SELECT e.status,e.version,n.published_cover_asset_id,n.public_grant_id,n.published_home_cover_asset_id,n.home_public_grant_id
 		FROM hhc_web.content_entry e
 		JOIN hhc_web.news_item n ON n.entry_id=e.id
 		WHERE e.id=$1 AND e.module='news'
-		FOR UPDATE OF e,n`, payload.ContentID).Scan(&status, &version, &oldAssetID, &oldGrantID); err != nil {
+		FOR UPDATE OF e,n`, payload.ContentID).Scan(&status, &version, &oldAssetID, &oldGrantID, &oldHomeAssetID, &oldHomeGrantID); err != nil {
 		return err
 	}
 	if status != content.StatusPublishing || version != payload.AggregateVersion {
@@ -351,7 +349,12 @@ func (r *Repository) CompleteContentPublish(ctx context.Context, event publicati
 	}
 	item.Status = content.StatusPublished
 	item.PublishedAt = &now
-	item.CoverURL = publicURL
+	detail, home := publishedAsset(assets, "detail"), publishedAsset(assets, "home")
+	if detail.AssetID != payload.AssetID || home.AssetID != payload.HomeAssetID {
+		return fmt.Errorf("published asset set does not match event payload")
+	}
+	item.CoverURL = detail.PublicURL
+	item.HomeCoverURL = home.PublicURL
 	if _, err := tx.ExecContext(ctx, `DELETE FROM hhc_web.public_projection WHERE resource_type='news' AND resource_id=$1`, item.ID); err != nil {
 		return err
 	}
@@ -374,22 +377,18 @@ func (r *Repository) CompleteContentPublish(ctx context.Context, event publicati
 	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.content_entry SET status='published',published_at=$2,updated_at=$2 WHERE id=$1`, item.ID, now); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.news_item SET public_grant_id=$2,published_cover_asset_id=$3,published_version=$4 WHERE entry_id=$1`, item.ID, grantID, payload.AssetID, version); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.news_item SET public_grant_id=$2,published_cover_asset_id=$3,home_public_grant_id=$4,published_home_cover_asset_id=$5,published_version=$6 WHERE entry_id=$1`, item.ID, detail.GrantID, detail.AssetID, home.GrantID, home.AssetID, version); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.outbox_event SET status='delivered',claimed_until=NULL,last_error='',updated_at=$2 WHERE id=$1`, event.ID, now); err != nil {
 		return err
 	}
-	if oldGrantID != "" && oldGrantID != grantID {
-		revokePayload, _ := json.Marshal(publication.ContentUnpublishPayload{
-			ContentID: item.ID, AssetID: oldAssetID, GrantID: oldGrantID, AggregateVersion: version,
-		})
-		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO hhc_web.outbox_event(id,destination,event_type,aggregate_type,aggregate_id,aggregate_version,payload_json,idempotency_key,status,next_attempt_at,created_at,updated_at)
-			VALUES($1,'asset-api','asset.grant.revoke','news',$2,$3,$4,$5,'pending',$6,$6,$6)
-			ON CONFLICT(destination,idempotency_key) DO NOTHING`,
-			platform.NewID(), item.ID, version, revokePayload, fmt.Sprintf("news:%s:revoke:%s", item.ID, oldGrantID), now); err != nil {
-			return err
+	for _, old := range []publication.PublishedAsset{{Usage: "detail", AssetID: oldAssetID, GrantID: oldGrantID}, {Usage: "home", AssetID: oldHomeAssetID, GrantID: oldHomeGrantID}} {
+		current := publishedAsset(assets, old.Usage)
+		if old.GrantID != "" && old.GrantID != current.GrantID {
+			if err := enqueueGrantRevoke(ctx, tx, item.ID, version, old, now); err != nil {
+				return err
+			}
 		}
 	}
 	return tx.Commit()
@@ -423,13 +422,43 @@ func (r *Repository) CompleteContentUnpublish(ctx context.Context, event publica
 	if rows, _ := result.RowsAffected(); rows == 0 {
 		return publication.ErrStalePublication
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.news_item SET public_grant_id='',published_cover_asset_id='',published_version=NULL WHERE entry_id=$1`, payload.ContentID); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.news_item SET public_grant_id='',published_cover_asset_id='',home_public_grant_id='',published_home_cover_asset_id='',published_version=NULL WHERE entry_id=$1`, payload.ContentID); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.outbox_event SET status='delivered',claimed_until=NULL,last_error='',updated_at=$2 WHERE id=$1`, event.ID, now); err != nil {
 		return err
 	}
 	return tx.Commit()
+}
+
+func publishedAssets(item content.Item) []publication.PublishedAsset {
+	assets := make([]publication.PublishedAsset, 0, 2)
+	if item.PublishedCoverID != "" && item.PublicGrantID != "" {
+		assets = append(assets, publication.PublishedAsset{Usage: "detail", AssetID: item.PublishedCoverID, GrantID: item.PublicGrantID})
+	}
+	if item.PublishedHomeCoverID != "" && item.HomePublicGrantID != "" {
+		assets = append(assets, publication.PublishedAsset{Usage: "home", AssetID: item.PublishedHomeCoverID, GrantID: item.HomePublicGrantID})
+	}
+	return assets
+}
+
+func publishedAsset(assets []publication.PublishedAsset, usage string) publication.PublishedAsset {
+	for _, asset := range assets {
+		if asset.Usage == usage {
+			return asset
+		}
+	}
+	return publication.PublishedAsset{Usage: usage}
+}
+
+func enqueueGrantRevoke(ctx context.Context, tx *sql.Tx, contentID string, version int64, asset publication.PublishedAsset, now time.Time) error {
+	payload, _ := json.Marshal(publication.ContentUnpublishPayload{ContentID: contentID, AssetID: asset.AssetID, GrantID: asset.GrantID, AggregateVersion: version})
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO hhc_web.outbox_event(id,destination,event_type,aggregate_type,aggregate_id,aggregate_version,payload_json,idempotency_key,status,next_attempt_at,created_at,updated_at)
+		VALUES($1,'asset-api','asset.grant.revoke','news',$2,$3,$4,$5,'pending',$6,$6,$6)
+		ON CONFLICT(destination,idempotency_key) DO NOTHING`,
+		platform.NewID(), contentID, version, payload, fmt.Sprintf("news:%s:revoke:%s", contentID, asset.GrantID), now)
+	return err
 }
 
 func (r *Repository) ContentRevisions(ctx context.Context, module content.Module, id string) ([]content.Revision, error) {
@@ -467,7 +496,7 @@ func (r *Repository) RestoreContent(ctx context.Context, module content.Module, 
 	if err := json.Unmarshal(payload, &snapshot); err != nil {
 		return content.Item{}, err
 	}
-	input := content.WriteInput{Slug: snapshot.Slug, DisplayDate: snapshot.DisplayDate, EventDate: snapshot.EventDate, YouTubeVideoID: snapshot.YouTubeVideoID, CoverAssetID: snapshot.CoverAssetID, Featured: snapshot.Featured, HomeEligible: snapshot.HomeEligible, Translations: snapshot.Translations}
+	input := content.WriteInput{Slug: snapshot.Slug, DisplayDate: snapshot.DisplayDate, EventDate: snapshot.EventDate, YouTubeVideoID: snapshot.YouTubeVideoID, CoverAssetID: snapshot.CoverAssetID, HomeCoverAssetID: snapshot.HomeCoverAssetID, Featured: snapshot.Featured, HomeEligible: snapshot.HomeEligible, Translations: snapshot.Translations}
 	return r.UpdateContent(ctx, module, id, expected, input, actor, now)
 }
 
@@ -524,7 +553,11 @@ func contentAssetIDs(ctx context.Context, tx *sql.Tx, module content.Module, id 
 		SELECT asset_id FROM (
 			SELECT cover_asset_id AS asset_id FROM hhc_web.news_item WHERE entry_id=$1
 			UNION
+			SELECT home_cover_asset_id AS asset_id FROM hhc_web.news_item WHERE entry_id=$1
+			UNION
 			SELECT snapshot_json->>'coverAssetId' FROM hhc_web.content_revision WHERE entry_id=$1
+			UNION
+			SELECT snapshot_json->>'homeCoverAssetId' FROM hhc_web.content_revision WHERE entry_id=$1
 		) assets WHERE COALESCE(asset_id,'')<>'' ORDER BY asset_id`, id)
 	if err != nil {
 		return nil, err
@@ -642,7 +675,7 @@ func hasPublicContentState(ctx context.Context, tx *sql.Tx, module content.Modul
 		return hasProjection, nil
 	}
 	var hasGrant bool
-	if err := tx.QueryRowContext(ctx, `SELECT public_grant_id<>'' FROM hhc_web.news_item WHERE entry_id=$1`, id).Scan(&hasGrant); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT public_grant_id<>'' OR home_public_grant_id<>'' FROM hhc_web.news_item WHERE entry_id=$1`, id).Scan(&hasGrant); err != nil {
 		return false, err
 	}
 	return hasProjection || hasGrant, nil
@@ -665,8 +698,8 @@ func loadContent(ctx context.Context, query contentQueryer, module content.Modul
 	switch module {
 	case content.ModuleNews:
 		var publishedVersion sql.NullInt64
-		err = query.QueryRowContext(ctx, `SELECT slug,display_date::text,cover_asset_id,featured,public_grant_id,published_cover_asset_id,published_version FROM hhc_web.news_item WHERE entry_id=$1`, id).
-			Scan(&item.Slug, &item.DisplayDate, &item.CoverAssetID, &item.Featured, &item.PublicGrantID, &item.PublishedCoverID, &publishedVersion)
+		err = query.QueryRowContext(ctx, `SELECT slug,display_date::text,cover_asset_id,home_cover_asset_id,featured,public_grant_id,home_public_grant_id,published_cover_asset_id,published_home_cover_asset_id,published_version FROM hhc_web.news_item WHERE entry_id=$1`, id).
+			Scan(&item.Slug, &item.DisplayDate, &item.CoverAssetID, &item.HomeCoverAssetID, &item.Featured, &item.PublicGrantID, &item.HomePublicGrantID, &item.PublishedCoverID, &item.PublishedHomeCoverID, &publishedVersion)
 		if publishedVersion.Valid {
 			item.PublishedVersion = publishedVersion.Int64
 		}
@@ -741,10 +774,10 @@ func writeTypedContent(ctx context.Context, tx *sql.Tx, module content.Module, i
 	switch module {
 	case content.ModuleNews:
 		if verb == "INSERT" {
-			_, err := tx.ExecContext(ctx, `INSERT INTO hhc_web.news_item(entry_id,slug,display_date,cover_asset_id,featured) VALUES($1,$2,$3,$4,$5)`, id, input.Slug, input.DisplayDate, input.CoverAssetID, input.Featured)
+			_, err := tx.ExecContext(ctx, `INSERT INTO hhc_web.news_item(entry_id,slug,display_date,cover_asset_id,home_cover_asset_id,featured) VALUES($1,$2,$3,$4,$5,$6)`, id, input.Slug, input.DisplayDate, input.CoverAssetID, input.HomeCoverAssetID, input.Featured)
 			return err
 		}
-		_, err := tx.ExecContext(ctx, `UPDATE hhc_web.news_item SET slug=$2,display_date=$3,cover_asset_id=$4,featured=$5 WHERE entry_id=$1`, id, input.Slug, input.DisplayDate, input.CoverAssetID, input.Featured)
+		_, err := tx.ExecContext(ctx, `UPDATE hhc_web.news_item SET slug=$2,display_date=$3,cover_asset_id=$4,home_cover_asset_id=$5,featured=$6 WHERE entry_id=$1`, id, input.Slug, input.DisplayDate, input.CoverAssetID, input.HomeCoverAssetID, input.Featured)
 		return err
 	case content.ModuleHistory:
 		if verb == "INSERT" {
@@ -808,9 +841,17 @@ func publicContent(item content.Item, translation content.Translation) content.P
 	value := content.PublicItem{ID: item.ID, Title: translation.Title, Summary: translation.Summary, Body: translation.Body, DateLabel: translation.DateLabel, DisplayDate: item.DisplayDate, EventDate: item.EventDate, ImageAlt: translation.ImageAlt, YouTubeVideoID: item.YouTubeVideoID, Featured: item.Featured, HomeEligible: item.HomeEligible}
 	switch item.Module {
 	case content.ModuleNews:
-		value.ImageURL = item.CoverURL + "/large"
-		if item.CoverURL == "" {
+		if item.CoverURL != "" {
+			value.ImageURL = item.CoverURL + "/large"
+		} else if item.CoverAssetID != "" {
 			value.ImageURL = "/assets/" + item.CoverAssetID + "/large"
+		}
+		if item.HomeCoverURL != "" {
+			value.HomeImageURL = item.HomeCoverURL + "/large"
+		} else if item.HomeCoverAssetID != "" {
+			value.HomeImageURL = "/assets/" + item.HomeCoverAssetID + "/large"
+		} else {
+			value.HomeImageURL = value.ImageURL
 		}
 		value.Href = "/" + translation.Locale + "/news/" + item.Slug
 	case content.ModuleVideos:

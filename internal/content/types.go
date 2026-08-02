@@ -42,39 +42,44 @@ type Translation struct {
 }
 
 type WriteInput struct {
-	Slug           string        `json:"slug,omitempty"`
-	DisplayDate    string        `json:"displayDate,omitempty"`
-	EventDate      string        `json:"eventDate,omitempty"`
-	YouTubeVideoID string        `json:"youtubeVideoId,omitempty"`
-	CoverAssetID   string        `json:"coverAssetId,omitempty"`
-	Featured       bool          `json:"featured,omitempty"`
-	HomeEligible   bool          `json:"homeEligible,omitempty"`
-	Translations   []Translation `json:"translations"`
-}
-
-type Item struct {
-	ID               string        `json:"id"`
-	Module           Module        `json:"module"`
-	Status           string        `json:"status"`
-	Version          int64         `json:"version"`
 	Slug             string        `json:"slug,omitempty"`
 	DisplayDate      string        `json:"displayDate,omitempty"`
 	EventDate        string        `json:"eventDate,omitempty"`
 	YouTubeVideoID   string        `json:"youtubeVideoId,omitempty"`
 	CoverAssetID     string        `json:"coverAssetId,omitempty"`
-	CoverURL         string        `json:"coverUrl,omitempty"`
-	PublicGrantID    string        `json:"-"`
-	PublishedCoverID string        `json:"-"`
-	IsPublished      bool          `json:"isPublished"`
-	PublishedVersion int64         `json:"publishedVersion,omitempty"`
+	HomeCoverAssetID string        `json:"homeCoverAssetId,omitempty"`
 	Featured         bool          `json:"featured,omitempty"`
 	HomeEligible     bool          `json:"homeEligible,omitempty"`
 	Translations     []Translation `json:"translations"`
-	CreatedBy        string        `json:"createdBy"`
-	UpdatedBy        string        `json:"updatedBy"`
-	PublishedAt      *time.Time    `json:"publishedAt,omitempty"`
-	CreatedAt        time.Time     `json:"createdAt"`
-	UpdatedAt        time.Time     `json:"updatedAt"`
+}
+
+type Item struct {
+	ID                   string        `json:"id"`
+	Module               Module        `json:"module"`
+	Status               string        `json:"status"`
+	Version              int64         `json:"version"`
+	Slug                 string        `json:"slug,omitempty"`
+	DisplayDate          string        `json:"displayDate,omitempty"`
+	EventDate            string        `json:"eventDate,omitempty"`
+	YouTubeVideoID       string        `json:"youtubeVideoId,omitempty"`
+	CoverAssetID         string        `json:"coverAssetId,omitempty"`
+	HomeCoverAssetID     string        `json:"homeCoverAssetId,omitempty"`
+	CoverURL             string        `json:"coverUrl,omitempty"`
+	HomeCoverURL         string        `json:"homeCoverUrl,omitempty"`
+	PublicGrantID        string        `json:"-"`
+	HomePublicGrantID    string        `json:"-"`
+	PublishedCoverID     string        `json:"-"`
+	PublishedHomeCoverID string        `json:"-"`
+	IsPublished          bool          `json:"isPublished"`
+	PublishedVersion     int64         `json:"publishedVersion,omitempty"`
+	Featured             bool          `json:"featured,omitempty"`
+	HomeEligible         bool          `json:"homeEligible,omitempty"`
+	Translations         []Translation `json:"translations"`
+	CreatedBy            string        `json:"createdBy"`
+	UpdatedBy            string        `json:"updatedBy"`
+	PublishedAt          *time.Time    `json:"publishedAt,omitempty"`
+	CreatedAt            time.Time     `json:"createdAt"`
+	UpdatedAt            time.Time     `json:"updatedAt"`
 }
 
 type Revision struct {
@@ -94,6 +99,7 @@ type PublicItem struct {
 	EventDate      string `json:"eventDate,omitempty"`
 	ImageAlt       string `json:"imageAlt,omitempty"`
 	ImageURL       string `json:"imageUrl,omitempty"`
+	HomeImageURL   string `json:"homeImageUrl,omitempty"`
 	Href           string `json:"href,omitempty"`
 	YouTubeVideoID string `json:"youtubeVideoId,omitempty"`
 	Featured       bool   `json:"featured,omitempty"`

@@ -208,6 +208,89 @@ func TestWorkerPublishesOwnedNewsCover(t *testing.T) {
 	}
 }
 
+func TestWorkerPublishesNewsWithoutImages(t *testing.T) {
+	repository := &workerRepository{event: Event{
+		ID: "event-news", EventType: "news.publish.ensure_asset", AggregateID: "news-1", AggregateVersion: 3,
+		Payload: []byte(`{"contentId":"news-1","aggregateVersion":3}`), Attempts: 1,
+	}}
+	assets := &workerAssets{}
+	worker := NewWorker(repository, assets, 5)
+
+	if _, err := worker.processNext(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if assets.grantCalls != 0 || len(repository.completedContentAssets) != 0 {
+		t.Fatalf("grantCalls=%d completed=%#v", assets.grantCalls, repository.completedContentAssets)
+	}
+}
+
+func TestWorkerPublishesNewsDetailAndHomeImages(t *testing.T) {
+	repository := &workerRepository{event: Event{
+		ID: "event-news", EventType: "news.publish.ensure_asset", AggregateID: "news-1", AggregateVersion: 3,
+		Payload: []byte(`{"contentId":"news-1","assetId":"asset-detail","homeAssetId":"asset-home","aggregateVersion":3}`), Attempts: 1,
+	}}
+	assets := &workerAssets{
+		assets: map[string]Asset{
+			"asset-detail": readyNewsAsset("asset-detail", "news_detail_cover"),
+			"asset-home":   readyNewsAsset("asset-home", "news_home_cover"),
+		},
+		grants: map[string]Grant{"asset-detail": {ID: "grant-detail"}, "asset-home": {ID: "grant-home"}},
+	}
+	worker := NewWorker(repository, assets, 5)
+
+	if _, err := worker.processNext(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(repository.completedContentAssets) != 2 || repository.completedContentAssets[0].Usage != "detail" || repository.completedContentAssets[1].Usage != "home" {
+		t.Fatalf("completed=%#v", repository.completedContentAssets)
+	}
+}
+
+func TestWorkerCompensatesAllNewsGrantsWhenCompletionFails(t *testing.T) {
+	repository := &workerRepository{event: Event{
+		ID: "event-news", EventType: "news.publish.ensure_asset", AggregateID: "news-1", AggregateVersion: 3,
+		Payload: []byte(`{"contentId":"news-1","assetId":"asset-detail","homeAssetId":"asset-home","aggregateVersion":3}`), Attempts: 5,
+	}, completeContentError: errors.New("database unavailable")}
+	assets := &workerAssets{
+		assets: map[string]Asset{
+			"asset-detail": readyNewsAsset("asset-detail", "news_detail_cover"),
+			"asset-home":   readyNewsAsset("asset-home", "news_home_cover"),
+		},
+		grants: map[string]Grant{"asset-detail": {ID: "grant-detail"}, "asset-home": {ID: "grant-home"}},
+	}
+	worker := NewWorker(repository, assets, 5)
+
+	if _, err := worker.processNext(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(repository.compensationAssets) != 2 || repository.failCount != 1 {
+		t.Fatalf("compensation=%#v fail=%d", repository.compensationAssets, repository.failCount)
+	}
+}
+
+func TestWorkerCompensatesCreatedNewsGrantWhenNextGrantFails(t *testing.T) {
+	repository := &workerRepository{event: Event{
+		ID: "event-news", EventType: "news.publish.ensure_asset", AggregateID: "news-1", AggregateVersion: 3,
+		Payload: []byte(`{"contentId":"news-1","assetId":"asset-detail","homeAssetId":"asset-home","aggregateVersion":3}`), Attempts: 5,
+	}}
+	assets := &workerAssets{
+		assets: map[string]Asset{
+			"asset-detail": readyNewsAsset("asset-detail", "news_detail_cover"),
+			"asset-home":   readyNewsAsset("asset-home", "news_home_cover"),
+		},
+		grants:      map[string]Grant{"asset-detail": {ID: "grant-detail"}},
+		grantErrors: map[string]error{"asset-home": errors.New("grant unavailable")},
+	}
+	worker := NewWorker(repository, assets, 5)
+
+	if _, err := worker.processNext(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(repository.compensationAssets) != 1 || repository.compensationAssets[0].GrantID != "grant-detail" || repository.failCount != 1 {
+		t.Fatalf("compensation=%#v fail=%d", repository.compensationAssets, repository.failCount)
+	}
+}
+
 func TestWorkerUnpublishesNewsWithoutDeletingCover(t *testing.T) {
 	repository := &workerRepository{event: Event{
 		ID:               "event-news-unpublish",
@@ -225,6 +308,22 @@ func TestWorkerUnpublishesNewsWithoutDeletingCover(t *testing.T) {
 	}
 	if assets.revokedGrant != "grant-news" || assets.deletedAsset != "" || repository.completeContentUnpublishCount != 1 {
 		t.Fatalf("revoked=%q deleted=%q completed=%d", assets.revokedGrant, assets.deletedAsset, repository.completeContentUnpublishCount)
+	}
+}
+
+func TestWorkerUnpublishesBothNewsImages(t *testing.T) {
+	repository := &workerRepository{event: Event{
+		ID: "event-news-unpublish", EventType: "news.unpublish.revoke_asset", AggregateID: "news-1", AggregateVersion: 4,
+		Payload: []byte(`{"contentId":"news-1","assets":[{"usage":"detail","assetId":"asset-detail","grantId":"grant-detail"},{"usage":"home","assetId":"asset-home","grantId":"grant-home"}],"aggregateVersion":4}`), Attempts: 1,
+	}}
+	assets := &workerAssets{}
+	worker := NewWorker(repository, assets, 5)
+
+	if _, err := worker.processNext(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(assets.revokedGrants) != 2 || assets.revokedGrants[0] != "grant-detail" || assets.revokedGrants[1] != "grant-home" {
+		t.Fatalf("revoked=%#v", assets.revokedGrants)
 	}
 }
 
@@ -371,6 +470,13 @@ func readyBulletinAsset() Asset {
 	}
 }
 
+func readyNewsAsset(id, purpose string) Asset {
+	return Asset{
+		ID: id, OwnerService: "hhc-web-api", Namespace: "cms.news.cover", OwnerType: "news", OwnerID: "news-1", Purpose: purpose,
+		UploadStatus: "completed", ScanStatus: "clean", ProcessingStatus: "ready",
+	}
+}
+
 func publishEvent(attempts int) Event {
 	return Event{
 		ID:               "event-1",
@@ -393,12 +499,14 @@ type workerRepository struct {
 	completeUnpublishCount        int
 	completedGrant                string
 	completedContentGrant         string
+	completedContentAssets        []PublishedAsset
 	completePublishError          error
 	completeContentError          error
 	completeContentUnpublishCount int
 	eventDelivered                bool
 	eventDeliveredError           error
 	compensationGrant             string
+	compensationAssets            []PublishedAsset
 	failPublishError              error
 }
 
@@ -429,6 +537,14 @@ func (r *workerRepository) FailPublish(_ context.Context, _ Event, _, grantID, _
 	r.compensationGrant = grantID
 	return nil
 }
+func (r *workerRepository) FailContentPublish(_ context.Context, _ Event, assets []PublishedAsset, _ string, _ time.Time) error {
+	if r.failPublishError != nil {
+		return r.failPublishError
+	}
+	r.failCount++
+	r.compensationAssets = append([]PublishedAsset(nil), assets...)
+	return nil
+}
 func (r *workerRepository) EventDelivered(context.Context, string) (bool, error) {
 	return r.eventDelivered, r.eventDeliveredError
 }
@@ -436,8 +552,11 @@ func (r *workerRepository) CompletePublish(_ context.Context, _ Event, grantID, 
 	r.completedGrant = grantID
 	return r.completePublishError
 }
-func (r *workerRepository) CompleteContentPublish(_ context.Context, _ Event, grantID, _ string, _ time.Time) error {
-	r.completedContentGrant = grantID
+func (r *workerRepository) CompleteContentPublish(_ context.Context, _ Event, assets []PublishedAsset, _ time.Time) error {
+	r.completedContentAssets = append([]PublishedAsset(nil), assets...)
+	if len(assets) > 0 {
+		r.completedContentGrant = assets[0].GrantID
+	}
 	return r.completeContentError
 }
 func (r *workerRepository) CompleteContentUnpublish(context.Context, Event, time.Time) error {
@@ -455,25 +574,39 @@ func (r *workerRepository) CompleteUnpublish(context.Context, Event, time.Time) 
 }
 
 type workerAssets struct {
-	asset        Asset
-	grant        Grant
-	getError     error
-	grantError   error
-	revokeError  error
-	revokedGrant string
-	deletedAsset string
-	grantCalls   int
+	asset         Asset
+	assets        map[string]Asset
+	grant         Grant
+	grants        map[string]Grant
+	grantErrors   map[string]error
+	getError      error
+	grantError    error
+	revokeError   error
+	revokedGrant  string
+	revokedGrants []string
+	deletedAsset  string
+	grantCalls    int
 }
 
-func (a *workerAssets) Get(context.Context, string) (Asset, error) {
+func (a *workerAssets) Get(_ context.Context, assetID string) (Asset, error) {
+	if a.assets != nil {
+		return a.assets[assetID], a.getError
+	}
 	return a.asset, a.getError
 }
-func (a *workerAssets) CreatePublicGrant(context.Context, string, string) (Grant, error) {
+func (a *workerAssets) CreatePublicGrant(_ context.Context, assetID, _ string) (Grant, error) {
 	a.grantCalls++
+	if err := a.grantErrors[assetID]; err != nil {
+		return Grant{}, err
+	}
+	if a.grants != nil {
+		return a.grants[assetID], a.grantError
+	}
 	return a.grant, a.grantError
 }
 func (a *workerAssets) RevokeGrant(_ context.Context, _, grantID string) error {
 	a.revokedGrant = grantID
+	a.revokedGrants = append(a.revokedGrants, grantID)
 	return a.revokeError
 }
 func (a *workerAssets) Delete(_ context.Context, assetID string) error {

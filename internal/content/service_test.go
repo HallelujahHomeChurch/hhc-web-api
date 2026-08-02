@@ -151,16 +151,28 @@ func TestPublishRequiresPublicContent(t *testing.T) {
 	}
 }
 
-func TestNewsPublishRequiresCleanCoverReference(t *testing.T) {
+func TestNewsPublishAllowsOptionalImages(t *testing.T) {
 	repo := &serviceRepository{item: Item{ID: "item-1", Module: ModuleNews, Status: StatusDraft, Version: 2, Slug: "announcement", DisplayDate: "2026-07-13", Translations: translations()}}
 	service := NewService(repo, time.Now)
 
-	if _, err := service.PublishContent(context.Background(), ModuleNews, "item-1", 2, "user-1"); !errors.Is(err, ErrNotPublishable) {
-		t.Fatalf("err=%v", err)
-	}
-	repo.item.CoverAssetID = "asset-1"
 	if _, err := service.PublishContent(context.Background(), ModuleNews, "item-1", 2, "user-1"); err != nil {
+		t.Fatalf("image-less publish err=%v", err)
+	}
+	repo.item.HomeCoverAssetID = "home-asset"
+	if _, err := service.PublishContent(context.Background(), ModuleNews, "item-1", 2, "user-1"); err != nil {
+		t.Fatalf("home-only publish err=%v", err)
+	}
+}
+
+func TestNewsNormalizesHomeCoverAssetID(t *testing.T) {
+	repo := &serviceRepository{}
+	service := NewService(repo, time.Now)
+	input := WriteInput{DisplayDate: "2026-08-02", HomeCoverAssetID: " home-asset ", Translations: translations()}
+	if _, err := service.CreateContent(context.Background(), ModuleNews, input, "user-1", "news-home"); err != nil {
 		t.Fatal(err)
+	}
+	if repo.item.HomeCoverAssetID != "home-asset" {
+		t.Fatalf("homeCoverAssetId=%q", repo.item.HomeCoverAssetID)
 	}
 }
 
@@ -306,7 +318,7 @@ type serviceRepository struct {
 }
 
 func (r *serviceRepository) CreateContent(_ context.Context, module Module, input WriteInput, actor, key string, now time.Time) (Item, error) {
-	r.item = Item{ID: "item-1", Module: module, Status: StatusDraft, Version: 1, Slug: input.Slug, DisplayDate: input.DisplayDate, EventDate: input.EventDate, YouTubeVideoID: input.YouTubeVideoID, CoverAssetID: input.CoverAssetID, Featured: input.Featured, HomeEligible: input.HomeEligible, Translations: input.Translations}
+	r.item = Item{ID: "item-1", Module: module, Status: StatusDraft, Version: 1, Slug: input.Slug, DisplayDate: input.DisplayDate, EventDate: input.EventDate, YouTubeVideoID: input.YouTubeVideoID, CoverAssetID: input.CoverAssetID, HomeCoverAssetID: input.HomeCoverAssetID, Featured: input.Featured, HomeEligible: input.HomeEligible, Translations: input.Translations}
 	return r.item, nil
 }
 func (r *serviceRepository) ListContent(_ context.Context, _ Module, options ListOptions) (Page, error) {

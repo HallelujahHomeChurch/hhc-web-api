@@ -807,6 +807,35 @@ func (r *Repository) FailPublish(ctx context.Context, event publication.Event, a
 	return tx.Commit()
 }
 
+func (r *Repository) FailContentPublish(ctx context.Context, event publication.Event, assets []publication.PublishedAsset, detail string, now time.Time) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := failEvent(ctx, tx, event, detail, now); err != nil {
+		return err
+	}
+	for _, asset := range assets {
+		if asset.AssetID == "" || asset.GrantID == "" {
+			continue
+		}
+		payload, err := json.Marshal(publication.ContentUnpublishPayload{AssetID: asset.AssetID, GrantID: asset.GrantID, AggregateVersion: event.AggregateVersion})
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO hhc_web.outbox_event(id,destination,event_type,aggregate_type,aggregate_id,aggregate_version,payload_json,idempotency_key,status,next_attempt_at,created_at,updated_at)
+			VALUES($1,'asset-api','asset.grant.revoke','news',$2,$3,$4,$5,$6,'pending',$7,$7,$7)
+			ON CONFLICT(destination,idempotency_key) DO NOTHING`,
+			platform.NewID(), event.AggregateID, event.AggregateVersion, payload,
+			fmt.Sprintf("publication:%s:revoke:%s", event.ID, asset.GrantID), now); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 func failEvent(ctx context.Context, tx *sql.Tx, event publication.Event, detail string, now time.Time) error {
 	var payload publication.PublishPayload
 	_ = json.Unmarshal(event.Payload, &payload)

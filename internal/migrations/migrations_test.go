@@ -96,3 +96,16 @@ func TestHistoryProjectionMigrationPublishesBackfilledEventDates(t *testing.T) {
 		}
 	}
 }
+
+func TestNewsHomeImageMigrationAddsIndependentPublicationState(t *testing.T) {
+	contents, err := files.ReadFile("sql/019_news_home_image.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := string(contents)
+	for _, expected := range []string{"home_cover_asset_id", "home_public_grant_id", "published_home_cover_asset_id", "DEFAULT ''"} {
+		if !strings.Contains(sql, expected) {
+			t.Fatalf("migration missing %q", expected)
+		}
+	}
+}

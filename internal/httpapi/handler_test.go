@@ -426,6 +426,7 @@ func bulletinIssue() bulletins.Issue {
 
 type apiUploads struct {
 	createdIssue, createdLocale string
+	createdPurpose              string
 	completed                   assetclient.Asset
 	completeCalls               int
 	getError                    error
@@ -437,7 +438,8 @@ func (u *apiUploads) CreateBulletinUpload(_ context.Context, issueID, locale, fi
 	u.createdLocale = locale
 	return assetclient.CreatedUpload{Asset: assetclient.Asset{ID: "asset-1"}, UploadTarget: assetclient.UploadTarget{URL: "http://example.test/upload", Method: http.MethodPut}}, nil
 }
-func (u *apiUploads) CreateNewsCoverUpload(_ context.Context, newsID, fileName, mimeType string, sizeBytes int64, key string) (assetclient.CreatedUpload, error) {
+func (u *apiUploads) CreateNewsCoverUpload(_ context.Context, newsID, purpose, fileName, mimeType string, sizeBytes int64, key string) (assetclient.CreatedUpload, error) {
+	u.createdPurpose = purpose
 	return assetclient.CreatedUpload{Asset: assetclient.Asset{ID: "news-asset", OwnerID: newsID}, UploadTarget: assetclient.UploadTarget{URL: "http://example.test/upload", Method: http.MethodPut}}, nil
 }
 func (u *apiUploads) CompleteUpload(context.Context, string, assetclient.CompleteUploadInput) (assetclient.Asset, error) {

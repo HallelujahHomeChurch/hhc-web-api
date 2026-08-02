@@ -41,7 +41,7 @@ Weekly bulletin uploads are orchestrated here, while `asset-api` owns the upload
 
 News, history, and video content share lifecycle, locale, revision, and public-projection behavior while retaining typed module tables and validation. Public routes never read drafts.
 
-News cover uploads are coordinated through content-owned upload routes. A news item can publish only after the cover is owned by that item, ClamAV marks it clean, responsive derivatives are ready, and a public read grant is created. Unpublish removes the projection immediately and revokes the public grant asynchronously while retaining the private asset for revisions and republishing.
+News image uploads are coordinated through content-owned upload routes. Detail and home images are optional; when attached, each image must be owned by that item, pass ClamAV, finish responsive derivative processing, and receive its own public read grant before publication. The public home image falls back to the detail image. Unpublish removes the projection immediately and revokes every public grant asynchronously while retaining private assets for revisions and republishing.
 
 ## Production release
 
