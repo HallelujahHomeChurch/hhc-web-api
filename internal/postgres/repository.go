@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -20,36 +21,45 @@ type Repository struct{ db *sql.DB }
 
 func New(db *sql.DB) *Repository { return &Repository{db: db} }
 
-func (r *Repository) CreateIssue(ctx context.Context, date, actor, idempotency string, now time.Time) (bulletins.Issue, error) {
+func (r *Repository) CreateIssue(ctx context.Context, number int, date, actor, idempotency string, now time.Time) (bulletins.Issue, error) {
 	id := platform.NewID()
-	_, err := r.db.ExecContext(ctx, `INSERT INTO hhc_web.bulletin_issue(id,issue_date,status,version,idempotency_key,created_by,updated_by,created_at,updated_at) VALUES($1,$2,'draft',1,$3,$4,$4,$5,$5) ON CONFLICT(idempotency_key) DO NOTHING`, id, date, idempotency, actor, now)
+	_, err := r.db.ExecContext(ctx, `INSERT INTO hhc_web.bulletin_issue(id,issue_number,issue_date,status,version,idempotency_key,created_by,updated_by,created_at,updated_at) VALUES($1,$2,$3,'draft',1,$4,$5,$5,$6,$6) ON CONFLICT(idempotency_key) DO NOTHING`, id, number, date, idempotency, actor, now)
 	if err != nil {
 		return bulletins.Issue{}, mapConflict(err)
 	}
 	var existingID, existingDate string
-	if err := r.db.QueryRowContext(ctx, `SELECT id::text,issue_date::text FROM hhc_web.bulletin_issue WHERE idempotency_key=$1`, idempotency).Scan(&existingID, &existingDate); err != nil {
+	var existingNumber sql.NullInt64
+	if err := r.db.QueryRowContext(ctx, `SELECT id::text,issue_number,issue_date::text FROM hhc_web.bulletin_issue WHERE idempotency_key=$1`, idempotency).Scan(&existingID, &existingNumber, &existingDate); err != nil {
 		return bulletins.Issue{}, err
 	}
-	if existingDate != date {
+	if !existingNumber.Valid || int(existingNumber.Int64) != number || existingDate != date {
 		return bulletins.Issue{}, bulletins.ErrConflict
 	}
 	return r.GetIssue(ctx, existingID)
 }
 
-func (r *Repository) ListIssues(ctx context.Context, page, size int, status string) (bulletins.Page, error) {
+func (r *Repository) ListIssues(ctx context.Context, page, size int, status, query string) (bulletins.Page, error) {
 	args := []any{}
-	where := ""
+	clauses := []string{}
 	if status != "" {
 		args = append(args, status)
-		where = " WHERE status=$1"
+		clauses = append(clauses, fmt.Sprintf("i.status=$%d", len(args)))
+	}
+	if query != "" {
+		args = append(args, "%"+query+"%")
+		clauses = append(clauses, fmt.Sprintf("(i.issue_number::text ILIKE $%d OR EXISTS (SELECT 1 FROM hhc_web.bulletin_version v WHERE v.issue_id=i.id AND (v.title ILIKE $%d OR v.subtitle ILIKE $%d)))", len(args), len(args), len(args)))
+	}
+	where := ""
+	if len(clauses) > 0 {
+		where = " WHERE " + strings.Join(clauses, " AND ")
 	}
 	var total int64
-	if err := r.db.QueryRowContext(ctx, "SELECT count(*) FROM hhc_web.bulletin_issue"+where, args...).Scan(&total); err != nil {
+	if err := r.db.QueryRowContext(ctx, "SELECT count(*) FROM hhc_web.bulletin_issue i"+where, args...).Scan(&total); err != nil {
 		return bulletins.Page{}, err
 	}
 	args = append(args, size, (page-1)*size)
 	limitPos, offsetPos := len(args)-1, len(args)
-	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`SELECT id::text,issue_date::text,status,version,created_by,updated_by,published_at,created_at,updated_at FROM hhc_web.bulletin_issue%s ORDER BY issue_date DESC LIMIT $%d OFFSET $%d`, where, limitPos, offsetPos), args...)
+	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`SELECT i.id::text,i.issue_number,i.issue_date::text,i.status,i.version,i.created_by,i.updated_by,i.published_at,i.created_at,i.updated_at FROM hhc_web.bulletin_issue i%s ORDER BY i.issue_number DESC NULLS LAST,i.issue_date DESC LIMIT $%d OFFSET $%d`, where, limitPos, offsetPos), args...)
 	if err != nil {
 		return bulletins.Page{}, err
 	}
@@ -93,13 +103,45 @@ func (r *Repository) GetIssue(ctx context.Context, id string) (bulletins.Issue, 
 	return loadIssue(ctx, r.db, id)
 }
 
+func (r *Repository) UpdateIssue(ctx context.Context, id string, expected int64, input bulletins.UpdateIssueInput, actor string, now time.Time) (bulletins.Issue, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return bulletins.Issue{}, err
+	}
+	defer tx.Rollback()
+	if err := lockMutableIssue(ctx, tx, id, expected); err != nil {
+		return bulletins.Issue{}, err
+	}
+	var published bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM hhc_web.bulletin_version WHERE issue_id=$1 AND (status IN ('published','publishing','unpublishing','unpublish_failed') OR COALESCE(public_grant_id,'')<>'' OR COALESCE(retiring_grant_id,'')<>''))`, id).Scan(&published); err != nil {
+		return bulletins.Issue{}, err
+	}
+	if published {
+		return bulletins.Issue{}, bulletins.ErrConflict
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.bulletin_issue SET issue_number=$2,issue_date=$3,version=version+1,updated_by=$4,updated_at=$5 WHERE id=$1`, id, input.IssueNumber, input.IssueDate, actor, now); err != nil {
+		return bulletins.Issue{}, mapConflict(err)
+	}
+	issue, err := loadIssue(ctx, tx, id)
+	if err != nil {
+		return bulletins.Issue{}, err
+	}
+	if err := insertBulletinRevision(ctx, tx, issue, actor, now); err != nil {
+		return bulletins.Issue{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return bulletins.Issue{}, err
+	}
+	return issue, nil
+}
+
 type bulletinQueryer interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
 }
 
 func loadIssue(ctx context.Context, query bulletinQueryer, id string) (bulletins.Issue, error) {
-	issue, err := scanIssue(query.QueryRowContext(ctx, `SELECT id::text,issue_date::text,status,version,created_by,updated_by,published_at,created_at,updated_at FROM hhc_web.bulletin_issue WHERE id=$1`, id))
+	issue, err := scanIssue(query.QueryRowContext(ctx, `SELECT id::text,issue_number,issue_date::text,status,version,created_by,updated_by,published_at,created_at,updated_at FROM hhc_web.bulletin_issue WHERE id=$1`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return bulletins.Issue{}, bulletins.ErrNotFound
 	}
@@ -114,8 +156,13 @@ type scanner interface{ Scan(...any) error }
 
 func scanIssue(row scanner) (bulletins.Issue, error) {
 	var v bulletins.Issue
+	var number sql.NullInt64
 	var published sql.NullTime
-	err := row.Scan(&v.ID, &v.IssueDate, &v.Status, &v.Version, &v.CreatedBy, &v.UpdatedBy, &published, &v.CreatedAt, &v.UpdatedAt)
+	err := row.Scan(&v.ID, &number, &v.IssueDate, &v.Status, &v.Version, &v.CreatedBy, &v.UpdatedBy, &published, &v.CreatedAt, &v.UpdatedAt)
+	if number.Valid {
+		value := int(number.Int64)
+		v.IssueNumber = &value
+	}
 	if published.Valid {
 		value := published.Time
 		v.PublishedAt = &value
@@ -136,7 +183,7 @@ func queryVersions(ctx context.Context, query bulletinQueryer, ids ...string) ([
 		placeholders[index] = fmt.Sprintf("$%d", index+1)
 	}
 	rows, err := query.QueryContext(ctx, fmt.Sprintf(`
-		SELECT v.id::text,v.issue_id::text,v.locale,v.title,v.pdf_asset_id,v.pdf_file_name,
+		SELECT v.id::text,v.issue_id::text,v.locale,v.title,v.subtitle,v.pdf_asset_id,v.pdf_file_name,
 		       COALESCE(v.public_grant_id,''),v.status,COALESCE(w.status,''),COALESCE(w.error_detail,''),
 		       v.version,v.published_at,v.created_at,v.updated_at
 		FROM hhc_web.bulletin_version v
@@ -157,7 +204,7 @@ func queryVersions(ctx context.Context, query bulletinQueryer, ids ...string) ([
 	for rows.Next() {
 		var v bulletins.Version
 		var published sql.NullTime
-		if err := rows.Scan(&v.ID, &v.IssueID, &v.Locale, &v.Title, &v.PDFAssetID, &v.PDFFileName, &v.PublicGrantID, &v.Status, &v.WorkflowStatus, &v.WorkflowError, &v.Version, &published, &v.CreatedAt, &v.UpdatedAt); err != nil {
+		if err := rows.Scan(&v.ID, &v.IssueID, &v.Locale, &v.Title, &v.Subtitle, &v.PDFAssetID, &v.PDFFileName, &v.PublicGrantID, &v.Status, &v.WorkflowStatus, &v.WorkflowError, &v.Version, &published, &v.CreatedAt, &v.UpdatedAt); err != nil {
 			return nil, err
 		}
 		if published.Valid {
@@ -197,14 +244,14 @@ func (r *Repository) PutVersion(ctx context.Context, id string, expected int64, 
 		return bulletins.Issue{}, bulletins.ErrNotPublishable
 	}
 	_, err = tx.ExecContext(ctx, `
-		INSERT INTO hhc_web.bulletin_version(id,issue_id,locale,title,pdf_asset_id,pdf_file_name,status,version,created_by,updated_by,created_at,updated_at)
-		VALUES($1,$2,$3,$4,$5,$6,'draft',1,$7,$7,$8,$8)
+		INSERT INTO hhc_web.bulletin_version(id,issue_id,locale,title,subtitle,pdf_asset_id,pdf_file_name,status,version,created_by,updated_by,created_at,updated_at)
+		VALUES($1,$2,$3,$4,$5,$6,$7,'draft',1,$8,$8,$9,$9)
 		ON CONFLICT(issue_id,locale) DO UPDATE SET
 			retiring_asset_id=CASE WHEN hhc_web.bulletin_version.status='published' THEN hhc_web.bulletin_version.pdf_asset_id ELSE hhc_web.bulletin_version.retiring_asset_id END,
 			retiring_grant_id=CASE WHEN hhc_web.bulletin_version.status='published' THEN hhc_web.bulletin_version.public_grant_id ELSE hhc_web.bulletin_version.retiring_grant_id END,
-			title=EXCLUDED.title,pdf_asset_id=EXCLUDED.pdf_asset_id,pdf_file_name=EXCLUDED.pdf_file_name,status='draft',
+			title=EXCLUDED.title,subtitle=EXCLUDED.subtitle,pdf_asset_id=EXCLUDED.pdf_asset_id,pdf_file_name=EXCLUDED.pdf_file_name,status='draft',
 			version=hhc_web.bulletin_version.version+1,updated_by=EXCLUDED.updated_by,updated_at=EXCLUDED.updated_at`,
-		platform.NewID(), id, input.Locale, input.Title, input.PDFAssetID, input.PDFFileName, actor, now)
+		platform.NewID(), id, input.Locale, input.Title, input.Subtitle, input.PDFAssetID, input.PDFFileName, actor, now)
 	if err != nil {
 		return bulletins.Issue{}, err
 	}
@@ -224,7 +271,7 @@ func (r *Repository) PutVersion(ctx context.Context, id string, expected int64, 
 	return issue, nil
 }
 
-func (r *Repository) UpdateVersion(ctx context.Context, id, locale string, expected int64, title, actor string, now time.Time) (bulletins.Issue, error) {
+func (r *Repository) UpdateVersion(ctx context.Context, id, locale string, expected int64, title, subtitle, actor string, now time.Time) (bulletins.Issue, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return bulletins.Issue{}, err
@@ -233,7 +280,7 @@ func (r *Repository) UpdateVersion(ctx context.Context, id, locale string, expec
 	if err := lockMutableIssue(ctx, tx, id, expected); err != nil {
 		return bulletins.Issue{}, err
 	}
-	result, err := tx.ExecContext(ctx, `UPDATE hhc_web.bulletin_version SET title=$3,status='draft',version=version+1,updated_by=$4,updated_at=$5 WHERE issue_id=$1 AND locale=$2 AND status IN ('draft','unpublished') AND COALESCE(public_grant_id,'')='' AND COALESCE(retiring_grant_id,'')=''`, id, locale, title, actor, now)
+	result, err := tx.ExecContext(ctx, `UPDATE hhc_web.bulletin_version SET title=$3,subtitle=$4,status='draft',version=version+1,updated_by=$5,updated_at=$6 WHERE issue_id=$1 AND locale=$2 AND status IN ('draft','unpublished') AND COALESCE(public_grant_id,'')='' AND COALESCE(retiring_grant_id,'')=''`, id, locale, title, subtitle, actor, now)
 	if err != nil {
 		return bulletins.Issue{}, err
 	}
@@ -394,19 +441,19 @@ func (r *Repository) RestoreIssueRevision(ctx context.Context, id string, revisi
 			versionID = platform.NewID()
 		}
 		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO hhc_web.bulletin_version(id,issue_id,locale,title,pdf_asset_id,pdf_file_name,status,version,created_by,updated_by,created_at,updated_at)
-			VALUES($1,$2,$3,$4,$5,$6,'draft',1,$7,$7,$8,$8)
+			INSERT INTO hhc_web.bulletin_version(id,issue_id,locale,title,subtitle,pdf_asset_id,pdf_file_name,status,version,created_by,updated_by,created_at,updated_at)
+			VALUES($1,$2,$3,$4,$5,$6,$7,'draft',1,$8,$8,$9,$9)
 			ON CONFLICT(issue_id,locale) DO UPDATE SET
 				retiring_asset_id=CASE WHEN hhc_web.bulletin_version.status='published' THEN hhc_web.bulletin_version.pdf_asset_id ELSE hhc_web.bulletin_version.retiring_asset_id END,
 				retiring_grant_id=CASE WHEN hhc_web.bulletin_version.status='published' THEN hhc_web.bulletin_version.public_grant_id ELSE hhc_web.bulletin_version.retiring_grant_id END,
-				title=EXCLUDED.title,pdf_asset_id=EXCLUDED.pdf_asset_id,pdf_file_name=EXCLUDED.pdf_file_name,status='draft',
+				title=EXCLUDED.title,subtitle=EXCLUDED.subtitle,pdf_asset_id=EXCLUDED.pdf_asset_id,pdf_file_name=EXCLUDED.pdf_file_name,status='draft',
 				version=hhc_web.bulletin_version.version+1,updated_by=EXCLUDED.updated_by,updated_at=EXCLUDED.updated_at`,
-			versionID, id, version.Locale, version.Title, version.PDFAssetID, version.PDFFileName, actor, now); err != nil {
+			versionID, id, version.Locale, version.Title, version.Subtitle, version.PDFAssetID, version.PDFFileName, actor, now); err != nil {
 			return bulletins.Issue{}, err
 		}
 	}
 	next := current + 1
-	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.bulletin_issue SET issue_date=$2,status='draft',version=$3,updated_by=$4,updated_at=$5 WHERE id=$1`, id, snapshot.IssueDate, next, actor, now); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.bulletin_issue SET issue_number=$2,issue_date=$3,status='draft',version=$4,updated_by=$5,updated_at=$6 WHERE id=$1`, id, snapshot.IssueNumber, snapshot.IssueDate, next, actor, now); err != nil {
 		return bulletins.Issue{}, mapConflict(err)
 	}
 	restored, err := loadIssue(ctx, tx, id)
@@ -526,7 +573,7 @@ func (r *Repository) Unpublish(ctx context.Context, id, locale string, expected 
 	if _, err := tx.ExecContext(ctx, `DELETE FROM hhc_web.public_projection WHERE projection_key=$1 OR (projection_key=$2 AND resource_id=$3)`, fmt.Sprintf("bulletins:issue:%s:%s", locale, date), fmt.Sprintf("bulletins:latest:%s", locale), id); err != nil {
 		return bulletins.Issue{}, err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO hhc_web.public_projection(projection_key,resource_type,resource_id,locale,route_path,version,etag,payload_json,updated_at) SELECT $1,resource_type,resource_id,locale,'/bulletins/latest',version,etag,payload_json,$3 FROM hhc_web.public_projection WHERE resource_type='bulletin_issue' AND locale=$2 ORDER BY payload_json->>'issueDate' DESC LIMIT 1 ON CONFLICT(projection_key) DO UPDATE SET resource_id=EXCLUDED.resource_id,version=EXCLUDED.version,etag=EXCLUDED.etag,payload_json=EXCLUDED.payload_json,updated_at=EXCLUDED.updated_at`, fmt.Sprintf("bulletins:latest:%s", locale), locale, now); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO hhc_web.public_projection(projection_key,resource_type,resource_id,locale,route_path,version,etag,payload_json,updated_at) SELECT $1,resource_type,resource_id,locale,'/bulletins/latest',version,etag,payload_json,$3 FROM hhc_web.public_projection WHERE resource_type='bulletin_issue' AND locale=$2 ORDER BY COALESCE((payload_json->>'issueNumber')::integer,0) DESC,payload_json->>'issueDate' DESC LIMIT 1 ON CONFLICT(projection_key) DO UPDATE SET resource_id=EXCLUDED.resource_id,version=EXCLUDED.version,etag=EXCLUDED.etag,payload_json=EXCLUDED.payload_json,updated_at=EXCLUDED.updated_at`, fmt.Sprintf("bulletins:latest:%s", locale), locale, now); err != nil {
 		return bulletins.Issue{}, err
 	}
 	payload, _ := json.Marshal(publication.UnpublishPayload{WorkflowID: workflowID, IssueID: id, Locale: locale, AssetID: assetID, GrantID: grantID, AggregateVersion: next})
@@ -650,18 +697,18 @@ func (r *Repository) ListPublic(ctx context.Context, page, size int) (bulletins.
 	}
 	rows, err := r.db.QueryContext(ctx, `
 		WITH issues AS (
-			SELECT resource_id, max(payload_json->>'issueDate') AS issue_date
+			SELECT resource_id, max(COALESCE((payload_json->>'issueNumber')::integer,0)) AS issue_number, max(payload_json->>'issueDate') AS issue_date
 			FROM hhc_web.public_projection
 			WHERE resource_type='bulletin_issue'
 			GROUP BY resource_id
-			ORDER BY issue_date DESC
+			ORDER BY issue_number DESC,issue_date DESC
 			LIMIT $1 OFFSET $2
 		)
 		SELECT p.payload_json
 		FROM issues i
 		JOIN hhc_web.public_projection p
 		  ON p.resource_type='bulletin_issue' AND p.resource_id=i.resource_id
-		ORDER BY i.issue_date DESC,
+		ORDER BY i.issue_number DESC,i.issue_date DESC,
 		  CASE p.locale WHEN 'zh-Hant' THEN 1 WHEN 'zh-Hans' THEN 2 ELSE 3 END`,
 		size, (page-1)*size)
 	if err != nil {
@@ -679,7 +726,7 @@ func (r *Repository) ListPublic(ctx context.Context, page, size int) (bulletins.
 			return bulletins.PublicPage{}, err
 		}
 		if len(items) == 0 || items[len(items)-1].IssueDate != item.IssueDate {
-			items = append(items, bulletins.PublicIssue{IssueDate: item.IssueDate, Versions: []bulletins.PublicBulletin{}})
+			items = append(items, bulletins.PublicIssue{IssueNumber: item.IssueNumber, IssueDate: item.IssueDate, Versions: []bulletins.PublicBulletin{}})
 		}
 		items[len(items)-1].Versions = append(items[len(items)-1].Versions, item)
 	}
@@ -828,21 +875,29 @@ func (r *Repository) CompletePublish(ctx context.Context, event publication.Even
 	if delivered {
 		return nil
 	}
-	var issueDate, issueStatus, title, versionStatus, retiringAssetID, retiringGrantID string
+	var issueDate, issueStatus, title, subtitle, versionStatus, retiringAssetID, retiringGrantID string
+	var issueNumber sql.NullInt64
 	var issueVersion int64
 	if err := tx.QueryRowContext(ctx, `
-		SELECT i.issue_date::text,i.status,i.version,v.title,v.status,
+		SELECT i.issue_number,i.issue_date::text,i.status,i.version,v.title,v.subtitle,v.status,
 		       COALESCE(v.retiring_asset_id,''),COALESCE(v.retiring_grant_id,'')
 		FROM hhc_web.bulletin_issue i
 		JOIN hhc_web.bulletin_version v ON v.issue_id=i.id AND v.locale=$2
 		WHERE i.id=$1 FOR UPDATE OF i,v`, payload.IssueID, payload.Locale).
-		Scan(&issueDate, &issueStatus, &issueVersion, &title, &versionStatus, &retiringAssetID, &retiringGrantID); err != nil {
+		Scan(&issueNumber, &issueDate, &issueStatus, &issueVersion, &title, &subtitle, &versionStatus, &retiringAssetID, &retiringGrantID); err != nil {
 		return err
 	}
 	if issueVersion != payload.AggregateVersion || issueStatus != "publishing" || versionStatus != "publishing" {
 		return publication.ErrStalePublication
 	}
-	public := bulletins.PublicBulletin{IssueDate: issueDate, Locale: payload.Locale, Title: title, DownloadURL: downloadURL, PublishedAt: now, Version: issueVersion}
+	fileName := fmt.Sprintf("%s-%s.pdf", issueDate, title)
+	var number *int
+	if issueNumber.Valid {
+		value := int(issueNumber.Int64)
+		number = &value
+		fileName = fmt.Sprintf("%d-%s.pdf", value, title)
+	}
+	public := bulletins.PublicBulletin{IssueNumber: number, IssueDate: issueDate, Locale: payload.Locale, Title: title, Subtitle: subtitle, DownloadURL: downloadURL + "?filename=" + url.QueryEscape(fileName), DownloadFileName: fileName, PublishedAt: now, Version: issueVersion}
 	encoded, err := json.Marshal(public)
 	if err != nil {
 		return err
@@ -858,7 +913,7 @@ func (r *Repository) CompletePublish(ctx context.Context, event publication.Even
 	if _, err := tx.ExecContext(ctx, `INSERT INTO hhc_web.public_projection(projection_key,resource_type,resource_id,locale,route_path,version,etag,payload_json,updated_at) VALUES($1,'bulletin_issue',$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(projection_key) DO UPDATE SET resource_id=EXCLUDED.resource_id,route_path=EXCLUDED.route_path,version=EXCLUDED.version,etag=EXCLUDED.etag,payload_json=EXCLUDED.payload_json,updated_at=EXCLUDED.updated_at`, fmt.Sprintf("bulletins:issue:%s:%s", payload.Locale, issueDate), payload.IssueID, payload.Locale, "/bulletins/"+issueDate, issueVersion, etag, encoded, now); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO hhc_web.public_projection(projection_key,resource_type,resource_id,locale,route_path,version,etag,payload_json,updated_at) VALUES($1,'bulletin_latest',$2,$3,'/bulletins/latest',$4,$5,$6,$7) ON CONFLICT(projection_key) DO UPDATE SET resource_id=EXCLUDED.resource_id,version=EXCLUDED.version,etag=EXCLUDED.etag,payload_json=EXCLUDED.payload_json,updated_at=EXCLUDED.updated_at WHERE hhc_web.public_projection.payload_json->>'issueDate' <= EXCLUDED.payload_json->>'issueDate'`, fmt.Sprintf("bulletins:latest:%s", payload.Locale), payload.IssueID, payload.Locale, issueVersion, etag, encoded, now); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO hhc_web.public_projection(projection_key,resource_type,resource_id,locale,route_path,version,etag,payload_json,updated_at) VALUES($1,'bulletin_latest',$2,$3,'/bulletins/latest',$4,$5,$6,$7) ON CONFLICT(projection_key) DO UPDATE SET resource_id=EXCLUDED.resource_id,version=EXCLUDED.version,etag=EXCLUDED.etag,payload_json=EXCLUDED.payload_json,updated_at=EXCLUDED.updated_at WHERE COALESCE((hhc_web.public_projection.payload_json->>'issueNumber')::integer,0) <= COALESCE((EXCLUDED.payload_json->>'issueNumber')::integer,0)`, fmt.Sprintf("bulletins:latest:%s", payload.Locale), payload.IssueID, payload.Locale, issueVersion, etag, encoded, now); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.publication_workflow SET status='completed',updated_at=$2 WHERE id=$1`, payload.WorkflowID, now); err != nil {

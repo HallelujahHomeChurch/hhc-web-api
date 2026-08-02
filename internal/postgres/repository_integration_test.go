@@ -37,7 +37,7 @@ func TestRepositoryPublishWaitsForAssetWorkflow(t *testing.T) {
 	}
 	repository := New(db)
 	now := time.Now().UTC()
-	issue, err := repository.CreateIssue(ctx, "2026-07-12", "user-1", "create-1", now)
+	issue, err := repository.CreateIssue(ctx, 1700, "2026-07-12", "user-1", "create-1", now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +189,7 @@ func TestBulletinDeleteCascadesAndQueuesReferencedAssets(t *testing.T) {
 	}
 	repository := New(db)
 	now := time.Now().UTC()
-	issue, err := repository.CreateIssue(ctx, "2026-08-23", "user-1", "delete-issue", now)
+	issue, err := repository.CreateIssue(ctx, 1701, "2026-08-23", "user-1", "delete-issue", now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -241,7 +241,7 @@ func TestBulletinRejectsCrossLocaleMutationDuringPublication(t *testing.T) {
 	}
 	repository := New(db)
 	now := time.Now().UTC()
-	issue, err := repository.CreateIssue(ctx, "2026-08-02", "user-1", "issue-cross-locale", now)
+	issue, err := repository.CreateIssue(ctx, 1702, "2026-08-02", "user-1", "issue-cross-locale", now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -285,7 +285,7 @@ func TestFailedPublishPersistsGrantCompensation(t *testing.T) {
 	}
 	repository := New(db)
 	now := time.Now().UTC()
-	issue, err := repository.CreateIssue(ctx, "2026-08-09", "user-1", "compensation-issue", now)
+	issue, err := repository.CreateIssue(ctx, 1703, "2026-08-09", "user-1", "compensation-issue", now)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -59,6 +59,7 @@ func (h *Handler) Routes() http.Handler {
 	admin.HandleFunc("GET /api/admin/bulletins", requireScope("cms:read", h.adminList))
 	admin.HandleFunc("POST /api/admin/bulletins", requireScope("cms:write", h.adminCreate))
 	admin.HandleFunc("GET /api/admin/bulletins/{issueID}", requireScope("cms:read", h.adminGet))
+	admin.HandleFunc("PUT /api/admin/bulletins/{issueID}", requireScope("cms:write", h.adminUpdateIssue))
 	admin.HandleFunc("PUT /api/admin/bulletins/{issueID}/versions/{locale}", requireScope("cms:write", h.adminUpdateVersion))
 	admin.HandleFunc("DELETE /api/admin/bulletins/{issueID}/versions/{locale}", requireScope("cms:write", h.adminDeleteVersion))
 	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/upload-sessions", requireScopes([]string{"cms:write", "assets:write"}, h.adminCreateUpload))
@@ -86,13 +87,15 @@ type createUploadInput struct {
 type completeUploadInput struct {
 	Locale         string `json:"locale"`
 	Title          string `json:"title"`
+	Subtitle       string `json:"subtitle"`
 	FileName       string `json:"fileName"`
 	MIMEType       string `json:"mimeType"`
 	SizeBytes      int64  `json:"sizeBytes"`
 	ChecksumSHA256 string `json:"checksumSha256"`
 }
 type updateVersionInput struct {
-	Title string `json:"title"`
+	Title    string `json:"title"`
+	Subtitle string `json:"subtitle"`
 }
 
 type assetStatusResponse struct {
@@ -180,7 +183,7 @@ func (h *Handler) adminCompleteUpload(w http.ResponseWriter, r *http.Request) {
 	if fileName == "" {
 		fileName = input.FileName
 	}
-	value, err := h.service.PutVersion(r.Context(), r.PathValue("issueID"), expected, bulletins.PutVersionInput{Locale: input.Locale, Title: input.Title, PDFAssetID: asset.ID, PDFFileName: fileName}, actor(r))
+	value, err := h.service.PutVersion(r.Context(), r.PathValue("issueID"), expected, bulletins.PutVersionInput{Locale: input.Locale, Title: input.Title, Subtitle: input.Subtitle, PDFAssetID: asset.ID, PDFFileName: fileName}, actor(r))
 	if err != nil {
 		handleError(w, err)
 		return
@@ -276,7 +279,7 @@ func (h *Handler) publicList(w http.ResponseWriter, r *http.Request) {
 }
 func (h *Handler) adminList(w http.ResponseWriter, r *http.Request) {
 	page, size := pagination(r)
-	value, err := h.service.ListIssues(r.Context(), page, size, r.URL.Query().Get("status"))
+	value, err := h.service.ListIssues(r.Context(), page, size, r.URL.Query().Get("status"), r.URL.Query().Get("q"))
 	if err != nil {
 		handleError(w, err)
 		return
@@ -285,6 +288,23 @@ func (h *Handler) adminList(w http.ResponseWriter, r *http.Request) {
 }
 func (h *Handler) adminGet(w http.ResponseWriter, r *http.Request) {
 	value, err := h.service.GetIssue(r.Context(), r.PathValue("issueID"))
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+	w.Header().Set("ETag", fmt.Sprintf(`"%d"`, value.Version))
+	writeData(w, http.StatusOK, value, nil)
+}
+func (h *Handler) adminUpdateIssue(w http.ResponseWriter, r *http.Request) {
+	expected, ok := ifMatch(w, r)
+	if !ok {
+		return
+	}
+	var input bulletins.UpdateIssueInput
+	if !decode(w, r, &input) {
+		return
+	}
+	value, err := h.service.UpdateIssue(r.Context(), r.PathValue("issueID"), expected, input, actor(r))
 	if err != nil {
 		handleError(w, err)
 		return
@@ -358,7 +378,7 @@ func (h *Handler) adminUpdateVersion(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &input) {
 		return
 	}
-	value, err := h.service.UpdateVersion(r.Context(), r.PathValue("issueID"), r.PathValue("locale"), expected, bulletins.UpdateVersionInput{Title: input.Title}, actor(r))
+	value, err := h.service.UpdateVersion(r.Context(), r.PathValue("issueID"), r.PathValue("locale"), expected, bulletins.UpdateVersionInput{Title: input.Title, Subtitle: input.Subtitle}, actor(r))
 	if err != nil {
 		handleError(w, err)
 		return

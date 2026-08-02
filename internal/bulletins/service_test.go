@@ -9,7 +9,7 @@ import (
 func TestServiceRejectsInvalidIssueAndVersion(t *testing.T) {
 	repo := &repositoryStub{}
 	service := NewService(repo, time.Now)
-	if _, err := service.CreateIssue(context.Background(), CreateIssueInput{IssueDate: "07/12/2026"}, "user", "key"); err != ErrInvalid {
+	if _, err := service.CreateIssue(context.Background(), CreateIssueInput{IssueNumber: 1, IssueDate: "07/12/2026"}, "user", "key"); err != ErrInvalid {
 		t.Fatalf("error=%v", err)
 	}
 	if _, err := service.PutVersion(context.Background(), "id", 1, PutVersionInput{Locale: "fr", Title: "x", PDFAssetID: "a", PDFFileName: "a.pdf"}, "user"); err != ErrInvalid {
@@ -19,9 +19,21 @@ func TestServiceRejectsInvalidIssueAndVersion(t *testing.T) {
 func TestServiceNormalizesPagination(t *testing.T) {
 	repo := &repositoryStub{}
 	service := NewService(repo, time.Now)
-	_, _ = service.ListIssues(context.Background(), 0, 1000, "")
+	_, _ = service.ListIssues(context.Background(), 0, 1000, "", "")
 	if repo.page != 1 || repo.pageSize != 100 {
 		t.Fatalf("page=%d size=%d", repo.page, repo.pageSize)
+	}
+}
+
+func TestServiceUpdatesIssueMetadata(t *testing.T) {
+	repo := &repositoryStub{}
+	service := NewService(repo, func() time.Time { return time.Unix(123, 0) })
+
+	if _, err := service.UpdateIssue(context.Background(), "issue-1", 2, UpdateIssueInput{IssueNumber: 1733, IssueDate: "2026-08-09"}, "user-1"); err != nil {
+		t.Fatal(err)
+	}
+	if repo.issueNumber != 1733 || repo.issueDate != "2026-08-09" || repo.expected != 2 {
+		t.Fatalf("metadata forwarding=%#v", repo)
 	}
 }
 
@@ -93,22 +105,28 @@ type repositoryStub struct {
 	locale         string
 	title          string
 	deletedLocale  string
+	issueNumber    int
+	issueDate      string
 	now            time.Time
 }
 
-func (r *repositoryStub) CreateIssue(context.Context, string, string, string, time.Time) (Issue, error) {
+func (r *repositoryStub) CreateIssue(context.Context, int, string, string, string, time.Time) (Issue, error) {
 	return Issue{}, nil
 }
-func (r *repositoryStub) ListIssues(_ context.Context, p, s int, _ string) (Page, error) {
+func (r *repositoryStub) ListIssues(_ context.Context, p, s int, _, _ string) (Page, error) {
 	r.page = p
 	r.pageSize = s
 	return Page{}, nil
 }
 func (r *repositoryStub) GetIssue(context.Context, string) (Issue, error) { return Issue{}, nil }
+func (r *repositoryStub) UpdateIssue(_ context.Context, _ string, expected int64, input UpdateIssueInput, _ string, _ time.Time) (Issue, error) {
+	r.expected, r.issueNumber, r.issueDate = expected, input.IssueNumber, input.IssueDate
+	return Issue{}, nil
+}
 func (r *repositoryStub) PutVersion(context.Context, string, int64, PutVersionInput, string, time.Time) (Issue, error) {
 	return Issue{}, nil
 }
-func (r *repositoryStub) UpdateVersion(_ context.Context, _ string, locale string, _ int64, title, _ string, _ time.Time) (Issue, error) {
+func (r *repositoryStub) UpdateVersion(_ context.Context, _ string, locale string, _ int64, title, _ string, _ string, _ time.Time) (Issue, error) {
 	r.locale, r.title = locale, title
 	return Issue{}, nil
 }

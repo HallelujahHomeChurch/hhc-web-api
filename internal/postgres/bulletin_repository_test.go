@@ -19,20 +19,20 @@ func TestListIssuesLoadsPageVersionsWithOneBatchQuery(t *testing.T) {
 	defer db.Close()
 
 	now := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT count(*) FROM hhc_web.bulletin_issue")).
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT count(*) FROM hhc_web.bulletin_issue i")).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(2))
-	mock.ExpectQuery("SELECT id::text,issue_date::text,status,version,created_by,updated_by,published_at,created_at,updated_at FROM hhc_web.bulletin_issue").
+	mock.ExpectQuery("SELECT i.id::text,i.issue_number,i.issue_date::text").
 		WithArgs(20, 0).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "issue_date", "status", "version", "created_by", "updated_by", "published_at", "created_at", "updated_at"}).
-			AddRow("00000000-0000-0000-0000-000000000001", "2026-08-02", "draft", 2, "user-1", "user-1", nil, now, now).
-			AddRow("00000000-0000-0000-0000-000000000002", "2026-07-26", "draft", 2, "user-1", "user-1", nil, now, now))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "issue_number", "issue_date", "status", "version", "created_by", "updated_by", "published_at", "created_at", "updated_at"}).
+			AddRow("00000000-0000-0000-0000-000000000001", 1732, "2026-08-02", "draft", 2, "user-1", "user-1", nil, now, now).
+			AddRow("00000000-0000-0000-0000-000000000002", 1731, "2026-07-26", "draft", 2, "user-1", "user-1", nil, now, now))
 	mock.ExpectQuery("FROM hhc_web.bulletin_version v").
 		WithArgs("00000000-0000-0000-0000-000000000001", "00000000-0000-0000-0000-000000000002").
-		WillReturnRows(sqlmock.NewRows([]string{"id", "issue_id", "locale", "title", "pdf_asset_id", "pdf_file_name", "public_grant_id", "status", "workflow_status", "workflow_error", "version", "published_at", "created_at", "updated_at"}).
-			AddRow("10000000-0000-0000-0000-000000000001", "00000000-0000-0000-0000-000000000001", "zh-Hant", "本週週報", "asset-1", "weekly.pdf", "", "draft", "", "", 1, nil, now, now).
-			AddRow("10000000-0000-0000-0000-000000000002", "00000000-0000-0000-0000-000000000002", "en", "Weekly", "asset-2", "weekly-en.pdf", "", "draft", "", "", 1, nil, now, now))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "issue_id", "locale", "title", "subtitle", "pdf_asset_id", "pdf_file_name", "public_grant_id", "status", "workflow_status", "workflow_error", "version", "published_at", "created_at", "updated_at"}).
+			AddRow("10000000-0000-0000-0000-000000000001", "00000000-0000-0000-0000-000000000001", "zh-Hant", "本週週報", "副標", "asset-1", "weekly.pdf", "", "draft", "", "", 1, nil, now, now).
+			AddRow("10000000-0000-0000-0000-000000000002", "00000000-0000-0000-0000-000000000002", "en", "Weekly", "", "asset-2", "weekly-en.pdf", "", "draft", "", "", 1, nil, now, now))
 
-	page, err := New(db).ListIssues(context.Background(), 1, 20, "")
+	page, err := New(db).ListIssues(context.Background(), 1, 20, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,16 +92,16 @@ func TestRestoreIssueRevisionCreatesDraftWithoutChangingPublicProjection(t *test
 	mock.ExpectExec("DELETE FROM hhc_web.bulletin_version").WithArgs(issueID, "zh-Hant").
 		WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec("INSERT INTO hhc_web.bulletin_version").
-		WithArgs(versionID, issueID, "zh-Hant", "舊週報", "asset-1", "weekly.pdf", "user-2", now).
+		WithArgs(versionID, issueID, "zh-Hant", "舊週報", "", "asset-1", "weekly.pdf", "user-2", now).
 		WillReturnResult(sqlmock.NewResult(0, 1))
-	mock.ExpectExec("UPDATE hhc_web.bulletin_issue").WithArgs(issueID, "2026-08-02", int64(4), "user-2", now).
+	mock.ExpectExec("UPDATE hhc_web.bulletin_issue").WithArgs(issueID, nil, "2026-08-02", int64(4), "user-2", now).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectQuery("FROM hhc_web.bulletin_issue WHERE id=\\$1").WithArgs(issueID).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "issue_date", "status", "version", "created_by", "updated_by", "published_at", "created_at", "updated_at"}).
-			AddRow(issueID, "2026-08-02", "draft", 4, "user-1", "user-2", now, now, now))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "issue_number", "issue_date", "status", "version", "created_by", "updated_by", "published_at", "created_at", "updated_at"}).
+			AddRow(issueID, nil, "2026-08-02", "draft", 4, "user-1", "user-2", now, now, now))
 	mock.ExpectQuery("FROM hhc_web.bulletin_version v").WithArgs(issueID).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "issue_id", "locale", "title", "pdf_asset_id", "pdf_file_name", "public_grant_id", "status", "workflow_status", "workflow_error", "version", "published_at", "created_at", "updated_at"}).
-			AddRow(versionID, issueID, "zh-Hant", "舊週報", "asset-1", "weekly.pdf", "grant-1", "draft", "", "", 2, now, now, now))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "issue_id", "locale", "title", "subtitle", "pdf_asset_id", "pdf_file_name", "public_grant_id", "status", "workflow_status", "workflow_error", "version", "published_at", "created_at", "updated_at"}).
+			AddRow(versionID, issueID, "zh-Hant", "舊週報", "", "asset-1", "weekly.pdf", "grant-1", "draft", "", "", 2, now, now, now))
 	mock.ExpectExec("INSERT INTO hhc_web.bulletin_revision").WithArgs(issueID, int64(4), sqlmock.AnyArg(), "user-2", now).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()

@@ -17,14 +17,14 @@ func NewService(repository Repository, now func() time.Time) *Service {
 }
 
 func (s *Service) CreateIssue(ctx context.Context, input CreateIssueInput, actor, idempotencyKey string) (Issue, error) {
-	if !validDate(input.IssueDate) || strings.TrimSpace(actor) == "" || strings.TrimSpace(idempotencyKey) == "" {
+	if input.IssueNumber < 1 || !validDate(input.IssueDate) || strings.TrimSpace(actor) == "" || strings.TrimSpace(idempotencyKey) == "" {
 		return Issue{}, ErrInvalid
 	}
-	return s.repository.CreateIssue(ctx, input.IssueDate, actor, idempotencyKey, s.now().UTC())
+	return s.repository.CreateIssue(ctx, input.IssueNumber, input.IssueDate, actor, idempotencyKey, s.now().UTC())
 }
-func (s *Service) ListIssues(ctx context.Context, page, pageSize int, status string) (Page, error) {
+func (s *Service) ListIssues(ctx context.Context, page, pageSize int, status, query string) (Page, error) {
 	page, pageSize = normalizePage(page, pageSize)
-	return s.repository.ListIssues(ctx, page, pageSize, status)
+	return s.repository.ListIssues(ctx, page, pageSize, status, strings.TrimSpace(query))
 }
 func (s *Service) GetIssue(ctx context.Context, id string) (Issue, error) {
 	if strings.TrimSpace(id) == "" {
@@ -32,22 +32,30 @@ func (s *Service) GetIssue(ctx context.Context, id string) (Issue, error) {
 	}
 	return s.repository.GetIssue(ctx, id)
 }
+func (s *Service) UpdateIssue(ctx context.Context, id string, expected int64, input UpdateIssueInput, actor string) (Issue, error) {
+	if strings.TrimSpace(id) == "" || expected < 1 || input.IssueNumber < 1 || !validDate(input.IssueDate) || strings.TrimSpace(actor) == "" {
+		return Issue{}, ErrInvalid
+	}
+	return s.repository.UpdateIssue(ctx, id, expected, input, actor, s.now().UTC())
+}
 func (s *Service) PutVersion(ctx context.Context, id string, expected int64, input PutVersionInput, actor string) (Issue, error) {
 	input.Locale = strings.TrimSpace(input.Locale)
 	input.Title = strings.TrimSpace(input.Title)
+	input.Subtitle = strings.TrimSpace(input.Subtitle)
 	input.PDFAssetID = strings.TrimSpace(input.PDFAssetID)
 	input.PDFFileName = filepath.Base(strings.TrimSpace(input.PDFFileName))
-	if id == "" || expected <= 0 || !validLocale(input.Locale) || input.Title == "" || len(input.Title) > 200 || input.PDFAssetID == "" || input.PDFFileName == "" || len(input.PDFFileName) > 255 || actor == "" {
+	if id == "" || expected <= 0 || !validLocale(input.Locale) || input.Title == "" || len(input.Title) > 200 || len(input.Subtitle) > 300 || input.PDFAssetID == "" || input.PDFFileName == "" || len(input.PDFFileName) > 255 || actor == "" {
 		return Issue{}, ErrInvalid
 	}
 	return s.repository.PutVersion(ctx, id, expected, input, actor, s.now().UTC())
 }
 func (s *Service) UpdateVersion(ctx context.Context, id, locale string, expected int64, input UpdateVersionInput, actor string) (Issue, error) {
 	input.Title = strings.TrimSpace(input.Title)
-	if strings.TrimSpace(id) == "" || !validLocale(locale) || expected < 1 || input.Title == "" || len(input.Title) > 200 || strings.TrimSpace(actor) == "" {
+	input.Subtitle = strings.TrimSpace(input.Subtitle)
+	if strings.TrimSpace(id) == "" || !validLocale(locale) || expected < 1 || input.Title == "" || len(input.Title) > 200 || len(input.Subtitle) > 300 || strings.TrimSpace(actor) == "" {
 		return Issue{}, ErrInvalid
 	}
-	return s.repository.UpdateVersion(ctx, id, locale, expected, input.Title, actor, s.now().UTC())
+	return s.repository.UpdateVersion(ctx, id, locale, expected, input.Title, input.Subtitle, actor, s.now().UTC())
 }
 func (s *Service) DeleteVersion(ctx context.Context, id, locale string, expected int64, actor string) (Issue, error) {
 	if strings.TrimSpace(id) == "" || !validLocale(locale) || expected < 1 || strings.TrimSpace(actor) == "" {
