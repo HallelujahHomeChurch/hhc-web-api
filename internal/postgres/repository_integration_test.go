@@ -96,7 +96,7 @@ func TestRepositoryPublishWaitsForAssetWorkflow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if public.IssueDate != "2026-07-12" || public.DownloadURL != "https://www.alive.org.tw/api/assets/public/asset-1" {
+	if public.IssueDate != "2026-07-12" || public.DownloadURL != "https://www.alive.org.tw/api/assets/public/asset-1?filename=1700-%E9%80%B1%E5%A0%B1.pdf" || public.DownloadFileName != "1700-週報.pdf" {
 		t.Fatalf("public = %#v", public)
 	}
 	published, err := repository.GetIssue(ctx, issue.ID)
