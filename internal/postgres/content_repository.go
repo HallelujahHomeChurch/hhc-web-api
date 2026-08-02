@@ -74,7 +74,10 @@ func (r *Repository) ListContent(ctx context.Context, module content.Module, opt
 	}
 	if options.Query != "" {
 		args = append(args, options.Query)
-		where += fmt.Sprintf(" AND EXISTS(SELECT 1 FROM hhc_web.content_translation search WHERE search.entry_id=e.id AND strpos(lower(search.title),lower($%d))>0)", len(args))
+		where += fmt.Sprintf(` AND (
+			EXISTS(SELECT 1 FROM hhc_web.content_translation search WHERE search.entry_id=e.id AND strpos(lower(search.title || ' ' || search.summary || ' ' || search.body),lower($%d))>0)
+			OR EXISTS(SELECT 1 FROM hhc_web.video_item search_video WHERE search_video.entry_id=e.id AND strpos(lower(search_video.youtube_video_id),lower($%d))>0)
+		)`, len(args), len(args))
 	}
 	var total int64
 	if err := r.db.QueryRowContext(ctx, `SELECT count(*) FROM hhc_web.content_entry e`+where, args...).Scan(&total); err != nil {
@@ -561,8 +564,12 @@ func enqueueAssetDeletes(ctx context.Context, tx *sql.Tx, resourceType, resource
 	return nil
 }
 
-func (r *Repository) PublicContent(ctx context.Context, module content.Module, locale string, limit int) ([]content.PublicItem, error) {
+func (r *Repository) PublicContent(ctx context.Context, module content.Module, locale string, page, pageSize int) (content.PublicPage, error) {
 	order := publicContentOrdering(module)
+	var total int64
+	if err := r.db.QueryRowContext(ctx, `SELECT count(DISTINCT resource_id) FROM hhc_web.public_projection WHERE resource_type=$1 AND locale IN ($2,'zh-Hant')`, module, locale).Scan(&total); err != nil {
+		return content.PublicPage{}, err
+	}
 	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT payload_json
 		FROM (
@@ -572,9 +579,9 @@ func (r *Repository) PublicContent(ctx context.Context, module content.Module, l
 			ORDER BY resource_id,CASE WHEN locale=$2 THEN 0 ELSE 1 END
 		) localized
 		ORDER BY %s
-		LIMIT $3`, order), module, locale, limit)
+		LIMIT $3 OFFSET $4`, order), module, locale, pageSize, (page-1)*pageSize)
 	if err != nil {
-		return nil, err
+		return content.PublicPage{}, err
 	}
 	defer rows.Close()
 	values := []content.PublicItem{}
@@ -582,14 +589,14 @@ func (r *Repository) PublicContent(ctx context.Context, module content.Module, l
 		var payload []byte
 		var value content.PublicItem
 		if err := rows.Scan(&payload); err != nil {
-			return nil, err
+			return content.PublicPage{}, err
 		}
 		if err := json.Unmarshal(payload, &value); err != nil {
-			return nil, err
+			return content.PublicPage{}, err
 		}
 		values = append(values, value)
 	}
-	return values, rows.Err()
+	return content.PublicPage{Items: values, Page: page, PageSize: pageSize, Total: total}, rows.Err()
 }
 
 func (r *Repository) PublicNews(ctx context.Context, locale, slug string) (content.PublicItem, string, error) {

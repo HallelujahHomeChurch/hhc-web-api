@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 func TestServiceValidatesTypedModules(t *testing.T) {
@@ -43,9 +44,49 @@ func TestServiceAcceptsCanonicalHistoryEventDates(t *testing.T) {
 	}
 }
 
+func TestServiceTrimsHistoryEventDate(t *testing.T) {
+	repo := &serviceRepository{}
+	service := NewService(repo, time.Now)
+	if _, err := service.CreateContent(context.Background(), ModuleHistory, historyInput(" 1988-03 "), "user-1", "history-trim"); err != nil {
+		t.Fatal(err)
+	}
+	if repo.item.EventDate != "1988-03" {
+		t.Fatalf("eventDate=%q", repo.item.EventDate)
+	}
+}
+
+func TestNewsCreateDerivesSlugAndSummary(t *testing.T) {
+	repo := &serviceRepository{}
+	service := NewService(repo, time.Now)
+	input := WriteInput{
+		DisplayDate:  "2026-08-02",
+		Translations: []Translation{{Locale: "zh-Hant", Title: "最新消息", Body: strings.Repeat("內容", 100)}},
+	}
+	created, err := service.CreateContent(context.Background(), ModuleNews, input, "user-1", "news-create")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(created.Slug, "news-20260802-") || utf8.RuneCountInString(created.Translations[0].Summary) != 160 {
+		t.Fatalf("created=%#v", created)
+	}
+}
+
+func TestNewsUpdatePreservesExistingSlug(t *testing.T) {
+	repo := &serviceRepository{item: Item{ID: "news-1", Module: ModuleNews, Slug: "existing-slug", Version: 2}}
+	service := NewService(repo, time.Now)
+	input := WriteInput{DisplayDate: "2026-08-02", Translations: translations()}
+	updated, err := service.UpdateContent(context.Background(), ModuleNews, "news-1", 2, input, "user-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Slug != "existing-slug" {
+		t.Fatalf("slug=%q", updated.Slug)
+	}
+}
+
 func TestServiceRejectsNonCanonicalHistoryEventDates(t *testing.T) {
 	service := NewService(&serviceRepository{}, time.Now)
-	for _, eventDate := range []string{"0000", "88", "1988-3", "1988-00", "1988-13", "1990-02-30", "1990/09/02", " 1990 "} {
+	for _, eventDate := range []string{"0000", "88", "1988-3", "1988-00", "1988-13", "1990-02-30", "1990/09/02"} {
 		t.Run(eventDate, func(t *testing.T) {
 			if _, err := service.CreateContent(context.Background(), ModuleHistory, historyInput(eventDate), "user-1", "history-invalid"); !errors.Is(err, ErrInvalid) {
 				t.Fatalf("eventDate=%q err=%v", eventDate, err)
@@ -226,6 +267,20 @@ func TestServiceRejectsInvalidPublicNewsSlug(t *testing.T) {
 	}
 }
 
+func TestServiceNormalizesPublicPagination(t *testing.T) {
+	repo := &serviceRepository{}
+	service := NewService(repo, time.Now)
+	if _, err := service.PublicContent(context.Background(), ModuleNews, "zh-Hant", 0, 101); err != nil {
+		t.Fatal(err)
+	}
+	if repo.publicPage != 1 || repo.publicPageSize != 20 {
+		t.Fatalf("page=%d pageSize=%d", repo.publicPage, repo.publicPageSize)
+	}
+	if _, err := service.PublicContent(context.Background(), ModuleNews, "zh-Hant", 10_001, 20); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("err=%v", err)
+	}
+}
+
 func translations() []Translation {
 	return []Translation{{Locale: "zh-Hant", Title: "標題", Summary: "摘要", Body: "內容", DateLabel: "2026年"}}
 }
@@ -240,12 +295,14 @@ func historyInput(eventDate string) WriteInput {
 }
 
 type serviceRepository struct {
-	item        Item
-	listOptions ListOptions
-	deletedID   string
-	expected    int64
-	actor       string
-	now         time.Time
+	item           Item
+	listOptions    ListOptions
+	deletedID      string
+	expected       int64
+	actor          string
+	now            time.Time
+	publicPage     int
+	publicPageSize int
 }
 
 func (r *serviceRepository) CreateContent(_ context.Context, module Module, input WriteInput, actor, key string, now time.Time) (Item, error) {
@@ -259,7 +316,10 @@ func (r *serviceRepository) ListContent(_ context.Context, _ Module, options Lis
 func (r *serviceRepository) GetContent(context.Context, Module, string) (Item, error) {
 	return r.item, nil
 }
-func (r *serviceRepository) UpdateContent(context.Context, Module, string, int64, WriteInput, string, time.Time) (Item, error) {
+
+func (r *serviceRepository) UpdateContent(_ context.Context, _ Module, _ string, _ int64, input WriteInput, _ string, _ time.Time) (Item, error) {
+	r.item.Slug = input.Slug
+	r.item.Translations = input.Translations
 	return r.item, nil
 }
 func (r *serviceRepository) PublishContent(_ context.Context, _ Module, _ string, _ int64, _ string, _ time.Time) (Item, error) {
@@ -279,8 +339,9 @@ func (r *serviceRepository) DeleteContent(_ context.Context, _ Module, id string
 	r.deletedID, r.expected, r.actor, r.now = id, expected, actor, now
 	return nil
 }
-func (r *serviceRepository) PublicContent(context.Context, Module, string, int) ([]PublicItem, error) {
-	return nil, nil
+func (r *serviceRepository) PublicContent(_ context.Context, _ Module, _ string, page, pageSize int) (PublicPage, error) {
+	r.publicPage, r.publicPageSize = page, pageSize
+	return PublicPage{}, nil
 }
 func (r *serviceRepository) PublicNews(context.Context, string, string) (PublicItem, string, error) {
 	return PublicItem{}, "", nil

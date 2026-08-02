@@ -107,6 +107,13 @@ type Page struct {
 	Total    int64
 }
 
+type PublicPage struct {
+	Items    []PublicItem
+	Page     int
+	PageSize int
+	Total    int64
+}
+
 type ListOptions struct {
 	Query     string
 	Status    string
@@ -126,6 +133,6 @@ type Repository interface {
 	ContentRevisions(context.Context, Module, string) ([]Revision, error)
 	RestoreContent(context.Context, Module, string, int64, int64, string, time.Time) (Item, error)
 	DeleteContent(context.Context, Module, string, int64, string, time.Time) error
-	PublicContent(context.Context, Module, string, int) ([]PublicItem, error)
+	PublicContent(context.Context, Module, string, int, int) (PublicPage, error)
 	PublicNews(context.Context, string, string) (PublicItem, string, error)
 }

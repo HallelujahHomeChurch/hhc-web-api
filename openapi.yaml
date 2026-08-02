@@ -36,7 +36,10 @@ paths:
   /news:
     get:
       operationId: listPublicNews
-      parameters: [{ $ref: '#/components/parameters/Locale' }]
+      parameters:
+        - $ref: '#/components/parameters/Locale'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
       responses: { '200': { $ref: '#/components/responses/PublicContentList' } }
   /news/{slug}:
     get:
@@ -52,12 +55,18 @@ paths:
   /history:
     get:
       operationId: listPublicHistory
-      parameters: [{ $ref: '#/components/parameters/Locale' }]
+      parameters:
+        - $ref: '#/components/parameters/Locale'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
       responses: { '200': { $ref: '#/components/responses/PublicContentList' } }
   /videos:
     get:
       operationId: listPublicVideos
-      parameters: [{ $ref: '#/components/parameters/Locale' }]
+      parameters:
+        - $ref: '#/components/parameters/Locale'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
       responses: { '200': { $ref: '#/components/responses/PublicContentList' } }
   /home:
     get:
@@ -879,7 +888,7 @@ components:
       required: [data, meta]
       properties:
         data: { type: array, items: { $ref: '#/components/schemas/PublicContentItem' } }
-        meta: { type: object, additionalProperties: true }
+        meta: { $ref: '#/components/schemas/PageMeta' }
         error: { type: ['null'] }
     PublicContentItemEnvelope:
       type: object

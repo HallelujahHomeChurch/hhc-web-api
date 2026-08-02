@@ -14,10 +14,10 @@ import (
 )
 
 func (h *Handler) contentRoutes(public, admin *http.ServeMux) {
-	public.HandleFunc("GET /api/news", h.publicContent(content.ModuleNews, 20))
+	public.HandleFunc("GET /api/news", h.publicContent(content.ModuleNews))
 	public.HandleFunc("GET /api/news/{slug}", h.publicNews)
-	public.HandleFunc("GET /api/history", h.publicContent(content.ModuleHistory, 100))
-	public.HandleFunc("GET /api/videos", h.publicContent(content.ModuleVideos, 100))
+	public.HandleFunc("GET /api/history", h.publicContent(content.ModuleHistory))
+	public.HandleFunc("GET /api/videos", h.publicContent(content.ModuleVideos))
 	public.HandleFunc("GET /api/home", h.publicHome)
 	admin.HandleFunc("GET /api/admin/content/{module}", requireScope("cms:read", h.adminContentList))
 	admin.HandleFunc("POST /api/admin/content/{module}", requireScope("cms:write", h.adminContentCreate))
@@ -53,33 +53,34 @@ func (h *Handler) publicNews(w http.ResponseWriter, r *http.Request) {
 	writeData(w, http.StatusOK, value, nil)
 }
 
-func (h *Handler) publicContent(module content.Module, limit int) http.HandlerFunc {
+func (h *Handler) publicContent(module content.Module) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		values, err := h.content.PublicContent(r.Context(), module, locale(r), limit)
+		page, size := pagination(r)
+		values, err := h.content.PublicContent(r.Context(), module, locale(r), page, size)
 		if err != nil {
 			handleContentError(w, err)
 			return
 		}
 		w.Header().Set("Cache-Control", "public, max-age=30, must-revalidate")
-		writeData(w, http.StatusOK, values, nil)
+		writeData(w, http.StatusOK, values.Items, map[string]any{"page": values.Page, "pageSize": values.PageSize, "total": values.Total})
 	}
 }
 
 func (h *Handler) publicHome(w http.ResponseWriter, r *http.Request) {
 	requestedLocale := locale(r)
-	news, err := h.content.PublicContent(r.Context(), content.ModuleNews, requestedLocale, 20)
+	news, err := h.content.PublicContent(r.Context(), content.ModuleNews, requestedLocale, 1, 20)
 	if err != nil {
 		handleContentError(w, err)
 		return
 	}
-	videos, err := h.content.PublicContent(r.Context(), content.ModuleVideos, requestedLocale, 100)
+	videos, err := h.content.PublicContent(r.Context(), content.ModuleVideos, requestedLocale, 1, 100)
 	if err != nil {
 		handleContentError(w, err)
 		return
 	}
 	seed := time.Now().UTC().Format("2006-01-02") + ":" + requestedLocale
 	w.Header().Set("Cache-Control", "public, max-age=30, must-revalidate")
-	writeData(w, http.StatusOK, map[string]any{"news": featuredNews(news, 3), "videos": eligibleVideos(videos, 3, seed)}, nil)
+	writeData(w, http.StatusOK, map[string]any{"news": latestNews(news.Items, 3), "videos": eligibleVideos(videos.Items, 3, seed)}, nil)
 }
 
 func etagMatches(header, target string) bool {
@@ -93,27 +94,11 @@ func etagMatches(header, target string) bool {
 	return false
 }
 
-func featuredNews(values []content.PublicItem, limit int) []content.PublicItem {
-	featured := make([]content.PublicItem, 0, limit)
-	for _, value := range values {
-		if value.Featured {
-			featured = append(featured, value)
-		}
+func latestNews(values []content.PublicItem, limit int) []content.PublicItem {
+	if len(values) > limit {
+		values = values[:limit]
 	}
-	if len(featured) < limit {
-		for _, value := range values {
-			if !value.Featured {
-				featured = append(featured, value)
-			}
-			if len(featured) == limit {
-				break
-			}
-		}
-	}
-	if len(featured) > limit {
-		featured = featured[:limit]
-	}
-	return featured
+	return values
 }
 func eligibleVideos(values []content.PublicItem, limit int, seed string) []content.PublicItem {
 	eligible := make([]content.PublicItem, 0, len(values))
