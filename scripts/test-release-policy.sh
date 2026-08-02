@@ -4,11 +4,10 @@ set -eu
 workflow=.github/workflows/release.yml
 
 grep -q 'workflow_dispatch:' "$workflow"
+grep -q '^  push:' "$workflow"
+grep -q 'branches: \[main\]' "$workflow"
+grep -Fq "github.event_name == 'push' && 'deploy-hhc-web-api-production' || inputs.confirmation" "$workflow"
 grep -q 'deploy-hhc-web-api-production' "$workflow"
-if grep -q '^  push:' "$workflow"; then
-  echo 'production release must not run automatically on push' >&2
-  exit 1
-fi
 grep -q 'environment: production' "$workflow"
 grep -q 'Verify isolated runtime prerequisites' "$workflow"
 grep -q "roleDefinitionName=='Key Vault Secrets User'" "$workflow"
