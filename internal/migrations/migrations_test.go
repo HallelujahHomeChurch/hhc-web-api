@@ -44,3 +44,16 @@ func TestContentDeleteMigrationPreservesArchivedRowsAsDraft(t *testing.T) {
 		t.Fatal("expand migration must retain status constraints for rollback compatibility")
 	}
 }
+
+func TestCanonicalAssetURLMigrationRewritesExistingPublicProjections(t *testing.T) {
+	contents, err := files.ReadFile("sql/014_canonical_asset_urls.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := string(contents)
+	for _, expected := range []string{"/api/assets/public/", "/assets/", "downloadUrl", "imageUrl", "etag"} {
+		if !strings.Contains(sql, expected) {
+			t.Fatalf("migration missing %q", expected)
+		}
+	}
+}

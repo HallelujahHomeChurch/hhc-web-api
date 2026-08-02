@@ -21,3 +21,14 @@ func TestPublicHistoryOrderingIsOldestFirstNullLastAndStable(t *testing.T) {
 		t.Fatalf("order=%q", order)
 	}
 }
+
+func TestPublicNewsFallbackUsesCanonicalAssetPath(t *testing.T) {
+	item := content.Item{Module: content.ModuleNews, CoverAssetID: "asset-1", Slug: "news"}
+	translation := content.Translation{Locale: "zh-Hant", Title: "消息"}
+
+	got := publicContent(item, translation)
+
+	if got.ImageURL != "/assets/asset-1/large" {
+		t.Fatalf("image URL = %q", got.ImageURL)
+	}
+}

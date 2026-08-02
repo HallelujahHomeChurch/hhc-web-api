@@ -803,7 +803,7 @@ func publicContent(item content.Item, translation content.Translation) content.P
 	case content.ModuleNews:
 		value.ImageURL = item.CoverURL + "/large"
 		if item.CoverURL == "" {
-			value.ImageURL = "/api/assets/public/" + item.CoverAssetID + "/large"
+			value.ImageURL = "/assets/" + item.CoverAssetID + "/large"
 		}
 		value.Href = "/" + translation.Locale + "/news/" + item.Slug
 	case content.ModuleVideos:
