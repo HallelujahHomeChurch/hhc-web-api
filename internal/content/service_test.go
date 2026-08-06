@@ -66,8 +66,16 @@ func TestNewsCreateDerivesSlugAndSummary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(created.Slug, "news-20260802-") || utf8.RuneCountInString(created.Translations[0].Summary) != 160 {
+	if !strings.HasPrefix(created.Slug, "news-20260802-") || utf8.RuneCountInString(created.Translations[0].Summary) != 160 || created.DetailLayout != "top" {
 		t.Fatalf("created=%#v", created)
+	}
+}
+
+func TestNewsRejectsInvalidDetailLayout(t *testing.T) {
+	service := NewService(&serviceRepository{}, time.Now)
+	input := WriteInput{DisplayDate: "2026-08-02", DetailLayout: "custom", Translations: translations()}
+	if _, err := service.CreateContent(context.Background(), ModuleNews, input, "user-1", "news-layout"); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("error=%v", err)
 	}
 }
 
@@ -318,7 +326,7 @@ type serviceRepository struct {
 }
 
 func (r *serviceRepository) CreateContent(_ context.Context, module Module, input WriteInput, actor, key string, now time.Time) (Item, error) {
-	r.item = Item{ID: "item-1", Module: module, Status: StatusDraft, Version: 1, Slug: input.Slug, DisplayDate: input.DisplayDate, EventDate: input.EventDate, YouTubeVideoID: input.YouTubeVideoID, CoverAssetID: input.CoverAssetID, HomeCoverAssetID: input.HomeCoverAssetID, Featured: input.Featured, HomeEligible: input.HomeEligible, Translations: input.Translations}
+	r.item = Item{ID: "item-1", Module: module, Status: StatusDraft, Version: 1, Slug: input.Slug, DisplayDate: input.DisplayDate, EventDate: input.EventDate, YouTubeVideoID: input.YouTubeVideoID, CoverAssetID: input.CoverAssetID, HomeCoverAssetID: input.HomeCoverAssetID, DetailLayout: input.DetailLayout, Featured: input.Featured, HomeEligible: input.HomeEligible, Translations: input.Translations}
 	return r.item, nil
 }
 func (r *serviceRepository) ListContent(_ context.Context, _ Module, options ListOptions) (Page, error) {

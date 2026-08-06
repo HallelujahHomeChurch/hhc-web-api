@@ -48,6 +48,7 @@ type WriteInput struct {
 	YouTubeVideoID   string        `json:"youtubeVideoId,omitempty"`
 	CoverAssetID     string        `json:"coverAssetId,omitempty"`
 	HomeCoverAssetID string        `json:"homeCoverAssetId,omitempty"`
+	DetailLayout     string        `json:"detailLayout,omitempty"`
 	Featured         bool          `json:"featured,omitempty"`
 	HomeEligible     bool          `json:"homeEligible,omitempty"`
 	Translations     []Translation `json:"translations"`
@@ -64,6 +65,7 @@ type Item struct {
 	YouTubeVideoID       string        `json:"youtubeVideoId,omitempty"`
 	CoverAssetID         string        `json:"coverAssetId,omitempty"`
 	HomeCoverAssetID     string        `json:"homeCoverAssetId,omitempty"`
+	DetailLayout         string        `json:"detailLayout,omitempty"`
 	CoverURL             string        `json:"coverUrl,omitempty"`
 	HomeCoverURL         string        `json:"homeCoverUrl,omitempty"`
 	PublicGrantID        string        `json:"-"`
@@ -104,6 +106,7 @@ type PublicItem struct {
 	YouTubeVideoID string `json:"youtubeVideoId,omitempty"`
 	Featured       bool   `json:"featured,omitempty"`
 	HomeEligible   bool   `json:"homeEligible,omitempty"`
+	DetailLayout   string `json:"detailLayout,omitempty"`
 }
 
 type Page struct {

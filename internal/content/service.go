@@ -182,7 +182,7 @@ func valid(module Module, input WriteInput) bool {
 	}
 	switch module {
 	case ModuleNews:
-		return len(input.Slug) <= 120 && contentSlug.MatchString(input.Slug) && validDate(input.DisplayDate) && len(input.CoverAssetID) <= 200 && len(input.HomeCoverAssetID) <= 200
+		return len(input.Slug) <= 120 && contentSlug.MatchString(input.Slug) && validDate(input.DisplayDate) && len(input.CoverAssetID) <= 200 && len(input.HomeCoverAssetID) <= 200 && validNewsDetailLayout(input.DetailLayout)
 	case ModuleHistory:
 		return validHistoryDate(input.EventDate)
 	case ModuleVideos:
@@ -192,7 +192,7 @@ func valid(module Module, input WriteInput) bool {
 	}
 }
 func publishable(item Item) bool {
-	if !valid(item.Module, WriteInput{Slug: item.Slug, DisplayDate: item.DisplayDate, EventDate: item.EventDate, YouTubeVideoID: item.YouTubeVideoID, CoverAssetID: item.CoverAssetID, HomeCoverAssetID: item.HomeCoverAssetID, Translations: item.Translations}) {
+	if !valid(item.Module, WriteInput{Slug: item.Slug, DisplayDate: item.DisplayDate, EventDate: item.EventDate, YouTubeVideoID: item.YouTubeVideoID, CoverAssetID: item.CoverAssetID, HomeCoverAssetID: item.HomeCoverAssetID, DetailLayout: item.DetailLayout, Translations: item.Translations}) {
 		return false
 	}
 	for _, value := range item.Translations {
@@ -238,6 +238,10 @@ func normalize(input WriteInput) WriteInput {
 	input.YouTubeVideoID = normalizeYouTubeVideoID(input.YouTubeVideoID)
 	input.CoverAssetID = strings.TrimSpace(input.CoverAssetID)
 	input.HomeCoverAssetID = strings.TrimSpace(input.HomeCoverAssetID)
+	input.DetailLayout = strings.TrimSpace(input.DetailLayout)
+	if input.DetailLayout == "" {
+		input.DetailLayout = "top"
+	}
 	for index := range input.Translations {
 		input.Translations[index].Locale = strings.TrimSpace(input.Translations[index].Locale)
 		input.Translations[index].Title = strings.TrimSpace(input.Translations[index].Title)
@@ -247,6 +251,10 @@ func normalize(input WriteInput) WriteInput {
 		input.Translations[index].ImageAlt = strings.TrimSpace(input.Translations[index].ImageAlt)
 	}
 	return input
+}
+
+func validNewsDetailLayout(value string) bool {
+	return value == "" || value == "top" || value == "left" || value == "right"
 }
 
 func normalizeNews(input WriteInput, slugSeed string) WriteInput {
