@@ -758,6 +758,7 @@ components:
         youtubeVideoId: { type: string, pattern: '^[A-Za-z0-9_-]{11}$' }
         coverAssetId: { type: string, maxLength: 200 }
         homeCoverAssetId: { type: string, maxLength: 200 }
+        detailLayout: { type: string, enum: [top, left, right], default: top }
         featured: { type: boolean }
         homeEligible: { type: boolean }
         translations:
@@ -810,6 +811,7 @@ components:
         youtubeVideoId: { type: string }
         featured: { type: boolean }
         homeEligible: { type: boolean }
+        detailLayout: { type: string, enum: [top, left, right] }
     BulletinIssueEnvelope:
       type: object
       required: [data, meta]

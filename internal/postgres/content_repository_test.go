@@ -26,7 +26,7 @@ func TestPublicHistoryOrderingIsOldestFirstNullLastAndStable(t *testing.T) {
 }
 
 func TestPublicNewsFallbackUsesCanonicalAssetPath(t *testing.T) {
-	item := content.Item{Module: content.ModuleNews, CoverAssetID: "asset-1", Slug: "news"}
+	item := content.Item{Module: content.ModuleNews, CoverAssetID: "asset-1", Slug: "news", DetailLayout: "left"}
 	translation := content.Translation{Locale: "zh-Hant", Title: "消息"}
 
 	got := publicContent(item, translation)
@@ -36,6 +36,9 @@ func TestPublicNewsFallbackUsesCanonicalAssetPath(t *testing.T) {
 	}
 	if got.HomeImageURL != got.ImageURL {
 		t.Fatalf("home image URL = %q", got.HomeImageURL)
+	}
+	if got.DetailLayout != "left" {
+		t.Fatalf("detail layout = %q", got.DetailLayout)
 	}
 }
 
