@@ -773,6 +773,9 @@ func writeTypedContent(ctx context.Context, tx *sql.Tx, module content.Module, i
 	}
 	switch module {
 	case content.ModuleNews:
+		if input.DetailLayout == "" {
+			input.DetailLayout = "top"
+		}
 		if verb == "INSERT" {
 			_, err := tx.ExecContext(ctx, `INSERT INTO hhc_web.news_item(entry_id,slug,display_date,cover_asset_id,home_cover_asset_id,detail_layout,featured) VALUES($1,$2,$3,$4,$5,$6,$7)`, id, input.Slug, input.DisplayDate, input.CoverAssetID, input.HomeCoverAssetID, input.DetailLayout, input.Featured)
 			return err
