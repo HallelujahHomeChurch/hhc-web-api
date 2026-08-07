@@ -26,3 +26,15 @@ func TestDatabasePoolConfiguration(t *testing.T) {
 		t.Fatalf("unexpected pool config: %#v", cfg)
 	}
 }
+
+func TestEngagementUsesDaprInvocationByDefault(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://example")
+	t.Setenv("ENGAGEMENT_API_BASE_URL", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.EngagementAPIBaseURL != "http://127.0.0.1:3500/v1.0/invoke/engagement-api/method" {
+		t.Fatalf("engagement base URL=%q", cfg.EngagementAPIBaseURL)
+	}
+}

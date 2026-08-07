@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,44 @@ import (
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/assetclient"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/bulletins"
 )
+
+type engagementProxyFake struct {
+	path  string
+	actor string
+}
+
+func (f *engagementProxyFake) Forward(_ context.Context, _ string, path string, _ io.Reader, actor string) (*http.Response, error) {
+	f.path, f.actor = path, actor
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"data":[]}`)),
+	}, nil
+}
+
+func TestCampaignProxyRequiresCMSScopeAndForwardsActor(t *testing.T) {
+	proxy := &engagementProxyFake{}
+	handler := NewWithContent(
+		bulletins.NewService(&apiRepository{}, time.Now), nil, nil, nil,
+		"api-gateway", "", true, proxy,
+	).Routes()
+
+	forbidden := httptest.NewRequest(http.MethodGet, "/api/admin/campaigns", nil)
+	trusted(forbidden, "assets:write")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, forbidden)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("forbidden status=%d", response.Code)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/api/admin/campaigns", nil)
+	trusted(request, "cms:read")
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || proxy.path != "/priv/campaigns" || proxy.actor != "user-1" {
+		t.Fatalf("status=%d path=%q actor=%q body=%s", response.Code, proxy.path, proxy.actor, response.Body.String())
+	}
+}
 
 func TestAdminRoutesRequireTrustedIdentityAndScope(t *testing.T) {
 	handler := testHandler(&apiRepository{})

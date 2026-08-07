@@ -5,6 +5,95 @@ info:
 servers:
   - url: https://www.alive.org.tw/api
 paths:
+  /admin/campaigns:
+    get:
+      operationId: listCampaigns
+      security: [{ bearerAuth: [] }]
+      x-required-scopes: ['cms:read']
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses: { '200': { description: Campaign page } }
+    post:
+      operationId: createCampaign
+      security: [{ bearerAuth: [] }]
+      x-required-scopes: ['cms:write']
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateCampaign' }
+      responses: { '201': { description: Campaign draft created } }
+  /admin/campaigns/{campaignId}:
+    parameters:
+      - { name: campaignId, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getCampaign
+      security: [{ bearerAuth: [] }]
+      x-required-scopes: ['cms:read']
+      responses: { '200': { description: Campaign detail } }
+    put:
+      operationId: updateCampaign
+      security: [{ bearerAuth: [] }]
+      x-required-scopes: ['cms:write']
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateCampaign' }
+      responses: { '200': { description: Campaign draft updated } }
+    delete:
+      operationId: deleteCampaign
+      security: [{ bearerAuth: [] }]
+      x-required-scopes: ['cms:write']
+      responses: { '204': { description: Campaign draft deleted } }
+  /admin/campaigns/{campaignId}/send:
+    post:
+      operationId: sendCampaign
+      security: [{ bearerAuth: [] }]
+      x-required-scopes: ['cms:write']
+      parameters:
+        - { name: campaignId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses: { '200': { description: Campaign audience snapshotted and queued } }
+  /admin/campaign-schedules:
+    get:
+      operationId: listCampaignSchedules
+      security: [{ bearerAuth: [] }]
+      x-required-scopes: ['cms:read']
+      responses: { '200': { description: Campaign schedules } }
+    post:
+      operationId: createCampaignSchedule
+      security: [{ bearerAuth: [] }]
+      x-required-scopes: ['cms:write']
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateCampaignSchedule' }
+      responses: { '201': { description: Campaign schedule created } }
+  /admin/campaign-schedules/{scheduleId}:
+    parameters:
+      - { name: scheduleId, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getCampaignSchedule
+      security: [{ bearerAuth: [] }]
+      x-required-scopes: ['cms:read']
+      responses: { '200': { description: Campaign schedule detail } }
+    put:
+      operationId: updateCampaignSchedule
+      security: [{ bearerAuth: [] }]
+      x-required-scopes: ['cms:write']
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateCampaignSchedule' }
+      responses: { '200': { description: Campaign schedule updated } }
+    delete:
+      operationId: deleteCampaignSchedule
+      security: [{ bearerAuth: [] }]
+      x-required-scopes: ['cms:write']
+      responses: { '204': { description: Campaign schedule deleted } }
   /bulletins:
     get:
       operationId: listPublicBulletins
@@ -538,6 +627,55 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/PublicContentItemEnvelope' }
   schemas:
+    CampaignTranslation:
+      type: object
+      additionalProperties: false
+      required: [subject, body]
+      properties:
+        subject: { type: string, maxLength: 200 }
+        body: { type: string, maxLength: 20000 }
+    CreateCampaign:
+      type: object
+      additionalProperties: false
+      required: [name, audienceType, translations]
+      properties:
+        name: { type: string, maxLength: 120 }
+        audienceType: { type: string, enum: [newsletter] }
+        translations:
+          type: object
+          minProperties: 1
+          additionalProperties: { $ref: '#/components/schemas/CampaignTranslation' }
+    UpdateCampaign:
+      type: object
+      additionalProperties: false
+      required: [name, translations]
+      properties:
+        name: { type: string, maxLength: 120 }
+        translations:
+          type: object
+          minProperties: 1
+          additionalProperties: { $ref: '#/components/schemas/CampaignTranslation' }
+    CreateCampaignSchedule:
+      type: object
+      additionalProperties: false
+      required: [name, scheduleType, translations]
+      properties:
+        name: { type: string, maxLength: 120 }
+        scheduleType: { type: string, enum: [once, cron] }
+        runAt: { type: [string, 'null'], format: date-time }
+        cronExpression: { type: string }
+        timezone: { type: string, default: Asia/Taipei }
+        translations:
+          type: object
+          minProperties: 1
+          additionalProperties: { $ref: '#/components/schemas/CampaignTranslation' }
+    UpdateCampaignSchedule:
+      allOf:
+        - $ref: '#/components/schemas/CreateCampaignSchedule'
+        - type: object
+          required: [enabled]
+          properties:
+            enabled: { type: boolean }
     Locale:
       type: string
       enum: [zh-Hant, zh-Hans, en]

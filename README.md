@@ -34,6 +34,7 @@ go run ./cmd/server
 - `POST /api/admin/content/{module}/{contentId}/{publish|unpublish}`
 - `GET /api/admin/content/{module}/{contentId}/revisions`
 - `POST /api/admin/content/{module}/{contentId}/revisions/{revision}/restore`
+- `/api/admin/campaigns*` and `/api/admin/campaign-schedules*` proxy authorized CMS operators to the private engagement service.
 
 Admin writes require `If-Match` after creation. Publish is asynchronous and returns `202`; public visibility changes only after the asset grant workflow completes. News edits keep the previous published projection live until the replacement asset grant is ready.
 
