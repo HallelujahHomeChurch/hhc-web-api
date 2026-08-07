@@ -9,20 +9,21 @@ import (
 )
 
 type Config struct {
-	Port                string
-	DatabaseURL         string
-	DBMaxOpenConns      int
-	DBMaxIdleConns      int
-	DBConnMaxLifetime   time.Duration
-	Environment         string
-	ShutdownTimeout     time.Duration
-	AssetAPIBaseURL     string
-	InternalCallerAppID string
-	AdminAllowedCaller  string
-	DaprAPIToken        string
-	AllowDevCaller      bool
-	PublicBaseURL       string
-	OutboxMaxAttempts   int
+	Port                 string
+	DatabaseURL          string
+	DBMaxOpenConns       int
+	DBMaxIdleConns       int
+	DBConnMaxLifetime    time.Duration
+	Environment          string
+	ShutdownTimeout      time.Duration
+	AssetAPIBaseURL      string
+	EngagementAPIBaseURL string
+	InternalCallerAppID  string
+	AdminAllowedCaller   string
+	DaprAPIToken         string
+	AllowDevCaller       bool
+	PublicBaseURL        string
+	OutboxMaxAttempts    int
 }
 
 func Load() (Config, error) {
@@ -30,7 +31,8 @@ func Load() (Config, error) {
 		Port: value("PORT", "8082"), DatabaseURL: strings.TrimSpace(os.Getenv("DATABASE_URL")),
 		DBMaxOpenConns: 10, DBMaxIdleConns: 5, DBConnMaxLifetime: 30 * time.Minute,
 		Environment: value("ENVIRONMENT", "development"), ShutdownTimeout: 10 * time.Second, AssetAPIBaseURL: value("ASSET_API_BASE_URL", "http://127.0.0.1:8083"),
-		InternalCallerAppID: value("INTERNAL_CALLER_APP_ID", "hhc-web-api"), AdminAllowedCaller: value("ADMIN_ALLOWED_CALLER_APP_ID", "api-gateway"),
+		EngagementAPIBaseURL: value("ENGAGEMENT_API_BASE_URL", "http://127.0.0.1:3500/v1.0/invoke/engagement-api/method"),
+		InternalCallerAppID:  value("INTERNAL_CALLER_APP_ID", "hhc-web-api"), AdminAllowedCaller: value("ADMIN_ALLOWED_CALLER_APP_ID", "api-gateway"),
 		DaprAPIToken:      strings.TrimSpace(os.Getenv("APP_API_TOKEN")),
 		AllowDevCaller:    strings.EqualFold(strings.TrimSpace(os.Getenv("ALLOW_DEV_CALLER_HEADER")), "true"),
 		PublicBaseURL:     value("PUBLIC_BASE_URL", "http://127.0.0.1:8082/assets"),

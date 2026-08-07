@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -27,11 +28,16 @@ type assetUploads interface {
 	RequeueScan(context.Context, string) error
 }
 
+type engagementProxy interface {
+	Forward(context.Context, string, string, io.Reader, string) (*http.Response, error)
+}
+
 type Handler struct {
 	service        *bulletins.Service
 	content        *content.Service
 	db             *sql.DB
 	uploads        assetUploads
+	engagement     engagementProxy
 	trustedCaller  string
 	daprAPIToken   string
 	allowDevCaller bool
@@ -40,8 +46,12 @@ type Handler struct {
 func New(service *bulletins.Service, db *sql.DB, uploads assetUploads) *Handler {
 	return NewWithContent(service, nil, db, uploads, "api-gateway", "", false)
 }
-func NewWithContent(service *bulletins.Service, contentService *content.Service, db *sql.DB, uploads assetUploads, trustedCaller, daprAPIToken string, allowDevCaller bool) *Handler {
-	return &Handler{service: service, content: contentService, db: db, uploads: uploads, trustedCaller: trustedCaller, daprAPIToken: daprAPIToken, allowDevCaller: allowDevCaller}
+func NewWithContent(service *bulletins.Service, contentService *content.Service, db *sql.DB, uploads assetUploads, trustedCaller, daprAPIToken string, allowDevCaller bool, engagement ...engagementProxy) *Handler {
+	handler := &Handler{service: service, content: contentService, db: db, uploads: uploads, trustedCaller: trustedCaller, daprAPIToken: daprAPIToken, allowDevCaller: allowDevCaller}
+	if len(engagement) > 0 {
+		handler.engagement = engagement[0]
+	}
+	return handler
 }
 func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
@@ -74,8 +84,43 @@ func (h *Handler) Routes() http.Handler {
 	if h.content != nil {
 		h.contentRoutes(mux, admin)
 	}
+	if h.engagement != nil {
+		admin.HandleFunc("GET /api/admin/campaigns", requireScope("cms:read", h.forwardEngagement))
+		admin.HandleFunc("POST /api/admin/campaigns", requireScope("cms:write", h.forwardEngagement))
+		admin.HandleFunc("GET /api/admin/campaigns/{campaignID}", requireScope("cms:read", h.forwardEngagement))
+		admin.HandleFunc("PUT /api/admin/campaigns/{campaignID}", requireScope("cms:write", h.forwardEngagement))
+		admin.HandleFunc("DELETE /api/admin/campaigns/{campaignID}", requireScope("cms:write", h.forwardEngagement))
+		admin.HandleFunc("POST /api/admin/campaigns/{campaignID}/send", requireScope("cms:write", h.forwardEngagement))
+		admin.HandleFunc("GET /api/admin/campaign-schedules", requireScope("cms:read", h.forwardEngagement))
+		admin.HandleFunc("POST /api/admin/campaign-schedules", requireScope("cms:write", h.forwardEngagement))
+		admin.HandleFunc("GET /api/admin/campaign-schedules/{scheduleID}", requireScope("cms:read", h.forwardEngagement))
+		admin.HandleFunc("PUT /api/admin/campaign-schedules/{scheduleID}", requireScope("cms:write", h.forwardEngagement))
+		admin.HandleFunc("DELETE /api/admin/campaign-schedules/{scheduleID}", requireScope("cms:write", h.forwardEngagement))
+	}
 	mux.Handle("/api/admin/", requireTrusted(h.trustedCaller, h.daprAPIToken, h.allowDevCaller, admin))
 	return requestID(accessLog(mux))
+}
+
+func (h *Handler) forwardEngagement(w http.ResponseWriter, r *http.Request) {
+	path := "/priv" + strings.TrimPrefix(r.URL.Path, "/api/admin")
+	if r.URL.RawQuery != "" {
+		path += "?" + r.URL.RawQuery
+	}
+	var body io.Reader
+	if r.Body != nil && r.Body != http.NoBody {
+		body = http.MaxBytesReader(w, r.Body, 1<<20)
+	}
+	response, err := h.engagement.Forward(r.Context(), r.Method, path, body, actor(r))
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "engagement_service_unavailable", "Campaign service is unavailable.")
+		return
+	}
+	defer response.Body.Close()
+	if contentType := response.Header.Get("Content-Type"); contentType != "" {
+		w.Header().Set("Content-Type", contentType)
+	}
+	w.WriteHeader(response.StatusCode)
+	_, _ = io.Copy(w, io.LimitReader(response.Body, 2<<20))
 }
 
 type createUploadInput struct {
