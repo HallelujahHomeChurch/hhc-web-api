@@ -54,6 +54,28 @@ func TestCampaignProxyRequiresCMSScopeAndForwardsActor(t *testing.T) {
 	}
 }
 
+func TestCampaignDeliveryProxyRoutes(t *testing.T) {
+	proxy := &engagementProxyFake{}
+	handler := NewWithContent(bulletins.NewService(&apiRepository{}, time.Now), nil, nil, nil,
+		"api-gateway", "", true, proxy).Routes()
+
+	request := httptest.NewRequest(http.MethodGet, "/api/admin/campaigns/campaign-1/deliveries?page=1", nil)
+	trusted(request, "cms:read")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || proxy.path != "/priv/campaigns/campaign-1/deliveries?page=1" {
+		t.Fatalf("status=%d path=%q", response.Code, proxy.path)
+	}
+
+	request = httptest.NewRequest(http.MethodPost, "/api/admin/campaigns/campaign-1/retry-failed", nil)
+	trusted(request, "cms:write")
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || proxy.path != "/priv/campaigns/campaign-1/retry-failed" {
+		t.Fatalf("status=%d path=%q", response.Code, proxy.path)
+	}
+}
+
 func TestAdminRoutesRequireTrustedIdentityAndScope(t *testing.T) {
 	handler := testHandler(&apiRepository{})
 	request := httptest.NewRequest(http.MethodGet, "/api/admin/bulletins", nil)
