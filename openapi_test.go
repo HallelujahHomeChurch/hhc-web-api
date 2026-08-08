@@ -34,3 +34,22 @@ func TestOpenAPIDocumentsPublicBulletinByNumber(t *testing.T) {
 		}
 	}
 }
+
+func TestOpenAPIDocumentsCampaignSearchAndClickBehavior(t *testing.T) {
+	contents, err := os.ReadFile("openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := string(contents)
+	for _, expected := range []string{
+		"name: q",
+		"maxLength: 120",
+		"clickBehavior:",
+		"enum: [home, url, dismiss]",
+		"actionUrl:",
+	} {
+		if !strings.Contains(document, expected) {
+			t.Fatalf("OpenAPI document missing %q", expected)
+		}
+	}
+}

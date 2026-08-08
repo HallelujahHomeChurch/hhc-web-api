@@ -13,6 +13,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/SearchQuery'
       responses: { '200': { description: Campaign page } }
     post:
       operationId: createCampaign
@@ -600,6 +601,11 @@ components:
     Locale: { name: locale, in: query, schema: { $ref: '#/components/schemas/Locale' } }
     Page: { name: page, in: query, schema: { type: integer, minimum: 1, maximum: 10000, default: 1 } }
     PageSize: { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+    SearchQuery:
+      name: q
+      in: query
+      description: Searches the internal campaign name and localized subject or body.
+      schema: { type: string, maxLength: 120 }
     IssueID: { name: issueId, in: path, required: true, schema: { type: string, format: uuid } }
     IdempotencyKey: { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 1 } }
     IfMatch: { name: If-Match, in: header, required: true, schema: { type: string, pattern: '^"[1-9][0-9]*"$' } }
@@ -662,13 +668,28 @@ components:
       properties:
         subject: { type: string, maxLength: 200 }
         body: { type: string, maxLength: 20000 }
+        clickBehavior:
+          type: string
+          enum: [home, url, dismiss]
+          description: Web push click behavior. URL requires actionUrl; home and dismiss omit it.
+        actionUrl:
+          type: string
+          maxLength: 2048
+          pattern: '^/(?!/).*$'
     CreateCampaign:
       type: object
       additionalProperties: false
-      required: [name, audienceType, translations]
+      required: [name, channel, audienceType, translations]
       properties:
         name: { type: string, maxLength: 120 }
-        audienceType: { type: string, enum: [newsletter] }
+        channel: { type: string, enum: [email, web_push] }
+        audienceType: { type: string, enum: [newsletter, all, role, users] }
+        roleId: { type: string, format: uuid }
+        userIds:
+          type: array
+          maxItems: 500
+          uniqueItems: true
+          items: { type: string, format: uuid }
         translations:
           type: object
           minProperties: 1
@@ -676,9 +697,17 @@ components:
     UpdateCampaign:
       type: object
       additionalProperties: false
-      required: [name, translations]
+      required: [name, channel, audienceType, translations]
       properties:
         name: { type: string, maxLength: 120 }
+        channel: { type: string, enum: [email, web_push] }
+        audienceType: { type: string, enum: [newsletter, all, role, users] }
+        roleId: { type: string, format: uuid }
+        userIds:
+          type: array
+          maxItems: 500
+          uniqueItems: true
+          items: { type: string, format: uuid }
         translations:
           type: object
           minProperties: 1
@@ -686,9 +715,17 @@ components:
     CreateCampaignSchedule:
       type: object
       additionalProperties: false
-      required: [name, scheduleType, translations]
+      required: [name, channel, audienceType, scheduleType, translations]
       properties:
         name: { type: string, maxLength: 120 }
+        channel: { type: string, enum: [email, web_push] }
+        audienceType: { type: string, enum: [newsletter, all, role, users] }
+        roleId: { type: string, format: uuid }
+        userIds:
+          type: array
+          maxItems: 500
+          uniqueItems: true
+          items: { type: string, format: uuid }
         scheduleType: { type: string, enum: [once, cron] }
         runAt: { type: [string, 'null'], format: date-time }
         cronExpression: { type: string }
