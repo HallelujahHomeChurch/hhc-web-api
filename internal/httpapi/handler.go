@@ -91,6 +91,8 @@ func (h *Handler) Routes() http.Handler {
 		admin.HandleFunc("PUT /api/admin/campaigns/{campaignID}", requireScope("cms:write", h.forwardEngagement))
 		admin.HandleFunc("DELETE /api/admin/campaigns/{campaignID}", requireScope("cms:write", h.forwardEngagement))
 		admin.HandleFunc("POST /api/admin/campaigns/{campaignID}/send", requireScope("cms:write", h.forwardEngagement))
+		admin.HandleFunc("GET /api/admin/campaigns/{campaignID}/deliveries", requireScope("cms:read", h.forwardEngagement))
+		admin.HandleFunc("POST /api/admin/campaigns/{campaignID}/retry-failed", requireScope("cms:write", h.forwardEngagement))
 		admin.HandleFunc("GET /api/admin/campaign-schedules", requireScope("cms:read", h.forwardEngagement))
 		admin.HandleFunc("POST /api/admin/campaign-schedules", requireScope("cms:write", h.forwardEngagement))
 		admin.HandleFunc("GET /api/admin/campaign-schedules/{scheduleID}", requireScope("cms:read", h.forwardEngagement))

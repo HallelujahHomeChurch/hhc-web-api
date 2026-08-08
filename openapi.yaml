@@ -55,6 +55,24 @@ paths:
       parameters:
         - { name: campaignId, in: path, required: true, schema: { type: string, format: uuid } }
       responses: { '200': { description: Campaign audience snapshotted and queued } }
+  /admin/campaigns/{campaignId}/deliveries:
+    get:
+      operationId: listCampaignDeliveries
+      security: [{ bearerAuth: [] }]
+      x-required-scopes: ['cms:read']
+      parameters:
+        - { name: campaignId, in: path, required: true, schema: { type: string, format: uuid } }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses: { '200': { description: Campaign delivery results and summary } }
+  /admin/campaigns/{campaignId}/retry-failed:
+    post:
+      operationId: retryFailedCampaignDeliveries
+      security: [{ bearerAuth: [] }]
+      x-required-scopes: ['cms:write']
+      parameters:
+        - { name: campaignId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses: { '200': { description: Failed deliveries queued for retry } }
   /admin/campaign-schedules:
     get:
       operationId: listCampaignSchedules
