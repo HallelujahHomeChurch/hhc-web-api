@@ -45,11 +45,11 @@ func TestCampaignProxyRequiresCMSScopeAndForwardsActor(t *testing.T) {
 		t.Fatalf("forbidden status=%d", response.Code)
 	}
 
-	request := httptest.NewRequest(http.MethodGet, "/api/admin/campaigns", nil)
+	request := httptest.NewRequest(http.MethodGet, "/api/admin/campaigns?q=August&page=2", nil)
 	trusted(request, "cms:read")
 	response = httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
-	if response.Code != http.StatusOK || proxy.path != "/priv/campaigns" || proxy.actor != "user-1" {
+	if response.Code != http.StatusOK || proxy.path != "/priv/campaigns?q=August&page=2" || proxy.actor != "user-1" {
 		t.Fatalf("status=%d path=%q actor=%q body=%s", response.Code, proxy.path, proxy.actor, response.Body.String())
 	}
 }
