@@ -128,5 +128,6 @@ type Repository interface {
 	RestoreIssueRevision(context.Context, string, int64, int64, string, time.Time) (Issue, error)
 	GetPublicLatest(context.Context, string) (PublicBulletin, error)
 	GetPublicByDate(context.Context, string, string) (PublicBulletin, error)
+	GetPublicByNumber(context.Context, int, string) (PublicBulletin, error)
 	ListPublic(context.Context, int, int) (PublicPage, error)
 }

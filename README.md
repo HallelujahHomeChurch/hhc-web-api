@@ -20,6 +20,7 @@ go run ./cmd/server
 - `GET /ready`
 - `GET /api/bulletins`
 - `GET /api/bulletins/latest`
+- `GET /api/bulletins/by-number/{issueNumber}`
 - `GET /api/bulletins/{issueDate}`
 - `GET /api/admin/bulletins`
 - `GET /api/admin/bulletins/{issueId}`

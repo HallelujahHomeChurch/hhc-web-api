@@ -309,6 +309,73 @@ func TestPublicLatestUsesPublishedProjection(t *testing.T) {
 	}
 }
 
+func TestPublicByNumberUsesCanonicalIssueNumberAndLocale(t *testing.T) {
+	number := 1732
+	repo := &apiRepository{public: bulletins.PublicBulletin{IssueNumber: &number, IssueDate: "2026-08-02", Locale: "zh-Hant", Title: "週報", DownloadURL: "/api/assets/public/asset-1", Version: 3}}
+	handler := testHandler(repo)
+
+	for _, test := range []struct {
+		path   string
+		locale string
+	}{
+		{path: "/api/bulletins/by-number/1732", locale: "zh-Hant"},
+		{path: "/api/bulletins/by-number/1732?locale=en", locale: "en"},
+	} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, test.path, nil))
+		if response.Code != http.StatusOK {
+			t.Fatalf("path=%q status=%d body=%s", test.path, response.Code, response.Body.String())
+		}
+		if response.Header().Get("Cache-Control") != "public, max-age=60, stale-while-revalidate=300" || response.Header().Get("ETag") != `"bulletin-3"` {
+			t.Fatalf("path=%q headers=%v", test.path, response.Header())
+		}
+		if repo.publicLocale != test.locale {
+			t.Fatalf("path=%q locale=%q", test.path, repo.publicLocale)
+		}
+	}
+	if repo.publicIssueNumber != 1732 {
+		t.Fatalf("issueNumber=%d locale=%q", repo.publicIssueNumber, repo.publicLocale)
+	}
+}
+
+func TestPublicByNumberRejectsNonCanonicalValues(t *testing.T) {
+	handler := testHandler(&apiRepository{})
+	for _, value := range []string{"0", "-1", "+1", "01", "2147483648", "1.0", "abc", "1%20"} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/bulletins/by-number/"+value, nil))
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("value=%q status=%d body=%s", value, response.Code, response.Body.String())
+		}
+		if !strings.Contains(response.Body.String(), `"code":"invalid_request"`) {
+			t.Fatalf("value=%q body=%s", value, response.Body.String())
+		}
+		if response.Header().Get("Cache-Control") != "private, no-store" {
+			t.Fatalf("value=%q Cache-Control=%q", value, response.Header().Get("Cache-Control"))
+		}
+	}
+
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/bulletins/by-number/1?locale=fr", nil))
+	if response.Code != http.StatusBadRequest || response.Header().Get("Cache-Control") != "private, no-store" {
+		t.Fatalf("invalid locale status=%d headers=%v", response.Code, response.Header())
+	}
+}
+
+func TestPublicByNumberReturnsNotFoundWithoutFallingThroughToDateRoute(t *testing.T) {
+	repo := &apiRepository{publicError: bulletins.ErrNotFound}
+	response := httptest.NewRecorder()
+	testHandler(repo).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/bulletins/by-number/1732?locale=en", nil))
+	if response.Code != http.StatusNotFound || response.Header().Get("Cache-Control") != "private, no-store" {
+		t.Fatalf("status=%d headers=%v body=%s", response.Code, response.Header(), response.Body.String())
+	}
+	if !strings.Contains(response.Body.String(), `"code":"not_found"`) {
+		t.Fatalf("body=%s", response.Body.String())
+	}
+	if repo.publicIssueNumber != 1732 || repo.publicLocale != "en" {
+		t.Fatalf("route fell through: issueNumber=%d locale=%q", repo.publicIssueNumber, repo.publicLocale)
+	}
+}
+
 func TestBulletinUploadSessionRequiresBothCMSAndAssetScopes(t *testing.T) {
 	repo := &apiRepository{issue: bulletinIssue()}
 	uploads := &apiUploads{}
@@ -452,6 +519,9 @@ type apiRepository struct {
 	restoreError       error
 	deleted            bool
 	deletedLocale      string
+	publicIssueNumber  int
+	publicLocale       string
+	publicError        error
 }
 
 func (r *apiRepository) CreateIssue(_ context.Context, number int, date, actor, key string, now time.Time) (bulletins.Issue, error) {
@@ -555,6 +625,10 @@ func (r *apiRepository) GetPublicLatest(context.Context, string) (bulletins.Publ
 }
 func (r *apiRepository) GetPublicByDate(context.Context, string, string) (bulletins.PublicBulletin, error) {
 	return r.public, nil
+}
+func (r *apiRepository) GetPublicByNumber(_ context.Context, issueNumber int, locale string) (bulletins.PublicBulletin, error) {
+	r.publicIssueNumber, r.publicLocale = issueNumber, locale
+	return r.public, r.publicError
 }
 func (r *apiRepository) ListPublic(context.Context, int, int) (bulletins.PublicPage, error) {
 	return bulletins.PublicPage{Items: []bulletins.PublicIssue{{IssueDate: r.public.IssueDate, Versions: []bulletins.PublicBulletin{r.public}}}, Page: 1, PageSize: 20, Total: 1}, nil

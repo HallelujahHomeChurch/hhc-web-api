@@ -675,9 +675,24 @@ func (r *Repository) GetPublicLatest(ctx context.Context, locale string) (bullet
 func (r *Repository) GetPublicByDate(ctx context.Context, date, locale string) (bulletins.PublicBulletin, error) {
 	return r.publicProjection(ctx, fmt.Sprintf("bulletins:issue:%s:%s", locale, date))
 }
+func (r *Repository) GetPublicByNumber(ctx context.Context, issueNumber int, locale string) (bulletins.PublicBulletin, error) {
+	var payload []byte
+	err := r.db.QueryRowContext(ctx, `
+		SELECT p.payload_json
+		FROM hhc_web.bulletin_issue i
+		JOIN hhc_web.public_projection p
+		  ON p.resource_type='bulletin_issue'
+		 AND p.resource_id=i.id
+		 AND p.locale=$2
+		WHERE i.issue_number=$1`, issueNumber, locale).Scan(&payload)
+	return decodePublicBulletin(payload, err)
+}
 func (r *Repository) publicProjection(ctx context.Context, key string) (bulletins.PublicBulletin, error) {
 	var payload []byte
 	err := r.db.QueryRowContext(ctx, `SELECT payload_json FROM hhc_web.public_projection WHERE projection_key=$1`, key).Scan(&payload)
+	return decodePublicBulletin(payload, err)
+}
+func decodePublicBulletin(payload []byte, err error) (bulletins.PublicBulletin, error) {
 	if errors.Is(err, sql.ErrNoRows) {
 		return bulletins.PublicBulletin{}, bulletins.ErrNotFound
 	}

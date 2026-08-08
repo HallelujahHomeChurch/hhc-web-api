@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"regexp"
 	"testing"
 	"time"
@@ -10,6 +11,59 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/bulletins"
 )
+
+func TestGetPublicByNumberUsesExactProjectionJoin(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	payload := `{"issueNumber":1732,"issueDate":"2026-08-02","locale":"zh-Hant","title":"週報","subtitle":"本週消息","downloadUrl":"/api/assets/public/asset-1","downloadFileName":"1732-週報.pdf","publishedAt":"2026-08-01T12:00:00Z","version":3}`
+	mock.ExpectQuery(`SELECT p\.payload_json\s+FROM hhc_web\.bulletin_issue i\s+JOIN hhc_web\.public_projection p\s+ON p\.resource_type='bulletin_issue'\s+AND p\.resource_id=i\.id\s+AND p\.locale=\$2\s+WHERE i\.issue_number=\$1`).
+		WithArgs(1732, "zh-Hant").
+		WillReturnRows(sqlmock.NewRows([]string{"payload_json"}).AddRow([]byte(payload)))
+
+	value, err := New(db).GetPublicByNumber(context.Background(), 1732, "zh-Hant")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value.IssueNumber == nil || *value.IssueNumber != 1732 || value.Locale != "zh-Hant" || value.Subtitle != "本週消息" {
+		t.Fatalf("value=%#v", value)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestGetPublicByNumberMapsMissingAndMalformedProjection(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		rows *sqlmock.Rows
+	}{
+		{name: "missing", rows: sqlmock.NewRows([]string{"payload_json"})},
+		{name: "malformed", rows: sqlmock.NewRows([]string{"payload_json"}).AddRow([]byte(`{"issueNumber":`))},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			db, mock, err := sqlmock.New()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			mock.ExpectQuery("FROM hhc_web.bulletin_issue i").WithArgs(1732, "en").WillReturnRows(test.rows)
+			_, err = New(db).GetPublicByNumber(context.Background(), 1732, "en")
+			if test.name == "missing" && !errors.Is(err, bulletins.ErrNotFound) {
+				t.Fatalf("error=%v", err)
+			}
+			var syntaxError *json.SyntaxError
+			if test.name == "malformed" && !errors.As(err, &syntaxError) {
+				t.Fatalf("error=%v", err)
+			}
+			if err := mock.ExpectationsWereMet(); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
 
 func TestListIssuesLoadsPageVersionsWithOneBatchQuery(t *testing.T) {
 	db, mock, err := sqlmock.New()

@@ -105,6 +105,12 @@ func (s *Service) GetPublicByDate(ctx context.Context, date, locale string) (Pub
 	}
 	return s.repository.GetPublicByDate(ctx, date, locale)
 }
+func (s *Service) GetPublicByNumber(ctx context.Context, issueNumber int, locale string) (PublicBulletin, error) {
+	if issueNumber < 1 || issueNumber > 2147483647 || !validLocale(locale) {
+		return PublicBulletin{}, ErrInvalid
+	}
+	return s.repository.GetPublicByNumber(ctx, issueNumber, locale)
+}
 func (s *Service) ListPublic(ctx context.Context, page, pageSize int) (PublicPage, error) {
 	page, pageSize = normalizePage(page, pageSize)
 	return s.repository.ListPublic(ctx, page, pageSize)
