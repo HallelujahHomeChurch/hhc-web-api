@@ -131,6 +131,16 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/PublicBulletin' }
         '404': { $ref: '#/components/responses/Error' }
+  /bulletins/by-number/{issueNumber}:
+    get:
+      operationId: getPublicBulletinByNumber
+      parameters:
+        - { name: issueNumber, in: path, required: true, schema: { type: integer, format: int32, minimum: 1, maximum: 2147483647 } }
+        - $ref: '#/components/parameters/Locale'
+      responses:
+        '200': { $ref: '#/components/responses/PublicBulletin' }
+        '400': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
   /bulletins/{issueDate}:
     get:
       operationId: getPublicBulletinByDate

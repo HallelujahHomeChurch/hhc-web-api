@@ -25,6 +25,26 @@ func TestServiceNormalizesPagination(t *testing.T) {
 	}
 }
 
+func TestServiceGetPublicByNumberValidatesRangeAndLocale(t *testing.T) {
+	repo := &repositoryStub{}
+	service := NewService(repo, time.Now)
+
+	for _, issueNumber := range []int{0, -1, 2147483648} {
+		if _, err := service.GetPublicByNumber(context.Background(), issueNumber, "zh-Hant"); err != ErrInvalid {
+			t.Fatalf("issueNumber=%d error=%v", issueNumber, err)
+		}
+	}
+	if _, err := service.GetPublicByNumber(context.Background(), 1, "fr"); err != ErrInvalid {
+		t.Fatalf("invalid locale error=%v", err)
+	}
+	if _, err := service.GetPublicByNumber(context.Background(), 2147483647, "en"); err != nil {
+		t.Fatal(err)
+	}
+	if repo.issueNumber != 2147483647 || repo.locale != "en" {
+		t.Fatalf("issueNumber=%d locale=%q", repo.issueNumber, repo.locale)
+	}
+}
+
 func TestServiceUpdatesIssueMetadata(t *testing.T) {
 	repo := &repositoryStub{}
 	service := NewService(repo, func() time.Time { return time.Unix(123, 0) })
@@ -155,6 +175,10 @@ func (r *repositoryStub) GetPublicLatest(context.Context, string) (PublicBulleti
 	return PublicBulletin{}, nil
 }
 func (r *repositoryStub) GetPublicByDate(context.Context, string, string) (PublicBulletin, error) {
+	return PublicBulletin{}, nil
+}
+func (r *repositoryStub) GetPublicByNumber(_ context.Context, issueNumber int, locale string) (PublicBulletin, error) {
+	r.issueNumber, r.locale = issueNumber, locale
 	return PublicBulletin{}, nil
 }
 func (r *repositoryStub) ListPublic(context.Context, int, int) (PublicPage, error) {

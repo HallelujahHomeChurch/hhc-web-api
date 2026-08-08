@@ -99,6 +99,13 @@ func TestRepositoryPublishWaitsForAssetWorkflow(t *testing.T) {
 	if public.IssueDate != "2026-07-12" || public.DownloadURL != "https://www.alive.org.tw/api/assets/public/asset-1?filename=1700-%E9%80%B1%E5%A0%B1.pdf" || public.DownloadFileName != "1700-週報.pdf" {
 		t.Fatalf("public = %#v", public)
 	}
+	byNumber, err := repository.GetPublicByNumber(ctx, 1700, "zh-Hant")
+	if err != nil || byNumber.DownloadURL != public.DownloadURL {
+		t.Fatalf("public by number = %#v err=%v", byNumber, err)
+	}
+	if _, err := repository.GetPublicByNumber(ctx, 1700, "en"); !errors.Is(err, bulletins.ErrNotFound) {
+		t.Fatalf("missing locale by number error = %v", err)
+	}
 	published, err := repository.GetIssue(ctx, issue.ID)
 	if err != nil {
 		t.Fatal(err)

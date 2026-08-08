@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"regexp"
 	"testing"
 	"time"
@@ -10,6 +11,59 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/bulletins"
 )
+
+func TestGetPublicByNumberUsesExactProjectionJoin(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	payload := `{"issueNumber":1732,"issueDate":"2026-08-02","locale":"zh-Hant","title":"週報","subtitle":"本週消息","downloadUrl":"/api/assets/public/asset-1","downloadFileName":"1732-週報.pdf","publishedAt":"2026-08-01T12:00:00Z","version":3}`
+	mock.ExpectQuery(`SELECT p\.payload_json\s+FROM hhc_web\.bulletin_issue i\s+JOIN hhc_web\.public_projection p\s+ON p\.resource_type='bulletin_issue'\s+AND p\.resource_id=i\.id\s+AND p\.locale=\$2\s+WHERE i\.issue_number=\$1`).
+		WithArgs(1732, "zh-Hant").
+		WillReturnRows(sqlmock.NewRows([]string{"payload_json"}).AddRow([]byte(payload)))
+
+	value, err := New(db).GetPublicByNumber(context.Background(), 1732, "zh-Hant")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value.IssueNumber == nil || *value.IssueNumber != 1732 || value.Locale != "zh-Hant" || value.Subtitle != "本週消息" {
+		t.Fatalf("value=%#v", value)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestGetPublicByNumberMapsMissingAndMalformedProjection(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		rows *sqlmock.Rows
+	}{
+		{name: "missing", rows: sqlmock.NewRows([]string{"payload_json"})},
+		{name: "malformed", rows: sqlmock.NewRows([]string{"payload_json"}).AddRow([]byte(`{"issueNumber":`))},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			db, mock, err := sqlmock.New()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			mock.ExpectQuery("FROM hhc_web.bulletin_issue i").WithArgs(1732, "en").WillReturnRows(test.rows)
+			_, err = New(db).GetPublicByNumber(context.Background(), 1732, "en")
+			if test.name == "missing" && !errors.Is(err, bulletins.ErrNotFound) {
+				t.Fatalf("error=%v", err)
+			}
+			var syntaxError *json.SyntaxError
+			if test.name == "malformed" && !errors.As(err, &syntaxError) {
+				t.Fatalf("error=%v", err)
+			}
+			if err := mock.ExpectationsWereMet(); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
 
 func TestListIssuesLoadsPageVersionsWithOneBatchQuery(t *testing.T) {
 	db, mock, err := sqlmock.New()
@@ -69,7 +123,7 @@ func TestIssueRevisionsReturnsStoredSnapshots(t *testing.T) {
 	}
 }
 
-func TestRestoreIssueRevisionCreatesDraftWithoutChangingPublicProjection(t *testing.T) {
+func TestRestoreIssueRevisionAllowsMetadataChangeWithoutPublicProjection(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
 		t.Fatal(err)
@@ -83,10 +137,12 @@ func TestRestoreIssueRevisionCreatesDraftWithoutChangingPublicProjection(t *test
 	}}})
 
 	mock.ExpectBegin()
-	mock.ExpectQuery("SELECT version,status FROM hhc_web.bulletin_issue").WithArgs(issueID).
-		WillReturnRows(sqlmock.NewRows([]string{"version", "status"}).AddRow(3, "published"))
+	mock.ExpectQuery("SELECT version,status,issue_number,issue_date::text FROM hhc_web.bulletin_issue").WithArgs(issueID).
+		WillReturnRows(sqlmock.NewRows([]string{"version", "status", "issue_number", "issue_date"}).AddRow(3, "published", 1733, "2026-08-09"))
 	mock.ExpectQuery("SELECT snapshot_json FROM hhc_web.bulletin_revision").WithArgs(issueID, int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"snapshot_json"}).AddRow(snapshot))
+	mock.ExpectQuery("SELECT EXISTS.*public_projection.*resource_type='bulletin_issue'.*resource_id=\\$1").WithArgs(issueID).
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
 	mock.ExpectQuery("SELECT EXISTS").WithArgs(issueID, "zh-Hant").
 		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
 	mock.ExpectExec("DELETE FROM hhc_web.bulletin_version").WithArgs(issueID, "zh-Hant").
@@ -115,5 +171,46 @@ func TestRestoreIssueRevisionCreatesDraftWithoutChangingPublicProjection(t *test
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestRestoreIssueRevisionRejectsPublicMetadataChangeBeforeMutation(t *testing.T) {
+	issueID := "00000000-0000-0000-0000-000000000001"
+	now := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+
+	for _, test := range []struct {
+		name   string
+		number int
+		date   string
+	}{
+		{name: "issue number", number: 1731, date: "2026-08-02"},
+		{name: "issue date", number: 1732, date: "2026-07-26"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			db, mock, err := sqlmock.New()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			snapshot := bulletins.Issue{ID: issueID, IssueNumber: &test.number, IssueDate: test.date, Status: "published", Version: 2, Versions: []bulletins.Version{}}
+			payload, _ := json.Marshal(snapshot)
+
+			mock.ExpectBegin()
+			mock.ExpectQuery("SELECT version,status,issue_number,issue_date::text FROM hhc_web.bulletin_issue").WithArgs(issueID).
+				WillReturnRows(sqlmock.NewRows([]string{"version", "status", "issue_number", "issue_date"}).AddRow(3, "published", 1732, "2026-08-02"))
+			mock.ExpectQuery("SELECT snapshot_json FROM hhc_web.bulletin_revision").WithArgs(issueID, int64(2)).
+				WillReturnRows(sqlmock.NewRows([]string{"snapshot_json"}).AddRow(payload))
+			mock.ExpectQuery("SELECT EXISTS.*public_projection.*resource_type='bulletin_issue'.*resource_id=\\$1").WithArgs(issueID).
+				WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+			mock.ExpectRollback()
+
+			_, err = New(db).RestoreIssueRevision(context.Background(), issueID, 2, 3, "user-2", now)
+			if !errors.Is(err, bulletins.ErrConflict) {
+				t.Fatalf("error=%v", err)
+			}
+			if err := mock.ExpectationsWereMet(); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }

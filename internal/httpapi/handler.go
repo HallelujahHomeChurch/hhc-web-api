@@ -63,6 +63,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("GET /ready", h.ready)
 	mux.HandleFunc("GET /health/ready", h.ready)
 	mux.HandleFunc("GET /api/bulletins/latest", h.publicLatest)
+	mux.HandleFunc("GET /api/bulletins/by-number/{issueNumber}", h.publicByNumber)
 	mux.HandleFunc("GET /api/bulletins/{issueDate}", h.publicByDate)
 	mux.HandleFunc("GET /api/bulletins", h.publicList)
 	admin := http.NewServeMux()
@@ -310,6 +311,22 @@ func (h *Handler) publicLatest(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) publicByDate(w http.ResponseWriter, r *http.Request) {
 	value, err := h.service.GetPublicByDate(r.Context(), r.PathValue("issueDate"), locale(r))
 	if err != nil {
+		handleError(w, err)
+		return
+	}
+	publicResponse(w, value)
+}
+func (h *Handler) publicByNumber(w http.ResponseWriter, r *http.Request) {
+	raw := r.PathValue("issueNumber")
+	parsed, err := strconv.ParseInt(raw, 10, 32)
+	if err != nil || parsed < 1 || strconv.FormatInt(parsed, 10) != raw {
+		w.Header().Set("Cache-Control", "private, no-store")
+		handleError(w, bulletins.ErrInvalid)
+		return
+	}
+	value, err := h.service.GetPublicByNumber(r.Context(), int(parsed), locale(r))
+	if err != nil {
+		w.Header().Set("Cache-Control", "private, no-store")
 		handleError(w, err)
 		return
 	}
