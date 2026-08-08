@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"os"
 	"testing"
@@ -84,5 +85,38 @@ func TestBulletinRevisionRestoreKeepsPublicProjectionAndCreatesDraft(t *testing.
 	}
 	if len(revisions[1].Snapshot.Versions) != 2 || !retainedAsset {
 		t.Fatalf("revision asset retention=%#v", revisions[1])
+	}
+
+	changedNumber := 1700
+	conflicting := restored
+	conflicting.IssueNumber = &changedNumber
+	conflicting.IssueDate = "2026-07-26"
+	payload, _ := json.Marshal(conflicting)
+	if _, err := db.ExecContext(ctx, `INSERT INTO hhc_web.bulletin_revision(issue_id,version,snapshot_json,created_by,created_at) VALUES($1,99,$2,'user-1',$3)`, issue.ID, payload, now); err != nil {
+		t.Fatal(err)
+	}
+	beforeRevisionCount := len(revisions) + 1
+	if _, err := repository.RestoreIssueRevision(ctx, issue.ID, 99, restored.Version, "user-2", now.Add(3*time.Minute)); !errors.Is(err, bulletins.ErrConflict) {
+		t.Fatalf("public metadata-changing restore error=%v", err)
+	}
+	unchanged, err := repository.GetIssue(ctx, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unchanged.Version != restored.Version || unchanged.Status != restored.Status || unchanged.IssueNumber == nil || *unchanged.IssueNumber != 1732 || unchanged.IssueDate != "2026-08-02" {
+		t.Fatalf("issue changed after rejected restore=%#v", unchanged)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT payload_json::text FROM hhc_web.public_projection WHERE projection_key='revision-public'`).Scan(&projection); err != nil {
+		t.Fatal(err)
+	}
+	if projection != `{"sentinel": "unchanged"}` {
+		t.Fatalf("projection changed after rejected restore=%s", projection)
+	}
+	revisions, err = repository.IssueRevisions(ctx, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(revisions) != beforeRevisionCount {
+		t.Fatalf("revision audit changed after rejected restore: before=%d after=%d", beforeRevisionCount, len(revisions))
 	}
 }

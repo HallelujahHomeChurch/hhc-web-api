@@ -386,8 +386,9 @@ func (r *Repository) RestoreIssueRevision(ctx context.Context, id string, revisi
 	}
 	defer tx.Rollback()
 	var current int64
-	var status string
-	if err := tx.QueryRowContext(ctx, `SELECT version,status FROM hhc_web.bulletin_issue WHERE id=$1 FOR UPDATE`, id).Scan(&current, &status); errors.Is(err, sql.ErrNoRows) {
+	var status, currentDate string
+	var currentNumber sql.NullInt64
+	if err := tx.QueryRowContext(ctx, `SELECT version,status,issue_number,issue_date::text FROM hhc_web.bulletin_issue WHERE id=$1 FOR UPDATE`, id).Scan(&current, &status, &currentNumber, &currentDate); errors.Is(err, sql.ErrNoRows) {
 		return bulletins.Issue{}, bulletins.ErrNotFound
 	} else if err != nil {
 		return bulletins.Issue{}, err
@@ -410,6 +411,19 @@ func (r *Repository) RestoreIssueRevision(ctx context.Context, id string, revisi
 	}
 	if snapshot.ID != id || !validStoredIssueDate(snapshot.IssueDate) {
 		return bulletins.Issue{}, bulletins.ErrConflict
+	}
+	metadataChanged := currentDate != snapshot.IssueDate || currentNumber.Valid != (snapshot.IssueNumber != nil)
+	if currentNumber.Valid && snapshot.IssueNumber != nil {
+		metadataChanged = metadataChanged || currentNumber.Int64 != int64(*snapshot.IssueNumber)
+	}
+	if metadataChanged {
+		var hasPublicProjection bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM hhc_web.public_projection WHERE resource_type='bulletin_issue' AND resource_id=$1)`, id).Scan(&hasPublicProjection); err != nil {
+			return bulletins.Issue{}, err
+		}
+		if hasPublicProjection {
+			return bulletins.Issue{}, bulletins.ErrConflict
+		}
 	}
 	locales := make([]string, len(snapshot.Versions))
 	args := []any{id}
