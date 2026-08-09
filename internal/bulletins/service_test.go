@@ -25,6 +25,18 @@ func TestServiceNormalizesPagination(t *testing.T) {
 	}
 }
 
+func TestServiceForwardsPublishNotificationIntent(t *testing.T) {
+	repo := &repositoryStub{}
+	service := NewService(repo, func() time.Time { return time.Unix(123, 0) })
+
+	if _, err := service.Publish(context.Background(), "issue-1", "zh-Hant", 2, true, "user-1"); err != nil {
+		t.Fatal(err)
+	}
+	if !repo.notifySubscribers {
+		t.Fatal("notification intent was not forwarded")
+	}
+}
+
 func TestServiceGetPublicByNumberValidatesRangeAndLocale(t *testing.T) {
 	repo := &repositoryStub{}
 	service := NewService(repo, time.Now)
@@ -117,17 +129,18 @@ func TestServiceListsAndRestoresIssueRevision(t *testing.T) {
 }
 
 type repositoryStub struct {
-	page, pageSize int
-	expected       int64
-	actor          string
-	deletedID      string
-	revision       int64
-	locale         string
-	title          string
-	deletedLocale  string
-	issueNumber    int
-	issueDate      string
-	now            time.Time
+	page, pageSize    int
+	expected          int64
+	actor             string
+	deletedID         string
+	revision          int64
+	locale            string
+	title             string
+	deletedLocale     string
+	issueNumber       int
+	issueDate         string
+	notifySubscribers bool
+	now               time.Time
 }
 
 func (r *repositoryStub) CreateIssue(context.Context, int, string, string, string, time.Time) (Issue, error) {
@@ -154,7 +167,8 @@ func (r *repositoryStub) DeleteVersion(_ context.Context, _ string, locale strin
 	r.deletedLocale = locale
 	return Issue{}, nil
 }
-func (r *repositoryStub) StartPublish(context.Context, string, string, int64, string, time.Time) (Workflow, error) {
+func (r *repositoryStub) StartPublish(_ context.Context, _ string, _ string, _ int64, notifySubscribers bool, _ string, _ time.Time) (Workflow, error) {
+	r.notifySubscribers = notifySubscribers
 	return Workflow{}, nil
 }
 func (r *repositoryStub) Unpublish(context.Context, string, string, int64, string, time.Time) (Issue, error) {

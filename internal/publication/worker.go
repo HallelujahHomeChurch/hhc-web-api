@@ -10,16 +10,21 @@ import (
 )
 
 type Worker struct {
-	repository  Repository
-	assets      AssetClient
-	maxAttempts int
-	now         func() time.Time
+	repository    Repository
+	assets        AssetClient
+	notifications NotificationClient
+	maxAttempts   int
+	now           func() time.Time
 }
 
 const assetReadinessDeadline = 30 * time.Minute
 
-func NewWorker(repository Repository, assets AssetClient, maxAttempts int) *Worker {
-	return &Worker{repository: repository, assets: assets, maxAttempts: maxAttempts, now: time.Now}
+func NewWorker(repository Repository, assets AssetClient, maxAttempts int, notifications ...NotificationClient) *Worker {
+	worker := &Worker{repository: repository, assets: assets, maxAttempts: maxAttempts, now: time.Now}
+	if len(notifications) > 0 {
+		worker.notifications = notifications[0]
+	}
+	return worker
 }
 
 func (w *Worker) Run(ctx context.Context) error {
@@ -63,6 +68,8 @@ func (w *Worker) processNext(ctx context.Context) (bool, error) {
 		err = w.unpublishNews(ctx, event, now)
 	case "asset.grant.revoke":
 		err = w.revokeGrant(ctx, event, now)
+	case "bulletin.notification.queue":
+		err = w.notifyBulletin(ctx, event, now)
 	default:
 		err = terminalError{fmt.Errorf("unsupported outbox event %s", event.EventType)}
 	}
@@ -78,11 +85,26 @@ func (w *Worker) processNext(ctx context.Context) (bool, error) {
 	}
 	var terminal terminalError
 	var compensation compensationError
-	if errors.As(err, &terminal) || (event.Attempts >= w.maxAttempts && !errors.As(err, &compensation)) {
+	var permanent interface{ Permanent() bool }
+	if errors.As(err, &terminal) || (errors.As(err, &permanent) && permanent.Permanent()) || (event.Attempts >= w.maxAttempts && !errors.As(err, &compensation)) {
 		return true, w.repository.Fail(ctx, event, safeError(err), now)
 	}
 	backoff := time.Duration(1<<min(event.Attempts-1, 5)) * 5 * time.Second
 	return true, w.repository.Retry(ctx, event.ID, safeError(err), now.Add(backoff), now)
+}
+
+func (w *Worker) notifyBulletin(ctx context.Context, event Event, now time.Time) error {
+	if w.notifications == nil {
+		return terminalError{fmt.Errorf("notification client is not configured")}
+	}
+	var payload BulletinNotificationPayload
+	if err := json.Unmarshal(event.Payload, &payload); err != nil || payload.IssueID == "" || payload.ActorID == "" || payload.Name == "" || len(payload.Translations) == 0 {
+		return terminalError{fmt.Errorf("invalid bulletin notification payload")}
+	}
+	if err := w.notifications.QueueBulletinNotification(ctx, payload); err != nil {
+		return err
+	}
+	return w.repository.CompleteNotification(ctx, event, now)
 }
 
 func (w *Worker) publish(ctx context.Context, event Event, now time.Time) error {

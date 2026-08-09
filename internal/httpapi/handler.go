@@ -398,7 +398,7 @@ func (h *Handler) adminPublish(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &input) {
 		return
 	}
-	value, err := h.service.Publish(r.Context(), r.PathValue("issueID"), input.Locale, expected, actor(r))
+	value, err := h.service.Publish(r.Context(), r.PathValue("issueID"), input.Locale, expected, input.NotifySubscribers, actor(r))
 	if err != nil {
 		handleError(w, err)
 		return

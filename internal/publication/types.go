@@ -16,11 +16,25 @@ type Event struct {
 	CreatedAt                  time.Time
 }
 type PublishPayload struct {
-	WorkflowID       string `json:"workflowId"`
-	IssueID          string `json:"issueId"`
-	Locale           string `json:"locale"`
-	AssetID          string `json:"assetId"`
-	AggregateVersion int64  `json:"aggregateVersion"`
+	WorkflowID        string `json:"workflowId"`
+	IssueID           string `json:"issueId"`
+	Locale            string `json:"locale"`
+	AssetID           string `json:"assetId"`
+	AggregateVersion  int64  `json:"aggregateVersion"`
+	NotifySubscribers bool   `json:"notifySubscribers,omitempty"`
+	ActorID           string `json:"actorId,omitempty"`
+}
+type NotificationTranslation struct {
+	Subject       string `json:"subject"`
+	Body          string `json:"body"`
+	ClickBehavior string `json:"clickBehavior"`
+	ActionURL     string `json:"actionUrl"`
+}
+type BulletinNotificationPayload struct {
+	IssueID      string                             `json:"issueId"`
+	ActorID      string                             `json:"actorId"`
+	Name         string                             `json:"name"`
+	Translations map[string]NotificationTranslation `json:"translations"`
 }
 type UnpublishPayload struct {
 	WorkflowID       string `json:"workflowId"`
@@ -62,6 +76,7 @@ type Repository interface {
 	CompleteUnpublish(context.Context, Event, time.Time) error
 	CompleteContentPublish(context.Context, Event, []PublishedAsset, time.Time) error
 	CompleteContentUnpublish(context.Context, Event, time.Time) error
+	CompleteNotification(context.Context, Event, time.Time) error
 	Complete(context.Context, string, time.Time) error
 }
 type AssetClient interface {
@@ -76,3 +91,7 @@ type Asset struct {
 	UploadStatus, ScanStatus, ProcessingStatus                       string
 }
 type Grant struct{ ID string }
+
+type NotificationClient interface {
+	QueueBulletinNotification(context.Context, BulletinNotificationPayload) error
+}

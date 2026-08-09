@@ -46,10 +46,10 @@ func run() error {
 	repository := postgres.New(db)
 	service := bulletins.NewService(repository, time.Now)
 	assetClient := assetclient.New(cfg.AssetAPIBaseURL, cfg.InternalCallerAppID, cfg.PublicBaseURL)
-	engagementClient := engagementclient.New(cfg.EngagementAPIBaseURL, cfg.InternalCallerAppID, cfg.DaprAPIToken)
+	engagementClient := engagementclient.New(cfg.EngagementAPIBaseURL, cfg.InternalCallerAppID)
 	handler := httpapi.NewWithContent(service, content.NewService(repository, time.Now), db, assetClient, cfg.AdminAllowedCaller, cfg.DaprAPIToken, cfg.AllowDevCaller, engagementClient)
 	assets := publication.NewAssetAdapter(assetClient)
-	worker := publication.NewWorker(repository, assets, cfg.OutboxMaxAttempts)
+	worker := publication.NewWorker(repository, assets, cfg.OutboxMaxAttempts, engagementClient)
 	go func() {
 		if err := worker.Run(ctx); err != nil {
 			slog.Error("publication worker stopped", "error", err)

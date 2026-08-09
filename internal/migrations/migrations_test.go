@@ -109,3 +109,16 @@ func TestNewsHomeImageMigrationAddsIndependentPublicationState(t *testing.T) {
 		}
 	}
 }
+
+func TestBulletinNotificationMigrationAddsIndependentState(t *testing.T) {
+	contents, err := files.ReadFile("sql/021_bulletin_notification_state.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := string(contents)
+	for _, expected := range []string{"notification_status", "not_requested", "notification_queued_at", "notification_error_code"} {
+		if !strings.Contains(sql, expected) {
+			t.Fatalf("migration missing %q", expected)
+		}
+	}
+}

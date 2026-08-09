@@ -185,6 +185,30 @@ func TestMutationRequiresIfMatch(t *testing.T) {
 	}
 }
 
+func TestPublishForwardsNotificationIntent(t *testing.T) {
+	repo := &apiRepository{}
+	request := httptest.NewRequest(http.MethodPost, "/api/admin/bulletins/issue-1/publish", bytes.NewBufferString(`{"locale":"zh-Hant","notifySubscribers":true}`))
+	trusted(request, "cms:publish")
+	request.Header.Set("If-Match", `"1"`)
+	response := httptest.NewRecorder()
+	testHandler(repo).ServeHTTP(response, request)
+	if response.Code != http.StatusAccepted || !repo.notifySubscribers {
+		t.Fatalf("status=%d notify=%v body=%s", response.Code, repo.notifySubscribers, response.Body.String())
+	}
+}
+
+func TestPublishDefaultsNotificationIntentOff(t *testing.T) {
+	repo := &apiRepository{}
+	request := httptest.NewRequest(http.MethodPost, "/api/admin/bulletins/issue-1/publish", bytes.NewBufferString(`{"locale":"zh-Hant"}`))
+	trusted(request, "cms:publish")
+	request.Header.Set("If-Match", `"1"`)
+	response := httptest.NewRecorder()
+	testHandler(repo).ServeHTTP(response, request)
+	if response.Code != http.StatusAccepted || repo.notifySubscribers {
+		t.Fatalf("status=%d notify=%v body=%s", response.Code, repo.notifySubscribers, response.Body.String())
+	}
+}
+
 func TestDeleteIssueRequiresWriteScopeAndVersion(t *testing.T) {
 	repo := &apiRepository{issue: bulletinIssue()}
 	handler := testHandler(repo)
@@ -522,6 +546,7 @@ type apiRepository struct {
 	publicIssueNumber  int
 	publicLocale       string
 	publicError        error
+	notifySubscribers  bool
 }
 
 func (r *apiRepository) CreateIssue(_ context.Context, number int, date, actor, key string, now time.Time) (bulletins.Issue, error) {
@@ -584,7 +609,8 @@ func (u *apiUploads) RequeueScan(context.Context, string) error {
 	u.requeueCalls++
 	return nil
 }
-func (*apiRepository) StartPublish(context.Context, string, string, int64, string, time.Time) (bulletins.Workflow, error) {
+func (r *apiRepository) StartPublish(_ context.Context, _ string, _ string, _ int64, notifySubscribers bool, _ string, _ time.Time) (bulletins.Workflow, error) {
+	r.notifySubscribers = notifySubscribers
 	return bulletins.Workflow{}, nil
 }
 func (*apiRepository) Unpublish(context.Context, string, string, int64, string, time.Time) (bulletins.Issue, error) {

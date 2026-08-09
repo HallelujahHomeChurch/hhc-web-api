@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"regexp"
@@ -77,9 +78,9 @@ func TestListIssuesLoadsPageVersionsWithOneBatchQuery(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(2))
 	mock.ExpectQuery("SELECT i.id::text,i.issue_number,i.issue_date::text").
 		WithArgs(20, 0).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "issue_number", "issue_date", "status", "version", "created_by", "updated_by", "published_at", "created_at", "updated_at"}).
-			AddRow("00000000-0000-0000-0000-000000000001", 1732, "2026-08-02", "draft", 2, "user-1", "user-1", nil, now, now).
-			AddRow("00000000-0000-0000-0000-000000000002", 1731, "2026-07-26", "draft", 2, "user-1", "user-1", nil, now, now))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "issue_number", "issue_date", "status", "notification_status", "notification_queued_at", "notification_error_code", "version", "created_by", "updated_by", "published_at", "created_at", "updated_at"}).
+			AddRow("00000000-0000-0000-0000-000000000001", 1732, "2026-08-02", "draft", "not_requested", nil, "", 2, "user-1", "user-1", nil, now, now).
+			AddRow("00000000-0000-0000-0000-000000000002", 1731, "2026-07-26", "draft", "not_requested", nil, "", 2, "user-1", "user-1", nil, now, now))
 	mock.ExpectQuery("FROM hhc_web.bulletin_version v").
 		WithArgs("00000000-0000-0000-0000-000000000001", "00000000-0000-0000-0000-000000000002").
 		WillReturnRows(sqlmock.NewRows([]string{"id", "issue_id", "locale", "title", "subtitle", "pdf_asset_id", "pdf_file_name", "public_grant_id", "status", "workflow_status", "workflow_error", "version", "published_at", "created_at", "updated_at"}).
@@ -95,6 +96,21 @@ func TestListIssuesLoadsPageVersionsWithOneBatchQuery(t *testing.T) {
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestBuildBulletinNotificationFallsBackFromTraditionalChinese(t *testing.T) {
+	number := int64(1732)
+	payload := buildBulletinNotification("issue-1", sql.NullInt64{Int64: number, Valid: true}, "user-1", "en", []bulletins.Version{
+		{Locale: "zh-Hant", Title: "繁體標題", Subtitle: "繁體副標"},
+		{Locale: "en", Title: "English title"},
+	})
+
+	if payload.Translations["zh-Hans"].Body != "繁體副標" || payload.Translations["en"].Body != "English title" {
+		t.Fatalf("translations=%#v", payload.Translations)
+	}
+	if payload.Translations["en"].ActionURL != "/en/literature-ministry" || payload.IssueID != "issue-1" || payload.ActorID != "user-1" {
+		t.Fatalf("payload=%#v", payload)
 	}
 }
 
@@ -153,8 +169,8 @@ func TestRestoreIssueRevisionAllowsMetadataChangeWithoutPublicProjection(t *test
 	mock.ExpectExec("UPDATE hhc_web.bulletin_issue").WithArgs(issueID, nil, "2026-08-02", int64(4), "user-2", now).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectQuery("FROM hhc_web.bulletin_issue WHERE id=\\$1").WithArgs(issueID).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "issue_number", "issue_date", "status", "version", "created_by", "updated_by", "published_at", "created_at", "updated_at"}).
-			AddRow(issueID, nil, "2026-08-02", "draft", 4, "user-1", "user-2", now, now, now))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "issue_number", "issue_date", "status", "notification_status", "notification_queued_at", "notification_error_code", "version", "created_by", "updated_by", "published_at", "created_at", "updated_at"}).
+			AddRow(issueID, nil, "2026-08-02", "draft", "not_requested", nil, "", 4, "user-1", "user-2", now, now, now))
 	mock.ExpectQuery("FROM hhc_web.bulletin_version v").WithArgs(issueID).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "issue_id", "locale", "title", "subtitle", "pdf_asset_id", "pdf_file_name", "public_grant_id", "status", "workflow_status", "workflow_error", "version", "published_at", "created_at", "updated_at"}).
 			AddRow(versionID, issueID, "zh-Hant", "舊週報", "", "asset-1", "weekly.pdf", "grant-1", "draft", "", "", 2, now, now, now))

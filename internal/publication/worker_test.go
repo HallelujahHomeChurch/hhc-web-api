@@ -36,6 +36,45 @@ func TestWorkerCompletesPublishForCleanAsset(t *testing.T) {
 	}
 }
 
+func TestWorkerQueuesBulletinNotification(t *testing.T) {
+	payload := `{"issueId":"issue-1","actorId":"user-1","name":"Weekly bulletin 1732","translations":{"zh-Hant":{"subject":"第 1732 期週報已發布","body":"本週週報","clickBehavior":"url","actionUrl":"/zh-Hant/literature-ministry"}}}`
+	repository := &workerRepository{event: Event{ID: "event-notification", EventType: "bulletin.notification.queue", AggregateID: "issue-1", Payload: []byte(payload), Attempts: 1}}
+	notifications := &workerNotifications{}
+	worker := NewWorker(repository, &workerAssets{}, 5, notifications)
+
+	processed, err := worker.processNext(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !processed || notifications.payload.IssueID != "issue-1" || repository.completeNotificationCount != 1 {
+		t.Fatalf("processed=%v payload=%#v completed=%d", processed, notifications.payload, repository.completeNotificationCount)
+	}
+}
+
+func TestWorkerRetriesTransientBulletinNotificationFailure(t *testing.T) {
+	repository := &workerRepository{event: Event{ID: "event-notification", EventType: "bulletin.notification.queue", Payload: []byte(`{"issueId":"issue-1","actorId":"user-1","name":"Weekly bulletin 1732","translations":{"en":{"subject":"Weekly bulletin 1732 is now available","body":"Weekly","clickBehavior":"url","actionUrl":"/en/literature-ministry"}}}`), Attempts: 1}}
+	worker := NewWorker(repository, &workerAssets{}, 5, &workerNotifications{err: errors.New("timeout")})
+
+	if _, err := worker.processNext(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if repository.retryCount != 1 || repository.failCount != 0 {
+		t.Fatalf("retry=%d fail=%d", repository.retryCount, repository.failCount)
+	}
+}
+
+func TestWorkerFailsInvalidBulletinNotificationPayload(t *testing.T) {
+	repository := &workerRepository{event: Event{ID: "event-notification", EventType: "bulletin.notification.queue", Payload: []byte(`{"issueId":"issue-1"}`), Attempts: 1}}
+	worker := NewWorker(repository, &workerAssets{}, 5, &workerNotifications{})
+
+	if _, err := worker.processNext(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if repository.failCount != 1 || repository.retryCount != 0 {
+		t.Fatalf("fail=%d retry=%d", repository.failCount, repository.retryCount)
+	}
+}
+
 func TestWorkerFailsClosedForInvalidAssetStates(t *testing.T) {
 	for _, test := range []struct {
 		name       string
@@ -508,6 +547,7 @@ type workerRepository struct {
 	compensationGrant             string
 	compensationAssets            []PublishedAsset
 	failPublishError              error
+	completeNotificationCount     int
 }
 
 func (r *workerRepository) Claim(context.Context, time.Time, time.Duration) (Event, bool, error) {
@@ -571,6 +611,20 @@ func (r *workerRepository) CompleteUnpublish(context.Context, Event, time.Time) 
 	r.completeCount++
 	r.completeUnpublishCount++
 	return nil
+}
+func (r *workerRepository) CompleteNotification(context.Context, Event, time.Time) error {
+	r.completeNotificationCount++
+	return nil
+}
+
+type workerNotifications struct {
+	payload BulletinNotificationPayload
+	err     error
+}
+
+func (n *workerNotifications) QueueBulletinNotification(_ context.Context, payload BulletinNotificationPayload) error {
+	n.payload = payload
+	return n.err
 }
 
 type workerAssets struct {

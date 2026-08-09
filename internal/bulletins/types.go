@@ -15,17 +15,20 @@ var (
 )
 
 type Issue struct {
-	ID          string     `json:"id"`
-	IssueNumber *int       `json:"issueNumber,omitempty"`
-	IssueDate   string     `json:"issueDate"`
-	Status      string     `json:"status"`
-	Version     int64      `json:"version"`
-	CreatedBy   string     `json:"createdBy"`
-	UpdatedBy   string     `json:"updatedBy"`
-	PublishedAt *time.Time `json:"publishedAt,omitempty"`
-	CreatedAt   time.Time  `json:"createdAt"`
-	UpdatedAt   time.Time  `json:"updatedAt"`
-	Versions    []Version  `json:"versions"`
+	ID                    string     `json:"id"`
+	IssueNumber           *int       `json:"issueNumber,omitempty"`
+	IssueDate             string     `json:"issueDate"`
+	Status                string     `json:"status"`
+	NotificationStatus    string     `json:"notificationStatus"`
+	NotificationQueuedAt  *time.Time `json:"notificationQueuedAt,omitempty"`
+	NotificationErrorCode string     `json:"notificationErrorCode,omitempty"`
+	Version               int64      `json:"version"`
+	CreatedBy             string     `json:"createdBy"`
+	UpdatedBy             string     `json:"updatedBy"`
+	PublishedAt           *time.Time `json:"publishedAt,omitempty"`
+	CreatedAt             time.Time  `json:"createdAt"`
+	UpdatedAt             time.Time  `json:"updatedAt"`
+	Versions              []Version  `json:"versions"`
 }
 
 type Version struct {
@@ -98,7 +101,8 @@ type UpdateVersionInput struct {
 	Subtitle string `json:"subtitle"`
 }
 type PublishInput struct {
-	Locale string `json:"locale"`
+	Locale            string `json:"locale"`
+	NotifySubscribers bool   `json:"notifySubscribers,omitempty"`
 }
 type Page struct {
 	Items    []Issue `json:"items"`
@@ -121,7 +125,7 @@ type Repository interface {
 	PutVersion(context.Context, string, int64, PutVersionInput, string, time.Time) (Issue, error)
 	UpdateVersion(context.Context, string, string, int64, string, string, string, time.Time) (Issue, error)
 	DeleteVersion(context.Context, string, string, int64, string, time.Time) (Issue, error)
-	StartPublish(context.Context, string, string, int64, string, time.Time) (Workflow, error)
+	StartPublish(context.Context, string, string, int64, bool, string, time.Time) (Workflow, error)
 	Unpublish(context.Context, string, string, int64, string, time.Time) (Issue, error)
 	DeleteIssue(context.Context, string, int64, string, time.Time) error
 	IssueRevisions(context.Context, string) ([]Revision, error)

@@ -2,6 +2,8 @@
 
 `hhc-web-api` is private to the Container Apps environment and is invoked through Dapr by `api-gateway`.
 
+Azure Container Apps injects the revision-scoped `APP_API_TOKEN` used to verify inbound Dapr requests. Do not persist it in Key Vault, declare it in Bicep, or reuse it as an outbound `DAPR_API_TOKEN`.
+
 Initial bootstrap:
 
 ```sh
