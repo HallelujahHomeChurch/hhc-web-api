@@ -63,11 +63,11 @@ func (s *Service) DeleteVersion(ctx context.Context, id, locale string, expected
 	}
 	return s.repository.DeleteVersion(ctx, id, locale, expected, actor, s.now().UTC())
 }
-func (s *Service) Publish(ctx context.Context, id, locale string, expected int64, actor string) (Workflow, error) {
+func (s *Service) Publish(ctx context.Context, id, locale string, expected int64, notifySubscribers bool, actor string) (Workflow, error) {
 	if id == "" || !validLocale(locale) || expected <= 0 || actor == "" {
 		return Workflow{}, ErrInvalid
 	}
-	return s.repository.StartPublish(ctx, id, locale, expected, actor, s.now().UTC())
+	return s.repository.StartPublish(ctx, id, locale, expected, notifySubscribers, actor, s.now().UTC())
 }
 func (s *Service) Unpublish(ctx context.Context, id, locale string, expected int64, actor string) (Issue, error) {
 	if id == "" || !validLocale(locale) || expected <= 0 || actor == "" {

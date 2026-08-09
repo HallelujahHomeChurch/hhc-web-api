@@ -791,12 +791,15 @@ components:
         updatedAt: { type: string, format: date-time }
     BulletinIssue:
       type: object
-      required: [id, issueDate, status, version, createdBy, updatedBy, createdAt, updatedAt, versions]
+      required: [id, issueDate, status, notificationStatus, version, createdBy, updatedBy, createdAt, updatedAt, versions]
       properties:
         id: { type: string, format: uuid }
         issueNumber: { type: integer, minimum: 1 }
         issueDate: { type: string, format: date }
         status: { $ref: '#/components/schemas/BulletinStatus' }
+        notificationStatus: { type: string, enum: [not_requested, pending, queued, failed] }
+        notificationQueuedAt: { type: string, format: date-time }
+        notificationErrorCode: { type: string, enum: [NOTIFICATION_QUEUE_FAILED] }
         version: { type: integer, format: int64 }
         createdBy: { type: string }
         updatedBy: { type: string }
@@ -939,6 +942,10 @@ components:
       required: [locale]
       properties:
         locale: { $ref: '#/components/schemas/Locale' }
+        notifySubscribers:
+          type: boolean
+          default: false
+          description: Queue one Web Push campaign after the bulletin is publicly available. Ignored by unpublish operations.
     ContentTranslation:
       type: object
       additionalProperties: false

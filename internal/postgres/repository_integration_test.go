@@ -48,7 +48,7 @@ func TestRepositoryPublishWaitsForAssetWorkflow(t *testing.T) {
 	if _, err := repository.PutVersion(ctx, issue.ID, 1, bulletins.PutVersionInput{Locale: "en", Title: "Weekly", PDFAssetID: "asset-2", PDFFileName: "weekly.pdf"}, "user-1", now); !errors.Is(err, bulletins.ErrPrecondition) {
 		t.Fatalf("stale update error = %v", err)
 	}
-	workflow, err := repository.StartPublish(ctx, issue.ID, "zh-Hant", issue.Version, "user-1", now)
+	workflow, err := repository.StartPublish(ctx, issue.ID, "zh-Hant", issue.Version, false, "user-1", now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +130,7 @@ func TestRepositoryPublishWaitsForAssetWorkflow(t *testing.T) {
 	if stillPublic, err := repository.GetPublicLatest(ctx, "zh-Hant"); err != nil || stillPublic.DownloadURL != public.DownloadURL {
 		t.Fatalf("public during replacement = %#v err=%v", stillPublic, err)
 	}
-	if _, err := repository.StartPublish(ctx, replacement.ID, "zh-Hant", replacement.Version, "user-1", now.Add(3*time.Minute)); err != nil {
+	if _, err := repository.StartPublish(ctx, replacement.ID, "zh-Hant", replacement.Version, false, "user-1", now.Add(3*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
 	publishReplacement, found, err := repository.Claim(ctx, now.Add(3*time.Minute), 30*time.Second)
@@ -174,6 +174,98 @@ func TestRepositoryPublishWaitsForAssetWorkflow(t *testing.T) {
 	}
 	if unpublished.Status != "unpublished" || unpublished.Versions[0].Status != "unpublished" {
 		t.Fatalf("unpublished = %#v", unpublished)
+	}
+}
+
+func TestRepositoryQueuesOneNotificationAfterSuccessfulBulletinPublish(t *testing.T) {
+	databaseURL := os.Getenv("HHW_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("HHW_TEST_DATABASE_URL is not configured")
+	}
+	db, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	if err := migrations.Run(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `TRUNCATE hhc_web.outbox_event,hhc_web.publication_workflow,hhc_web.public_projection,hhc_web.bulletin_version,hhc_web.bulletin_issue CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+
+	repository := New(db)
+	now := time.Date(2026, 8, 9, 9, 0, 0, 0, time.UTC)
+	issue, err := repository.CreateIssue(ctx, 1732, "2026-08-09", "user-1", "notify-create", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	issue, err = repository.PutVersion(ctx, issue.ID, issue.Version, bulletins.PutVersionInput{Locale: "zh-Hant", Title: "繁體標題", Subtitle: "繁體副標", PDFAssetID: "asset-zh", PDFFileName: "weekly.pdf"}, "user-1", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.StartPublish(ctx, issue.ID, "zh-Hant", issue.Version, true, "user-1", now); err != nil {
+		t.Fatal(err)
+	}
+	publish, found, err := repository.Claim(ctx, now, 30*time.Second)
+	if err != nil || !found {
+		t.Fatalf("claim publish found=%v err=%v", found, err)
+	}
+	if err := repository.CompletePublish(ctx, publish, "grant-zh", "https://www.alive.org.tw/assets/asset-zh", now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.CompletePublish(ctx, publish, "grant-zh", "https://www.alive.org.tw/assets/asset-zh", now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+
+	notification, found, err := repository.Claim(ctx, now.Add(time.Minute), 30*time.Second)
+	if err != nil || !found || notification.EventType != "bulletin.notification.queue" {
+		t.Fatalf("notification=%#v found=%v err=%v", notification, found, err)
+	}
+	var notificationPayload publication.BulletinNotificationPayload
+	if err := json.Unmarshal(notification.Payload, &notificationPayload); err != nil {
+		t.Fatal(err)
+	}
+	if notificationPayload.Translations["en"].Body != "繁體副標" {
+		t.Fatalf("notification payload=%#v", notificationPayload)
+	}
+	if err := repository.Fail(ctx, notification, "engagement timeout", now.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	failed, err := repository.GetIssue(ctx, issue.ID)
+	if err != nil || failed.NotificationStatus != "failed" || failed.NotificationErrorCode != "NOTIFICATION_QUEUE_FAILED" {
+		t.Fatalf("failed issue=%#v err=%v", failed, err)
+	}
+
+	withEnglish, err := repository.PutVersion(ctx, failed.ID, failed.Version, bulletins.PutVersionInput{Locale: "en", Title: "English title", PDFAssetID: "asset-en", PDFFileName: "weekly-en.pdf"}, "user-1", now.Add(3*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.StartPublish(ctx, withEnglish.ID, "en", withEnglish.Version, true, "user-1", now.Add(3*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	publishEnglish, found, err := repository.Claim(ctx, now.Add(3*time.Minute), 30*time.Second)
+	if err != nil || !found || publishEnglish.EventType != "bulletin.publish.ensure_asset" {
+		t.Fatalf("english publish=%#v found=%v err=%v", publishEnglish, found, err)
+	}
+	if err := repository.CompletePublish(ctx, publishEnglish, "grant-en", "https://www.alive.org.tw/assets/asset-en", now.Add(4*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	retriedNotification, found, err := repository.Claim(ctx, now.Add(4*time.Minute), 30*time.Second)
+	if err != nil || !found || retriedNotification.ID != notification.ID || string(retriedNotification.Payload) != string(notification.Payload) {
+		t.Fatalf("retried notification=%#v found=%v err=%v", retriedNotification, found, err)
+	}
+	var notificationCount int
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM hhc_web.outbox_event WHERE aggregate_id=$1 AND event_type='bulletin.notification.queue'`, issue.ID).Scan(&notificationCount); err != nil || notificationCount != 1 {
+		t.Fatalf("notification count=%d err=%v", notificationCount, err)
+	}
+	if err := repository.CompleteNotification(ctx, retriedNotification, now.Add(5*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	queued, err := repository.GetIssue(ctx, issue.ID)
+	if err != nil || queued.NotificationStatus != "queued" || queued.NotificationQueuedAt == nil {
+		t.Fatalf("queued issue=%#v err=%v", queued, err)
 	}
 }
 
@@ -258,7 +350,7 @@ func TestBulletinRejectsCrossLocaleMutationDuringPublication(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := repository.StartPublish(ctx, issue.ID, "zh-Hant", issue.Version, "user-1", now); err != nil {
+	if _, err := repository.StartPublish(ctx, issue.ID, "zh-Hant", issue.Version, false, "user-1", now); err != nil {
 		t.Fatal(err)
 	}
 	current, err := repository.GetIssue(ctx, issue.ID)
@@ -302,7 +394,7 @@ func TestFailedPublishPersistsGrantCompensation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := repository.StartPublish(ctx, issue.ID, "zh-Hant", issue.Version, "user-1", now); err != nil {
+	if _, err := repository.StartPublish(ctx, issue.ID, "zh-Hant", issue.Version, false, "user-1", now); err != nil {
 		t.Fatal(err)
 	}
 	event, found, err := repository.Claim(ctx, now, 30*time.Second)

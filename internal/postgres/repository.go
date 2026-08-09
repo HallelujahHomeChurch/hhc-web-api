@@ -59,7 +59,7 @@ func (r *Repository) ListIssues(ctx context.Context, page, size int, status, que
 	}
 	args = append(args, size, (page-1)*size)
 	limitPos, offsetPos := len(args)-1, len(args)
-	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`SELECT i.id::text,i.issue_number,i.issue_date::text,i.status,i.version,i.created_by,i.updated_by,i.published_at,i.created_at,i.updated_at FROM hhc_web.bulletin_issue i%s ORDER BY i.issue_number DESC NULLS LAST,i.issue_date DESC LIMIT $%d OFFSET $%d`, where, limitPos, offsetPos), args...)
+	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`SELECT i.id::text,i.issue_number,i.issue_date::text,i.status,i.notification_status,i.notification_queued_at,i.notification_error_code,i.version,i.created_by,i.updated_by,i.published_at,i.created_at,i.updated_at FROM hhc_web.bulletin_issue i%s ORDER BY i.issue_number DESC NULLS LAST,i.issue_date DESC LIMIT $%d OFFSET $%d`, where, limitPos, offsetPos), args...)
 	if err != nil {
 		return bulletins.Page{}, err
 	}
@@ -141,7 +141,7 @@ type bulletinQueryer interface {
 }
 
 func loadIssue(ctx context.Context, query bulletinQueryer, id string) (bulletins.Issue, error) {
-	issue, err := scanIssue(query.QueryRowContext(ctx, `SELECT id::text,issue_number,issue_date::text,status,version,created_by,updated_by,published_at,created_at,updated_at FROM hhc_web.bulletin_issue WHERE id=$1`, id))
+	issue, err := scanIssue(query.QueryRowContext(ctx, `SELECT id::text,issue_number,issue_date::text,status,notification_status,notification_queued_at,notification_error_code,version,created_by,updated_by,published_at,created_at,updated_at FROM hhc_web.bulletin_issue WHERE id=$1`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return bulletins.Issue{}, bulletins.ErrNotFound
 	}
@@ -157,8 +157,8 @@ type scanner interface{ Scan(...any) error }
 func scanIssue(row scanner) (bulletins.Issue, error) {
 	var v bulletins.Issue
 	var number sql.NullInt64
-	var published sql.NullTime
-	err := row.Scan(&v.ID, &number, &v.IssueDate, &v.Status, &v.Version, &v.CreatedBy, &v.UpdatedBy, &published, &v.CreatedAt, &v.UpdatedAt)
+	var published, notificationQueued sql.NullTime
+	err := row.Scan(&v.ID, &number, &v.IssueDate, &v.Status, &v.NotificationStatus, &notificationQueued, &v.NotificationErrorCode, &v.Version, &v.CreatedBy, &v.UpdatedBy, &published, &v.CreatedAt, &v.UpdatedAt)
 	if number.Valid {
 		value := int(number.Int64)
 		v.IssueNumber = &value
@@ -166,6 +166,10 @@ func scanIssue(row scanner) (bulletins.Issue, error) {
 	if published.Valid {
 		value := published.Time
 		v.PublishedAt = &value
+	}
+	if notificationQueued.Valid {
+		value := notificationQueued.Time
+		v.NotificationQueuedAt = &value
 	}
 	return v, err
 }
@@ -497,7 +501,7 @@ func validStoredIssueDate(value string) bool {
 	return err == nil && parsed.Format("2006-01-02") == value
 }
 
-func (r *Repository) StartPublish(ctx context.Context, id, locale string, expected int64, actor string, now time.Time) (bulletins.Workflow, error) {
+func (r *Repository) StartPublish(ctx context.Context, id, locale string, expected int64, notifySubscribers bool, actor string, now time.Time) (bulletins.Workflow, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return bulletins.Workflow{}, err
@@ -533,7 +537,7 @@ func (r *Repository) StartPublish(ctx context.Context, id, locale string, expect
 	if _, err := tx.ExecContext(ctx, `INSERT INTO hhc_web.publication_workflow(id,workflow_type,resource_type,resource_id,locale,aggregate_version,asset_id,status,created_by,created_at,updated_at) VALUES($1,'bulletin_publish','bulletin',$2,$3,$4,$5,$6,$7,$8,$8)`, workflow.ID, id, locale, next, assetID, workflow.Status, actor, now); err != nil {
 		return bulletins.Workflow{}, err
 	}
-	payload, _ := json.Marshal(map[string]any{"workflowId": workflow.ID, "issueId": id, "locale": locale, "assetId": assetID, "aggregateVersion": next})
+	payload, _ := json.Marshal(publication.PublishPayload{WorkflowID: workflow.ID, IssueID: id, Locale: locale, AssetID: assetID, AggregateVersion: next, NotifySubscribers: notifySubscribers, ActorID: actor})
 	if _, err := tx.ExecContext(ctx, `INSERT INTO hhc_web.outbox_event(id,destination,event_type,aggregate_type,aggregate_id,aggregate_version,payload_json,idempotency_key,status,next_attempt_at,created_at,updated_at) VALUES($1,'asset-api','bulletin.publish.ensure_asset','bulletin',$2,$3,$4,$5,'pending',$6,$6,$6)`, platform.NewID(), id, next, payload, fmt.Sprintf("bulletin:%s:%s:publish:v%d", id, locale, next), now); err != nil {
 		return bulletins.Workflow{}, err
 	}
@@ -871,6 +875,14 @@ func failEvent(ctx context.Context, tx *sql.Tx, event publication.Event, detail 
 	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.outbox_event SET status='failed',claimed_until=NULL,last_error=$2,updated_at=$3 WHERE id=$1`, event.ID, detail, now); err != nil {
 		return err
 	}
+	if event.EventType == "bulletin.notification.queue" {
+		var notification publication.BulletinNotificationPayload
+		if err := json.Unmarshal(event.Payload, &notification); err != nil {
+			return nil
+		}
+		_, err := tx.ExecContext(ctx, `UPDATE hhc_web.bulletin_issue SET notification_status='failed',notification_error_code='NOTIFICATION_QUEUE_FAILED',updated_at=$2 WHERE id=$1 AND notification_status='pending'`, notification.IssueID, now)
+		return err
+	}
 	if strings.HasPrefix(event.EventType, "news.") {
 		var contentID string
 		var version int64
@@ -933,16 +945,16 @@ func (r *Repository) CompletePublish(ctx context.Context, event publication.Even
 	if delivered {
 		return nil
 	}
-	var issueDate, issueStatus, title, subtitle, versionStatus, retiringAssetID, retiringGrantID string
+	var issueDate, issueStatus, notificationStatus, title, subtitle, versionStatus, retiringAssetID, retiringGrantID string
 	var issueNumber sql.NullInt64
 	var issueVersion int64
 	if err := tx.QueryRowContext(ctx, `
-		SELECT i.issue_number,i.issue_date::text,i.status,i.version,v.title,v.subtitle,v.status,
+		SELECT i.issue_number,i.issue_date::text,i.status,i.notification_status,i.version,v.title,v.subtitle,v.status,
 		       COALESCE(v.retiring_asset_id,''),COALESCE(v.retiring_grant_id,'')
 		FROM hhc_web.bulletin_issue i
 		JOIN hhc_web.bulletin_version v ON v.issue_id=i.id AND v.locale=$2
 		WHERE i.id=$1 FOR UPDATE OF i,v`, payload.IssueID, payload.Locale).
-		Scan(&issueNumber, &issueDate, &issueStatus, &issueVersion, &title, &subtitle, &versionStatus, &retiringAssetID, &retiringGrantID); err != nil {
+		Scan(&issueNumber, &issueDate, &issueStatus, &notificationStatus, &issueVersion, &title, &subtitle, &versionStatus, &retiringAssetID, &retiringGrantID); err != nil {
 		return err
 	}
 	if issueVersion != payload.AggregateVersion || issueStatus != "publishing" || versionStatus != "publishing" {
@@ -980,6 +992,29 @@ func (r *Repository) CompletePublish(ctx context.Context, event publication.Even
 	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.outbox_event SET status='delivered',claimed_until=NULL,last_error='',updated_at=$2 WHERE id=$1`, event.ID, now); err != nil {
 		return err
 	}
+	if payload.NotifySubscribers && (notificationStatus == "not_requested" || notificationStatus == "failed") {
+		versions, err := queryVersions(ctx, tx, payload.IssueID)
+		if err != nil {
+			return err
+		}
+		notification := buildBulletinNotification(payload.IssueID, issueNumber, payload.ActorID, payload.Locale, versions)
+		encodedNotification, err := json.Marshal(notification)
+		if err != nil {
+			return err
+		}
+		key := fmt.Sprintf("bulletin:%s:web-push", payload.IssueID)
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO hhc_web.outbox_event(id,destination,event_type,aggregate_type,aggregate_id,aggregate_version,payload_json,idempotency_key,status,next_attempt_at,created_at,updated_at)
+			VALUES($1,'engagement-api','bulletin.notification.queue','bulletin',$2,$3,$4,$5,'pending',$6,$6,$6)
+			ON CONFLICT(destination,idempotency_key) DO UPDATE SET
+			  status='pending',attempts=0,next_attempt_at=EXCLUDED.next_attempt_at,claimed_until=NULL,last_error='',updated_at=EXCLUDED.updated_at
+			WHERE hhc_web.outbox_event.status='failed'`, platform.NewID(), payload.IssueID, issueVersion, encodedNotification, key, now); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.bulletin_issue SET notification_status='pending',notification_queued_at=NULL,notification_error_code='' WHERE id=$1`, payload.IssueID); err != nil {
+			return err
+		}
+	}
 	if retiringAssetID != "" && retiringAssetID != payload.AssetID {
 		retirePayload, _ := json.Marshal(publication.UnpublishPayload{
 			IssueID: payload.IssueID, Locale: payload.Locale, AssetID: retiringAssetID,
@@ -995,6 +1030,46 @@ func (r *Repository) CompletePublish(ctx context.Context, event publication.Even
 		}
 	}
 	return tx.Commit()
+}
+
+func buildBulletinNotification(issueID string, issueNumber sql.NullInt64, actor, triggeringLocale string, versions []bulletins.Version) publication.BulletinNotificationPayload {
+	copyByLocale := make(map[string]string, len(versions))
+	for _, version := range versions {
+		body := strings.TrimSpace(version.Subtitle)
+		if body == "" {
+			body = strings.TrimSpace(version.Title)
+		}
+		copyByLocale[version.Locale] = body
+	}
+	fallback := copyByLocale["zh-Hant"]
+	if fallback == "" {
+		fallback = copyByLocale[triggeringLocale]
+	}
+	translations := make(map[string]publication.NotificationTranslation, 3)
+	for _, locale := range []string{"zh-Hant", "zh-Hans", "en"} {
+		body := copyByLocale[locale]
+		if body == "" {
+			body = fallback
+		}
+		subject := map[string]string{
+			"zh-Hant": "本週週報已發布",
+			"zh-Hans": "本周周报已发布",
+			"en":      "This week's bulletin is now available",
+		}[locale]
+		if issueNumber.Valid {
+			subject = map[string]string{
+				"zh-Hant": fmt.Sprintf("第 %d 期週報已發布", issueNumber.Int64),
+				"zh-Hans": fmt.Sprintf("第 %d 期周报已发布", issueNumber.Int64),
+				"en":      fmt.Sprintf("Weekly bulletin %d is now available", issueNumber.Int64),
+			}[locale]
+		}
+		translations[locale] = publication.NotificationTranslation{Subject: subject, Body: body, ClickBehavior: "url", ActionURL: "/" + locale + "/literature-ministry"}
+	}
+	name := "Weekly bulletin"
+	if issueNumber.Valid {
+		name = fmt.Sprintf("Weekly bulletin %d", issueNumber.Int64)
+	}
+	return publication.BulletinNotificationPayload{IssueID: issueID, ActorID: actor, Name: name, Translations: translations}
 }
 
 func (r *Repository) CompleteUnpublish(ctx context.Context, event publication.Event, now time.Time) error {
@@ -1057,6 +1132,25 @@ func (r *Repository) CompleteUnpublish(ctx context.Context, event publication.Ev
 func (r *Repository) Complete(ctx context.Context, id string, now time.Time) error {
 	_, err := r.db.ExecContext(ctx, `UPDATE hhc_web.outbox_event SET status='delivered',claimed_until=NULL,last_error='',updated_at=$2 WHERE id=$1`, id, now)
 	return err
+}
+
+func (r *Repository) CompleteNotification(ctx context.Context, event publication.Event, now time.Time) error {
+	var payload publication.BulletinNotificationPayload
+	if err := json.Unmarshal(event.Payload, &payload); err != nil {
+		return err
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.outbox_event SET status='delivered',claimed_until=NULL,last_error='',updated_at=$2 WHERE id=$1 AND status='processing'`, event.ID, now); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.bulletin_issue SET notification_status='queued',notification_queued_at=$2,notification_error_code='',updated_at=$2 WHERE id=$1 AND notification_status='pending'`, payload.IssueID, now); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (r *Repository) EventDelivered(ctx context.Context, id string) (bool, error) {

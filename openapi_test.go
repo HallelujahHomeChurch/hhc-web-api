@@ -53,3 +53,16 @@ func TestOpenAPIDocumentsCampaignSearchAndClickBehavior(t *testing.T) {
 		}
 	}
 }
+
+func TestOpenAPIDocumentsBulletinNotificationIntentAndState(t *testing.T) {
+	contents, err := os.ReadFile("openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := string(contents)
+	for _, expected := range []string{"notifySubscribers:", "notificationStatus:", "[not_requested, pending, queued, failed]", "NOTIFICATION_QUEUE_FAILED"} {
+		if !strings.Contains(document, expected) {
+			t.Fatalf("OpenAPI document missing %q", expected)
+		}
+	}
+}
