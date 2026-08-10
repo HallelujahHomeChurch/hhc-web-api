@@ -18,6 +18,9 @@ for file in "$@"; do
     internal/migrations/sql/006_news_publication_lifecycle.sql)
       legacy_hash='f299af0a5994995edb9e117340fa76c1b0425799967ef7699ecbc7989225e35e'
       ;;
+    internal/migrations/sql/022_five_content_locales.sql)
+      legacy_hash='7e81c0f7a3c499926206a65db07724e0aa15828d37ed1b4005b8318596d1b4d2'
+      ;;
   esac
   if [ -n "$legacy_hash" ]; then
     if command -v sha256sum >/dev/null 2>&1; then

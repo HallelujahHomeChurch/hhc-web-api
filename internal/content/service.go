@@ -168,7 +168,12 @@ func validModule(module Module) bool {
 	return module == ModuleNews || module == ModuleHistory || module == ModuleVideos
 }
 func validLocale(locale string) bool {
-	return locale == "zh-Hant" || locale == "zh-Hans" || locale == "en"
+	switch locale {
+	case "zh-Hant", "zh-Hans", "en", "ja", "ko":
+		return true
+	default:
+		return false
+	}
 }
 func validStatus(status string) bool {
 	switch status {
@@ -180,7 +185,7 @@ func validStatus(status string) bool {
 	}
 }
 func valid(module Module, input WriteInput) bool {
-	if !validModule(module) || len(input.Translations) == 0 || len(input.Translations) > 3 {
+	if !validModule(module) || len(input.Translations) == 0 || len(input.Translations) > 5 {
 		return false
 	}
 	seen := map[string]bool{}

@@ -51,7 +51,7 @@ func run() error {
 	db.SetMaxOpenConns(cfg.DBMaxOpenConns)
 	db.SetMaxIdleConns(cfg.DBMaxIdleConns)
 	db.SetConnMaxLifetime(cfg.DBConnMaxLifetime)
-	repository := postgres.New(db)
+	repository := postgres.New(db, cfg.EnableFiveLocaleBulletinNotificationsAfterFluentReview)
 	service := bulletins.NewService(repository, time.Now)
 	assetClient := assetclient.New(cfg.AssetAPIBaseURL, cfg.InternalCallerAppID, cfg.PublicBaseURL)
 	engagementClient := engagementclient.New(cfg.EngagementAPIBaseURL, cfg.InternalCallerAppID)

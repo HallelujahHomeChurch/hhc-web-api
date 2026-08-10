@@ -38,3 +38,24 @@ func TestEngagementUsesDaprInvocationByDefault(t *testing.T) {
 		t.Fatalf("engagement base URL=%q", cfg.EngagementAPIBaseURL)
 	}
 }
+
+func TestFiveLocaleBulletinNotificationsRequireExplicitFluentReviewEnablement(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://example")
+	t.Setenv("ENABLE_FIVE_LOCALE_BULLETIN_NOTIFICATIONS_AFTER_FLUENT_REVIEW", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.EnableFiveLocaleBulletinNotificationsAfterFluentReview {
+		t.Fatal("five-locale bulletin notifications must default off")
+	}
+
+	t.Setenv("ENABLE_FIVE_LOCALE_BULLETIN_NOTIFICATIONS_AFTER_FLUENT_REVIEW", "true")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.EnableFiveLocaleBulletinNotificationsAfterFluentReview {
+		t.Fatal("explicit fluent-review enablement was ignored")
+	}
+}

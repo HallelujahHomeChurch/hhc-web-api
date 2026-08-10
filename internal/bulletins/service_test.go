@@ -107,6 +107,29 @@ func TestServiceUpdatesAndDeletesVersion(t *testing.T) {
 	}
 }
 
+func TestServiceAcceptsJapaneseAndKoreanBulletinLifecycle(t *testing.T) {
+	repo := &repositoryStub{}
+	service := NewService(repo, func() time.Time { return time.Unix(123, 0) })
+
+	if _, err := service.PutVersion(context.Background(), "issue-1", 1, PutVersionInput{Locale: "ja", Title: "週報", PDFAssetID: "asset-ja", PDFFileName: "weekly-ja.pdf"}, "user-1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.UpdateVersion(context.Background(), "issue-1", "ko", 1, UpdateVersionInput{Title: "주보"}, "user-1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Publish(context.Background(), "issue-1", "ja", 1, false, "user-1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Unpublish(context.Background(), "issue-1", "ko", 1, "user-1"); err != nil {
+		t.Fatal(err)
+	}
+	for _, locale := range []string{"ja", "ko"} {
+		if _, err := service.GetPublicLatest(context.Background(), locale); err != nil {
+			t.Fatalf("public latest %s: %v", locale, err)
+		}
+	}
+}
+
 func TestServiceListsAndRestoresIssueRevision(t *testing.T) {
 	repo := &repositoryStub{}
 	service := NewService(repo, func() time.Time { return time.Unix(123, 0) })

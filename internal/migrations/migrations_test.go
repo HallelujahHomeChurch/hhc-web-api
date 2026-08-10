@@ -122,3 +122,25 @@ func TestBulletinNotificationMigrationAddsIndependentState(t *testing.T) {
 		}
 	}
 }
+
+func TestFiveContentLocalesMigrationReplacesOnlyLocaleChecks(t *testing.T) {
+	contents, err := files.ReadFile("sql/022_five_content_locales.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := string(contents)
+	for _, expected := range []string{
+		"bulletin_version_locale_check",
+		"content_translation_locale_check",
+		"public_projection_locale_check",
+		"publication_workflow_locale_check",
+		"'zh-Hant','zh-Hans','en','ja','ko'",
+	} {
+		if !strings.Contains(sql, expected) {
+			t.Fatalf("migration missing %q", expected)
+		}
+	}
+	if strings.Contains(sql, "UPDATE ") || strings.Contains(sql, "DELETE ") || strings.Contains(sql, "INSERT ") {
+		t.Fatal("locale migration must not rewrite existing rows")
+	}
+}

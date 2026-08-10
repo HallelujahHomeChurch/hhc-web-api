@@ -36,3 +36,18 @@ if ./scripts/test-migration-policy.sh "$tmp/drop-constraint.sql" 2>/dev/null; th
   echo 'constraint drop migration was not rejected' >&2
   exit 1
 fi
+
+locale_migration='internal/migrations/sql/022_five_content_locales.sql'
+./scripts/test-migration-policy.sh "$locale_migration"
+
+locale_backup="$tmp/022_five_content_locales.sql"
+cp "$locale_migration" "$locale_backup"
+restore_locale_migration() {
+  cp "$locale_backup" "$locale_migration"
+}
+trap 'restore_locale_migration; rm -rf "$tmp"' EXIT
+printf '%s\n' '-- test mutation' >>"$locale_migration"
+if ./scripts/test-migration-policy.sh "$locale_migration" 2>/dev/null; then
+  echo 'five-locale constraint replacement was not immutable' >&2
+  exit 1
+fi

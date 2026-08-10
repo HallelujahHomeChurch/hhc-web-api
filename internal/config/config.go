@@ -9,21 +9,22 @@ import (
 )
 
 type Config struct {
-	Port                 string
-	DatabaseURL          string
-	DBMaxOpenConns       int
-	DBMaxIdleConns       int
-	DBConnMaxLifetime    time.Duration
-	Environment          string
-	ShutdownTimeout      time.Duration
-	AssetAPIBaseURL      string
-	EngagementAPIBaseURL string
-	InternalCallerAppID  string
-	AdminAllowedCaller   string
-	DaprAPIToken         string
-	AllowDevCaller       bool
-	PublicBaseURL        string
-	OutboxMaxAttempts    int
+	Port                                                   string
+	DatabaseURL                                            string
+	DBMaxOpenConns                                         int
+	DBMaxIdleConns                                         int
+	DBConnMaxLifetime                                      time.Duration
+	Environment                                            string
+	ShutdownTimeout                                        time.Duration
+	AssetAPIBaseURL                                        string
+	EngagementAPIBaseURL                                   string
+	InternalCallerAppID                                    string
+	AdminAllowedCaller                                     string
+	DaprAPIToken                                           string
+	AllowDevCaller                                         bool
+	EnableFiveLocaleBulletinNotificationsAfterFluentReview bool
+	PublicBaseURL                                          string
+	OutboxMaxAttempts                                      int
 }
 
 func Load() (Config, error) {
@@ -33,8 +34,9 @@ func Load() (Config, error) {
 		Environment: value("ENVIRONMENT", "development"), ShutdownTimeout: 10 * time.Second, AssetAPIBaseURL: value("ASSET_API_BASE_URL", "http://127.0.0.1:8083"),
 		EngagementAPIBaseURL: value("ENGAGEMENT_API_BASE_URL", "http://127.0.0.1:3500/v1.0/invoke/engagement-api/method"),
 		InternalCallerAppID:  value("INTERNAL_CALLER_APP_ID", "hhc-web-api"), AdminAllowedCaller: value("ADMIN_ALLOWED_CALLER_APP_ID", "api-gateway"),
-		DaprAPIToken:      strings.TrimSpace(os.Getenv("APP_API_TOKEN")),
-		AllowDevCaller:    strings.EqualFold(strings.TrimSpace(os.Getenv("ALLOW_DEV_CALLER_HEADER")), "true"),
+		DaprAPIToken:   strings.TrimSpace(os.Getenv("APP_API_TOKEN")),
+		AllowDevCaller: strings.EqualFold(strings.TrimSpace(os.Getenv("ALLOW_DEV_CALLER_HEADER")), "true"),
+		EnableFiveLocaleBulletinNotificationsAfterFluentReview: strings.EqualFold(strings.TrimSpace(os.Getenv("ENABLE_FIVE_LOCALE_BULLETIN_NOTIFICATIONS_AFTER_FLUENT_REVIEW")), "true"),
 		PublicBaseURL:     value("PUBLIC_BASE_URL", "http://127.0.0.1:8082/assets"),
 		OutboxMaxAttempts: 20,
 	}

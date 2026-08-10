@@ -110,6 +110,14 @@ func TestLivenessRouteDoesNotRequireDependencies(t *testing.T) {
 	}
 }
 
+func TestBulletinHTTPValidationAcceptsJapaneseAndKoreanLocales(t *testing.T) {
+	for _, locale := range []string{"ja", "ko"} {
+		if !validLocale(locale) {
+			t.Fatalf("locale %q rejected", locale)
+		}
+	}
+}
+
 func TestAdminRoutesRequireDaprAPITokenWhenConfigured(t *testing.T) {
 	handler := NewWithContent(
 		bulletins.NewService(&apiRepository{}, time.Now),

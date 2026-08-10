@@ -30,6 +30,7 @@ var commonEnvironment = [
   { name: 'INTERNAL_CALLER_APP_ID', value: 'hhc-web-api' }
   { name: 'ADMIN_ALLOWED_CALLER_APP_ID', value: 'api-gateway' }
   { name: 'ALLOW_DEV_CALLER_HEADER', value: 'false' }
+  { name: 'ENABLE_FIVE_LOCALE_BULLETIN_NOTIFICATIONS_AFTER_FLUENT_REVIEW', value: 'false' }
   { name: 'PUBLIC_BASE_URL', value: 'https://www.alive.org.tw/assets' }
   { name: 'OUTBOX_MAX_ATTEMPTS', value: '20' }
 ]
