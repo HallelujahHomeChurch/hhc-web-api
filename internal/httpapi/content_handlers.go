@@ -267,6 +267,7 @@ func (h *Handler) adminNewsCoverUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "asset_service_unavailable", "The upload session could not be created.")
 		return
 	}
+	logAssetEvent(r, "asset upload session created", "news", r.PathValue("contentID"), created.Asset.ID)
 	writeData(w, http.StatusCreated, created, nil)
 }
 func (h *Handler) adminNewsCoverComplete(w http.ResponseWriter, r *http.Request) {
@@ -325,6 +326,7 @@ func (h *Handler) adminNewsCoverComplete(w http.ResponseWriter, r *http.Request)
 		handleContentError(w, err)
 		return
 	}
+	logAssetEvent(r, "asset attached", "news", r.PathValue("contentID"), asset.ID)
 	writeContentItem(w, updated)
 }
 func (h *Handler) adminNewsCoverStatus(w http.ResponseWriter, r *http.Request) {
