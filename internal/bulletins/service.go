@@ -116,7 +116,14 @@ func (s *Service) ListPublic(ctx context.Context, page, pageSize int) (PublicPag
 	return s.repository.ListPublic(ctx, page, pageSize)
 }
 
-func validLocale(value string) bool { return value == "zh-Hant" || value == "zh-Hans" || value == "en" }
+func validLocale(value string) bool {
+	switch value {
+	case "zh-Hant", "zh-Hans", "en", "ja", "ko":
+		return true
+	default:
+		return false
+	}
+}
 func validDate(value string) bool {
 	parsed, err := time.Parse("2006-01-02", value)
 	return err == nil && parsed.Format("2006-01-02") == value

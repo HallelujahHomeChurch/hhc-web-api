@@ -17,9 +17,18 @@ import (
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/publication"
 )
 
-type Repository struct{ db *sql.DB }
+type Repository struct {
+	db                                                     *sql.DB
+	enableFiveLocaleBulletinNotificationsAfterFluentReview bool
+}
 
-func New(db *sql.DB) *Repository { return &Repository{db: db} }
+func New(db *sql.DB, enableFiveLocaleBulletinNotificationsAfterFluentReview ...bool) *Repository {
+	enabled := false
+	if len(enableFiveLocaleBulletinNotificationsAfterFluentReview) > 0 {
+		enabled = enableFiveLocaleBulletinNotificationsAfterFluentReview[0]
+	}
+	return &Repository{db: db, enableFiveLocaleBulletinNotificationsAfterFluentReview: enabled}
+}
 
 func (r *Repository) CreateIssue(ctx context.Context, number int, date, actor, idempotency string, now time.Time) (bulletins.Issue, error) {
 	id := platform.NewID()
@@ -742,7 +751,7 @@ func (r *Repository) ListPublic(ctx context.Context, page, size int) (bulletins.
 		JOIN hhc_web.public_projection p
 		  ON p.resource_type='bulletin_issue' AND p.resource_id=i.resource_id
 		ORDER BY i.issue_number DESC,i.issue_date DESC,
-		  CASE p.locale WHEN 'zh-Hant' THEN 1 WHEN 'zh-Hans' THEN 2 ELSE 3 END`,
+		  CASE p.locale WHEN 'zh-Hant' THEN 1 WHEN 'zh-Hans' THEN 2 WHEN 'en' THEN 3 WHEN 'ja' THEN 4 WHEN 'ko' THEN 5 ELSE 6 END`,
 		size, (page-1)*size)
 	if err != nil {
 		return bulletins.PublicPage{}, err
@@ -997,7 +1006,7 @@ func (r *Repository) CompletePublish(ctx context.Context, event publication.Even
 		if err != nil {
 			return err
 		}
-		notification := buildBulletinNotification(payload.IssueID, issueNumber, payload.ActorID, payload.Locale, versions)
+		notification := buildBulletinNotification(payload.IssueID, issueNumber, payload.ActorID, r.enableFiveLocaleBulletinNotificationsAfterFluentReview, versions)
 		encodedNotification, err := json.Marshal(notification)
 		if err != nil {
 			return err
@@ -1032,21 +1041,30 @@ func (r *Repository) CompletePublish(ctx context.Context, event publication.Even
 	return tx.Commit()
 }
 
-func buildBulletinNotification(issueID string, issueNumber sql.NullInt64, actor, triggeringLocale string, versions []bulletins.Version) publication.BulletinNotificationPayload {
+const englishBulletinNotificationFallback = "The latest weekly bulletin is now available."
+
+func buildBulletinNotification(issueID string, issueNumber sql.NullInt64, actor string, enableFiveLocalesAfterFluentReview bool, versions []bulletins.Version) publication.BulletinNotificationPayload {
 	copyByLocale := make(map[string]string, len(versions))
 	for _, version := range versions {
+		if version.Status != "published" {
+			continue
+		}
 		body := strings.TrimSpace(version.Subtitle)
 		if body == "" {
 			body = strings.TrimSpace(version.Title)
 		}
 		copyByLocale[version.Locale] = body
 	}
-	fallback := copyByLocale["zh-Hant"]
+	fallback := copyByLocale["en"]
 	if fallback == "" {
-		fallback = copyByLocale[triggeringLocale]
+		fallback = englishBulletinNotificationFallback
 	}
-	translations := make(map[string]publication.NotificationTranslation, 3)
-	for _, locale := range []string{"zh-Hant", "zh-Hans", "en"} {
+	locales := []string{"zh-Hant", "zh-Hans", "en"}
+	if enableFiveLocalesAfterFluentReview {
+		locales = append(locales, "ja", "ko")
+	}
+	translations := make(map[string]publication.NotificationTranslation, len(locales))
+	for _, locale := range locales {
 		body := copyByLocale[locale]
 		if body == "" {
 			body = fallback
@@ -1055,12 +1073,16 @@ func buildBulletinNotification(issueID string, issueNumber sql.NullInt64, actor,
 			"zh-Hant": "本週週報已發布",
 			"zh-Hans": "本周周报已发布",
 			"en":      "This week's bulletin is now available",
+			"ja":      "今週の週報を公開しました",
+			"ko":      "이번 주 주보가 발행되었습니다",
 		}[locale]
 		if issueNumber.Valid {
 			subject = map[string]string{
 				"zh-Hant": fmt.Sprintf("第 %d 期週報已發布", issueNumber.Int64),
 				"zh-Hans": fmt.Sprintf("第 %d 期周报已发布", issueNumber.Int64),
 				"en":      fmt.Sprintf("Weekly bulletin %d is now available", issueNumber.Int64),
+				"ja":      fmt.Sprintf("第 %d 号の週報を公開しました", issueNumber.Int64),
+				"ko":      fmt.Sprintf("%d호 주보가 발행되었습니다", issueNumber.Int64),
 			}[locale]
 		}
 		translations[locale] = publication.NotificationTranslation{Subject: subject, Body: body, ClickBehavior: "url", ActionURL: "/" + locale + "/literature-ministry"}

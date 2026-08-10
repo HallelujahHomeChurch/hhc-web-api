@@ -99,18 +99,55 @@ func TestListIssuesLoadsPageVersionsWithOneBatchQuery(t *testing.T) {
 	}
 }
 
-func TestBuildBulletinNotificationFallsBackFromTraditionalChinese(t *testing.T) {
+func TestBuildBulletinNotificationPreservesLegacyPayloadUntilFluentReviewIsEnabled(t *testing.T) {
 	number := int64(1732)
-	payload := buildBulletinNotification("issue-1", sql.NullInt64{Int64: number, Valid: true}, "user-1", "en", []bulletins.Version{
-		{Locale: "zh-Hant", Title: "繁體標題", Subtitle: "繁體副標"},
-		{Locale: "en", Title: "English title"},
+	payload := buildBulletinNotification("issue-1", sql.NullInt64{Int64: number, Valid: true}, "user-1", false, []bulletins.Version{
+		{Locale: "zh-Hant", Title: "繁體標題", Subtitle: "繁體副標", Status: "published"},
+		{Locale: "en", Title: "English title", Status: "published"},
+		{Locale: "ja", Title: "日本語タイトル", Subtitle: "日本語の副題", Status: "published"},
+		{Locale: "ko", Title: "한국어 제목", Subtitle: "한국어 부제", Status: "published"},
 	})
 
-	if payload.Translations["zh-Hans"].Body != "繁體副標" || payload.Translations["en"].Body != "English title" {
+	if len(payload.Translations) != 3 || payload.Translations["zh-Hans"].Body != "English title" || payload.Translations["en"].Body != "English title" {
 		t.Fatalf("translations=%#v", payload.Translations)
+	}
+	if _, ok := payload.Translations["ja"]; ok {
+		t.Fatalf("Japanese translation leaked before fluent review: %#v", payload.Translations)
+	}
+	if _, ok := payload.Translations["ko"]; ok {
+		t.Fatalf("Korean translation leaked before fluent review: %#v", payload.Translations)
 	}
 	if payload.Translations["en"].ActionURL != "/en/literature-ministry" || payload.IssueID != "issue-1" || payload.ActorID != "user-1" {
 		t.Fatalf("payload=%#v", payload)
+	}
+}
+
+func TestBuildBulletinNotificationUsesEnglishGenericFallbackWhenEnglishIsUnpublished(t *testing.T) {
+	payload := buildBulletinNotification("issue-1", sql.NullInt64{}, "user-1", false, []bulletins.Version{
+		{Locale: "zh-Hant", Title: "繁體標題", Subtitle: "繁體副標", Status: "published"},
+		{Locale: "en", Title: "Draft English", Status: "draft"},
+	})
+
+	if payload.Translations["en"].Body != "The latest weekly bulletin is now available." || payload.Translations["zh-Hans"].Body != "The latest weekly bulletin is now available." {
+		t.Fatalf("translations=%#v", payload.Translations)
+	}
+}
+
+func TestBuildBulletinNotificationUsesPublishedFiveLocaleCopyAfterFluentReview(t *testing.T) {
+	number := int64(1732)
+	payload := buildBulletinNotification("issue-1", sql.NullInt64{Int64: number, Valid: true}, "user-1", true, []bulletins.Version{
+		{Locale: "zh-Hant", Title: "繁體標題", Subtitle: "繁體副標", Status: "published"},
+		{Locale: "en", Title: "English title", Status: "published"},
+		{Locale: "ja", Title: "日本語タイトル", Subtitle: "日本語の副題", Status: "published"},
+		{Locale: "ko", Title: "한국어 제목", Subtitle: "한국어 부제", Status: "published"},
+		{Locale: "zh-Hans", Title: "Draft simplified", Status: "draft"},
+	})
+
+	if len(payload.Translations) != 5 || payload.Translations["ja"].Subject != "第 1732 号の週報を公開しました" || payload.Translations["ja"].Body != "日本語の副題" || payload.Translations["ko"].Subject != "1732호 주보가 발행되었습니다" || payload.Translations["ko"].Body != "한국어 부제" {
+		t.Fatalf("translations=%#v", payload.Translations)
+	}
+	if payload.Translations["zh-Hans"].Body != "English title" {
+		t.Fatalf("draft translation leaked into notification: %#v", payload.Translations)
 	}
 }
 

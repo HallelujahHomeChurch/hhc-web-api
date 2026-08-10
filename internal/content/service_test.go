@@ -370,6 +370,40 @@ func TestServiceNormalizesPublicPagination(t *testing.T) {
 	}
 }
 
+func TestServiceAcceptsJapaneseAndKoreanContentLocales(t *testing.T) {
+	repo := &serviceRepository{}
+	service := NewService(repo, time.Now)
+	translations := []Translation{
+		{Locale: "zh-Hant", Title: "影片"},
+		{Locale: "zh-Hans", Title: "视频"},
+		{Locale: "en", Title: "Video"},
+		{Locale: "ja", Title: "動画"},
+		{Locale: "ko", Title: "동영상"},
+	}
+
+	created, err := service.CreateContent(context.Background(), ModuleVideos, WriteInput{
+		YouTubeVideoID: "K3ckFWeSQ-k",
+		Translations:   translations,
+	}, "user-1", "five-locales")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.UpdateContent(context.Background(), ModuleVideos, created.ID, created.Version, WriteInput{
+		YouTubeVideoID: "K3ckFWeSQ-k",
+		Translations:   translations,
+	}, "user-1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.PublishContent(context.Background(), ModuleVideos, created.ID, created.Version, "user-1"); err != nil {
+		t.Fatal(err)
+	}
+	for _, locale := range []string{"ja", "ko"} {
+		if _, err := service.PublicContent(context.Background(), ModuleVideos, locale, 1, 20); err != nil {
+			t.Fatalf("public %s: %v", locale, err)
+		}
+	}
+}
+
 func translations() []Translation {
 	return []Translation{{Locale: "zh-Hant", Title: "標題", Summary: "摘要", Body: "內容", DateLabel: "2026年"}}
 }

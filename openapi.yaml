@@ -748,7 +748,7 @@ components:
             enabled: { type: boolean }
     Locale:
       type: string
-      enum: [zh-Hant, zh-Hans, en]
+      enum: [zh-Hant, zh-Hans, en, ja, ko]
       default: zh-Hant
     BulletinStatus:
       type: string
@@ -979,7 +979,7 @@ components:
         translations:
           type: array
           minItems: 1
-          maxItems: 3
+          maxItems: 5
           items: { $ref: '#/components/schemas/ContentTranslation' }
         deleteLocales:
           type: array

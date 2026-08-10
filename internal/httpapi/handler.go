@@ -542,7 +542,14 @@ func locale(r *http.Request) string {
 	}
 	return value
 }
-func validLocale(value string) bool { return value == "zh-Hant" || value == "zh-Hans" || value == "en" }
+func validLocale(value string) bool {
+	switch value {
+	case "zh-Hant", "zh-Hans", "en", "ja", "ko":
+		return true
+	default:
+		return false
+	}
+}
 func pagination(r *http.Request) (int, int) {
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 	size, _ := strconv.Atoi(r.URL.Query().Get("pageSize"))
