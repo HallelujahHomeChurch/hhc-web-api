@@ -184,6 +184,7 @@ func (h *Handler) adminCreateUpload(w http.ResponseWriter, r *http.Request) {
 		handleError(w, err)
 		return
 	}
+	logAssetEvent(r, "asset upload session created", "bulletin", r.PathValue("issueID"), created.Asset.ID)
 	writeData(w, http.StatusCreated, created, nil)
 }
 func (h *Handler) adminCompleteUpload(w http.ResponseWriter, r *http.Request) {
@@ -236,6 +237,7 @@ func (h *Handler) adminCompleteUpload(w http.ResponseWriter, r *http.Request) {
 		handleError(w, err)
 		return
 	}
+	logAssetEvent(r, "asset attached", "bulletin", r.PathValue("issueID"), asset.ID)
 	w.Header().Set("ETag", fmt.Sprintf(`"%d"`, value.Version))
 	writeData(w, http.StatusOK, value, nil)
 }
@@ -290,6 +292,14 @@ func ownedBulletinAsset(asset assetclient.Asset, issueID, assetID, locale string
 	return asset.ID == assetID && asset.Namespace == "cms.weekly.pdf" &&
 		asset.OwnerService == "hhc-web-api" && asset.OwnerType == "bulletin_issue" &&
 		asset.OwnerID == issueID && asset.Locale == locale
+}
+func logAssetEvent(r *http.Request, message, resourceType, resourceID, assetID string) {
+	slog.Info(message,
+		"request_id", r.Header.Get("X-HHC-Request-ID"),
+		"resource_type", resourceType,
+		"resource_id", resourceID,
+		"asset_id", assetID,
+	)
 }
 func (h *Handler) ready(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)

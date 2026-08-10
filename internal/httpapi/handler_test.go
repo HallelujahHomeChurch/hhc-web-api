@@ -427,11 +427,16 @@ func TestBulletinUploadSessionRequiresBothCMSAndAssetScopes(t *testing.T) {
 }
 
 func TestCompleteBulletinUploadAttachesOwnedAsset(t *testing.T) {
+	var output bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&output, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
 	repo := &apiRepository{issue: bulletinIssue()}
 	uploads := &apiUploads{completed: assetclient.Asset{ID: "asset-1", Namespace: "cms.weekly.pdf", OwnerService: "hhc-web-api", OwnerType: "bulletin_issue", OwnerID: "issue-1", Locale: "zh-Hant", OriginalFileName: "weekly.pdf"}}
 	handler := testHandlerWithUploads(repo, uploads)
 	request := httptest.NewRequest(http.MethodPost, "/api/admin/bulletins/issue-1/assets/asset-1/complete", bytes.NewBufferString(`{"locale":"zh-Hant","title":"週報","fileName":"weekly.pdf","mimeType":"application/pdf","sizeBytes":128,"checksumSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`))
 	trusted(request, "cms:write assets:write")
+	request.Header.Set("X-HHC-Request-ID", "request-upload-1")
 	request.Header.Set("If-Match", `"1"`)
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
@@ -440,6 +445,10 @@ func TestCompleteBulletinUploadAttachesOwnedAsset(t *testing.T) {
 	}
 	if repo.put.PDFAssetID != "asset-1" || repo.put.Locale != "zh-Hant" {
 		t.Fatalf("put = %#v", repo.put)
+	}
+	logged := output.String()
+	if !strings.Contains(logged, `"asset_id":"asset-1"`) || !strings.Contains(logged, `"request_id":"request-upload-1"`) || !strings.Contains(logged, `"resource_id":"issue-1"`) {
+		t.Fatalf("missing asset correlation log: %s", logged)
 	}
 }
 
