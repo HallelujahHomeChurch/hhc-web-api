@@ -11,6 +11,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 var (
@@ -63,7 +65,7 @@ func New(baseURL, caller, publicBaseURL string) *Client {
 		baseURL:       strings.TrimRight(baseURL, "/"),
 		caller:        caller,
 		publicBaseURL: strings.TrimRight(publicBaseURL, "/"),
-		http:          &http.Client{Timeout: 10 * time.Second},
+		http:          &http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport), Timeout: 10 * time.Second},
 	}
 }
 func (c *Client) Get(ctx context.Context, id string) (Asset, error) {
