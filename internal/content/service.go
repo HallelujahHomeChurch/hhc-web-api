@@ -81,18 +81,24 @@ func (s *Service) GetContent(ctx context.Context, module Module, id string) (Ite
 }
 func (s *Service) UpdateContent(ctx context.Context, module Module, id string, expected int64, input WriteInput, actor string) (Item, error) {
 	input = normalize(input)
+	if !validModule(module) || expected < 1 {
+		return Item{}, ErrInvalid
+	}
+	current, err := s.repository.GetContent(ctx, module, id)
+	if err != nil {
+		return Item{}, err
+	}
 	if module == ModuleNews {
 		if input.Slug == "" {
-			current, err := s.repository.GetContent(ctx, module, id)
-			if err != nil {
-				return Item{}, err
-			}
 			input.Slug = current.Slug
 		}
 		input = normalizeNews(input, "")
 	}
-	if expected < 1 || !valid(module, input) {
+	if !valid(module, input) || !validDeleteLocales(input.DeleteLocales) {
 		return Item{}, ErrInvalid
+	}
+	if localeSetMismatch(current.Translations, input.Translations, input.DeleteLocales) {
+		return Item{}, ErrLocaleSetMismatch
 	}
 	return s.repository.UpdateContent(ctx, module, id, expected, input, actor, s.now().UTC())
 }
@@ -116,10 +122,19 @@ func (s *Service) ContentRevisions(ctx context.Context, module Module, id string
 	return s.repository.ContentRevisions(ctx, module, id)
 }
 func (s *Service) RestoreContent(ctx context.Context, module Module, id string, revision, expected int64, actor string) (Item, error) {
-	if revision < 1 || expected < 1 {
+	if !validModule(module) || revision < 1 || expected < 1 {
 		return Item{}, ErrInvalid
 	}
-	return s.repository.RestoreContent(ctx, module, id, revision, expected, actor, s.now().UTC())
+	current, err := s.repository.GetContent(ctx, module, id)
+	if err != nil {
+		return Item{}, err
+	}
+	value, err := s.repository.ContentRevision(ctx, module, id, revision)
+	if err != nil {
+		return Item{}, err
+	}
+	input := WriteInput{Slug: value.Snapshot.Slug, DisplayDate: value.Snapshot.DisplayDate, EventDate: value.Snapshot.EventDate, YouTubeVideoID: value.Snapshot.YouTubeVideoID, CoverAssetID: value.Snapshot.CoverAssetID, HomeCoverAssetID: value.Snapshot.HomeCoverAssetID, DetailLayout: value.Snapshot.DetailLayout, Featured: value.Snapshot.Featured, HomeEligible: value.Snapshot.HomeEligible, Translations: preserveMissingLocales(value.Snapshot.Translations, current.Translations)}
+	return s.UpdateContent(ctx, module, id, expected, input, actor)
 }
 func (s *Service) DeleteContent(ctx context.Context, module Module, id string, expected int64, actor string) error {
 	if !validModule(module) || strings.TrimSpace(id) == "" || expected < 1 || strings.TrimSpace(actor) == "" {
@@ -250,7 +265,53 @@ func normalize(input WriteInput) WriteInput {
 		input.Translations[index].DateLabel = strings.TrimSpace(input.Translations[index].DateLabel)
 		input.Translations[index].ImageAlt = strings.TrimSpace(input.Translations[index].ImageAlt)
 	}
+	for index := range input.DeleteLocales {
+		input.DeleteLocales[index] = strings.TrimSpace(input.DeleteLocales[index])
+	}
 	return input
+}
+
+func validDeleteLocales(locales []string) bool {
+	seen := map[string]bool{}
+	for _, locale := range locales {
+		if !validLocale(locale) || seen[locale] {
+			return false
+		}
+		seen[locale] = true
+	}
+	return true
+}
+
+func localeSetMismatch(current, submitted []Translation, deleted []string) bool {
+	seen := make(map[string]bool, len(submitted))
+	for _, translation := range submitted {
+		seen[translation.Locale] = true
+	}
+	for _, locale := range deleted {
+		if seen[locale] {
+			return true
+		}
+		seen[locale] = true
+	}
+	for _, translation := range current {
+		if !seen[translation.Locale] {
+			return true
+		}
+	}
+	return false
+}
+
+func preserveMissingLocales(snapshot, current []Translation) []Translation {
+	seen := make(map[string]bool, len(snapshot))
+	for _, translation := range snapshot {
+		seen[translation.Locale] = true
+	}
+	for _, translation := range current {
+		if !seen[translation.Locale] {
+			snapshot = append(snapshot, translation)
+		}
+	}
+	return snapshot
 }
 
 func validNewsDetailLayout(value string) bool {

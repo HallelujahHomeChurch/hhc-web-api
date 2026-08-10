@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -485,19 +486,25 @@ func (r *Repository) ContentRevisions(ctx context.Context, module content.Module
 	return values, rows.Err()
 }
 
-func (r *Repository) RestoreContent(ctx context.Context, module content.Module, id string, revision, expected int64, actor string, now time.Time) (content.Item, error) {
+func (r *Repository) ContentRevision(ctx context.Context, module content.Module, id string, revision int64) (content.Revision, error) {
+	var value content.Revision
 	var payload []byte
-	if err := r.db.QueryRowContext(ctx, `SELECT snapshot_json FROM hhc_web.content_revision WHERE entry_id=$1 AND version=$2`, id, revision).Scan(&payload); errors.Is(err, sql.ErrNoRows) {
-		return content.Item{}, content.ErrNotFound
-	} else if err != nil {
-		return content.Item{}, err
+	err := r.db.QueryRowContext(ctx, `
+		SELECT r.version,r.snapshot_json,r.created_by,r.created_at
+		FROM hhc_web.content_revision r
+		JOIN hhc_web.content_entry e ON e.id=r.entry_id
+		WHERE r.entry_id=$1 AND e.module=$2 AND r.version=$3`, id, module, revision).
+		Scan(&value.Version, &payload, &value.CreatedBy, &value.CreatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return content.Revision{}, content.ErrNotFound
 	}
-	var snapshot content.Item
-	if err := json.Unmarshal(payload, &snapshot); err != nil {
-		return content.Item{}, err
+	if err != nil {
+		return content.Revision{}, err
 	}
-	input := content.WriteInput{Slug: snapshot.Slug, DisplayDate: snapshot.DisplayDate, EventDate: snapshot.EventDate, YouTubeVideoID: snapshot.YouTubeVideoID, CoverAssetID: snapshot.CoverAssetID, HomeCoverAssetID: snapshot.HomeCoverAssetID, DetailLayout: snapshot.DetailLayout, Featured: snapshot.Featured, HomeEligible: snapshot.HomeEligible, Translations: snapshot.Translations}
-	return r.UpdateContent(ctx, module, id, expected, input, actor, now)
+	if err := json.Unmarshal(payload, &value.Snapshot); err != nil {
+		return content.Revision{}, err
+	}
+	return value, nil
 }
 
 func (r *Repository) DeleteContent(ctx context.Context, module content.Module, id string, expected int64, actor string, now time.Time) error {
@@ -604,45 +611,79 @@ func (r *Repository) PublicContent(ctx context.Context, module content.Module, l
 		return content.PublicPage{}, err
 	}
 	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`
-		SELECT payload_json
-		FROM (
-			SELECT DISTINCT ON (resource_id) resource_id,payload_json,updated_at
+		WITH localized AS (
+			SELECT DISTINCT ON (resource_id) resource_id,locale,payload_json,updated_at
 			FROM hhc_web.public_projection
 			WHERE resource_type=$1 AND locale IN ($2,'zh-Hant')
 			ORDER BY resource_id,CASE WHEN locale=$2 THEN 0 ELSE 1 END
-		) localized
-		ORDER BY %s
-		LIMIT $3 OFFSET $4`, order), module, locale, pageSize, (page-1)*pageSize)
+		), paged AS (
+			SELECT resource_id,locale,payload_json,updated_at
+			FROM localized
+			ORDER BY %s
+			LIMIT $3 OFFSET $4
+		), availability AS (
+			SELECT projection.resource_id AS available_resource_id,
+				jsonb_agg(projection.locale ORDER BY projection.locale) AS locales
+			FROM hhc_web.public_projection projection
+			JOIN paged ON paged.resource_id=projection.resource_id
+			WHERE projection.resource_type=$1
+			GROUP BY projection.resource_id
+		)
+		SELECT paged.resource_id,paged.locale,paged.payload_json,availability.locales
+		FROM paged
+		JOIN availability ON availability.available_resource_id=paged.resource_id
+		ORDER BY %s`, order, order), module, locale, pageSize, (page-1)*pageSize)
 	if err != nil {
 		return content.PublicPage{}, err
 	}
 	defer rows.Close()
 	values := []content.PublicItem{}
 	for rows.Next() {
-		var payload []byte
+		var id, resolvedLocale string
+		var payload, availableLocales []byte
 		var value content.PublicItem
-		if err := rows.Scan(&payload); err != nil {
+		if err := rows.Scan(&id, &resolvedLocale, &payload, &availableLocales); err != nil {
 			return content.PublicPage{}, err
 		}
 		if err := json.Unmarshal(payload, &value); err != nil {
 			return content.PublicPage{}, err
 		}
+		if err := enrichPublicItem(&value, id, locale, resolvedLocale, availableLocales); err != nil {
+			return content.PublicPage{}, err
+		}
 		values = append(values, value)
 	}
-	return content.PublicPage{Items: values, Page: page, PageSize: pageSize, Total: total}, rows.Err()
+	if err := rows.Err(); err != nil {
+		return content.PublicPage{}, err
+	}
+	return content.PublicPage{Items: values, Page: page, PageSize: pageSize, Total: total}, nil
 }
 
 func (r *Repository) PublicNews(ctx context.Context, locale, slug string) (content.PublicItem, string, error) {
-	var payload []byte
+	var id, resolvedLocale string
+	var payload, availableLocales []byte
 	var etag string
 	err := r.db.QueryRowContext(ctx, `
-		SELECT payload_json,etag
-		FROM hhc_web.public_projection
-		WHERE resource_type='news'
-			AND locale IN ($1,'zh-Hant')
-			AND route_path IN ('/' || $1 || '/news/' || $2,'/zh-Hant/news/' || $2)
-		ORDER BY CASE WHEN locale=$1 THEN 0 ELSE 1 END
-		LIMIT 1`, locale, slug).Scan(&payload, &etag)
+		WITH selected AS (
+			SELECT resource_id,locale,payload_json,etag
+			FROM hhc_web.public_projection
+			WHERE resource_type='news'
+				AND locale IN ($1,'zh-Hant')
+				AND route_path IN ('/' || $1 || '/news/' || $2,'/zh-Hant/news/' || $2)
+			ORDER BY CASE WHEN locale=$1 THEN 0 ELSE 1 END
+			LIMIT 1
+		), availability AS (
+			SELECT projection.resource_id AS available_resource_id,
+				jsonb_agg(projection.locale ORDER BY projection.locale) AS locales
+			FROM hhc_web.public_projection projection
+			JOIN selected ON selected.resource_id=projection.resource_id
+			WHERE projection.resource_type='news'
+			GROUP BY projection.resource_id
+		)
+		SELECT selected.resource_id,selected.locale,selected.payload_json,selected.etag,availability.locales
+		FROM selected
+		JOIN availability ON availability.available_resource_id=selected.resource_id`, locale, slug).
+		Scan(&id, &resolvedLocale, &payload, &etag, &availableLocales)
 	if errors.Is(err, sql.ErrNoRows) {
 		return content.PublicItem{}, "", content.ErrNotFound
 	}
@@ -653,7 +694,63 @@ func (r *Repository) PublicNews(ctx context.Context, locale, slug string) (conte
 	if err := json.Unmarshal(payload, &item); err != nil {
 		return content.PublicItem{}, "", err
 	}
-	return item, etag, nil
+	if err := enrichPublicItem(&item, id, locale, resolvedLocale, availableLocales); err != nil {
+		return content.PublicItem{}, "", err
+	}
+	return item, publicResponseETag(etag, locale, item), nil
+}
+
+func enrichPublicItem(value *content.PublicItem, id, requestedLocale, resolvedLocale string, availableLocales []byte) error {
+	if err := json.Unmarshal(availableLocales, &value.AvailableLocales); err != nil {
+		return err
+	}
+	if value.ID == "" {
+		value.ID = id
+	}
+	sortPublicLocales(value.AvailableLocales)
+	value.ResolvedLocale = resolvedLocale
+	value.Href = localizedPublicHref(value.Href, resolvedLocale, requestedLocale)
+	return nil
+}
+
+func sortPublicLocales(locales []string) {
+	sort.Slice(locales, func(i, j int) bool {
+		left, right := publicLocaleRank(locales[i]), publicLocaleRank(locales[j])
+		if left == right {
+			return locales[i] < locales[j]
+		}
+		return left < right
+	})
+}
+
+func publicLocaleRank(locale string) int {
+	switch locale {
+	case "zh-Hant":
+		return 0
+	case "zh-Hans":
+		return 1
+	case "en":
+		return 2
+	case "ja":
+		return 3
+	case "ko":
+		return 4
+	default:
+		return 5
+	}
+}
+
+func publicResponseETag(projectionETag, requestedLocale string, item content.PublicItem) string {
+	value := strings.Join([]string{projectionETag, requestedLocale, item.ResolvedLocale, strings.Join(item.AvailableLocales, ",")}, "\x00")
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(value)))
+}
+
+func localizedPublicHref(href, resolvedLocale, requestedLocale string) string {
+	prefix := "/" + resolvedLocale + "/"
+	if strings.HasPrefix(href, prefix) {
+		return "/" + requestedLocale + "/" + strings.TrimPrefix(href, prefix)
+	}
+	return href
 }
 
 func lockContent(ctx context.Context, tx *sql.Tx, module content.Module, id string) (int64, string, error) {

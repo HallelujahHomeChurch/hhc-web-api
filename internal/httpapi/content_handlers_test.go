@@ -35,6 +35,23 @@ func TestContentRoutesEnforceScopeAndConcurrency(t *testing.T) {
 	}
 }
 
+func TestContentUpdateRejectsOmittedLocale(t *testing.T) {
+	repo := &contentRepository{item: content.Item{
+		ID: "video-1", Module: content.ModuleVideos, Version: 2, YouTubeVideoID: "K3ckFWeSQ-k",
+		Translations: []content.Translation{{Locale: "zh-Hant", Title: "影片"}, {Locale: "en", Title: "Video"}},
+	}}
+	request := httptest.NewRequest(http.MethodPut, "/api/admin/content/videos/video-1", bytes.NewBufferString(`{"youtubeVideoId":"K3ckFWeSQ-k","translations":[{"locale":"zh-Hant","title":"影片更新"}]}`))
+	trusted(request, "cms:write")
+	request.Header.Set("If-Match", `"2"`)
+	response := httptest.NewRecorder()
+
+	contentTestHandler(repo).ServeHTTP(response, request)
+
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), `"code":"locale_set_mismatch"`) {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
 func TestPublicContentReadsProjectionWithoutAuthentication(t *testing.T) {
 	repo := &contentRepository{public: []content.PublicItem{{ID: "video-1", Title: "為祢而闖"}}, publicTotal: 6}
 	response := httptest.NewRecorder()
@@ -351,8 +368,8 @@ func (r *contentRepository) UnpublishContent(context.Context, content.Module, st
 func (r *contentRepository) ContentRevisions(context.Context, content.Module, string) ([]content.Revision, error) {
 	return nil, nil
 }
-func (r *contentRepository) RestoreContent(context.Context, content.Module, string, int64, int64, string, time.Time) (content.Item, error) {
-	return r.item, nil
+func (r *contentRepository) ContentRevision(context.Context, content.Module, string, int64) (content.Revision, error) {
+	return content.Revision{}, content.ErrNotFound
 }
 func (r *contentRepository) DeleteContent(context.Context, content.Module, string, int64, string, time.Time) error {
 	r.deleted = true

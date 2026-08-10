@@ -7,11 +7,12 @@ import (
 )
 
 var (
-	ErrInvalid        = errors.New("invalid content input")
-	ErrNotFound       = errors.New("content not found")
-	ErrConflict       = errors.New("content conflict")
-	ErrPrecondition   = errors.New("content precondition failed")
-	ErrNotPublishable = errors.New("content not publishable")
+	ErrInvalid           = errors.New("invalid content input")
+	ErrNotFound          = errors.New("content not found")
+	ErrConflict          = errors.New("content conflict")
+	ErrPrecondition      = errors.New("content precondition failed")
+	ErrLocaleSetMismatch = errors.New("locale set mismatch")
+	ErrNotPublishable    = errors.New("content not publishable")
 )
 
 type Module string
@@ -52,6 +53,7 @@ type WriteInput struct {
 	Featured         bool          `json:"featured,omitempty"`
 	HomeEligible     bool          `json:"homeEligible,omitempty"`
 	Translations     []Translation `json:"translations"`
+	DeleteLocales    []string      `json:"deleteLocales,omitempty"`
 }
 
 type Item struct {
@@ -92,21 +94,23 @@ type Revision struct {
 }
 
 type PublicItem struct {
-	ID             string `json:"id"`
-	Title          string `json:"title"`
-	Summary        string `json:"summary,omitempty"`
-	Body           string `json:"body,omitempty"`
-	DateLabel      string `json:"dateLabel,omitempty"`
-	DisplayDate    string `json:"displayDate,omitempty"`
-	EventDate      string `json:"eventDate,omitempty"`
-	ImageAlt       string `json:"imageAlt,omitempty"`
-	ImageURL       string `json:"imageUrl,omitempty"`
-	HomeImageURL   string `json:"homeImageUrl,omitempty"`
-	Href           string `json:"href,omitempty"`
-	YouTubeVideoID string `json:"youtubeVideoId,omitempty"`
-	Featured       bool   `json:"featured,omitempty"`
-	HomeEligible   bool   `json:"homeEligible,omitempty"`
-	DetailLayout   string `json:"detailLayout,omitempty"`
+	ID               string   `json:"id"`
+	Title            string   `json:"title"`
+	Summary          string   `json:"summary,omitempty"`
+	Body             string   `json:"body,omitempty"`
+	DateLabel        string   `json:"dateLabel,omitempty"`
+	DisplayDate      string   `json:"displayDate,omitempty"`
+	EventDate        string   `json:"eventDate,omitempty"`
+	ImageAlt         string   `json:"imageAlt,omitempty"`
+	ImageURL         string   `json:"imageUrl,omitempty"`
+	HomeImageURL     string   `json:"homeImageUrl,omitempty"`
+	Href             string   `json:"href,omitempty"`
+	YouTubeVideoID   string   `json:"youtubeVideoId,omitempty"`
+	Featured         bool     `json:"featured,omitempty"`
+	HomeEligible     bool     `json:"homeEligible,omitempty"`
+	DetailLayout     string   `json:"detailLayout,omitempty"`
+	ResolvedLocale   string   `json:"resolvedLocale"`
+	AvailableLocales []string `json:"availableLocales"`
 }
 
 type Page struct {
@@ -140,7 +144,7 @@ type Repository interface {
 	PublishContent(context.Context, Module, string, int64, string, time.Time) (Item, error)
 	UnpublishContent(context.Context, Module, string, int64, string, time.Time) (Item, error)
 	ContentRevisions(context.Context, Module, string) ([]Revision, error)
-	RestoreContent(context.Context, Module, string, int64, int64, string, time.Time) (Item, error)
+	ContentRevision(context.Context, Module, string, int64) (Revision, error)
 	DeleteContent(context.Context, Module, string, int64, string, time.Time) error
 	PublicContent(context.Context, Module, string, int, int) (PublicPage, error)
 	PublicNews(context.Context, string, string) (PublicItem, string, error)

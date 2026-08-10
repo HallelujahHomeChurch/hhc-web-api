@@ -447,6 +447,8 @@ func handleContentError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "not_found", "The content was not found.")
 	case errors.Is(err, content.ErrConflict):
 		writeError(w, http.StatusConflict, "content_conflict", "The content conflicts with an existing record.")
+	case errors.Is(err, content.ErrLocaleSetMismatch):
+		writeError(w, http.StatusConflict, "locale_set_mismatch", "Existing locales must be submitted or explicitly deleted.")
 	case errors.Is(err, content.ErrPrecondition):
 		writeError(w, http.StatusPreconditionFailed, "precondition_failed", "The content changed. Reload and try again.")
 	case errors.Is(err, content.ErrNotPublishable):
