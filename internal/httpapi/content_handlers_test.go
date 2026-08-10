@@ -368,8 +368,8 @@ func (r *contentRepository) UnpublishContent(context.Context, content.Module, st
 func (r *contentRepository) ContentRevisions(context.Context, content.Module, string) ([]content.Revision, error) {
 	return nil, nil
 }
-func (r *contentRepository) RestoreContent(context.Context, content.Module, string, int64, int64, string, time.Time) (content.Item, error) {
-	return r.item, nil
+func (r *contentRepository) ContentRevision(context.Context, content.Module, string, int64) (content.Revision, error) {
+	return content.Revision{}, content.ErrNotFound
 }
 func (r *contentRepository) DeleteContent(context.Context, content.Module, string, int64, string, time.Time) error {
 	r.deleted = true

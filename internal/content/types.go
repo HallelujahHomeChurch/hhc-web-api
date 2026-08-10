@@ -144,6 +144,7 @@ type Repository interface {
 	PublishContent(context.Context, Module, string, int64, string, time.Time) (Item, error)
 	UnpublishContent(context.Context, Module, string, int64, string, time.Time) (Item, error)
 	ContentRevisions(context.Context, Module, string) ([]Revision, error)
+	ContentRevision(context.Context, Module, string, int64) (Revision, error)
 	DeleteContent(context.Context, Module, string, int64, string, time.Time) error
 	PublicContent(context.Context, Module, string, int, int) (PublicPage, error)
 	PublicNews(context.Context, string, string) (PublicItem, string, error)

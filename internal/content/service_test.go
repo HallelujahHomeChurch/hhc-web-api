@@ -131,10 +131,10 @@ func TestRestoreRevisionPreservesLocalesMissingFromSnapshot(t *testing.T) {
 	repo := &serviceRepository{item: Item{
 		ID: "video-1", Module: ModuleVideos, Version: 2, YouTubeVideoID: "K3ckFWeSQ-k",
 		Translations: []Translation{{Locale: "zh-Hant", Title: "目前影片"}, {Locale: "en", Title: "Current video"}},
-	}, revisions: []Revision{{Version: 1, Snapshot: Item{
+	}, revision: Revision{Version: 1, Snapshot: Item{
 		Module: ModuleVideos, YouTubeVideoID: "K3ckFWeSQ-k",
 		Translations: []Translation{{Locale: "zh-Hant", Title: "歷史影片"}},
-	}}}}
+	}}}
 	service := NewService(repo, time.Now)
 
 	if _, err := service.RestoreContent(context.Background(), ModuleVideos, "video-1", 1, 2, "user-1"); err != nil {
@@ -142,6 +142,22 @@ func TestRestoreRevisionPreservesLocalesMissingFromSnapshot(t *testing.T) {
 	}
 	if got := repo.updateInput.Translations; len(got) != 2 || got[0].Locale != "zh-Hant" || got[0].Title != "歷史影片" || got[1].Locale != "en" || got[1].Title != "Current video" {
 		t.Fatalf("translations=%#v", got)
+	}
+	if repo.contentRevisionsCalls != 0 {
+		t.Fatalf("broad revision list calls=%d", repo.contentRevisionsCalls)
+	}
+}
+
+func TestRestoreContentReturnsNotFoundForMissingRevision(t *testing.T) {
+	repo := &serviceRepository{
+		item:          Item{ID: "video-1", Module: ModuleVideos, Version: 2},
+		revisionError: ErrNotFound,
+	}
+	service := NewService(repo, time.Now)
+
+	_, err := service.RestoreContent(context.Background(), ModuleVideos, "video-1", 99, 2, "user-1")
+	if !errors.Is(err, ErrNotFound) || repo.updateCalls != 0 || repo.contentRevisionsCalls != 0 {
+		t.Fatalf("err=%v updateCalls=%d broadCalls=%d", err, repo.updateCalls, repo.contentRevisionsCalls)
 	}
 }
 
@@ -368,17 +384,19 @@ func historyInput(eventDate string) WriteInput {
 }
 
 type serviceRepository struct {
-	item           Item
-	revisions      []Revision
-	listOptions    ListOptions
-	updateInput    WriteInput
-	updateCalls    int
-	deletedID      string
-	expected       int64
-	actor          string
-	now            time.Time
-	publicPage     int
-	publicPageSize int
+	item                  Item
+	revision              Revision
+	revisionError         error
+	listOptions           ListOptions
+	updateInput           WriteInput
+	updateCalls           int
+	contentRevisionsCalls int
+	deletedID             string
+	expected              int64
+	actor                 string
+	now                   time.Time
+	publicPage            int
+	publicPageSize        int
 }
 
 func (r *serviceRepository) CreateContent(_ context.Context, module Module, input WriteInput, actor, key string, now time.Time) (Item, error) {
@@ -408,10 +426,17 @@ func (r *serviceRepository) UnpublishContent(context.Context, Module, string, in
 	return r.item, nil
 }
 func (r *serviceRepository) ContentRevisions(context.Context, Module, string) ([]Revision, error) {
-	return r.revisions, nil
+	r.contentRevisionsCalls++
+	return nil, nil
 }
-func (r *serviceRepository) RestoreContent(context.Context, Module, string, int64, int64, string, time.Time) (Item, error) {
-	return r.item, nil
+func (r *serviceRepository) ContentRevision(_ context.Context, _ Module, _ string, revision int64) (Revision, error) {
+	if r.revisionError != nil {
+		return Revision{}, r.revisionError
+	}
+	if revision != r.revision.Version {
+		return Revision{}, ErrNotFound
+	}
+	return r.revision, nil
 }
 func (r *serviceRepository) DeleteContent(_ context.Context, _ Module, id string, expected int64, actor string, now time.Time) error {
 	r.deletedID, r.expected, r.actor, r.now = id, expected, actor, now

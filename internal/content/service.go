@@ -129,17 +129,12 @@ func (s *Service) RestoreContent(ctx context.Context, module Module, id string, 
 	if err != nil {
 		return Item{}, err
 	}
-	revisions, err := s.repository.ContentRevisions(ctx, module, id)
+	value, err := s.repository.ContentRevision(ctx, module, id, revision)
 	if err != nil {
 		return Item{}, err
 	}
-	for _, value := range revisions {
-		if value.Version == revision {
-			input := WriteInput{Slug: value.Snapshot.Slug, DisplayDate: value.Snapshot.DisplayDate, EventDate: value.Snapshot.EventDate, YouTubeVideoID: value.Snapshot.YouTubeVideoID, CoverAssetID: value.Snapshot.CoverAssetID, HomeCoverAssetID: value.Snapshot.HomeCoverAssetID, DetailLayout: value.Snapshot.DetailLayout, Featured: value.Snapshot.Featured, HomeEligible: value.Snapshot.HomeEligible, Translations: preserveMissingLocales(value.Snapshot.Translations, current.Translations)}
-			return s.UpdateContent(ctx, module, id, expected, input, actor)
-		}
-	}
-	return Item{}, ErrNotFound
+	input := WriteInput{Slug: value.Snapshot.Slug, DisplayDate: value.Snapshot.DisplayDate, EventDate: value.Snapshot.EventDate, YouTubeVideoID: value.Snapshot.YouTubeVideoID, CoverAssetID: value.Snapshot.CoverAssetID, HomeCoverAssetID: value.Snapshot.HomeCoverAssetID, DetailLayout: value.Snapshot.DetailLayout, Featured: value.Snapshot.Featured, HomeEligible: value.Snapshot.HomeEligible, Translations: preserveMissingLocales(value.Snapshot.Translations, current.Translations)}
+	return s.UpdateContent(ctx, module, id, expected, input, actor)
 }
 func (s *Service) DeleteContent(ctx context.Context, module Module, id string, expected int64, actor string) error {
 	if !validModule(module) || strings.TrimSpace(id) == "" || expected < 1 || strings.TrimSpace(actor) == "" {

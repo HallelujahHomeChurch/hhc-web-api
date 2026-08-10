@@ -2,13 +2,59 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"reflect"
 	"regexp"
 	"testing"
+	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/content"
 )
+
+func TestContentRevisionLoadsTargetedSnapshot(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	now := time.Date(2026, 8, 11, 0, 0, 0, 0, time.UTC)
+	mock.ExpectQuery("SELECT r.version,r.snapshot_json,r.created_by,r.created_at").
+		WithArgs("video-1", content.ModuleVideos, int64(7)).
+		WillReturnRows(sqlmock.NewRows([]string{"version", "snapshot_json", "created_by", "created_at"}).
+			AddRow(int64(7), []byte(`{"id":"video-1","module":"videos","translations":[{"locale":"ja","title":"動画"}]}`), "user-1", now))
+
+	revision, err := New(db).ContentRevision(context.Background(), content.ModuleVideos, "video-1", 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if revision.Version != 7 || revision.CreatedBy != "user-1" || len(revision.Snapshot.Translations) != 1 || revision.Snapshot.Translations[0].Title != "動画" {
+		t.Fatalf("revision=%#v", revision)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestContentRevisionReturnsNotFound(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	mock.ExpectQuery("SELECT r.version,r.snapshot_json,r.created_by,r.created_at").
+		WithArgs("video-1", content.ModuleVideos, int64(99)).
+		WillReturnError(sql.ErrNoRows)
+
+	_, err = New(db).ContentRevision(context.Background(), content.ModuleVideos, "video-1", 99)
+	if !errors.Is(err, content.ErrNotFound) {
+		t.Fatalf("error=%v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestHistoryContentOrderingUsesEventDateNullLastAndStableID(t *testing.T) {
 	order, join := contentOrdering(content.ModuleHistory, "eventDate", "desc")

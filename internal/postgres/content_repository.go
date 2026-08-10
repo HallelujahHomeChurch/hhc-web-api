@@ -486,6 +486,27 @@ func (r *Repository) ContentRevisions(ctx context.Context, module content.Module
 	return values, rows.Err()
 }
 
+func (r *Repository) ContentRevision(ctx context.Context, module content.Module, id string, revision int64) (content.Revision, error) {
+	var value content.Revision
+	var payload []byte
+	err := r.db.QueryRowContext(ctx, `
+		SELECT r.version,r.snapshot_json,r.created_by,r.created_at
+		FROM hhc_web.content_revision r
+		JOIN hhc_web.content_entry e ON e.id=r.entry_id
+		WHERE r.entry_id=$1 AND e.module=$2 AND r.version=$3`, id, module, revision).
+		Scan(&value.Version, &payload, &value.CreatedBy, &value.CreatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return content.Revision{}, content.ErrNotFound
+	}
+	if err != nil {
+		return content.Revision{}, err
+	}
+	if err := json.Unmarshal(payload, &value.Snapshot); err != nil {
+		return content.Revision{}, err
+	}
+	return value, nil
+}
+
 func (r *Repository) DeleteContent(ctx context.Context, module content.Module, id string, expected int64, actor string, now time.Time) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
