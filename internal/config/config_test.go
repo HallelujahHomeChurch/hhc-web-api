@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestProductionRequiresDaprAPIToken(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://example")
@@ -57,5 +60,94 @@ func TestFiveLocaleBulletinNotificationsRequireExplicitFluentReviewEnablement(t 
 	}
 	if !cfg.EnableFiveLocaleBulletinNotificationsAfterFluentReview {
 		t.Fatal("explicit fluent-review enablement was ignored")
+	}
+}
+
+func TestTranslationConfigurationDefaultsDisabledWithoutAzureValues(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://example")
+	t.Setenv("CMS_TRANSLATION_ENABLED", "")
+	t.Setenv("AZURE_OPENAI_ENDPOINT", "")
+	t.Setenv("AZURE_OPENAI_DEPLOYMENT", "")
+	t.Setenv("AZURE_OPENAI_API_KEY", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := TranslationConfig{
+		ProviderTimeout: 40 * time.Second,
+		HandlerTimeout:  45 * time.Second,
+		WriteDeadline:   50 * time.Second,
+		SourceCharLimit: 20000,
+		ActorLimit:      10,
+		DeploymentLimit: 60,
+	}
+	if cfg.Translation != want {
+		t.Fatalf("translation config = %#v, want %#v", cfg.Translation, want)
+	}
+}
+
+func TestTranslationEnabledRequiresAzureConfiguration(t *testing.T) {
+	tests := []struct {
+		name       string
+		endpoint   string
+		deployment string
+		key        string
+		wantErr    bool
+	}{
+		{name: "valid", endpoint: "https://example.openai.azure.com", deployment: "cms-translator", key: "test-key"},
+		{name: "missing endpoint", deployment: "cms-translator", key: "test-key", wantErr: true},
+		{name: "non-HTTPS endpoint", endpoint: "http://example.openai.azure.com", deployment: "cms-translator", key: "test-key", wantErr: true},
+		{name: "missing deployment", endpoint: "https://example.openai.azure.com", key: "test-key", wantErr: true},
+		{name: "missing key", endpoint: "https://example.openai.azure.com", deployment: "cms-translator", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("DATABASE_URL", "postgres://example")
+			t.Setenv("CMS_TRANSLATION_ENABLED", "true")
+			t.Setenv("AZURE_OPENAI_ENDPOINT", tt.endpoint)
+			t.Setenv("AZURE_OPENAI_DEPLOYMENT", tt.deployment)
+			t.Setenv("AZURE_OPENAI_API_KEY", tt.key)
+
+			cfg, err := Load()
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("Load() error = %v, wantErr %t", err, tt.wantErr)
+			}
+			if err == nil && (!cfg.Translation.Enabled || cfg.Translation.AzureEndpoint != tt.endpoint || cfg.Translation.AzureDeployment != tt.deployment || cfg.Translation.AzureAPIKey != tt.key) {
+				t.Fatalf("unexpected translation config: %#v", cfg.Translation)
+			}
+		})
+	}
+}
+
+func TestTranslationConfigRejectsInvalidLimits(t *testing.T) {
+	valid := TranslationConfig{
+		ProviderTimeout: 40 * time.Second,
+		HandlerTimeout:  45 * time.Second,
+		WriteDeadline:   50 * time.Second,
+		SourceCharLimit: 20000,
+		ActorLimit:      10,
+		DeploymentLimit: 60,
+	}
+	tests := []struct {
+		name   string
+		change func(*TranslationConfig)
+	}{
+		{name: "provider timeout", change: func(cfg *TranslationConfig) { cfg.ProviderTimeout = 0 }},
+		{name: "handler timeout", change: func(cfg *TranslationConfig) { cfg.HandlerTimeout = cfg.ProviderTimeout }},
+		{name: "write deadline", change: func(cfg *TranslationConfig) { cfg.WriteDeadline = cfg.HandlerTimeout }},
+		{name: "gateway deadline", change: func(cfg *TranslationConfig) { cfg.WriteDeadline = 60 * time.Second }},
+		{name: "source character limit", change: func(cfg *TranslationConfig) { cfg.SourceCharLimit = 0 }},
+		{name: "actor limit", change: func(cfg *TranslationConfig) { cfg.ActorLimit = 0 }},
+		{name: "deployment limit", change: func(cfg *TranslationConfig) { cfg.DeploymentLimit = 0 }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := valid
+			tt.change(&cfg)
+			if err := cfg.validate(); err == nil {
+				t.Fatal("expected invalid translation limits to be rejected")
+			}
+		})
 	}
 }
