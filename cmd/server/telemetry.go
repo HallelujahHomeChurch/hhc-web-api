@@ -3,11 +3,13 @@ package main
 import (
 	"context"
 	"log/slog"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
@@ -17,6 +19,36 @@ import (
 )
 
 const defaultTraceSampleRatio = 0.1
+
+type requestTraceMetadata struct {
+	remoteAddr string
+	header     http.Header
+}
+
+type requestTraceMetadataKey struct{}
+
+func newHTTPTraceHandler(next http.Handler, options ...otelhttp.Option) http.Handler {
+	// Keep client metadata available to the API without exporting it as trace attributes.
+	restoreRequest := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		metadata, _ := request.Context().Value(requestTraceMetadataKey{}).(requestTraceMetadata)
+		restored := request.Clone(request.Context())
+		restored.RemoteAddr = metadata.remoteAddr
+		restored.Header = metadata.header
+		next.ServeHTTP(writer, restored)
+	})
+	traced := otelhttp.NewHandler(restoreRequest, "hhc-web-api", options...)
+
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		metadata := requestTraceMetadata{remoteAddr: request.RemoteAddr, header: request.Header}
+		context := context.WithValue(request.Context(), requestTraceMetadataKey{}, metadata)
+		sanitized := request.Clone(context)
+		sanitized.RemoteAddr = ""
+		sanitized.Header = request.Header.Clone()
+		sanitized.Header.Del("User-Agent")
+		sanitized.Header.Del("X-Forwarded-For")
+		traced.ServeHTTP(writer, sanitized)
+	})
+}
 
 func configureTelemetry(ctx context.Context) func(context.Context) error {
 	if strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")) == "" {

@@ -20,7 +20,6 @@ import (
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/postgres"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/publication"
 	_ "github.com/jackc/pgx/v5/stdlib"
-	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 func main() {
@@ -65,7 +64,7 @@ func run() error {
 			stop()
 		}
 	}()
-	server := &http.Server{Addr: ":" + cfg.Port, Handler: otelhttp.NewHandler(handler.Routes(), "hhc-web-api"), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 2 * time.Minute}
+	server := &http.Server{Addr: ":" + cfg.Port, Handler: newHTTPTraceHandler(handler.Routes()), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 2 * time.Minute}
 	serverErrors := make(chan error, 1)
 	go func() { slog.Info("hhc web api listening", "port", cfg.Port); serverErrors <- server.ListenAndServe() }()
 	select {
