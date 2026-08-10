@@ -66,3 +66,16 @@ func TestOpenAPIDocumentsBulletinNotificationIntentAndState(t *testing.T) {
 		}
 	}
 }
+
+func TestOpenAPIDocumentsExplicitContentLocaleDeletion(t *testing.T) {
+	contents, err := os.ReadFile("openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := string(contents)
+	for _, expected := range []string{"deleteLocales:", "Locales omitted from translations are preserved", "locale_set_mismatch"} {
+		if !strings.Contains(document, expected) {
+			t.Fatalf("OpenAPI document missing %q", expected)
+		}
+	}
+}

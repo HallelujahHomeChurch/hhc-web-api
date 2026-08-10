@@ -7,11 +7,12 @@ import (
 )
 
 var (
-	ErrInvalid        = errors.New("invalid content input")
-	ErrNotFound       = errors.New("content not found")
-	ErrConflict       = errors.New("content conflict")
-	ErrPrecondition   = errors.New("content precondition failed")
-	ErrNotPublishable = errors.New("content not publishable")
+	ErrInvalid           = errors.New("invalid content input")
+	ErrNotFound          = errors.New("content not found")
+	ErrConflict          = errors.New("content conflict")
+	ErrPrecondition      = errors.New("content precondition failed")
+	ErrLocaleSetMismatch = errors.New("locale set mismatch")
+	ErrNotPublishable    = errors.New("content not publishable")
 )
 
 type Module string
@@ -52,6 +53,7 @@ type WriteInput struct {
 	Featured         bool          `json:"featured,omitempty"`
 	HomeEligible     bool          `json:"homeEligible,omitempty"`
 	Translations     []Translation `json:"translations"`
+	DeleteLocales    []string      `json:"deleteLocales,omitempty"`
 }
 
 type Item struct {
@@ -140,7 +142,6 @@ type Repository interface {
 	PublishContent(context.Context, Module, string, int64, string, time.Time) (Item, error)
 	UnpublishContent(context.Context, Module, string, int64, string, time.Time) (Item, error)
 	ContentRevisions(context.Context, Module, string) ([]Revision, error)
-	RestoreContent(context.Context, Module, string, int64, int64, string, time.Time) (Item, error)
 	DeleteContent(context.Context, Module, string, int64, string, time.Time) error
 	PublicContent(context.Context, Module, string, int, int) (PublicPage, error)
 	PublicNews(context.Context, string, string) (PublicItem, string, error)

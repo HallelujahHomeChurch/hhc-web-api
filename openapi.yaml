@@ -468,6 +468,11 @@ paths:
       requestBody: { $ref: '#/components/requestBodies/ContentWriteInput' }
       responses:
         '200': { $ref: '#/components/responses/ContentItem' }
+        '409':
+          description: Existing locales omitted from `translations` must be listed in `deleteLocales` (error code `locale_set_mismatch`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
         '412': { $ref: '#/components/responses/Error' }
     delete:
       operationId: deleteContent
@@ -976,6 +981,11 @@ components:
           minItems: 1
           maxItems: 3
           items: { $ref: '#/components/schemas/ContentTranslation' }
+        deleteLocales:
+          type: array
+          uniqueItems: true
+          description: Locales omitted from translations are preserved unless they are named here for explicit deletion.
+          items: { $ref: '#/components/schemas/Locale' }
     ContentItem:
       allOf:
         - $ref: '#/components/schemas/ContentWriteInput'

@@ -668,6 +668,7 @@ func TestContentRepublishRemovesDeletedLocaleProjection(t *testing.T) {
 	}
 	repository := New(db)
 	now := time.Now().UTC()
+	service := content.NewService(repository, func() time.Time { return now })
 	input := content.WriteInput{
 		YouTubeVideoID: "K3ckFWeSQ-k",
 		Translations: []content.Translation{
@@ -684,7 +685,8 @@ func TestContentRepublishRemovesDeletedLocaleProjection(t *testing.T) {
 		t.Fatal(err)
 	}
 	input.Translations = input.Translations[:1]
-	item, err = repository.UpdateContent(ctx, content.ModuleVideos, item.ID, item.Version, input, "user-1", now)
+	input.DeleteLocales = []string{"en"}
+	item, err = service.UpdateContent(ctx, content.ModuleVideos, item.ID, item.Version, input, "user-1")
 	if err != nil {
 		t.Fatal(err)
 	}

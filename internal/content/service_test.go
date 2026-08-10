@@ -92,6 +92,59 @@ func TestNewsUpdatePreservesExistingSlug(t *testing.T) {
 	}
 }
 
+func TestUpdateContentRejectsOmittedPersistedLocale(t *testing.T) {
+	repo := &serviceRepository{item: Item{
+		ID: "video-1", Module: ModuleVideos, Version: 2, YouTubeVideoID: "K3ckFWeSQ-k",
+		Translations: []Translation{{Locale: "zh-Hant", Title: "影片"}, {Locale: "en", Title: "Video"}},
+	}}
+	service := NewService(repo, time.Now)
+
+	_, err := service.UpdateContent(context.Background(), ModuleVideos, "video-1", 2, WriteInput{
+		YouTubeVideoID: "K3ckFWeSQ-k",
+		Translations:   []Translation{{Locale: "zh-Hant", Title: "影片更新"}},
+	}, "user-1")
+	if !errors.Is(err, ErrLocaleSetMismatch) || repo.updateCalls != 0 {
+		t.Fatalf("err=%v updateCalls=%d", err, repo.updateCalls)
+	}
+}
+
+func TestUpdateContentAllowsExplicitLocaleDeletion(t *testing.T) {
+	repo := &serviceRepository{item: Item{
+		ID: "video-1", Module: ModuleVideos, Version: 2, YouTubeVideoID: "K3ckFWeSQ-k",
+		Translations: []Translation{{Locale: "zh-Hant", Title: "影片"}, {Locale: "en", Title: "Video"}},
+	}}
+	service := NewService(repo, time.Now)
+
+	if _, err := service.UpdateContent(context.Background(), ModuleVideos, "video-1", 2, WriteInput{
+		YouTubeVideoID: "K3ckFWeSQ-k",
+		Translations:   []Translation{{Locale: "zh-Hant", Title: "影片更新"}},
+		DeleteLocales:  []string{"en"},
+	}, "user-1"); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.updateInput.Translations) != 1 || repo.updateInput.Translations[0].Locale != "zh-Hant" {
+		t.Fatalf("translations=%#v", repo.updateInput.Translations)
+	}
+}
+
+func TestRestoreRevisionPreservesLocalesMissingFromSnapshot(t *testing.T) {
+	repo := &serviceRepository{item: Item{
+		ID: "video-1", Module: ModuleVideos, Version: 2, YouTubeVideoID: "K3ckFWeSQ-k",
+		Translations: []Translation{{Locale: "zh-Hant", Title: "目前影片"}, {Locale: "en", Title: "Current video"}},
+	}, revisions: []Revision{{Version: 1, Snapshot: Item{
+		Module: ModuleVideos, YouTubeVideoID: "K3ckFWeSQ-k",
+		Translations: []Translation{{Locale: "zh-Hant", Title: "歷史影片"}},
+	}}}}
+	service := NewService(repo, time.Now)
+
+	if _, err := service.RestoreContent(context.Background(), ModuleVideos, "video-1", 1, 2, "user-1"); err != nil {
+		t.Fatal(err)
+	}
+	if got := repo.updateInput.Translations; len(got) != 2 || got[0].Locale != "zh-Hant" || got[0].Title != "歷史影片" || got[1].Locale != "en" || got[1].Title != "Current video" {
+		t.Fatalf("translations=%#v", got)
+	}
+}
+
 func TestServiceRejectsNonCanonicalHistoryEventDates(t *testing.T) {
 	service := NewService(&serviceRepository{}, time.Now)
 	for _, eventDate := range []string{"0000", "88", "1988-3", "1988-00", "1988-13", "1990-02-30", "1990/09/02"} {
@@ -316,7 +369,10 @@ func historyInput(eventDate string) WriteInput {
 
 type serviceRepository struct {
 	item           Item
+	revisions      []Revision
 	listOptions    ListOptions
+	updateInput    WriteInput
+	updateCalls    int
 	deletedID      string
 	expected       int64
 	actor          string
@@ -338,6 +394,8 @@ func (r *serviceRepository) GetContent(context.Context, Module, string) (Item, e
 }
 
 func (r *serviceRepository) UpdateContent(_ context.Context, _ Module, _ string, _ int64, input WriteInput, _ string, _ time.Time) (Item, error) {
+	r.updateCalls++
+	r.updateInput = input
 	r.item.Slug = input.Slug
 	r.item.Translations = input.Translations
 	return r.item, nil
@@ -350,7 +408,7 @@ func (r *serviceRepository) UnpublishContent(context.Context, Module, string, in
 	return r.item, nil
 }
 func (r *serviceRepository) ContentRevisions(context.Context, Module, string) ([]Revision, error) {
-	return nil, nil
+	return r.revisions, nil
 }
 func (r *serviceRepository) RestoreContent(context.Context, Module, string, int64, int64, string, time.Time) (Item, error) {
 	return r.item, nil

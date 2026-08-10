@@ -485,21 +485,6 @@ func (r *Repository) ContentRevisions(ctx context.Context, module content.Module
 	return values, rows.Err()
 }
 
-func (r *Repository) RestoreContent(ctx context.Context, module content.Module, id string, revision, expected int64, actor string, now time.Time) (content.Item, error) {
-	var payload []byte
-	if err := r.db.QueryRowContext(ctx, `SELECT snapshot_json FROM hhc_web.content_revision WHERE entry_id=$1 AND version=$2`, id, revision).Scan(&payload); errors.Is(err, sql.ErrNoRows) {
-		return content.Item{}, content.ErrNotFound
-	} else if err != nil {
-		return content.Item{}, err
-	}
-	var snapshot content.Item
-	if err := json.Unmarshal(payload, &snapshot); err != nil {
-		return content.Item{}, err
-	}
-	input := content.WriteInput{Slug: snapshot.Slug, DisplayDate: snapshot.DisplayDate, EventDate: snapshot.EventDate, YouTubeVideoID: snapshot.YouTubeVideoID, CoverAssetID: snapshot.CoverAssetID, HomeCoverAssetID: snapshot.HomeCoverAssetID, DetailLayout: snapshot.DetailLayout, Featured: snapshot.Featured, HomeEligible: snapshot.HomeEligible, Translations: snapshot.Translations}
-	return r.UpdateContent(ctx, module, id, expected, input, actor, now)
-}
-
 func (r *Repository) DeleteContent(ctx context.Context, module content.Module, id string, expected int64, actor string, now time.Time) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
