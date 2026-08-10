@@ -611,41 +611,49 @@ func (r *Repository) PublicContent(ctx context.Context, module content.Module, l
 		return content.PublicPage{}, err
 	}
 	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`
-		SELECT resource_id,locale,payload_json
-		FROM (
+		WITH localized AS (
 			SELECT DISTINCT ON (resource_id) resource_id,locale,payload_json,updated_at
 			FROM hhc_web.public_projection
 			WHERE resource_type=$1 AND locale IN ($2,'zh-Hant')
 			ORDER BY resource_id,CASE WHEN locale=$2 THEN 0 ELSE 1 END
-		) localized
-		ORDER BY %s
-		LIMIT $3 OFFSET $4`, order), module, locale, pageSize, (page-1)*pageSize)
+		), paged AS (
+			SELECT resource_id,locale,payload_json,updated_at
+			FROM localized
+			ORDER BY %s
+			LIMIT $3 OFFSET $4
+		), availability AS (
+			SELECT projection.resource_id AS available_resource_id,
+				jsonb_agg(projection.locale ORDER BY projection.locale) AS locales
+			FROM hhc_web.public_projection projection
+			JOIN paged ON paged.resource_id=projection.resource_id
+			WHERE projection.resource_type=$1
+			GROUP BY projection.resource_id
+		)
+		SELECT paged.resource_id,paged.locale,paged.payload_json,availability.locales
+		FROM paged
+		JOIN availability ON availability.available_resource_id=paged.resource_id
+		ORDER BY %s`, order, order), module, locale, pageSize, (page-1)*pageSize)
 	if err != nil {
 		return content.PublicPage{}, err
 	}
 	defer rows.Close()
 	values := []content.PublicItem{}
-	resolvedLocales := []string{}
 	for rows.Next() {
 		var id, resolvedLocale string
-		var payload []byte
+		var payload, availableLocales []byte
 		var value content.PublicItem
-		if err := rows.Scan(&id, &resolvedLocale, &payload); err != nil {
+		if err := rows.Scan(&id, &resolvedLocale, &payload, &availableLocales); err != nil {
 			return content.PublicPage{}, err
 		}
 		if err := json.Unmarshal(payload, &value); err != nil {
 			return content.PublicPage{}, err
 		}
-		if value.ID == "" {
-			value.ID = id
+		if err := enrichPublicItem(&value, id, locale, resolvedLocale, availableLocales); err != nil {
+			return content.PublicPage{}, err
 		}
 		values = append(values, value)
-		resolvedLocales = append(resolvedLocales, resolvedLocale)
 	}
 	if err := rows.Err(); err != nil {
-		return content.PublicPage{}, err
-	}
-	if err := r.populatePublicLocales(ctx, module, locale, values, resolvedLocales); err != nil {
 		return content.PublicPage{}, err
 	}
 	return content.PublicPage{Items: values, Page: page, PageSize: pageSize, Total: total}, nil
@@ -653,16 +661,29 @@ func (r *Repository) PublicContent(ctx context.Context, module content.Module, l
 
 func (r *Repository) PublicNews(ctx context.Context, locale, slug string) (content.PublicItem, string, error) {
 	var id, resolvedLocale string
-	var payload []byte
+	var payload, availableLocales []byte
 	var etag string
 	err := r.db.QueryRowContext(ctx, `
-		SELECT resource_id,locale,payload_json,etag
-		FROM hhc_web.public_projection
-		WHERE resource_type='news'
-			AND locale IN ($1,'zh-Hant')
-			AND route_path IN ('/' || $1 || '/news/' || $2,'/zh-Hant/news/' || $2)
-		ORDER BY CASE WHEN locale=$1 THEN 0 ELSE 1 END
-		LIMIT 1`, locale, slug).Scan(&id, &resolvedLocale, &payload, &etag)
+		WITH selected AS (
+			SELECT resource_id,locale,payload_json,etag
+			FROM hhc_web.public_projection
+			WHERE resource_type='news'
+				AND locale IN ($1,'zh-Hant')
+				AND route_path IN ('/' || $1 || '/news/' || $2,'/zh-Hant/news/' || $2)
+			ORDER BY CASE WHEN locale=$1 THEN 0 ELSE 1 END
+			LIMIT 1
+		), availability AS (
+			SELECT projection.resource_id AS available_resource_id,
+				jsonb_agg(projection.locale ORDER BY projection.locale) AS locales
+			FROM hhc_web.public_projection projection
+			JOIN selected ON selected.resource_id=projection.resource_id
+			WHERE projection.resource_type='news'
+			GROUP BY projection.resource_id
+		)
+		SELECT selected.resource_id,selected.locale,selected.payload_json,selected.etag,availability.locales
+		FROM selected
+		JOIN availability ON availability.available_resource_id=selected.resource_id`, locale, slug).
+		Scan(&id, &resolvedLocale, &payload, &etag, &availableLocales)
 	if errors.Is(err, sql.ErrNoRows) {
 		return content.PublicItem{}, "", content.ErrNotFound
 	}
@@ -673,58 +694,22 @@ func (r *Repository) PublicNews(ctx context.Context, locale, slug string) (conte
 	if err := json.Unmarshal(payload, &item); err != nil {
 		return content.PublicItem{}, "", err
 	}
-	if item.ID == "" {
-		item.ID = id
-	}
-	items := []content.PublicItem{item}
-	if err := r.populatePublicLocales(ctx, content.ModuleNews, locale, items, []string{resolvedLocale}); err != nil {
+	if err := enrichPublicItem(&item, id, locale, resolvedLocale, availableLocales); err != nil {
 		return content.PublicItem{}, "", err
 	}
-	return items[0], publicResponseETag(etag, locale, items[0]), nil
+	return item, publicResponseETag(etag, locale, item), nil
 }
 
-func (r *Repository) populatePublicLocales(ctx context.Context, module content.Module, requestedLocale string, values []content.PublicItem, resolvedLocales []string) error {
-	ids := make([]string, 0, len(values))
-	seen := make(map[string]bool, len(values))
-	for _, value := range values {
-		if !seen[value.ID] {
-			ids = append(ids, value.ID)
-			seen[value.ID] = true
-		}
-	}
-	if len(ids) == 0 {
-		return nil
-	}
-	placeholders := make([]string, len(ids))
-	args := make([]any, 1, len(ids)+1)
-	args[0] = module
-	for index, id := range ids {
-		placeholders[index] = fmt.Sprintf("$%d", index+2)
-		args = append(args, id)
-	}
-	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`SELECT resource_id,locale FROM hhc_web.public_projection WHERE resource_type=$1 AND resource_id IN (%s) ORDER BY resource_id,locale`, strings.Join(placeholders, ",")), args...)
-	if err != nil {
+func enrichPublicItem(value *content.PublicItem, id, requestedLocale, resolvedLocale string, availableLocales []byte) error {
+	if err := json.Unmarshal(availableLocales, &value.AvailableLocales); err != nil {
 		return err
 	}
-	defer rows.Close()
-	available := make(map[string][]string, len(ids))
-	for rows.Next() {
-		var id, locale string
-		if err := rows.Scan(&id, &locale); err != nil {
-			return err
-		}
-		available[id] = append(available[id], locale)
+	if value.ID == "" {
+		value.ID = id
 	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	for index := range values {
-		locales := available[values[index].ID]
-		sortPublicLocales(locales)
-		values[index].ResolvedLocale = resolvedLocales[index]
-		values[index].AvailableLocales = locales
-		values[index].Href = localizedPublicHref(values[index].Href, resolvedLocales[index], requestedLocale)
-	}
+	sortPublicLocales(value.AvailableLocales)
+	value.ResolvedLocale = resolvedLocale
+	value.Href = localizedPublicHref(value.Href, resolvedLocale, requestedLocale)
 	return nil
 }
 

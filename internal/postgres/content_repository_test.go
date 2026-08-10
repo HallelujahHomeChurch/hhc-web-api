@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"reflect"
 	"regexp"
@@ -82,13 +83,10 @@ func TestPublicContentFallbackExposesResolvedAndAvailableLocales(t *testing.T) {
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT count(DISTINCT resource_id) FROM hhc_web.public_projection WHERE resource_type=$1 AND locale IN ($2,'zh-Hant')")).
 		WithArgs(content.ModuleNews, "ja").
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
-	mock.ExpectQuery("SELECT resource_id,locale,payload_json").
+	mock.ExpectQuery("SELECT paged.resource_id,paged.locale,paged.payload_json,availability.locales").
 		WithArgs(content.ModuleNews, "ja", 20, 0).
-		WillReturnRows(sqlmock.NewRows([]string{"resource_id", "locale", "payload_json"}).
-			AddRow("news-1", "zh-Hant", []byte(`{"id":"news-1","title":"消息","href":"/zh-Hant/news/news-1"}`)))
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT resource_id,locale FROM hhc_web.public_projection WHERE resource_type=$1 AND resource_id IN ($2) ORDER BY resource_id,locale")).
-		WithArgs(content.ModuleNews, "news-1").
-		WillReturnRows(sqlmock.NewRows([]string{"resource_id", "locale"}).AddRow("news-1", "en").AddRow("news-1", "zh-Hant"))
+		WillReturnRows(sqlmock.NewRows([]string{"resource_id", "locale", "payload_json", "available_locales"}).
+			AddRow("news-1", "zh-Hant", []byte(`{"id":"news-1","title":"消息","href":"/zh-Hant/news/news-1"}`), []byte(`["en","zh-Hant"]`)))
 
 	page, err := New(db).PublicContent(context.Background(), content.ModuleNews, "ja", 1, 20)
 	if err != nil {
@@ -113,13 +111,10 @@ func TestPublicNewsFallbackExposesResolvedAndAvailableLocales(t *testing.T) {
 	}
 	defer db.Close()
 
-	mock.ExpectQuery("SELECT resource_id,locale,payload_json,etag").
+	mock.ExpectQuery("SELECT selected.resource_id,selected.locale,selected.payload_json,selected.etag,availability.locales").
 		WithArgs("ja", "news-1").
-		WillReturnRows(sqlmock.NewRows([]string{"resource_id", "locale", "payload_json", "etag"}).
-			AddRow("news-1", "zh-Hant", []byte(`{"id":"news-1","title":"消息","href":"/zh-Hant/news/news-1"}`), "etag-1"))
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT resource_id,locale FROM hhc_web.public_projection WHERE resource_type=$1 AND resource_id IN ($2) ORDER BY resource_id,locale")).
-		WithArgs(content.ModuleNews, "news-1").
-		WillReturnRows(sqlmock.NewRows([]string{"resource_id", "locale"}).AddRow("news-1", "en").AddRow("news-1", "zh-Hant"))
+		WillReturnRows(sqlmock.NewRows([]string{"resource_id", "locale", "payload_json", "etag", "available_locales"}).
+			AddRow("news-1", "zh-Hant", []byte(`{"id":"news-1","title":"消息","href":"/zh-Hant/news/news-1"}`), "etag-1", []byte(`["en","zh-Hant"]`)))
 
 	item, etag, err := New(db).PublicNews(context.Background(), "ja", "news-1")
 	if err != nil {
@@ -143,13 +138,10 @@ func TestPublicContentPrefersExactRequestedLocale(t *testing.T) {
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT count(DISTINCT resource_id) FROM hhc_web.public_projection WHERE resource_type=$1 AND locale IN ($2,'zh-Hant')")).
 		WithArgs(content.ModuleNews, "ja").
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
-	mock.ExpectQuery("SELECT resource_id,locale,payload_json").
+	mock.ExpectQuery("SELECT paged.resource_id,paged.locale,paged.payload_json,availability.locales").
 		WithArgs(content.ModuleNews, "ja", 20, 0).
-		WillReturnRows(sqlmock.NewRows([]string{"resource_id", "locale", "payload_json"}).
-			AddRow("news-1", "ja", []byte(`{"id":"news-1","title":"ニュース","href":"/ja/news/news-1"}`)))
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT resource_id,locale FROM hhc_web.public_projection WHERE resource_type=$1 AND resource_id IN ($2) ORDER BY resource_id,locale")).
-		WithArgs(content.ModuleNews, "news-1").
-		WillReturnRows(sqlmock.NewRows([]string{"resource_id", "locale"}).AddRow("news-1", "en").AddRow("news-1", "ja").AddRow("news-1", "zh-Hant"))
+		WillReturnRows(sqlmock.NewRows([]string{"resource_id", "locale", "payload_json", "available_locales"}).
+			AddRow("news-1", "ja", []byte(`{"id":"news-1","title":"ニュース","href":"/ja/news/news-1"}`), []byte(`["en","ja","zh-Hant"]`)))
 
 	page, err := New(db).PublicContent(context.Background(), content.ModuleNews, "ja", 1, 20)
 	if err != nil {
@@ -164,7 +156,7 @@ func TestPublicContentPrefersExactRequestedLocale(t *testing.T) {
 	}
 }
 
-func TestPublicContentLoadsAvailableLocalesInOneBulkQuery(t *testing.T) {
+func TestPublicContentLoadsAvailableLocalesInListDataQuery(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
 		t.Fatal(err)
@@ -174,16 +166,11 @@ func TestPublicContentLoadsAvailableLocalesInOneBulkQuery(t *testing.T) {
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT count(DISTINCT resource_id) FROM hhc_web.public_projection WHERE resource_type=$1 AND locale IN ($2,'zh-Hant')")).
 		WithArgs(content.ModuleNews, "ja").
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(2))
-	mock.ExpectQuery("SELECT resource_id,locale,payload_json").
+	mock.ExpectQuery("SELECT paged.resource_id,paged.locale,paged.payload_json,availability.locales").
 		WithArgs(content.ModuleNews, "ja", 20, 0).
-		WillReturnRows(sqlmock.NewRows([]string{"resource_id", "locale", "payload_json"}).
-			AddRow("news-1", "zh-Hant", []byte(`{"id":"news-1","title":"消息一"}`)).
-			AddRow("news-2", "zh-Hant", []byte(`{"id":"news-2","title":"消息二"}`)))
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT resource_id,locale FROM hhc_web.public_projection WHERE resource_type=$1 AND resource_id IN ($2,$3) ORDER BY resource_id,locale")).
-		WithArgs(content.ModuleNews, "news-1", "news-2").
-		WillReturnRows(sqlmock.NewRows([]string{"resource_id", "locale"}).
-			AddRow("news-1", "en").AddRow("news-1", "zh-Hant").
-			AddRow("news-2", "zh-Hant"))
+		WillReturnRows(sqlmock.NewRows([]string{"resource_id", "locale", "payload_json", "available_locales"}).
+			AddRow("news-1", "zh-Hant", []byte(`{"id":"news-1","title":"消息一"}`), []byte(`["en","zh-Hant"]`)).
+			AddRow("news-2", "zh-Hant", []byte(`{"id":"news-2","title":"消息二"}`), []byte(`["zh-Hant"]`)))
 
 	page, err := New(db).PublicContent(context.Background(), content.ModuleNews, "ja", 1, 20)
 	if err != nil {
@@ -207,14 +194,10 @@ func TestPublicContentSortsAvailableLocalesCanonically(t *testing.T) {
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT count(DISTINCT resource_id) FROM hhc_web.public_projection WHERE resource_type=$1 AND locale IN ($2,'zh-Hant')")).
 		WithArgs(content.ModuleNews, "ja").
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
-	mock.ExpectQuery("SELECT resource_id,locale,payload_json").
+	mock.ExpectQuery("SELECT paged.resource_id,paged.locale,paged.payload_json,availability.locales").
 		WithArgs(content.ModuleNews, "ja", 20, 0).
-		WillReturnRows(sqlmock.NewRows([]string{"resource_id", "locale", "payload_json"}).
-			AddRow("news-1", "ja", []byte(`{"id":"news-1","title":"ニュース"}`)))
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT resource_id,locale FROM hhc_web.public_projection WHERE resource_type=$1 AND resource_id IN ($2) ORDER BY resource_id,locale")).
-		WithArgs(content.ModuleNews, "news-1").
-		WillReturnRows(sqlmock.NewRows([]string{"resource_id", "locale"}).
-			AddRow("news-1", "en").AddRow("news-1", "ja").AddRow("news-1", "ko").AddRow("news-1", "zh-Hans").AddRow("news-1", "zh-Hant"))
+		WillReturnRows(sqlmock.NewRows([]string{"resource_id", "locale", "payload_json", "available_locales"}).
+			AddRow("news-1", "ja", []byte(`{"id":"news-1","title":"ニュース"}`), []byte(`["en","ja","ko","zh-Hans","zh-Hant"]`)))
 
 	page, err := New(db).PublicContent(context.Background(), content.ModuleNews, "ja", 1, 20)
 	if err != nil {
@@ -249,17 +232,14 @@ func publicNewsETag(t *testing.T, requestedLocale string, availableLocales []str
 	}
 	defer db.Close()
 
-	mock.ExpectQuery("SELECT resource_id,locale,payload_json,etag").
-		WithArgs(requestedLocale, "news-1").
-		WillReturnRows(sqlmock.NewRows([]string{"resource_id", "locale", "payload_json", "etag"}).
-			AddRow("news-1", "zh-Hant", []byte(`{"id":"news-1","title":"消息","href":"/zh-Hant/news/news-1"}`), "projection-etag"))
-	rows := sqlmock.NewRows([]string{"resource_id", "locale"})
-	for _, locale := range availableLocales {
-		rows.AddRow("news-1", locale)
+	encodedLocales, err := json.Marshal(availableLocales)
+	if err != nil {
+		t.Fatal(err)
 	}
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT resource_id,locale FROM hhc_web.public_projection WHERE resource_type=$1 AND resource_id IN ($2) ORDER BY resource_id,locale")).
-		WithArgs(content.ModuleNews, "news-1").
-		WillReturnRows(rows)
+	mock.ExpectQuery("SELECT selected.resource_id,selected.locale,selected.payload_json,selected.etag,availability.locales").
+		WithArgs(requestedLocale, "news-1").
+		WillReturnRows(sqlmock.NewRows([]string{"resource_id", "locale", "payload_json", "etag", "available_locales"}).
+			AddRow("news-1", "zh-Hant", []byte(`{"id":"news-1","title":"消息","href":"/zh-Hant/news/news-1"}`), "projection-etag", encodedLocales))
 
 	_, etag, err := New(db).PublicNews(context.Background(), requestedLocale, "news-1")
 	if err != nil {

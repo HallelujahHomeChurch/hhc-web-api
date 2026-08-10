@@ -487,6 +487,10 @@ func TestNewsPublicationKeepsLiveProjectionUntilReplacement(t *testing.T) {
 	if err != nil || fallback.Title != "最新消息" || fallbackETag == etag || fallback.ResolvedLocale != "zh-Hant" || strings.Join(fallback.AvailableLocales, ",") != "zh-Hant,en" || fallback.Href != "/ja/news/first-news" {
 		t.Fatalf("fallback detail=%#v etag=%q err=%v", fallback, fallbackETag, err)
 	}
+	japanese, err := repository.PublicContent(ctx, content.ModuleNews, "ja", 1, 20)
+	if err != nil || len(japanese.Items) != 1 || japanese.Items[0].Title != "最新消息" || japanese.Items[0].ResolvedLocale != "zh-Hant" || strings.Join(japanese.Items[0].AvailableLocales, ",") != "zh-Hant,en" || japanese.Items[0].Href != "/ja/news/first-news" {
+		t.Fatalf("Japanese fallback list=%#v err=%v", japanese, err)
+	}
 	english, err := repository.PublicContent(ctx, content.ModuleNews, "en", 1, 20)
 	if err != nil || len(english.Items) != 1 || english.Items[0].Title != "News" || english.Items[0].ResolvedLocale != "en" || strings.Join(english.Items[0].AvailableLocales, ",") != "zh-Hant,en" {
 		t.Fatalf("English list=%#v err=%v", english, err)
