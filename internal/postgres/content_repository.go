@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -589,9 +590,9 @@ func (r *Repository) PublicContent(ctx context.Context, module content.Module, l
 		return content.PublicPage{}, err
 	}
 	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`
-		SELECT payload_json
+		SELECT resource_id,locale,payload_json
 		FROM (
-			SELECT DISTINCT ON (resource_id) resource_id,payload_json,updated_at
+			SELECT DISTINCT ON (resource_id) resource_id,locale,payload_json,updated_at
 			FROM hhc_web.public_projection
 			WHERE resource_type=$1 AND locale IN ($2,'zh-Hant')
 			ORDER BY resource_id,CASE WHEN locale=$2 THEN 0 ELSE 1 END
@@ -603,31 +604,44 @@ func (r *Repository) PublicContent(ctx context.Context, module content.Module, l
 	}
 	defer rows.Close()
 	values := []content.PublicItem{}
+	resolvedLocales := []string{}
 	for rows.Next() {
+		var id, resolvedLocale string
 		var payload []byte
 		var value content.PublicItem
-		if err := rows.Scan(&payload); err != nil {
+		if err := rows.Scan(&id, &resolvedLocale, &payload); err != nil {
 			return content.PublicPage{}, err
 		}
 		if err := json.Unmarshal(payload, &value); err != nil {
 			return content.PublicPage{}, err
 		}
+		if value.ID == "" {
+			value.ID = id
+		}
 		values = append(values, value)
+		resolvedLocales = append(resolvedLocales, resolvedLocale)
 	}
-	return content.PublicPage{Items: values, Page: page, PageSize: pageSize, Total: total}, rows.Err()
+	if err := rows.Err(); err != nil {
+		return content.PublicPage{}, err
+	}
+	if err := r.populatePublicLocales(ctx, module, locale, values, resolvedLocales); err != nil {
+		return content.PublicPage{}, err
+	}
+	return content.PublicPage{Items: values, Page: page, PageSize: pageSize, Total: total}, nil
 }
 
 func (r *Repository) PublicNews(ctx context.Context, locale, slug string) (content.PublicItem, string, error) {
+	var id, resolvedLocale string
 	var payload []byte
 	var etag string
 	err := r.db.QueryRowContext(ctx, `
-		SELECT payload_json,etag
+		SELECT resource_id,locale,payload_json,etag
 		FROM hhc_web.public_projection
 		WHERE resource_type='news'
 			AND locale IN ($1,'zh-Hant')
 			AND route_path IN ('/' || $1 || '/news/' || $2,'/zh-Hant/news/' || $2)
 		ORDER BY CASE WHEN locale=$1 THEN 0 ELSE 1 END
-		LIMIT 1`, locale, slug).Scan(&payload, &etag)
+		LIMIT 1`, locale, slug).Scan(&id, &resolvedLocale, &payload, &etag)
 	if errors.Is(err, sql.ErrNoRows) {
 		return content.PublicItem{}, "", content.ErrNotFound
 	}
@@ -638,7 +652,99 @@ func (r *Repository) PublicNews(ctx context.Context, locale, slug string) (conte
 	if err := json.Unmarshal(payload, &item); err != nil {
 		return content.PublicItem{}, "", err
 	}
-	return item, etag, nil
+	if item.ID == "" {
+		item.ID = id
+	}
+	items := []content.PublicItem{item}
+	if err := r.populatePublicLocales(ctx, content.ModuleNews, locale, items, []string{resolvedLocale}); err != nil {
+		return content.PublicItem{}, "", err
+	}
+	return items[0], publicResponseETag(etag, locale, items[0]), nil
+}
+
+func (r *Repository) populatePublicLocales(ctx context.Context, module content.Module, requestedLocale string, values []content.PublicItem, resolvedLocales []string) error {
+	ids := make([]string, 0, len(values))
+	seen := make(map[string]bool, len(values))
+	for _, value := range values {
+		if !seen[value.ID] {
+			ids = append(ids, value.ID)
+			seen[value.ID] = true
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	placeholders := make([]string, len(ids))
+	args := make([]any, 1, len(ids)+1)
+	args[0] = module
+	for index, id := range ids {
+		placeholders[index] = fmt.Sprintf("$%d", index+2)
+		args = append(args, id)
+	}
+	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`SELECT resource_id,locale FROM hhc_web.public_projection WHERE resource_type=$1 AND resource_id IN (%s) ORDER BY resource_id,locale`, strings.Join(placeholders, ",")), args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	available := make(map[string][]string, len(ids))
+	for rows.Next() {
+		var id, locale string
+		if err := rows.Scan(&id, &locale); err != nil {
+			return err
+		}
+		available[id] = append(available[id], locale)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for index := range values {
+		locales := available[values[index].ID]
+		sortPublicLocales(locales)
+		values[index].ResolvedLocale = resolvedLocales[index]
+		values[index].AvailableLocales = locales
+		values[index].Href = localizedPublicHref(values[index].Href, resolvedLocales[index], requestedLocale)
+	}
+	return nil
+}
+
+func sortPublicLocales(locales []string) {
+	sort.Slice(locales, func(i, j int) bool {
+		left, right := publicLocaleRank(locales[i]), publicLocaleRank(locales[j])
+		if left == right {
+			return locales[i] < locales[j]
+		}
+		return left < right
+	})
+}
+
+func publicLocaleRank(locale string) int {
+	switch locale {
+	case "zh-Hant":
+		return 0
+	case "zh-Hans":
+		return 1
+	case "en":
+		return 2
+	case "ja":
+		return 3
+	case "ko":
+		return 4
+	default:
+		return 5
+	}
+}
+
+func publicResponseETag(projectionETag, requestedLocale string, item content.PublicItem) string {
+	value := strings.Join([]string{projectionETag, requestedLocale, item.ResolvedLocale, strings.Join(item.AvailableLocales, ",")}, "\x00")
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(value)))
+}
+
+func localizedPublicHref(href, resolvedLocale, requestedLocale string) string {
+	prefix := "/" + resolvedLocale + "/"
+	if strings.HasPrefix(href, prefix) {
+		return "/" + requestedLocale + "/" + strings.TrimPrefix(href, prefix)
+	}
+	return href
 }
 
 func lockContent(ctx context.Context, tx *sql.Tx, module content.Module, id string) (int64, string, error) {

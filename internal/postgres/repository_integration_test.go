@@ -446,7 +446,7 @@ func TestNewsPublicationKeepsLiveProjectionUntilReplacement(t *testing.T) {
 	now := time.Now().UTC()
 	input := content.WriteInput{
 		Slug: "first-news", DisplayDate: "2026-07-30", CoverAssetID: "asset-1",
-		Translations: []content.Translation{{Locale: "zh-Hant", Title: "最新消息"}},
+		Translations: []content.Translation{{Locale: "zh-Hant", Title: "最新消息"}, {Locale: "en", Title: "News"}},
 	}
 	item, err := repository.CreateContent(ctx, content.ModuleNews, input, "user-1", "news-create-1", now)
 	if err != nil {
@@ -483,13 +483,13 @@ func TestNewsPublicationKeepsLiveProjectionUntilReplacement(t *testing.T) {
 	if err != nil || detail.ID != item.ID || etag == "" {
 		t.Fatalf("detail=%#v etag=%q err=%v", detail, etag, err)
 	}
-	fallback, fallbackETag, err := repository.PublicNews(ctx, "en", "first-news")
-	if err != nil || fallback.Title != "最新消息" || fallbackETag != etag {
+	fallback, fallbackETag, err := repository.PublicNews(ctx, "ja", "first-news")
+	if err != nil || fallback.Title != "最新消息" || fallbackETag == etag || fallback.ResolvedLocale != "zh-Hant" || strings.Join(fallback.AvailableLocales, ",") != "zh-Hant,en" || fallback.Href != "/ja/news/first-news" {
 		t.Fatalf("fallback detail=%#v etag=%q err=%v", fallback, fallbackETag, err)
 	}
 	english, err := repository.PublicContent(ctx, content.ModuleNews, "en", 1, 20)
-	if err != nil || len(english.Items) != 1 || english.Items[0].Title != "最新消息" {
-		t.Fatalf("fallback list=%#v err=%v", english, err)
+	if err != nil || len(english.Items) != 1 || english.Items[0].Title != "News" || english.Items[0].ResolvedLocale != "en" || strings.Join(english.Items[0].AvailableLocales, ",") != "zh-Hant,en" {
+		t.Fatalf("English list=%#v err=%v", english, err)
 	}
 
 	input.CoverAssetID = "asset-2"

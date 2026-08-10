@@ -79,3 +79,22 @@ func TestOpenAPIDocumentsExplicitContentLocaleDeletion(t *testing.T) {
 		}
 	}
 }
+
+func TestOpenAPIDocumentsPublicContentLocaleResolution(t *testing.T) {
+	contents, err := os.ReadFile("openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := string(contents)
+	start := strings.LastIndex(document, "    PublicContentItem:")
+	end := strings.Index(document[start+1:], "\n    BulletinIssueEnvelope:")
+	if start < 0 || end < 0 {
+		t.Fatal("missing PublicContentItem schema")
+	}
+	schema := document[start : start+1+end]
+	for _, expected := range []string{"required: [id, title, resolvedLocale, availableLocales]", "resolvedLocale: { $ref: '#/components/schemas/Locale' }", "availableLocales:", "items: { $ref: '#/components/schemas/Locale' }"} {
+		if !strings.Contains(schema, expected) {
+			t.Fatalf("PublicContentItem missing %q:\n%s", expected, schema)
+		}
+	}
+}

@@ -94,21 +94,23 @@ type Revision struct {
 }
 
 type PublicItem struct {
-	ID             string `json:"id"`
-	Title          string `json:"title"`
-	Summary        string `json:"summary,omitempty"`
-	Body           string `json:"body,omitempty"`
-	DateLabel      string `json:"dateLabel,omitempty"`
-	DisplayDate    string `json:"displayDate,omitempty"`
-	EventDate      string `json:"eventDate,omitempty"`
-	ImageAlt       string `json:"imageAlt,omitempty"`
-	ImageURL       string `json:"imageUrl,omitempty"`
-	HomeImageURL   string `json:"homeImageUrl,omitempty"`
-	Href           string `json:"href,omitempty"`
-	YouTubeVideoID string `json:"youtubeVideoId,omitempty"`
-	Featured       bool   `json:"featured,omitempty"`
-	HomeEligible   bool   `json:"homeEligible,omitempty"`
-	DetailLayout   string `json:"detailLayout,omitempty"`
+	ID               string   `json:"id"`
+	Title            string   `json:"title"`
+	Summary          string   `json:"summary,omitempty"`
+	Body             string   `json:"body,omitempty"`
+	DateLabel        string   `json:"dateLabel,omitempty"`
+	DisplayDate      string   `json:"displayDate,omitempty"`
+	EventDate        string   `json:"eventDate,omitempty"`
+	ImageAlt         string   `json:"imageAlt,omitempty"`
+	ImageURL         string   `json:"imageUrl,omitempty"`
+	HomeImageURL     string   `json:"homeImageUrl,omitempty"`
+	Href             string   `json:"href,omitempty"`
+	YouTubeVideoID   string   `json:"youtubeVideoId,omitempty"`
+	Featured         bool     `json:"featured,omitempty"`
+	HomeEligible     bool     `json:"homeEligible,omitempty"`
+	DetailLayout     string   `json:"detailLayout,omitempty"`
+	ResolvedLocale   string   `json:"resolvedLocale"`
+	AvailableLocales []string `json:"availableLocales"`
 }
 
 type Page struct {

@@ -1015,10 +1015,14 @@ components:
         createdAt: { type: string, format: date-time }
     PublicContentItem:
       type: object
-      required: [id, title]
+      required: [id, title, resolvedLocale, availableLocales]
       properties:
         id: { type: string }
         title: { type: string }
+        resolvedLocale: { $ref: '#/components/schemas/Locale' }
+        availableLocales:
+          type: array
+          items: { $ref: '#/components/schemas/Locale' }
         summary: { type: string }
         body: { type: string }
         dateLabel: { type: string }
