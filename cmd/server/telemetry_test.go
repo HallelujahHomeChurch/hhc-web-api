@@ -8,12 +8,49 @@ import (
 	"time"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 func TestTraceSampleRatio(t *testing.T) {
 	t.Setenv("OTEL_TRACES_SAMPLER_ARG", "0.25")
 	if got := traceSampleRatio(); got != 0.25 {
 		t.Fatalf("traceSampleRatio() = %v, want 0.25", got)
+	}
+}
+
+func TestHTTPTraceExcludesClientMetadataWithoutChangingRequest(t *testing.T) {
+	recorder := tracetest.NewSpanRecorder()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	t.Cleanup(func() { _ = provider.Shutdown(context.Background()) })
+
+	var gotRemoteAddr, gotUserAgent, gotForwardedFor string
+	handler := newHTTPTraceHandler(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		gotRemoteAddr = request.RemoteAddr
+		gotUserAgent = request.UserAgent()
+		gotForwardedFor = request.Header.Get("X-Forwarded-For")
+		writer.WriteHeader(http.StatusNoContent)
+	}), otelhttp.WithTracerProvider(provider))
+
+	request := httptest.NewRequest(http.MethodGet, "/health", nil)
+	request.RemoteAddr = "203.0.113.10:4567"
+	request.Header.Set("User-Agent", "private-test-agent")
+	request.Header.Set("X-Forwarded-For", "198.51.100.5")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+
+	if gotRemoteAddr != request.RemoteAddr || gotUserAgent != request.UserAgent() || gotForwardedFor != request.Header.Get("X-Forwarded-For") {
+		t.Fatalf("handler request changed: remote=%q user-agent=%q x-forwarded-for=%q", gotRemoteAddr, gotUserAgent, gotForwardedFor)
+	}
+	ended := recorder.Ended()
+	if len(ended) != 1 {
+		t.Fatalf("ended spans = %d, want 1", len(ended))
+	}
+	for _, attribute := range ended[0].Attributes() {
+		switch string(attribute.Key) {
+		case "client.address", "network.peer.address", "network.peer.port", "user_agent.original":
+			t.Errorf("trace contains private attribute %q", attribute.Key)
+		}
 	}
 }
 
