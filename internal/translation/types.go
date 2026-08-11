@@ -6,7 +6,15 @@ import (
 	"time"
 )
 
-var ErrRateLimited = errors.New("translation rate limited")
+var (
+	ErrInvalidRequest    = errors.New("invalid translation request")
+	ErrNotFound          = errors.New("translation source not found")
+	ErrTranslationExists = errors.New("translation already exists")
+	ErrVersionMismatch   = errors.New("translation source version mismatch")
+	ErrRateLimited       = errors.New("translation rate limited")
+	ErrAudit             = errors.New("translation audit failed")
+	ErrInternal          = errors.New("translation internal error")
+)
 
 type Request struct {
 	Module       string
@@ -21,6 +29,23 @@ type Result struct {
 
 type Generator interface {
 	Generate(context.Context, Request) (Result, error)
+}
+
+type PreviewRequest struct {
+	Module          string
+	ResourceID      string
+	SourceLocale    string
+	TargetLocale    string
+	ExpectedVersion int64
+	Actor           string
+	ReplaceExisting bool
+}
+
+type Preview struct {
+	SourceLocale  string            `json:"sourceLocale"`
+	TargetLocale  string            `json:"targetLocale"`
+	SourceVersion int64             `json:"sourceVersion"`
+	Translation   map[string]string `json:"translation"`
 }
 
 type AuditEvent struct {

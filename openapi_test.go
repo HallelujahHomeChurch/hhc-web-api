@@ -98,3 +98,35 @@ func TestOpenAPIDocumentsPublicContentLocaleResolution(t *testing.T) {
 		}
 	}
 }
+
+func TestOpenAPIDocumentsTranslationPreviewContracts(t *testing.T) {
+	contents, err := os.ReadFile("openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := string(contents)
+	for _, expected := range []string{
+		"/admin/content/{module}/{contentId}/translation-previews/{targetLocale}:",
+		"/admin/bulletins/{issueId}/translation-previews/{targetLocale}:",
+		"operationId: previewContentTranslation",
+		"operationId: previewBulletinTranslation",
+		"x-required-scopes: ['cms:write']",
+		"TranslationPreviewInput:",
+		"additionalProperties: false",
+		"required: [sourceLocale, replaceExisting]",
+		"enum: [zh-Hans, en, ja, ko]",
+		"TranslationPreviewEnvelope:",
+		"required: [sourceLocale, targetLocale, sourceVersion, translation]",
+		"invalid_translation_request",
+		"translation_exists",
+		"version_mismatch",
+		"translation_rate_limited",
+		"translation_provider_error",
+		"translation_timeout",
+		"translation_disabled",
+	} {
+		if !strings.Contains(document, expected) {
+			t.Fatalf("OpenAPI document missing %q", expected)
+		}
+	}
+}

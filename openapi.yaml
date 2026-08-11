@@ -415,6 +415,28 @@ paths:
         '200': { $ref: '#/components/responses/BulletinIssue' }
         '404': { $ref: '#/components/responses/Error' }
         '412': { $ref: '#/components/responses/Error' }
+  /admin/bulletins/{issueId}/translation-previews/{targetLocale}:
+    post:
+      operationId: previewBulletinTranslation
+      security: [{ bearerAuth: [] }]
+      x-required-scopes: ['cms:write']
+      parameters:
+        - $ref: '#/components/parameters/IssueID'
+        - $ref: '#/components/parameters/TranslationTargetLocale'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody: { $ref: '#/components/requestBodies/TranslationPreviewInput' }
+      responses:
+        '200': { $ref: '#/components/responses/TranslationPreview' }
+        '400': { $ref: '#/components/responses/InvalidTranslationRequest' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/TranslationNotFound' }
+        '409': { $ref: '#/components/responses/TranslationExists' }
+        '412': { $ref: '#/components/responses/TranslationVersionMismatch' }
+        '429': { $ref: '#/components/responses/TranslationRateLimited' }
+        '500': { $ref: '#/components/responses/Error' }
+        '502': { $ref: '#/components/responses/TranslationProviderError' }
+        '503': { $ref: '#/components/responses/TranslationDisabled' }
+        '504': { $ref: '#/components/responses/TranslationTimeout' }
   /admin/content/{module}:
     get:
       operationId: listAdminContent
@@ -486,6 +508,29 @@ paths:
         '204': { description: Content and its revisions deleted }
         '409': { $ref: '#/components/responses/Error' }
         '412': { $ref: '#/components/responses/Error' }
+  /admin/content/{module}/{contentId}/translation-previews/{targetLocale}:
+    post:
+      operationId: previewContentTranslation
+      security: [{ bearerAuth: [] }]
+      x-required-scopes: ['cms:write']
+      parameters:
+        - $ref: '#/components/parameters/ContentModule'
+        - $ref: '#/components/parameters/ContentID'
+        - $ref: '#/components/parameters/TranslationTargetLocale'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody: { $ref: '#/components/requestBodies/TranslationPreviewInput' }
+      responses:
+        '200': { $ref: '#/components/responses/TranslationPreview' }
+        '400': { $ref: '#/components/responses/InvalidTranslationRequest' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/TranslationNotFound' }
+        '409': { $ref: '#/components/responses/TranslationExists' }
+        '412': { $ref: '#/components/responses/TranslationVersionMismatch' }
+        '429': { $ref: '#/components/responses/TranslationRateLimited' }
+        '500': { $ref: '#/components/responses/Error' }
+        '502': { $ref: '#/components/responses/TranslationProviderError' }
+        '503': { $ref: '#/components/responses/TranslationDisabled' }
+        '504': { $ref: '#/components/responses/TranslationTimeout' }
   /admin/content/{module}/{contentId}/publish:
     post:
       operationId: publishContent
@@ -616,6 +661,7 @@ components:
     IfMatch: { name: If-Match, in: header, required: true, schema: { type: string, pattern: '^"[1-9][0-9]*"$' } }
     ContentModule: { name: module, in: path, required: true, schema: { $ref: '#/components/schemas/ContentModule' } }
     ContentID: { name: contentId, in: path, required: true, schema: { type: string, format: uuid } }
+    TranslationTargetLocale: { name: targetLocale, in: path, required: true, schema: { type: string, enum: [zh-Hans, en, ja, ko] } }
     Revision: { name: revision, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
   requestBodies:
     PublicationInput:
@@ -628,6 +674,11 @@ components:
       content:
         application/json:
           schema: { $ref: '#/components/schemas/ContentWriteInput' }
+    TranslationPreviewInput:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/TranslationPreviewInput' }
   responses:
     BulletinIssue:
       description: Bulletin issue
@@ -665,6 +716,35 @@ components:
       content:
         application/json:
           schema: { $ref: '#/components/schemas/PublicContentItemEnvelope' }
+    TranslationPreview:
+      description: Review-only generated translation preview; no CMS state is changed.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/TranslationPreviewEnvelope' }
+    InvalidTranslationRequest:
+      description: invalid_translation_request
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+    TranslationNotFound:
+      description: not_found
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+    TranslationExists:
+      description: translation_exists
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+    TranslationVersionMismatch:
+      description: version_mismatch
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+    TranslationRateLimited:
+      description: translation_rate_limited
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+    TranslationProviderError:
+      description: translation_provider_error
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+    TranslationDisabled:
+      description: translation_disabled
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+    TranslationTimeout:
+      description: translation_timeout
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
   schemas:
     CampaignTranslation:
       type: object
@@ -962,6 +1042,55 @@ components:
         body: { type: string, maxLength: 100000 }
         dateLabel: { type: string, maxLength: 100 }
         imageAlt: { type: string, maxLength: 300 }
+    TranslationPreviewInput:
+      type: object
+      additionalProperties: false
+      required: [sourceLocale, replaceExisting]
+      properties:
+        sourceLocale: { type: string, const: zh-Hant }
+        replaceExisting: { type: boolean }
+    TranslationPreview:
+      type: object
+      additionalProperties: false
+      required: [sourceLocale, targetLocale, sourceVersion, translation]
+      properties:
+        sourceLocale: { type: string, const: zh-Hant }
+        targetLocale: { type: string, enum: [zh-Hans, en, ja, ko] }
+        sourceVersion: { type: integer, format: int64, minimum: 1 }
+        translation:
+          oneOf:
+            - $ref: '#/components/schemas/NewsTranslationPreview'
+            - $ref: '#/components/schemas/HistoryTranslationPreview'
+            - $ref: '#/components/schemas/VideoTranslationPreview'
+            - $ref: '#/components/schemas/BulletinTranslationPreview'
+    NewsTranslationPreview:
+      type: object
+      additionalProperties: false
+      required: [title, body, imageAlt]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 200 }
+        body: { type: string, maxLength: 100000 }
+        imageAlt: { type: string, maxLength: 300 }
+    HistoryTranslationPreview:
+      type: object
+      additionalProperties: false
+      required: [title, body]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 200 }
+        body: { type: string, maxLength: 100000 }
+    VideoTranslationPreview:
+      type: object
+      additionalProperties: false
+      required: [title]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 200 }
+    BulletinTranslationPreview:
+      type: object
+      additionalProperties: false
+      required: [title, subtitle]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 200 }
+        subtitle: { type: string, maxLength: 300 }
     ContentWriteInput:
       type: object
       additionalProperties: false
@@ -1097,6 +1226,13 @@ components:
       required: [data, meta]
       properties:
         data: { $ref: '#/components/schemas/ContentItem' }
+        meta: { type: object, additionalProperties: true }
+        error: { type: ['null'] }
+    TranslationPreviewEnvelope:
+      type: object
+      required: [data, meta, error]
+      properties:
+        data: { $ref: '#/components/schemas/TranslationPreview' }
         meta: { type: object, additionalProperties: true }
         error: { type: ['null'] }
     ContentListEnvelope:
