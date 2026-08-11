@@ -75,12 +75,15 @@ func TestTranslationConfigurationDefaultsDisabledWithoutAzureValues(t *testing.T
 		t.Fatal(err)
 	}
 	want := TranslationConfig{
-		ProviderTimeout: 40 * time.Second,
-		HandlerTimeout:  45 * time.Second,
-		WriteDeadline:   50 * time.Second,
-		SourceCharLimit: 20000,
-		ActorLimit:      10,
-		DeploymentLimit: 60,
+		ProviderTimeout:      40 * time.Second,
+		HandlerTimeout:       45 * time.Second,
+		WriteDeadline:        50 * time.Second,
+		SourceCharLimit:      20000,
+		ActorLimit:           10,
+		DeploymentLimit:      60,
+		ActorDailyLimit:      30,
+		DeploymentDailyLimit: 300,
+		Cooldown:             10 * time.Minute,
 	}
 	if cfg.Translation != want {
 		t.Fatalf("translation config = %#v, want %#v", cfg.Translation, want)
@@ -122,12 +125,15 @@ func TestTranslationEnabledRequiresAzureConfiguration(t *testing.T) {
 
 func TestTranslationConfigRejectsInvalidLimits(t *testing.T) {
 	valid := TranslationConfig{
-		ProviderTimeout: 40 * time.Second,
-		HandlerTimeout:  45 * time.Second,
-		WriteDeadline:   50 * time.Second,
-		SourceCharLimit: 20000,
-		ActorLimit:      10,
-		DeploymentLimit: 60,
+		ProviderTimeout:      40 * time.Second,
+		HandlerTimeout:       45 * time.Second,
+		WriteDeadline:        50 * time.Second,
+		SourceCharLimit:      20000,
+		ActorLimit:           10,
+		DeploymentLimit:      60,
+		ActorDailyLimit:      30,
+		DeploymentDailyLimit: 300,
+		Cooldown:             10 * time.Minute,
 	}
 	tests := []struct {
 		name   string
@@ -140,6 +146,9 @@ func TestTranslationConfigRejectsInvalidLimits(t *testing.T) {
 		{name: "source character limit", change: func(cfg *TranslationConfig) { cfg.SourceCharLimit = 0 }},
 		{name: "actor limit", change: func(cfg *TranslationConfig) { cfg.ActorLimit = 0 }},
 		{name: "deployment limit", change: func(cfg *TranslationConfig) { cfg.DeploymentLimit = 0 }},
+		{name: "actor daily limit", change: func(cfg *TranslationConfig) { cfg.ActorDailyLimit = 0 }},
+		{name: "deployment daily limit", change: func(cfg *TranslationConfig) { cfg.DeploymentDailyLimit = 0 }},
+		{name: "cooldown", change: func(cfg *TranslationConfig) { cfg.Cooldown = 0 }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

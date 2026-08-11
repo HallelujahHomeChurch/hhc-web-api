@@ -38,17 +38,20 @@ type BulletinSource interface {
 }
 
 type LimiterAuditor interface {
-	ReserveTranslation(context.Context, string, time.Time, int, int) error
+	ReserveTranslation(context.Context, Reservation) error
 	RecordTranslationAudit(context.Context, AuditEvent) error
 }
 
 type ServiceConfig struct {
-	Deployment      string
-	HandlerTimeout  time.Duration
-	SourceCharLimit int
-	ActorLimit      int
-	DeploymentLimit int
-	Now             func() time.Time
+	Deployment           string
+	HandlerTimeout       time.Duration
+	SourceCharLimit      int
+	ActorLimit           int
+	DeploymentLimit      int
+	ActorDailyLimit      int
+	DeploymentDailyLimit int
+	Cooldown             time.Duration
+	Now                  func() time.Time
 }
 
 type Service struct {
@@ -94,9 +97,14 @@ func (s *Service) Preview(ctx context.Context, request PreviewRequest) (Preview,
 	if state.characterCount > s.config.SourceCharLimit {
 		return s.finish(ctx, state, started, OutcomeInvalid, Preview{}, ErrInvalidRequest)
 	}
-	if err := s.repository.ReserveTranslation(ctx, request.Actor, started, s.config.ActorLimit, s.config.DeploymentLimit); err != nil {
+	reservation := Reservation{
+		Actor: request.Actor, ResourceType: resourceType(request.Module), ResourceID: request.ResourceID, SourceVersion: version, TargetLocale: request.TargetLocale, Now: started,
+		ActorMinuteLimit: s.config.ActorLimit, DeploymentMinuteLimit: s.config.DeploymentLimit,
+		ActorDailyLimit: s.config.ActorDailyLimit, DeploymentDailyLimit: s.config.DeploymentDailyLimit, Cooldown: s.config.Cooldown,
+	}
+	if err := s.repository.ReserveTranslation(ctx, reservation); err != nil {
 		if errors.Is(err, ErrRateLimited) {
-			return s.finish(ctx, state, started, OutcomeRateLimited, Preview{}, ErrRateLimited)
+			return s.finish(ctx, state, started, OutcomeRateLimited, Preview{}, err)
 		}
 		return s.finish(ctx, state, started, OutcomeInternalFailure, Preview{}, ErrInternal)
 	}

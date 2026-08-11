@@ -40,35 +40,35 @@ func TestTranslationRateLimitsAndAudit(t *testing.T) {
 	now := time.Date(2026, 8, 11, 12, 34, 45, 0, time.FixedZone("test", 8*60*60))
 	reset := func(t *testing.T) {
 		t.Helper()
-		if _, err := db.ExecContext(ctx, `DELETE FROM hhc_web.translation_rate_limit; DELETE FROM hhc_web.cms_audit_event WHERE action='translation_preview'`); err != nil {
+		if _, err := db.ExecContext(ctx, `DELETE FROM hhc_web.translation_cooldown; DELETE FROM hhc_web.translation_rate_limit; DELETE FROM hhc_web.cms_audit_event WHERE action='translation_preview'`); err != nil {
 			t.Fatal(err)
 		}
 	}
 
 	t.Run("actor and deployment limits roll back atomically", func(t *testing.T) {
 		reset(t)
-		if err := repository.ReserveTranslation(ctx, "actor-a", now, 1, 3); err != nil {
+		if err := reserveTranslation(ctx, repository, "actor-a", now, 1, 3, 1); err != nil {
 			t.Fatal(err)
 		}
-		if err := repository.ReserveTranslation(ctx, "actor-a", now, 1, 3); !errors.Is(err, translation.ErrRateLimited) {
+		if err := reserveTranslation(ctx, repository, "actor-a", now, 1, 3, 2); !errors.Is(err, translation.ErrRateLimited) {
 			t.Fatalf("actor limit error = %v", err)
 		}
 		var deploymentCount int
-		if err := db.QueryRowContext(ctx, `SELECT count FROM hhc_web.translation_rate_limit WHERE scope='deployment'`).Scan(&deploymentCount); err != nil {
+		if err := db.QueryRowContext(ctx, `SELECT count FROM hhc_web.translation_rate_limit WHERE scope='deployment:minute'`).Scan(&deploymentCount); err != nil {
 			t.Fatal(err)
 		}
 		if deploymentCount != 1 {
 			t.Fatalf("deployment count after actor rollback = %d", deploymentCount)
 		}
 		for _, actor := range []string{"actor-b", "actor-c"} {
-			if err := repository.ReserveTranslation(ctx, actor, now, 1, 3); err != nil {
+			if err := reserveTranslation(ctx, repository, actor, now, 1, 3, 1); err != nil {
 				t.Fatal(err)
 			}
 		}
-		if err := repository.ReserveTranslation(ctx, "actor-d", now, 1, 3); !errors.Is(err, translation.ErrRateLimited) {
+		if err := reserveTranslation(ctx, repository, "actor-d", now, 1, 3, 1); !errors.Is(err, translation.ErrRateLimited) {
 			t.Fatalf("deployment limit error = %v", err)
 		}
-		if err := db.QueryRowContext(ctx, `SELECT count FROM hhc_web.translation_rate_limit WHERE scope='deployment'`).Scan(&deploymentCount); err != nil {
+		if err := db.QueryRowContext(ctx, `SELECT count FROM hhc_web.translation_rate_limit WHERE scope='deployment:minute'`).Scan(&deploymentCount); err != nil {
 			t.Fatal(err)
 		}
 		if deploymentCount != 3 {
@@ -78,17 +78,17 @@ func TestTranslationRateLimitsAndAudit(t *testing.T) {
 
 	t.Run("minute rollover", func(t *testing.T) {
 		reset(t)
-		if err := repository.ReserveTranslation(ctx, "actor-a", now, 1, 1); err != nil {
+		if err := reserveTranslation(ctx, repository, "actor-a", now, 1, 1, 1); err != nil {
 			t.Fatal(err)
 		}
-		if err := repository.ReserveTranslation(ctx, "actor-a", now.Add(time.Minute), 1, 1); err != nil {
+		if err := reserveTranslation(ctx, repository, "actor-a", now.Add(time.Minute), 1, 1, 2); err != nil {
 			t.Fatal(err)
 		}
 		var rows int
 		if err := db.QueryRowContext(ctx, `SELECT count(*) FROM hhc_web.translation_rate_limit`).Scan(&rows); err != nil {
 			t.Fatal(err)
 		}
-		if rows != 4 {
+		if rows != 6 {
 			t.Fatalf("counter rows = %d", rows)
 		}
 	})
@@ -97,10 +97,10 @@ func TestTranslationRateLimitsAndAudit(t *testing.T) {
 		reset(t)
 		runConcurrentReservations(t, repository, now, 20, 5, 20, func(int) string { return "same-actor" }, 5)
 		var actorCount, deploymentCount int
-		if err := db.QueryRowContext(ctx, `SELECT count FROM hhc_web.translation_rate_limit WHERE scope='actor:same-actor'`).Scan(&actorCount); err != nil {
+		if err := db.QueryRowContext(ctx, `SELECT count FROM hhc_web.translation_rate_limit WHERE scope='actor:minute:same-actor'`).Scan(&actorCount); err != nil {
 			t.Fatal(err)
 		}
-		if err := db.QueryRowContext(ctx, `SELECT count FROM hhc_web.translation_rate_limit WHERE scope='deployment'`).Scan(&deploymentCount); err != nil {
+		if err := db.QueryRowContext(ctx, `SELECT count FROM hhc_web.translation_rate_limit WHERE scope='deployment:minute'`).Scan(&deploymentCount); err != nil {
 			t.Fatal(err)
 		}
 		if actorCount != 5 || deploymentCount != 5 {
@@ -112,10 +112,10 @@ func TestTranslationRateLimitsAndAudit(t *testing.T) {
 		reset(t)
 		runConcurrentReservations(t, repository, now, 20, 1, 7, func(index int) string { return fmt.Sprintf("actor-%d", index) }, 7)
 		var deploymentCount, actorCount int
-		if err := db.QueryRowContext(ctx, `SELECT count FROM hhc_web.translation_rate_limit WHERE scope='deployment'`).Scan(&deploymentCount); err != nil {
+		if err := db.QueryRowContext(ctx, `SELECT count FROM hhc_web.translation_rate_limit WHERE scope='deployment:minute'`).Scan(&deploymentCount); err != nil {
 			t.Fatal(err)
 		}
-		if err := db.QueryRowContext(ctx, `SELECT COALESCE(sum(count),0) FROM hhc_web.translation_rate_limit WHERE scope LIKE 'actor:%'`).Scan(&actorCount); err != nil {
+		if err := db.QueryRowContext(ctx, `SELECT COALESCE(sum(count),0) FROM hhc_web.translation_rate_limit WHERE scope LIKE 'actor:minute:%'`).Scan(&actorCount); err != nil {
 			t.Fatal(err)
 		}
 		if deploymentCount != 7 || actorCount != 7 {
@@ -125,10 +125,10 @@ func TestTranslationRateLimitsAndAudit(t *testing.T) {
 
 	t.Run("old windows are deleted", func(t *testing.T) {
 		reset(t)
-		if _, err := db.ExecContext(ctx, `INSERT INTO hhc_web.translation_rate_limit(scope,window_start,count) VALUES('old', $1, 1)`, now.UTC().Add(-2*time.Hour).Truncate(time.Minute)); err != nil {
+		if _, err := db.ExecContext(ctx, `INSERT INTO hhc_web.translation_rate_limit(scope,window_start,count) VALUES('old', $1, 1)`, now.UTC().Add(-72*time.Hour).Truncate(time.Minute)); err != nil {
 			t.Fatal(err)
 		}
-		if err := repository.ReserveTranslation(ctx, "actor-a", now, 1, 1); err != nil {
+		if err := reserveTranslation(ctx, repository, "actor-a", now, 1, 1, 1); err != nil {
 			t.Fatal(err)
 		}
 		var old int
@@ -137,6 +137,83 @@ func TestTranslationRateLimitsAndAudit(t *testing.T) {
 		}
 		if old != 0 {
 			t.Fatalf("old counter rows = %d", old)
+		}
+	})
+
+	t.Run("resource target cooldown and source-version bypass", func(t *testing.T) {
+		reset(t)
+		reservation := translation.Reservation{
+			Actor: "actor-a", ResourceType: "news", ResourceID: "10000000-0000-4000-8000-000000000001", SourceVersion: 1, TargetLocale: "ja", Now: now,
+			ActorMinuteLimit: 10, DeploymentMinuteLimit: 10, ActorDailyLimit: 10, DeploymentDailyLimit: 10, Cooldown: 10 * time.Minute,
+		}
+		if err := repository.ReserveTranslation(ctx, reservation); err != nil {
+			t.Fatal(err)
+		}
+		var limited *translation.RateLimitError
+		if err := repository.ReserveTranslation(ctx, reservation); !errors.As(err, &limited) || limited.RetryAfter != 10*time.Minute {
+			t.Fatalf("cooldown error = %#v", err)
+		}
+		reservation.SourceVersion = 2
+		if err := repository.ReserveTranslation(ctx, reservation); err != nil {
+			t.Fatalf("new source version was blocked: %v", err)
+		}
+		reservation.SourceVersion = 1
+		reservation.Now = now.Add(10 * time.Minute)
+		if err := repository.ReserveTranslation(ctx, reservation); err != nil {
+			t.Fatalf("expired cooldown was blocked: %v", err)
+		}
+	})
+
+	t.Run("actor and deployment daily budgets return UTC reset", func(t *testing.T) {
+		reset(t)
+		for version := int64(1); version <= 2; version++ {
+			reservation := translation.Reservation{Actor: "actor-a", ResourceType: "news", ResourceID: "resource-a", SourceVersion: version, TargetLocale: "ja", Now: now.Add(time.Duration(version) * time.Minute), ActorMinuteLimit: 10, DeploymentMinuteLimit: 10, ActorDailyLimit: 2, DeploymentDailyLimit: 10, Cooldown: time.Minute}
+			if err := repository.ReserveTranslation(ctx, reservation); err != nil {
+				t.Fatal(err)
+			}
+		}
+		actorThird := translation.Reservation{Actor: "actor-a", ResourceType: "news", ResourceID: "resource-a", SourceVersion: 3, TargetLocale: "ja", Now: now.Add(3 * time.Minute), ActorMinuteLimit: 10, DeploymentMinuteLimit: 10, ActorDailyLimit: 2, DeploymentDailyLimit: 10, Cooldown: time.Minute}
+		var actorLimited *translation.RateLimitError
+		if err := repository.ReserveTranslation(ctx, actorThird); !errors.As(err, &actorLimited) || actorLimited.RetryAfter != time.Date(2026, 8, 12, 0, 0, 0, 0, time.UTC).Sub(actorThird.Now.UTC()) {
+			t.Fatalf("actor daily error = %#v", err)
+		}
+
+		reset(t)
+		for index, actor := range []string{"actor-a", "actor-b"} {
+			if err := repository.ReserveTranslation(ctx, translation.Reservation{Actor: actor, ResourceType: "news", ResourceID: "resource", SourceVersion: int64(index + 1), TargetLocale: "ja", Now: now.Add(time.Duration(index) * time.Minute), ActorMinuteLimit: 10, DeploymentMinuteLimit: 10, ActorDailyLimit: 10, DeploymentDailyLimit: 2, Cooldown: time.Minute}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		deploymentThird := translation.Reservation{Actor: "actor-c", ResourceType: "news", ResourceID: "resource", SourceVersion: 3, TargetLocale: "ja", Now: now.Add(2 * time.Minute), ActorMinuteLimit: 10, DeploymentMinuteLimit: 10, ActorDailyLimit: 10, DeploymentDailyLimit: 2, Cooldown: time.Minute}
+		var deploymentLimited *translation.RateLimitError
+		if err := repository.ReserveTranslation(ctx, deploymentThird); !errors.As(err, &deploymentLimited) || deploymentLimited.RetryAfter != time.Date(2026, 8, 12, 0, 0, 0, 0, time.UTC).Sub(deploymentThird.Now.UTC()) {
+			t.Fatalf("deployment daily error = %#v", err)
+		}
+	})
+
+	t.Run("concurrent identical target reserves once", func(t *testing.T) {
+		reset(t)
+		reservation := translation.Reservation{Actor: "actor-a", ResourceType: "news", ResourceID: "resource", SourceVersion: 1, TargetLocale: "ja", Now: now, ActorMinuteLimit: 100, DeploymentMinuteLimit: 100, ActorDailyLimit: 100, DeploymentDailyLimit: 100, Cooldown: 10 * time.Minute}
+		start := make(chan struct{})
+		var success atomic.Int32
+		var wait sync.WaitGroup
+		for range 20 {
+			wait.Add(1)
+			go func() {
+				defer wait.Done()
+				<-start
+				err := repository.ReserveTranslation(context.Background(), reservation)
+				if err == nil {
+					success.Add(1)
+				} else if !errors.Is(err, translation.ErrRateLimited) {
+					t.Errorf("reservation error = %v", err)
+				}
+			}()
+		}
+		close(start)
+		wait.Wait()
+		if success.Load() != 1 {
+			t.Fatalf("successful reservations = %d", success.Load())
 		}
 	})
 
@@ -184,7 +261,7 @@ func runConcurrentReservations(t *testing.T, repository *Repository, now time.Ti
 		go func(index int) {
 			defer wait.Done()
 			<-start
-			err := repository.ReserveTranslation(context.Background(), actor(index), now, actorLimit, deploymentLimit)
+			err := reserveTranslation(context.Background(), repository, actor(index), now, actorLimit, deploymentLimit, int64(index+1))
 			if err == nil {
 				success.Add(1)
 			} else if !errors.Is(err, translation.ErrRateLimited) {
@@ -201,6 +278,13 @@ func runConcurrentReservations(t *testing.T, repository *Repository, now time.Ti
 	if success.Load() != wantSuccess {
 		t.Fatalf("successful reservations = %d, want %d", success.Load(), wantSuccess)
 	}
+}
+
+func reserveTranslation(ctx context.Context, repository *Repository, actor string, now time.Time, actorLimit, deploymentLimit int, sourceVersion int64) error {
+	return repository.ReserveTranslation(ctx, translation.Reservation{
+		Actor: actor, ResourceType: "news", ResourceID: "10000000-0000-4000-8000-000000000001", SourceVersion: sourceVersion, TargetLocale: "ja", Now: now,
+		ActorMinuteLimit: actorLimit, DeploymentMinuteLimit: deploymentLimit, ActorDailyLimit: 1_000, DeploymentDailyLimit: 10_000, Cooldown: 10 * time.Minute,
+	})
 }
 
 func TestRepositoryPublishWaitsForAssetWorkflow(t *testing.T) {

@@ -163,3 +163,28 @@ func TestTranslationRateLimitMigrationAddsAtomicCounter(t *testing.T) {
 		}
 	}
 }
+
+func TestTranslationCostLimitMigrationAddsResourceCooldown(t *testing.T) {
+	contents, err := files.ReadFile("sql/024_translation_cost_limits.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := string(contents)
+	for _, expected := range []string{
+		"CREATE TABLE hhc_web.translation_cooldown",
+		"actor text NOT NULL",
+		"resource_type text NOT NULL",
+		"resource_id text NOT NULL",
+		"source_version bigint NOT NULL",
+		"target_locale text NOT NULL",
+		"next_allowed_at timestamptz NOT NULL",
+		"PRIMARY KEY (actor, resource_type, resource_id, source_version, target_locale)",
+	} {
+		if !strings.Contains(sql, expected) {
+			t.Fatalf("migration missing %q", expected)
+		}
+	}
+	if strings.Contains(sql, "DROP ") || strings.Contains(sql, "UPDATE ") || strings.Contains(sql, "DELETE ") {
+		t.Fatal("cost-limit migration must be additive")
+	}
+}

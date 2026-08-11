@@ -16,6 +16,27 @@ var (
 	ErrInternal          = errors.New("translation internal error")
 )
 
+type RateLimitError struct {
+	RetryAfter time.Duration
+}
+
+func (e *RateLimitError) Error() string { return ErrRateLimited.Error() }
+func (e *RateLimitError) Unwrap() error { return ErrRateLimited }
+
+type Reservation struct {
+	Actor                 string
+	ResourceType          string
+	ResourceID            string
+	SourceVersion         int64
+	TargetLocale          string
+	Now                   time.Time
+	ActorMinuteLimit      int
+	DeploymentMinuteLimit int
+	ActorDailyLimit       int
+	DeploymentDailyLimit  int
+	Cooldown              time.Duration
+}
+
 type Request struct {
 	Module       string
 	SourceLocale string
