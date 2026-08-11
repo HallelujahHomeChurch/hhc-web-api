@@ -13,11 +13,29 @@ cat >"$tmp/safe.json" <<'JSON'
 JSON
 ./scripts/check-what-if.sh "$tmp/safe.json"
 
+cat >"$tmp/translation-disabled-retained.json" <<'JSON'
+{"changes":[{"resourceId":"/subscriptions/test/resourceGroups/alive/providers/Microsoft.App/containerApps/hhc-web-api","changeType":"Modify","delta":[{"path":"properties.template.containers[0].env[?name=='CMS_TRANSLATION_ENABLED'].value","propertyChangeType":"Modify"},{"path":"properties.template.containers[0].env[?name=='AZURE_OPENAI_ENDPOINT']","propertyChangeType":"NoEffect"},{"path":"properties.configuration.secrets[?name=='azure-openai-api-key']","propertyChangeType":"NoEffect"}]}]}
+JSON
+./scripts/check-what-if.sh "$tmp/translation-disabled-retained.json"
+
+cat >"$tmp/translation-first-disabled-unbound.json" <<'JSON'
+{"changes":[{"resourceId":"/subscriptions/test/resourceGroups/alive/providers/Microsoft.App/containerApps/hhc-web-api","changeType":"Modify","delta":[{"path":"properties.template.containers[0].env[?name=='CMS_TRANSLATION_ENABLED']","propertyChangeType":"Add"}]}]}
+JSON
+./scripts/check-what-if.sh "$tmp/translation-first-disabled-unbound.json"
+
 cat >"$tmp/nested-delete.json" <<'JSON'
 {"changes":[{"resourceId":"/subscriptions/test/resourceGroups/alive/providers/Microsoft.App/containerApps/hhc-web-api","changeType":"Modify","delta":[{"path":"properties.template.containers","propertyChangeType":"Array","children":[{"path":"env","propertyChangeType":"Delete"}]}]}]}
 JSON
 if ./scripts/check-what-if.sh "$tmp/nested-delete.json" 2>/dev/null; then
   echo "nested delete was not rejected" >&2
+  exit 1
+fi
+
+cat >"$tmp/translation-binding-delete.json" <<'JSON'
+{"changes":[{"resourceId":"/subscriptions/test/resourceGroups/alive/providers/Microsoft.App/containerApps/hhc-web-api","changeType":"Modify","delta":[{"path":"properties.configuration.secrets[?name=='azure-openai-api-key']","propertyChangeType":"Delete"}]}]}
+JSON
+if ./scripts/check-what-if.sh "$tmp/translation-binding-delete.json" 2>/dev/null; then
+  echo "translation binding delete was not rejected" >&2
   exit 1
 fi
 

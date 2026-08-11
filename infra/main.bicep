@@ -21,6 +21,7 @@ param azureOpenAIDeployment string = ''
 
 var acrPullRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
 var keyVaultSecretsUserRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')
+var translationConfigured = !empty(azureOpenAIEndpoint) && !empty(azureOpenAIDeployment)
 var commonEnvironment = [
   { name: 'PORT', value: '8082' }
   { name: 'ENVIRONMENT', value: 'production' }
@@ -38,7 +39,7 @@ var commonEnvironment = [
   { name: 'PUBLIC_BASE_URL', value: 'https://www.alive.org.tw/assets' }
   { name: 'OUTBOX_MAX_ATTEMPTS', value: '20' }
 ]
-var translationEnvironment = cmsTranslationEnabled ? [
+var translationEnvironment = translationConfigured ? [
   { name: 'AZURE_OPENAI_ENDPOINT', value: azureOpenAIEndpoint }
   { name: 'AZURE_OPENAI_DEPLOYMENT', value: azureOpenAIDeployment }
   { name: 'AZURE_OPENAI_API_KEY', secretRef: 'azure-openai-api-key' }
@@ -175,7 +176,7 @@ resource api 'Microsoft.App/containerApps@2025-01-01' = if (deployRuntime) {
           keyVaultUrl: '${runtimeVault.properties.vaultUri}secrets/database-url'
           identity: apiIdentity.id
         }
-      ], cmsTranslationEnabled ? [
+      ], translationConfigured ? [
         {
           name: 'azure-openai-api-key'
           keyVaultUrl: '${runtimeVault.properties.vaultUri}secrets/hhc-web-azure-openai-api-key'
