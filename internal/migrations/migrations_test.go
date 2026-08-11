@@ -144,3 +144,22 @@ func TestFiveContentLocalesMigrationReplacesOnlyLocaleChecks(t *testing.T) {
 		t.Fatal("locale migration must not rewrite existing rows")
 	}
 }
+
+func TestTranslationRateLimitMigrationAddsAtomicCounter(t *testing.T) {
+	contents, err := files.ReadFile("sql/023_translation_rate_limits.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := string(contents)
+	for _, expected := range []string{
+		"CREATE TABLE hhc_web.translation_rate_limit",
+		"scope text NOT NULL",
+		"window_start timestamptz NOT NULL",
+		"count integer NOT NULL CHECK (count > 0)",
+		"PRIMARY KEY (scope, window_start)",
+	} {
+		if !strings.Contains(sql, expected) {
+			t.Fatalf("migration missing %q", expected)
+		}
+	}
+}
