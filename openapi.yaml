@@ -9,7 +9,7 @@ paths:
     get:
       operationId: listCampaigns
       security: [{ bearerAuth: [] }]
-      x-required-scopes: ['cms:read']
+      x-required-any-scopes: ['campaigns:read', 'cms:read']
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PageSize'
@@ -18,7 +18,7 @@ paths:
     post:
       operationId: createCampaign
       security: [{ bearerAuth: [] }]
-      x-required-scopes: ['cms:write']
+      x-required-any-scopes: ['campaigns:write', 'cms:write']
       requestBody:
         required: true
         content:
@@ -31,12 +31,12 @@ paths:
     get:
       operationId: getCampaign
       security: [{ bearerAuth: [] }]
-      x-required-scopes: ['cms:read']
+      x-required-any-scopes: ['campaigns:read', 'cms:read']
       responses: { '200': { description: Campaign detail } }
     put:
       operationId: updateCampaign
       security: [{ bearerAuth: [] }]
-      x-required-scopes: ['cms:write']
+      x-required-any-scopes: ['campaigns:write', 'cms:write']
       requestBody:
         required: true
         content:
@@ -46,13 +46,13 @@ paths:
     delete:
       operationId: deleteCampaign
       security: [{ bearerAuth: [] }]
-      x-required-scopes: ['cms:write']
+      x-required-any-scopes: ['campaigns:write', 'cms:write']
       responses: { '204': { description: Campaign draft deleted } }
   /admin/campaigns/{campaignId}/send:
     post:
       operationId: sendCampaign
       security: [{ bearerAuth: [] }]
-      x-required-scopes: ['cms:write']
+      x-required-any-scopes: ['campaigns:send', 'cms:write']
       parameters:
         - { name: campaignId, in: path, required: true, schema: { type: string, format: uuid } }
       responses: { '200': { description: Campaign audience snapshotted and queued } }
@@ -82,7 +82,7 @@ paths:
     get:
       operationId: listCampaignDeliveries
       security: [{ bearerAuth: [] }]
-      x-required-scopes: ['cms:read']
+      x-required-any-scopes: ['campaigns:read', 'cms:read']
       parameters:
         - { name: campaignId, in: path, required: true, schema: { type: string, format: uuid } }
         - $ref: '#/components/parameters/Page'
@@ -92,7 +92,7 @@ paths:
     post:
       operationId: retryFailedCampaignDeliveries
       security: [{ bearerAuth: [] }]
-      x-required-scopes: ['cms:write']
+      x-required-any-scopes: ['campaigns:send', 'cms:write']
       parameters:
         - { name: campaignId, in: path, required: true, schema: { type: string, format: uuid } }
       responses: { '200': { description: Failed deliveries queued for retry } }
@@ -100,12 +100,12 @@ paths:
     get:
       operationId: listCampaignSchedules
       security: [{ bearerAuth: [] }]
-      x-required-scopes: ['cms:read']
+      x-required-any-scopes: ['campaigns:read', 'cms:read']
       responses: { '200': { description: Campaign schedules } }
     post:
       operationId: createCampaignSchedule
       security: [{ bearerAuth: [] }]
-      x-required-scopes: ['cms:write']
+      x-required-scope-sets: [['campaigns:write', 'campaigns:send'], ['cms:write']]
       requestBody:
         required: true
         content:
@@ -118,12 +118,13 @@ paths:
     get:
       operationId: getCampaignSchedule
       security: [{ bearerAuth: [] }]
-      x-required-scopes: ['cms:read']
+      x-required-any-scopes: ['campaigns:read', 'cms:read']
       responses: { '200': { description: Campaign schedule detail } }
     put:
       operationId: updateCampaignSchedule
       security: [{ bearerAuth: [] }]
-      x-required-scopes: ['cms:write']
+      x-required-any-scopes: ['campaigns:write', 'cms:write']
+      description: Enabling a schedule additionally requires campaigns:send; legacy cms:write remains accepted during role migration.
       requestBody:
         required: true
         content:
@@ -133,7 +134,7 @@ paths:
     delete:
       operationId: deleteCampaignSchedule
       security: [{ bearerAuth: [] }]
-      x-required-scopes: ['cms:write']
+      x-required-any-scopes: ['campaigns:write', 'cms:write']
       responses: { '204': { description: Campaign schedule deleted } }
   /admin/campaign-schedules/{scheduleId}/translation-previews/{targetLocale}:
     post:

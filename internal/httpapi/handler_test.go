@@ -30,7 +30,7 @@ func (f *engagementProxyFake) Forward(_ context.Context, _ string, path string, 
 	}, nil
 }
 
-func TestCampaignProxyRequiresCMSScopeAndForwardsActor(t *testing.T) {
+func TestCampaignProxyRequiresCampaignReadScopeAndForwardsActor(t *testing.T) {
 	proxy := &engagementProxyFake{}
 	handler := NewWithContent(
 		bulletins.NewService(&apiRepository{}, time.Now), nil, nil, nil,
@@ -46,7 +46,7 @@ func TestCampaignProxyRequiresCMSScopeAndForwardsActor(t *testing.T) {
 	}
 
 	request := httptest.NewRequest(http.MethodGet, "/api/admin/campaigns?q=August&page=2", nil)
-	trusted(request, "cms:read")
+	trusted(request, "campaigns:read")
 	response = httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusOK || proxy.path != "/priv/campaigns?q=August&page=2" || proxy.actor != "user-1" {
@@ -60,7 +60,7 @@ func TestCampaignDeliveryProxyRoutes(t *testing.T) {
 		"api-gateway", "", true, proxy).Routes()
 
 	request := httptest.NewRequest(http.MethodGet, "/api/admin/campaigns/campaign-1/deliveries?page=1", nil)
-	trusted(request, "cms:read")
+	trusted(request, "campaigns:read")
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusOK || proxy.path != "/priv/campaigns/campaign-1/deliveries?page=1" {
@@ -68,11 +68,76 @@ func TestCampaignDeliveryProxyRoutes(t *testing.T) {
 	}
 
 	request = httptest.NewRequest(http.MethodPost, "/api/admin/campaigns/campaign-1/retry-failed", nil)
-	trusted(request, "cms:write")
+	trusted(request, "campaigns:send")
 	response = httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusOK || proxy.path != "/priv/campaigns/campaign-1/retry-failed" {
 		t.Fatalf("status=%d path=%q", response.Code, proxy.path)
+	}
+}
+
+func TestCampaignWritesAndSendsUseSeparateScopes(t *testing.T) {
+	proxy := &engagementProxyFake{}
+	handler := NewWithContent(bulletins.NewService(&apiRepository{}, time.Now), nil, nil, nil,
+		"api-gateway", "", true, proxy).Routes()
+
+	write := httptest.NewRequest(http.MethodPost, "/api/admin/campaigns", strings.NewReader(`{}`))
+	trusted(write, "campaigns:write")
+	written := httptest.NewRecorder()
+	handler.ServeHTTP(written, write)
+	if written.Code != http.StatusOK {
+		t.Fatalf("write status=%d body=%s", written.Code, written.Body.String())
+	}
+
+	send := httptest.NewRequest(http.MethodPost, "/api/admin/campaigns/campaign-1/send", nil)
+	trusted(send, "campaigns:write")
+	denied := httptest.NewRecorder()
+	handler.ServeHTTP(denied, send)
+	if denied.Code != http.StatusForbidden {
+		t.Fatalf("send with write status=%d", denied.Code)
+	}
+
+	send = httptest.NewRequest(http.MethodPost, "/api/admin/campaigns/campaign-1/send", nil)
+	trusted(send, "campaigns:send")
+	allowed := httptest.NewRecorder()
+	handler.ServeHTTP(allowed, send)
+	if allowed.Code != http.StatusOK {
+		t.Fatalf("send status=%d body=%s", allowed.Code, allowed.Body.String())
+	}
+}
+
+func TestEnabledCampaignScheduleRequiresSendScope(t *testing.T) {
+	proxy := &engagementProxyFake{}
+	handler := NewWithContent(bulletins.NewService(&apiRepository{}, time.Now), nil, nil, nil,
+		"api-gateway", "", true, proxy).Routes()
+
+	for _, test := range []struct {
+		name       string
+		method     string
+		body       string
+		scopes     string
+		wantStatus int
+	}{
+		{name: "create without send", method: http.MethodPost, body: `{}`, scopes: "campaigns:write", wantStatus: http.StatusForbidden},
+		{name: "create with send", method: http.MethodPost, body: `{}`, scopes: "campaigns:write campaigns:send", wantStatus: http.StatusOK},
+		{name: "disabled update", method: http.MethodPut, body: `{"enabled":false}`, scopes: "campaigns:write", wantStatus: http.StatusOK},
+		{name: "enabled update without send", method: http.MethodPut, body: `{"enabled":true}`, scopes: "campaigns:write", wantStatus: http.StatusForbidden},
+		{name: "enabled update with send", method: http.MethodPut, body: `{"enabled":true}`, scopes: "campaigns:write campaigns:send", wantStatus: http.StatusOK},
+		{name: "legacy cms writer", method: http.MethodPut, body: `{"enabled":true}`, scopes: "cms:write", wantStatus: http.StatusOK},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			path := "/api/admin/campaign-schedules"
+			if test.method == http.MethodPut {
+				path += "/schedule-1"
+			}
+			request := httptest.NewRequest(test.method, path, strings.NewReader(test.body))
+			trusted(request, test.scopes)
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != test.wantStatus {
+				t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+			}
+		})
 	}
 }
 

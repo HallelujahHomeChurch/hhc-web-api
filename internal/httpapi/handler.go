@@ -18,6 +18,8 @@ import (
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/content"
 )
 
+const maxAdminProxyBody = 1 << 20
+
 const maxBulletinPDFSize = 20 << 20
 
 type assetUploads interface {
@@ -100,19 +102,22 @@ func (h *Handler) Routes() http.Handler {
 		h.contentRoutes(mux, admin)
 	}
 	if h.engagement != nil {
-		admin.HandleFunc("GET /api/admin/campaigns", requireScope("cms:read", h.forwardEngagement))
-		admin.HandleFunc("POST /api/admin/campaigns", requireScope("cms:write", h.forwardEngagement))
-		admin.HandleFunc("GET /api/admin/campaigns/{campaignID}", requireScope("cms:read", h.forwardEngagement))
-		admin.HandleFunc("PUT /api/admin/campaigns/{campaignID}", requireScope("cms:write", h.forwardEngagement))
-		admin.HandleFunc("DELETE /api/admin/campaigns/{campaignID}", requireScope("cms:write", h.forwardEngagement))
-		admin.HandleFunc("POST /api/admin/campaigns/{campaignID}/send", requireScope("cms:write", h.forwardEngagement))
-		admin.HandleFunc("GET /api/admin/campaigns/{campaignID}/deliveries", requireScope("cms:read", h.forwardEngagement))
-		admin.HandleFunc("POST /api/admin/campaigns/{campaignID}/retry-failed", requireScope("cms:write", h.forwardEngagement))
-		admin.HandleFunc("GET /api/admin/campaign-schedules", requireScope("cms:read", h.forwardEngagement))
-		admin.HandleFunc("POST /api/admin/campaign-schedules", requireScope("cms:write", h.forwardEngagement))
-		admin.HandleFunc("GET /api/admin/campaign-schedules/{scheduleID}", requireScope("cms:read", h.forwardEngagement))
-		admin.HandleFunc("PUT /api/admin/campaign-schedules/{scheduleID}", requireScope("cms:write", h.forwardEngagement))
-		admin.HandleFunc("DELETE /api/admin/campaign-schedules/{scheduleID}", requireScope("cms:write", h.forwardEngagement))
+		campaignRead := []string{"campaigns:read", "cms:read"}
+		campaignWrite := []string{"campaigns:write", "cms:write"}
+		campaignSend := []string{"campaigns:send", "cms:write"}
+		admin.HandleFunc("GET /api/admin/campaigns", requireAnyScope(campaignRead, h.forwardEngagement))
+		admin.HandleFunc("POST /api/admin/campaigns", requireAnyScope(campaignWrite, h.forwardEngagement))
+		admin.HandleFunc("GET /api/admin/campaigns/{campaignID}", requireAnyScope(campaignRead, h.forwardEngagement))
+		admin.HandleFunc("PUT /api/admin/campaigns/{campaignID}", requireAnyScope(campaignWrite, h.forwardEngagement))
+		admin.HandleFunc("DELETE /api/admin/campaigns/{campaignID}", requireAnyScope(campaignWrite, h.forwardEngagement))
+		admin.HandleFunc("POST /api/admin/campaigns/{campaignID}/send", requireAnyScope(campaignSend, h.forwardEngagement))
+		admin.HandleFunc("GET /api/admin/campaigns/{campaignID}/deliveries", requireAnyScope(campaignRead, h.forwardEngagement))
+		admin.HandleFunc("POST /api/admin/campaigns/{campaignID}/retry-failed", requireAnyScope(campaignSend, h.forwardEngagement))
+		admin.HandleFunc("GET /api/admin/campaign-schedules", requireAnyScope(campaignRead, h.forwardEngagement))
+		admin.HandleFunc("POST /api/admin/campaign-schedules", requireCampaignScheduleCreate(h.forwardEngagement))
+		admin.HandleFunc("GET /api/admin/campaign-schedules/{scheduleID}", requireAnyScope(campaignRead, h.forwardEngagement))
+		admin.HandleFunc("PUT /api/admin/campaign-schedules/{scheduleID}", requireCampaignScheduleUpdate(h.forwardEngagement))
+		admin.HandleFunc("DELETE /api/admin/campaign-schedules/{scheduleID}", requireAnyScope(campaignWrite, h.forwardEngagement))
 	}
 	mux.Handle("/api/admin/", requireTrusted(h.trustedCaller, h.daprAPIToken, h.allowDevCaller, admin))
 	return requestID(accessLog(mux))
@@ -125,7 +130,7 @@ func (h *Handler) forwardEngagement(w http.ResponseWriter, r *http.Request) {
 	}
 	var body io.Reader
 	if r.Body != nil && r.Body != http.NoBody {
-		body = http.MaxBytesReader(w, r.Body, 1<<20)
+		body = http.MaxBytesReader(w, r.Body, maxAdminProxyBody)
 	}
 	response, err := h.engagement.Forward(r.Context(), r.Method, path, body, actor(r))
 	if err != nil {
