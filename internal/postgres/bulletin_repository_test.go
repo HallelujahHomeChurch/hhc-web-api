@@ -11,6 +11,7 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/bulletins"
+	"github.com/HallelujahHomeChurch/hhc-web-api/internal/publication"
 )
 
 func TestGetPublicByNumberUsesExactProjectionJoin(t *testing.T) {
@@ -33,6 +34,42 @@ func TestGetPublicByNumberUsesExactProjectionJoin(t *testing.T) {
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestRepositoryRejectsUnsupportedEditionsBeforeDatabase(t *testing.T) {
+	repository := New(nil)
+	now := time.Now()
+	for _, locale := range []string{"ja", "ko"} {
+		if _, err := repository.PutVersion(context.Background(), "issue-1", 1, bulletins.PutVersionInput{Locale: locale}, "user-1", now); !errors.Is(err, bulletins.ErrInvalid) {
+			t.Fatalf("put %s error=%v", locale, err)
+		}
+		if _, err := repository.UpdateVersion(context.Background(), "issue-1", locale, 1, "title", "", "user-1", now); !errors.Is(err, bulletins.ErrInvalid) {
+			t.Fatalf("update %s error=%v", locale, err)
+		}
+		if _, err := repository.DeleteVersion(context.Background(), "issue-1", locale, 1, "user-1", now); !errors.Is(err, bulletins.ErrInvalid) {
+			t.Fatalf("delete %s error=%v", locale, err)
+		}
+		if _, err := repository.StartPublish(context.Background(), "issue-1", locale, 1, false, "user-1", now); !errors.Is(err, bulletins.ErrInvalid) {
+			t.Fatalf("publish %s error=%v", locale, err)
+		}
+		if _, err := repository.Unpublish(context.Background(), "issue-1", locale, 1, "user-1", now); !errors.Is(err, bulletins.ErrInvalid) {
+			t.Fatalf("unpublish %s error=%v", locale, err)
+		}
+		if _, err := repository.GetPublicLatest(context.Background(), locale); !errors.Is(err, bulletins.ErrInvalid) {
+			t.Fatalf("latest %s error=%v", locale, err)
+		}
+	}
+}
+
+func TestCompletePublishRejectsUnsupportedEditionBeforeDatabase(t *testing.T) {
+	event := publication.Event{
+		ID:      "event-1",
+		Payload: []byte(`{"issueId":"issue-1","locale":"ja","assetId":"asset-ja","aggregateVersion":3}`),
+	}
+	err := New(nil).CompletePublish(context.Background(), event, "grant-ja", "/asset-ja", time.Now())
+	if !errors.Is(err, bulletins.ErrInvalid) {
+		t.Fatalf("error=%v", err)
 	}
 }
 
@@ -63,6 +100,63 @@ func TestGetPublicByNumberMapsMissingAndMalformedProjection(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+func TestPublicProjectionRejectsUnsupportedLegacyEdition(t *testing.T) {
+	payload := []byte(`{"issueDate":"2026-08-02","locale":"ja","title":"legacy","downloadUrl":"/asset","downloadFileName":"legacy.pdf","publishedAt":"2026-08-01T12:00:00Z","version":3}`)
+	if _, err := decodePublicBulletin(payload, nil); !errors.Is(err, bulletins.ErrNotFound) {
+		t.Fatalf("error=%v", err)
+	}
+}
+
+func TestListPublicFiltersUnsupportedLegacyEditions(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	valid := []byte(`{"issueDate":"2026-08-02","locale":"zh-Hant","title":"Weekly","downloadUrl":"/asset","downloadFileName":"weekly.pdf","publishedAt":"2026-08-01T12:00:00Z","version":3}`)
+	legacy := []byte(`{"issueDate":"2026-08-02","locale":"ja","title":"legacy","downloadUrl":"/asset-ja","downloadFileName":"legacy.pdf","publishedAt":"2026-08-01T12:00:00Z","version":3}`)
+	mock.ExpectQuery("SELECT count\\(DISTINCT resource_id\\).*locale IN \\('zh-Hant','zh-Hans','en'\\)").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+	mock.ExpectQuery("WITH issues AS .*locale IN \\('zh-Hant','zh-Hans','en'\\)").
+		WithArgs(20, 0).
+		WillReturnRows(sqlmock.NewRows([]string{"payload_json"}).AddRow(valid).AddRow(legacy))
+
+	page, err := New(db).ListPublic(context.Background(), 1, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Total != 1 || len(page.Items) != 1 || len(page.Items[0].Versions) != 1 || page.Items[0].Versions[0].Locale != "zh-Hant" {
+		t.Fatalf("page=%#v", page)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRestoreIssueRevisionRejectsUnsupportedEditionBeforeMutation(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	issueID := "00000000-0000-0000-0000-000000000001"
+	snapshot, _ := json.Marshal(bulletins.Issue{ID: issueID, IssueDate: "2026-08-02", Versions: []bulletins.Version{{Locale: "ko", PDFAssetID: "asset-ko"}}})
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT version,status,issue_number,issue_date::text FROM hhc_web.bulletin_issue").WithArgs(issueID).
+		WillReturnRows(sqlmock.NewRows([]string{"version", "status", "issue_number", "issue_date"}).AddRow(3, "draft", 1732, "2026-08-02"))
+	mock.ExpectQuery("SELECT snapshot_json FROM hhc_web.bulletin_revision").WithArgs(issueID, int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"snapshot_json"}).AddRow(snapshot))
+	mock.ExpectRollback()
+
+	_, err = New(db).RestoreIssueRevision(context.Background(), issueID, 2, 3, "user-2", time.Now())
+	if !errors.Is(err, bulletins.ErrInvalid) {
+		t.Fatalf("error=%v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -138,13 +232,16 @@ func TestBuildBulletinNotificationUsesPublishedFiveLocaleCopyAfterFluentReview(t
 	payload := buildBulletinNotification("issue-1", sql.NullInt64{Int64: number, Valid: true}, "user-1", true, []bulletins.Version{
 		{Locale: "zh-Hant", Title: "繁體標題", Subtitle: "繁體副標", Status: "published"},
 		{Locale: "en", Title: "English title", Status: "published"},
-		{Locale: "ja", Title: "日本語タイトル", Subtitle: "日本語の副題", Status: "published"},
-		{Locale: "ko", Title: "한국어 제목", Subtitle: "한국어 부제", Status: "published"},
 		{Locale: "zh-Hans", Title: "Draft simplified", Status: "draft"},
+		{Locale: "ja", Title: "legacy Japanese", Subtitle: "legacy Japanese body", Status: "published"},
+		{Locale: "ko", Title: "legacy Korean", Subtitle: "legacy Korean body", Status: "published"},
 	})
 
-	if len(payload.Translations) != 5 || payload.Translations["ja"].Subject != "第 1732 号の週報を公開しました" || payload.Translations["ja"].Body != "日本語の副題" || payload.Translations["ko"].Subject != "1732호 주보가 발행되었습니다" || payload.Translations["ko"].Body != "한국어 부제" {
+	if len(payload.Translations) != 5 || payload.Translations["ja"].Subject != "第 1732 号の週報を公開しました" || payload.Translations["ja"].Body != "English title" || payload.Translations["ko"].Subject != "1732호 주보가 발행되었습니다" || payload.Translations["ko"].Body != "English title" {
 		t.Fatalf("translations=%#v", payload.Translations)
+	}
+	if payload.Translations["ja"].ActionURL != "/ja/literature-ministry" || payload.Translations["ko"].ActionURL != "/ko/literature-ministry" {
+		t.Fatalf("action routes=%#v", payload.Translations)
 	}
 	if payload.Translations["zh-Hans"].Body != "English title" {
 		t.Fatalf("draft translation leaked into notification: %#v", payload.Translations)

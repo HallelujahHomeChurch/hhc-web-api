@@ -60,13 +60,30 @@ func TestServicePreviewsOnlyModuleFieldsFromSavedTraditionalChinese(t *testing.T
 			if !reflect.DeepEqual(generator.request.Fields, test.wantFields) {
 				t.Fatalf("provider fields = %#v, want %#v", generator.request.Fields, test.wantFields)
 			}
-			if preview.SourceLocale != "zh-Hant" || preview.TargetLocale != "ja" || preview.SourceVersion != 7 || !reflect.DeepEqual(preview.Translation, translated(test.wantFields)) {
+			if preview.SourceLocale != "zh-Hant" || preview.TargetLocale != test.request.TargetLocale || preview.SourceVersion != 7 || !reflect.DeepEqual(preview.Translation, translated(test.wantFields)) {
 				t.Fatalf("preview = %#v", preview)
 			}
 			if repository.reserveCalls != 1 || len(repository.audits) != 1 || repository.audits[0].Outcome != OutcomeSuccess {
 				t.Fatalf("reserve calls = %d, audits = %#v", repository.reserveCalls, repository.audits)
 			}
 		})
+	}
+}
+
+func TestServiceRejectsJapaneseAndKoreanBulletinTargetsBeforeLoadOrProvider(t *testing.T) {
+	for _, locale := range []string{"ja", "ko"} {
+		request := previewRequest("bulletins")
+		request.TargetLocale = locale
+		generator := &generatorStub{}
+		repository := &translationRepositoryStub{}
+		service := NewService(contentSourceStub{}, bulletinSourceStub{err: errors.New("must not load")}, generator, repository, testServiceConfig())
+
+		if _, err := service.Preview(context.Background(), request); !errors.Is(err, ErrInvalidRequest) {
+			t.Fatalf("target=%s error=%v", locale, err)
+		}
+		if generator.calls != 0 || repository.reserveCalls != 0 {
+			t.Fatalf("target=%s generator=%d reserve=%d", locale, generator.calls, repository.reserveCalls)
+		}
 	}
 }
 
@@ -321,7 +338,11 @@ func TestServiceDoesNotAuditOrTraceUnboundedInvalidLocales(t *testing.T) {
 }
 
 func previewRequest(module string) PreviewRequest {
-	return PreviewRequest{Module: module, ResourceID: "10000000-0000-4000-8000-000000000001", SourceLocale: "zh-Hant", TargetLocale: "ja", ExpectedVersion: 7, Actor: "actor-1"}
+	target := "ja"
+	if module == "bulletins" {
+		target = "en"
+	}
+	return PreviewRequest{Module: module, ResourceID: "10000000-0000-4000-8000-000000000001", SourceLocale: "zh-Hant", TargetLocale: target, ExpectedVersion: 7, Actor: "actor-1"}
 }
 
 func testServiceConfig() ServiceConfig {

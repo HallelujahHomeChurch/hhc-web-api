@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/HallelujahHomeChurch/hhc-web-api/internal/bulletins"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/translation"
 )
 
@@ -26,6 +27,10 @@ func (h *Handler) adminContentTranslationPreview(w http.ResponseWriter, r *http.
 }
 
 func (h *Handler) adminBulletinTranslationPreview(w http.ResponseWriter, r *http.Request) {
+	if !bulletins.IsBulletinTranslationTarget(r.PathValue("targetLocale")) {
+		writeError(w, http.StatusBadRequest, "invalid_translation_request", "The translation request is invalid.")
+		return
+	}
 	h.translationPreview(w, r, "bulletins", r.PathValue("issueID"))
 }
 

@@ -182,7 +182,7 @@ func (h *Handler) adminCreateUpload(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &input) {
 		return
 	}
-	if !validLocale(input.Locale) || strings.TrimSpace(input.FileName) == "" || input.MIMEType != "application/pdf" || input.SizeBytes <= 0 || input.SizeBytes > maxBulletinPDFSize || strings.TrimSpace(r.Header.Get("Idempotency-Key")) == "" {
+	if !bulletins.IsBulletinEdition(input.Locale) || strings.TrimSpace(input.FileName) == "" || input.MIMEType != "application/pdf" || input.SizeBytes <= 0 || input.SizeBytes > maxBulletinPDFSize || strings.TrimSpace(r.Header.Get("Idempotency-Key")) == "" {
 		handleError(w, bulletins.ErrInvalid)
 		return
 	}
@@ -212,7 +212,7 @@ func (h *Handler) adminCompleteUpload(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &input) {
 		return
 	}
-	if !validLocale(input.Locale) || strings.TrimSpace(input.Title) == "" || input.MIMEType != "application/pdf" || input.SizeBytes <= 0 || len(input.ChecksumSHA256) != 64 {
+	if !bulletins.IsBulletinEdition(input.Locale) || strings.TrimSpace(input.Title) == "" || input.MIMEType != "application/pdf" || input.SizeBytes <= 0 || len(input.ChecksumSHA256) != 64 {
 		handleError(w, bulletins.ErrInvalid)
 		return
 	}
@@ -519,6 +519,12 @@ func (h *Handler) adminRestoreIssueRevision(w http.ResponseWriter, r *http.Reque
 		handleError(w, bulletins.ErrNotFound)
 		return
 	}
+	for _, version := range snapshot.Versions {
+		if !bulletins.IsBulletinEdition(version.Locale) {
+			handleError(w, bulletins.ErrInvalid)
+			return
+		}
+	}
 	if h.uploads == nil {
 		handleError(w, assetclient.ErrUnavailable)
 		return
@@ -553,14 +559,6 @@ func locale(r *http.Request) string {
 		value = "zh-Hant"
 	}
 	return value
-}
-func validLocale(value string) bool {
-	switch value {
-	case "zh-Hant", "zh-Hans", "en", "ja", "ko":
-		return true
-	default:
-		return false
-	}
 }
 func pagination(r *http.Request) (int, int) {
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))

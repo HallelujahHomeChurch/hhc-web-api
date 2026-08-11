@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"log/slog"
 	"time"
+
+	"github.com/HallelujahHomeChurch/hhc-web-api/internal/bulletins"
 )
 
 type Worker struct {
@@ -111,6 +113,9 @@ func (w *Worker) publish(ctx context.Context, event Event, now time.Time) error 
 	var payload PublishPayload
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
 		return terminalError{err}
+	}
+	if !bulletins.IsBulletinEdition(payload.Locale) {
+		return terminalError{fmt.Errorf("unsupported bulletin edition")}
 	}
 	asset, err := w.assets.Get(ctx, payload.AssetID)
 	if err != nil {
@@ -312,6 +317,9 @@ func (w *Worker) retire(ctx context.Context, event Event, now time.Time) error {
 	var payload UnpublishPayload
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
 		return terminalError{err}
+	}
+	if event.EventType == "bulletin.asset.retire" && !bulletins.IsBulletinEdition(payload.Locale) {
+		return terminalError{fmt.Errorf("unsupported bulletin edition")}
 	}
 	if payload.AssetID == "" {
 		return terminalError{fmt.Errorf("retiring asset id is missing")}

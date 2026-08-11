@@ -44,7 +44,7 @@ func (s *Service) PutVersion(ctx context.Context, id string, expected int64, inp
 	input.Subtitle = strings.TrimSpace(input.Subtitle)
 	input.PDFAssetID = strings.TrimSpace(input.PDFAssetID)
 	input.PDFFileName = filepath.Base(strings.TrimSpace(input.PDFFileName))
-	if id == "" || expected <= 0 || !validLocale(input.Locale) || input.Title == "" || len(input.Title) > 200 || len(input.Subtitle) > 300 || input.PDFAssetID == "" || input.PDFFileName == "" || len(input.PDFFileName) > 255 || actor == "" {
+	if id == "" || expected <= 0 || !IsBulletinEdition(input.Locale) || input.Title == "" || len(input.Title) > 200 || len(input.Subtitle) > 300 || input.PDFAssetID == "" || input.PDFFileName == "" || len(input.PDFFileName) > 255 || actor == "" {
 		return Issue{}, ErrInvalid
 	}
 	return s.repository.PutVersion(ctx, id, expected, input, actor, s.now().UTC())
@@ -52,25 +52,25 @@ func (s *Service) PutVersion(ctx context.Context, id string, expected int64, inp
 func (s *Service) UpdateVersion(ctx context.Context, id, locale string, expected int64, input UpdateVersionInput, actor string) (Issue, error) {
 	input.Title = strings.TrimSpace(input.Title)
 	input.Subtitle = strings.TrimSpace(input.Subtitle)
-	if strings.TrimSpace(id) == "" || !validLocale(locale) || expected < 1 || input.Title == "" || len(input.Title) > 200 || len(input.Subtitle) > 300 || strings.TrimSpace(actor) == "" {
+	if strings.TrimSpace(id) == "" || !IsBulletinEdition(locale) || expected < 1 || input.Title == "" || len(input.Title) > 200 || len(input.Subtitle) > 300 || strings.TrimSpace(actor) == "" {
 		return Issue{}, ErrInvalid
 	}
 	return s.repository.UpdateVersion(ctx, id, locale, expected, input.Title, input.Subtitle, actor, s.now().UTC())
 }
 func (s *Service) DeleteVersion(ctx context.Context, id, locale string, expected int64, actor string) (Issue, error) {
-	if strings.TrimSpace(id) == "" || !validLocale(locale) || expected < 1 || strings.TrimSpace(actor) == "" {
+	if strings.TrimSpace(id) == "" || !IsBulletinEdition(locale) || expected < 1 || strings.TrimSpace(actor) == "" {
 		return Issue{}, ErrInvalid
 	}
 	return s.repository.DeleteVersion(ctx, id, locale, expected, actor, s.now().UTC())
 }
 func (s *Service) Publish(ctx context.Context, id, locale string, expected int64, notifySubscribers bool, actor string) (Workflow, error) {
-	if id == "" || !validLocale(locale) || expected <= 0 || actor == "" {
+	if id == "" || !IsBulletinEdition(locale) || expected <= 0 || actor == "" {
 		return Workflow{}, ErrInvalid
 	}
 	return s.repository.StartPublish(ctx, id, locale, expected, notifySubscribers, actor, s.now().UTC())
 }
 func (s *Service) Unpublish(ctx context.Context, id, locale string, expected int64, actor string) (Issue, error) {
-	if id == "" || !validLocale(locale) || expected <= 0 || actor == "" {
+	if id == "" || !IsBulletinEdition(locale) || expected <= 0 || actor == "" {
 		return Issue{}, ErrInvalid
 	}
 	return s.repository.Unpublish(ctx, id, locale, expected, actor, s.now().UTC())
@@ -94,19 +94,19 @@ func (s *Service) RestoreIssueRevision(ctx context.Context, id string, revision,
 	return s.repository.RestoreIssueRevision(ctx, id, revision, expected, actor, s.now().UTC())
 }
 func (s *Service) GetPublicLatest(ctx context.Context, locale string) (PublicBulletin, error) {
-	if !validLocale(locale) {
+	if !IsBulletinEdition(locale) {
 		return PublicBulletin{}, ErrInvalid
 	}
 	return s.repository.GetPublicLatest(ctx, locale)
 }
 func (s *Service) GetPublicByDate(ctx context.Context, date, locale string) (PublicBulletin, error) {
-	if !validDate(date) || !validLocale(locale) {
+	if !validDate(date) || !IsBulletinEdition(locale) {
 		return PublicBulletin{}, ErrInvalid
 	}
 	return s.repository.GetPublicByDate(ctx, date, locale)
 }
 func (s *Service) GetPublicByNumber(ctx context.Context, issueNumber int, locale string) (PublicBulletin, error) {
-	if issueNumber < 1 || issueNumber > 2147483647 || !validLocale(locale) {
+	if issueNumber < 1 || issueNumber > 2147483647 || !IsBulletinEdition(locale) {
 		return PublicBulletin{}, ErrInvalid
 	}
 	return s.repository.GetPublicByNumber(ctx, issueNumber, locale)
@@ -116,14 +116,6 @@ func (s *Service) ListPublic(ctx context.Context, page, pageSize int) (PublicPag
 	return s.repository.ListPublic(ctx, page, pageSize)
 }
 
-func validLocale(value string) bool {
-	switch value {
-	case "zh-Hant", "zh-Hans", "en", "ja", "ko":
-		return true
-	default:
-		return false
-	}
-}
 func validDate(value string) bool {
 	parsed, err := time.Parse("2006-01-02", value)
 	return err == nil && parsed.Format("2006-01-02") == value

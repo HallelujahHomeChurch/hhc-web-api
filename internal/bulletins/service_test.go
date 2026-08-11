@@ -6,6 +6,22 @@ import (
 	"time"
 )
 
+func TestBulletinEditionOrderIsIndependentFromContentLocales(t *testing.T) {
+	want := [3]BulletinEdition{
+		BulletinEditionTraditionalChinese,
+		BulletinEditionSimplifiedChinese,
+		BulletinEditionEnglish,
+	}
+	if BulletinEditionOrder != want {
+		t.Fatalf("order=%#v", BulletinEditionOrder)
+	}
+	for _, locale := range []string{"ja", "ko"} {
+		if IsBulletinEdition(locale) {
+			t.Fatalf("content locale %q accepted as bulletin edition", locale)
+		}
+	}
+}
+
 func TestServiceRejectsInvalidIssueAndVersion(t *testing.T) {
 	repo := &repositoryStub{}
 	service := NewService(repo, time.Now)
@@ -107,26 +123,32 @@ func TestServiceUpdatesAndDeletesVersion(t *testing.T) {
 	}
 }
 
-func TestServiceAcceptsJapaneseAndKoreanBulletinLifecycle(t *testing.T) {
+func TestServiceRejectsJapaneseAndKoreanBulletinLifecycleBeforeRepository(t *testing.T) {
 	repo := &repositoryStub{}
 	service := NewService(repo, func() time.Time { return time.Unix(123, 0) })
 
-	if _, err := service.PutVersion(context.Background(), "issue-1", 1, PutVersionInput{Locale: "ja", Title: "週報", PDFAssetID: "asset-ja", PDFFileName: "weekly-ja.pdf"}, "user-1"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := service.UpdateVersion(context.Background(), "issue-1", "ko", 1, UpdateVersionInput{Title: "주보"}, "user-1"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := service.Publish(context.Background(), "issue-1", "ja", 1, false, "user-1"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := service.Unpublish(context.Background(), "issue-1", "ko", 1, "user-1"); err != nil {
-		t.Fatal(err)
-	}
 	for _, locale := range []string{"ja", "ko"} {
-		if _, err := service.GetPublicLatest(context.Background(), locale); err != nil {
-			t.Fatalf("public latest %s: %v", locale, err)
+		if _, err := service.PutVersion(context.Background(), "issue-1", 1, PutVersionInput{Locale: locale, Title: "Weekly", PDFAssetID: "asset-1", PDFFileName: "weekly.pdf"}, "user-1"); err != ErrInvalid {
+			t.Fatalf("put %s error=%v", locale, err)
 		}
+		if _, err := service.UpdateVersion(context.Background(), "issue-1", locale, 1, UpdateVersionInput{Title: "Weekly"}, "user-1"); err != ErrInvalid {
+			t.Fatalf("update %s error=%v", locale, err)
+		}
+		if _, err := service.DeleteVersion(context.Background(), "issue-1", locale, 1, "user-1"); err != ErrInvalid {
+			t.Fatalf("delete %s error=%v", locale, err)
+		}
+		if _, err := service.Publish(context.Background(), "issue-1", locale, 1, false, "user-1"); err != ErrInvalid {
+			t.Fatalf("publish %s error=%v", locale, err)
+		}
+		if _, err := service.Unpublish(context.Background(), "issue-1", locale, 1, "user-1"); err != ErrInvalid {
+			t.Fatalf("unpublish %s error=%v", locale, err)
+		}
+		if _, err := service.GetPublicLatest(context.Background(), locale); err != ErrInvalid {
+			t.Fatalf("public latest %s error=%v", locale, err)
+		}
+	}
+	if repo.sideEffectCalls != 0 {
+		t.Fatalf("repository side effects=%d", repo.sideEffectCalls)
 	}
 }
 
@@ -163,6 +185,7 @@ type repositoryStub struct {
 	issueNumber       int
 	issueDate         string
 	notifySubscribers bool
+	sideEffectCalls   int
 	now               time.Time
 }
 
@@ -180,21 +203,26 @@ func (r *repositoryStub) UpdateIssue(_ context.Context, _ string, expected int64
 	return Issue{}, nil
 }
 func (r *repositoryStub) PutVersion(context.Context, string, int64, PutVersionInput, string, time.Time) (Issue, error) {
+	r.sideEffectCalls++
 	return Issue{}, nil
 }
 func (r *repositoryStub) UpdateVersion(_ context.Context, _ string, locale string, _ int64, title, _ string, _ string, _ time.Time) (Issue, error) {
 	r.locale, r.title = locale, title
+	r.sideEffectCalls++
 	return Issue{}, nil
 }
 func (r *repositoryStub) DeleteVersion(_ context.Context, _ string, locale string, _ int64, _ string, _ time.Time) (Issue, error) {
 	r.deletedLocale = locale
+	r.sideEffectCalls++
 	return Issue{}, nil
 }
 func (r *repositoryStub) StartPublish(_ context.Context, _ string, _ string, _ int64, notifySubscribers bool, _ string, _ time.Time) (Workflow, error) {
+	r.sideEffectCalls++
 	r.notifySubscribers = notifySubscribers
 	return Workflow{}, nil
 }
 func (r *repositoryStub) Unpublish(context.Context, string, string, int64, string, time.Time) (Issue, error) {
+	r.sideEffectCalls++
 	return Issue{}, nil
 }
 func (r *repositoryStub) DeleteIssue(_ context.Context, id string, expected int64, actor string, now time.Time) error {

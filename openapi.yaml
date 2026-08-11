@@ -128,7 +128,7 @@ paths:
   /bulletins/latest:
     get:
       operationId: getLatestPublicBulletin
-      parameters: [{ $ref: '#/components/parameters/Locale' }]
+      parameters: [{ $ref: '#/components/parameters/BulletinEdition' }]
       responses:
         '200': { $ref: '#/components/responses/PublicBulletin' }
         '404': { $ref: '#/components/responses/Error' }
@@ -137,7 +137,7 @@ paths:
       operationId: getPublicBulletinByNumber
       parameters:
         - { name: issueNumber, in: path, required: true, schema: { type: integer, format: int32, minimum: 1, maximum: 2147483647 } }
-        - $ref: '#/components/parameters/Locale'
+        - $ref: '#/components/parameters/BulletinEdition'
       responses:
         '200': { $ref: '#/components/responses/PublicBulletin' }
         '400': { $ref: '#/components/responses/Error' }
@@ -147,7 +147,7 @@ paths:
       operationId: getPublicBulletinByDate
       parameters:
         - { name: issueDate, in: path, required: true, schema: { type: string, format: date } }
-        - $ref: '#/components/parameters/Locale'
+        - $ref: '#/components/parameters/BulletinEdition'
       responses:
         '200': { $ref: '#/components/responses/PublicBulletin' }
         '404': { $ref: '#/components/responses/Error' }
@@ -155,7 +155,7 @@ paths:
     get:
       operationId: listPublicNews
       parameters:
-        - $ref: '#/components/parameters/Locale'
+        - $ref: '#/components/parameters/ContentLocale'
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PageSize'
       responses: { '200': { $ref: '#/components/responses/PublicContentList' } }
@@ -164,7 +164,7 @@ paths:
       operationId: getPublicNews
       parameters:
         - { name: slug, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 120, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$' } }
-        - $ref: '#/components/parameters/Locale'
+        - $ref: '#/components/parameters/ContentLocale'
         - { name: If-None-Match, in: header, schema: { type: string } }
       responses:
         '200': { $ref: '#/components/responses/PublicContentItem' }
@@ -174,7 +174,7 @@ paths:
     get:
       operationId: listPublicHistory
       parameters:
-        - $ref: '#/components/parameters/Locale'
+        - $ref: '#/components/parameters/ContentLocale'
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PageSize'
       responses: { '200': { $ref: '#/components/responses/PublicContentList' } }
@@ -182,14 +182,14 @@ paths:
     get:
       operationId: listPublicVideos
       parameters:
-        - $ref: '#/components/parameters/Locale'
+        - $ref: '#/components/parameters/ContentLocale'
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PageSize'
       responses: { '200': { $ref: '#/components/responses/PublicContentList' } }
   /home:
     get:
       operationId: getPublicHome
-      parameters: [{ $ref: '#/components/parameters/Locale' }]
+      parameters: [{ $ref: '#/components/parameters/ContentLocale' }]
       responses:
         '200':
           description: Published home page projection
@@ -291,7 +291,7 @@ paths:
       x-required-scopes: ['cms:write']
       parameters:
         - $ref: '#/components/parameters/IssueID'
-        - { name: locale, in: path, required: true, schema: { $ref: '#/components/schemas/Locale' } }
+        - { name: locale, in: path, required: true, schema: { $ref: '#/components/schemas/BulletinEdition' } }
         - $ref: '#/components/parameters/IfMatch'
       requestBody:
         required: true
@@ -308,7 +308,7 @@ paths:
       x-required-scopes: ['cms:write']
       parameters:
         - $ref: '#/components/parameters/IssueID'
-        - { name: locale, in: path, required: true, schema: { $ref: '#/components/schemas/Locale' } }
+        - { name: locale, in: path, required: true, schema: { $ref: '#/components/schemas/BulletinEdition' } }
         - $ref: '#/components/parameters/IfMatch'
       responses:
         '200': { $ref: '#/components/responses/BulletinIssue' }
@@ -422,11 +422,11 @@ paths:
       x-required-scopes: ['cms:write']
       parameters:
         - $ref: '#/components/parameters/IssueID'
-        - $ref: '#/components/parameters/TranslationTargetLocale'
+        - $ref: '#/components/parameters/BulletinTranslationTargetEdition'
         - $ref: '#/components/parameters/IfMatch'
       requestBody: { $ref: '#/components/requestBodies/TranslationPreviewInput' }
       responses:
-        '200': { $ref: '#/components/responses/TranslationPreview' }
+        '200': { $ref: '#/components/responses/BulletinTranslationPreview' }
         '400': { $ref: '#/components/responses/InvalidTranslationRequest' }
         '403': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/TranslationNotFound' }
@@ -516,11 +516,11 @@ paths:
       parameters:
         - $ref: '#/components/parameters/ContentModule'
         - $ref: '#/components/parameters/ContentID'
-        - $ref: '#/components/parameters/TranslationTargetLocale'
+        - $ref: '#/components/parameters/ContentTranslationTargetLocale'
         - $ref: '#/components/parameters/IfMatch'
       requestBody: { $ref: '#/components/requestBodies/TranslationPreviewInput' }
       responses:
-        '200': { $ref: '#/components/responses/TranslationPreview' }
+        '200': { $ref: '#/components/responses/ContentTranslationPreview' }
         '400': { $ref: '#/components/responses/InvalidTranslationRequest' }
         '403': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/TranslationNotFound' }
@@ -648,7 +648,8 @@ components:
   securitySchemes:
     bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
   parameters:
-    Locale: { name: locale, in: query, schema: { $ref: '#/components/schemas/Locale' } }
+    ContentLocale: { name: locale, in: query, schema: { $ref: '#/components/schemas/ContentLocale' } }
+    BulletinEdition: { name: locale, in: query, schema: { $ref: '#/components/schemas/BulletinEdition' } }
     Page: { name: page, in: query, schema: { type: integer, minimum: 1, maximum: 10000, default: 1 } }
     PageSize: { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
     SearchQuery:
@@ -661,7 +662,8 @@ components:
     IfMatch: { name: If-Match, in: header, required: true, schema: { type: string, pattern: '^"[1-9][0-9]*"$' } }
     ContentModule: { name: module, in: path, required: true, schema: { $ref: '#/components/schemas/ContentModule' } }
     ContentID: { name: contentId, in: path, required: true, schema: { type: string, format: uuid } }
-    TranslationTargetLocale: { name: targetLocale, in: path, required: true, schema: { type: string, enum: [zh-Hans, en, ja, ko] } }
+    ContentTranslationTargetLocale: { name: targetLocale, in: path, required: true, schema: { $ref: '#/components/schemas/ContentTranslationTargetLocale' } }
+    BulletinTranslationTargetEdition: { name: targetLocale, in: path, required: true, schema: { $ref: '#/components/schemas/BulletinTranslationTargetEdition' } }
     Revision: { name: revision, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
   requestBodies:
     PublicationInput:
@@ -716,11 +718,16 @@ components:
       content:
         application/json:
           schema: { $ref: '#/components/schemas/PublicContentItemEnvelope' }
-    TranslationPreview:
+    ContentTranslationPreview:
       description: Review-only generated translation preview; no CMS state is changed.
       content:
         application/json:
-          schema: { $ref: '#/components/schemas/TranslationPreviewEnvelope' }
+          schema: { $ref: '#/components/schemas/ContentTranslationPreviewEnvelope' }
+    BulletinTranslationPreview:
+      description: Review-only generated bulletin edition preview; no CMS state is changed.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/BulletinTranslationPreviewEnvelope' }
     InvalidTranslationRequest:
       description: invalid_translation_request
       content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
@@ -826,10 +833,20 @@ components:
           required: [enabled]
           properties:
             enabled: { type: boolean }
-    Locale:
+    ContentLocale:
       type: string
       enum: [zh-Hant, zh-Hans, en, ja, ko]
       default: zh-Hant
+    BulletinEdition:
+      type: string
+      enum: [zh-Hant, zh-Hans, en]
+      default: zh-Hant
+    ContentTranslationTargetLocale:
+      type: string
+      enum: [zh-Hans, en, ja, ko]
+    BulletinTranslationTargetEdition:
+      type: string
+      enum: [zh-Hans, en]
     BulletinStatus:
       type: string
       enum: [draft, publishing, published, unpublishing, unpublish_failed, unpublished]
@@ -861,7 +878,7 @@ components:
       properties:
         id: { type: string, format: uuid }
         issueId: { type: string, format: uuid }
-        locale: { $ref: '#/components/schemas/Locale' }
+        locale: { $ref: '#/components/schemas/BulletinEdition' }
         title: { type: string }
         subtitle: { type: string }
         pdfAssetId: { type: string }
@@ -908,7 +925,7 @@ components:
       properties:
         issueDate: { type: string, format: date }
         issueNumber: { type: integer, minimum: 1 }
-        locale: { $ref: '#/components/schemas/Locale' }
+        locale: { $ref: '#/components/schemas/BulletinEdition' }
         title: { type: string }
         subtitle: { type: string }
         downloadUrl: { type: string }
@@ -970,7 +987,7 @@ components:
       additionalProperties: false
       required: [locale, fileName, mimeType, sizeBytes]
       properties:
-        locale: { $ref: '#/components/schemas/Locale' }
+        locale: { $ref: '#/components/schemas/BulletinEdition' }
         fileName: { type: string, minLength: 1 }
         mimeType: { type: string, const: application/pdf }
         sizeBytes: { type: integer, format: int64, minimum: 1, maximum: 20971520 }
@@ -986,7 +1003,7 @@ components:
       additionalProperties: false
       required: [locale, title, subtitle, fileName, mimeType, sizeBytes, checksumSha256]
       properties:
-        locale: { $ref: '#/components/schemas/Locale' }
+        locale: { $ref: '#/components/schemas/BulletinEdition' }
         title: { type: string, minLength: 1 }
         subtitle: { type: string, maxLength: 300 }
         fileName: { type: string, minLength: 1 }
@@ -1026,7 +1043,7 @@ components:
       additionalProperties: false
       required: [locale]
       properties:
-        locale: { $ref: '#/components/schemas/Locale' }
+        locale: { $ref: '#/components/schemas/BulletinEdition' }
         notifySubscribers:
           type: boolean
           default: false
@@ -1036,7 +1053,7 @@ components:
       additionalProperties: false
       required: [locale, title]
       properties:
-        locale: { $ref: '#/components/schemas/Locale' }
+        locale: { $ref: '#/components/schemas/ContentLocale' }
         title: { type: string, minLength: 1, maxLength: 200 }
         summary: { type: string, maxLength: 500 }
         body: { type: string, maxLength: 100000 }
@@ -1049,20 +1066,28 @@ components:
       properties:
         sourceLocale: { type: string, const: zh-Hant }
         replaceExisting: { type: boolean }
-    TranslationPreview:
+    ContentTranslationPreview:
       type: object
       additionalProperties: false
       required: [sourceLocale, targetLocale, sourceVersion, translation]
       properties:
         sourceLocale: { type: string, const: zh-Hant }
-        targetLocale: { type: string, enum: [zh-Hans, en, ja, ko] }
+        targetLocale: { $ref: '#/components/schemas/ContentTranslationTargetLocale' }
         sourceVersion: { type: integer, format: int64, minimum: 1 }
         translation:
           oneOf:
             - $ref: '#/components/schemas/NewsTranslationPreview'
             - $ref: '#/components/schemas/HistoryTranslationPreview'
             - $ref: '#/components/schemas/VideoTranslationPreview'
-            - $ref: '#/components/schemas/BulletinTranslationPreview'
+    BulletinTranslationPreview:
+      type: object
+      additionalProperties: false
+      required: [sourceLocale, targetLocale, sourceVersion, translation]
+      properties:
+        sourceLocale: { type: string, const: zh-Hant }
+        targetLocale: { $ref: '#/components/schemas/BulletinTranslationTargetEdition' }
+        sourceVersion: { type: integer, format: int64, minimum: 1 }
+        translation: { $ref: '#/components/schemas/BulletinTranslationFields' }
     NewsTranslationPreview:
       type: object
       additionalProperties: false
@@ -1084,7 +1109,7 @@ components:
       required: [title]
       properties:
         title: { type: string, minLength: 1, maxLength: 200 }
-    BulletinTranslationPreview:
+    BulletinTranslationFields:
       type: object
       additionalProperties: false
       required: [title, subtitle]
@@ -1114,7 +1139,7 @@ components:
           type: array
           uniqueItems: true
           description: Locales omitted from translations are preserved unless they are named here for explicit deletion.
-          items: { $ref: '#/components/schemas/Locale' }
+          items: { $ref: '#/components/schemas/ContentLocale' }
     ContentItem:
       allOf:
         - $ref: '#/components/schemas/ContentWriteInput'
@@ -1148,10 +1173,10 @@ components:
       properties:
         id: { type: string }
         title: { type: string }
-        resolvedLocale: { $ref: '#/components/schemas/Locale' }
+        resolvedLocale: { $ref: '#/components/schemas/ContentLocale' }
         availableLocales:
           type: array
-          items: { $ref: '#/components/schemas/Locale' }
+          items: { $ref: '#/components/schemas/ContentLocale' }
         summary: { type: string }
         body: { type: string }
         dateLabel: { type: string }
@@ -1228,11 +1253,18 @@ components:
         data: { $ref: '#/components/schemas/ContentItem' }
         meta: { type: object, additionalProperties: true }
         error: { type: ['null'] }
-    TranslationPreviewEnvelope:
+    ContentTranslationPreviewEnvelope:
       type: object
       required: [data, meta, error]
       properties:
-        data: { $ref: '#/components/schemas/TranslationPreview' }
+        data: { $ref: '#/components/schemas/ContentTranslationPreview' }
+        meta: { type: object, additionalProperties: true }
+        error: { type: ['null'] }
+    BulletinTranslationPreviewEnvelope:
+      type: object
+      required: [data, meta, error]
+      properties:
+        data: { $ref: '#/components/schemas/BulletinTranslationPreview' }
         meta: { type: object, additionalProperties: true }
         error: { type: ['null'] }
     ContentListEnvelope:

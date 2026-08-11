@@ -24,7 +24,7 @@ func TestOpenAPIDocumentsPublicBulletinByNumber(t *testing.T) {
 		"type: integer",
 		"minimum: 1",
 		"maximum: 2147483647",
-		"$ref: '#/components/parameters/Locale'",
+		"$ref: '#/components/parameters/BulletinEdition'",
 		"'200': { $ref: '#/components/responses/PublicBulletin' }",
 		"'400': { $ref: '#/components/responses/Error' }",
 		"'404': { $ref: '#/components/responses/Error' }",
@@ -92,10 +92,37 @@ func TestOpenAPIDocumentsPublicContentLocaleResolution(t *testing.T) {
 		t.Fatal("missing PublicContentItem schema")
 	}
 	schema := document[start : start+1+end]
-	for _, expected := range []string{"required: [id, title, resolvedLocale, availableLocales]", "resolvedLocale: { $ref: '#/components/schemas/Locale' }", "availableLocales:", "items: { $ref: '#/components/schemas/Locale' }"} {
+	for _, expected := range []string{"required: [id, title, resolvedLocale, availableLocales]", "resolvedLocale: { $ref: '#/components/schemas/ContentLocale' }", "availableLocales:", "items: { $ref: '#/components/schemas/ContentLocale' }"} {
 		if !strings.Contains(schema, expected) {
 			t.Fatalf("PublicContentItem missing %q:\n%s", expected, schema)
 		}
+	}
+}
+
+func TestOpenAPISplitsContentLocalesFromWeeklyEditions(t *testing.T) {
+	contents, err := os.ReadFile("openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := string(contents)
+	for _, expected := range []string{
+		"ContentLocale:",
+		"enum: [zh-Hant, zh-Hans, en, ja, ko]",
+		"BulletinEdition:",
+		"enum: [zh-Hant, zh-Hans, en]",
+		"ContentTranslationTargetLocale:",
+		"enum: [zh-Hans, en, ja, ko]",
+		"BulletinTranslationTargetEdition:",
+		"enum: [zh-Hans, en]",
+		"$ref: '#/components/parameters/BulletinTranslationTargetEdition'",
+		"$ref: '#/components/parameters/ContentTranslationTargetLocale'",
+	} {
+		if !strings.Contains(document, expected) {
+			t.Fatalf("OpenAPI document missing %q", expected)
+		}
+	}
+	if strings.Contains(document, "#/components/schemas/Locale") || strings.Contains(document, "#/components/parameters/Locale") {
+		t.Fatal("OpenAPI still exposes an ambiguous Locale contract")
 	}
 }
 
@@ -115,7 +142,8 @@ func TestOpenAPIDocumentsTranslationPreviewContracts(t *testing.T) {
 		"additionalProperties: false",
 		"required: [sourceLocale, replaceExisting]",
 		"enum: [zh-Hans, en, ja, ko]",
-		"TranslationPreviewEnvelope:",
+		"ContentTranslationPreviewEnvelope:",
+		"BulletinTranslationPreviewEnvelope:",
 		"required: [sourceLocale, targetLocale, sourceVersion, translation]",
 		"invalid_translation_request",
 		"translation_exists",

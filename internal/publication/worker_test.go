@@ -36,6 +36,42 @@ func TestWorkerCompletesPublishForCleanAsset(t *testing.T) {
 	}
 }
 
+func TestWorkerFailsUnsupportedBulletinEditionBeforeAssetSideEffects(t *testing.T) {
+	for _, eventType := range []string{"bulletin.publish.ensure_asset", "bulletin.asset.retire"} {
+		t.Run(eventType, func(t *testing.T) {
+			repository := &workerRepository{event: Event{
+				ID: "event-1", EventType: eventType, AggregateID: "issue-1", Attempts: 1,
+				Payload: []byte(`{"issueId":"issue-1","locale":"ja","assetId":"asset-1","grantId":"grant-1","aggregateVersion":3}`),
+			}}
+			assets := &workerAssets{}
+			worker := NewWorker(repository, assets, 5)
+
+			if _, err := worker.processNext(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if repository.failCount != 1 || assets.getCalls != 0 || assets.grantCalls != 0 || assets.revokedGrant != "" || assets.deletedAsset != "" {
+				t.Fatalf("fail=%d get=%d grant=%d revoked=%q deleted=%q", repository.failCount, assets.getCalls, assets.grantCalls, assets.revokedGrant, assets.deletedAsset)
+			}
+		})
+	}
+}
+
+func TestWorkerAllowsUnsupportedLegacyEditionUnpublishCleanup(t *testing.T) {
+	repository := &workerRepository{event: Event{
+		ID: "event-1", EventType: "bulletin.unpublish.revoke_asset", AggregateID: "issue-1", Attempts: 1,
+		Payload: []byte(`{"issueId":"issue-1","locale":"ja","assetId":"asset-1","grantId":"grant-1","aggregateVersion":3}`),
+	}}
+	assets := &workerAssets{}
+	worker := NewWorker(repository, assets, 5)
+
+	if _, err := worker.processNext(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if repository.completeUnpublishCount != 1 || assets.revokedGrant != "grant-1" || assets.deletedAsset != "" {
+		t.Fatalf("complete=%d revoked=%q deleted=%q", repository.completeUnpublishCount, assets.revokedGrant, assets.deletedAsset)
+	}
+}
+
 func TestWorkerQueuesBulletinNotification(t *testing.T) {
 	payload := `{"issueId":"issue-1","actorId":"user-1","name":"Weekly bulletin 1732","translations":{"zh-Hant":{"subject":"第 1732 期週報已發布","body":"本週週報","clickBehavior":"url","actionUrl":"/zh-Hant/literature-ministry"}}}`
 	repository := &workerRepository{event: Event{ID: "event-notification", EventType: "bulletin.notification.queue", AggregateID: "issue-1", Payload: []byte(payload), Attempts: 1}}
@@ -640,9 +676,11 @@ type workerAssets struct {
 	revokedGrants []string
 	deletedAsset  string
 	grantCalls    int
+	getCalls      int
 }
 
 func (a *workerAssets) Get(_ context.Context, assetID string) (Asset, error) {
+	a.getCalls++
 	if a.assets != nil {
 		return a.assets[assetID], a.getError
 	}
