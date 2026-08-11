@@ -1,8 +1,11 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"crypto/subtle"
+	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 )
@@ -65,6 +68,38 @@ func requireAnyScope(scopes []string, next http.HandlerFunc) http.HandlerFunc {
 		}
 		writeError(w, http.StatusForbidden, "forbidden", "The required capability is missing.")
 	}
+}
+func requireCampaignScheduleCreate(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		p, ok := r.Context().Value(principalKey{}).(principal)
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "unauthorized", "Trusted gateway identity is required.")
+			return
+		}
+		if !p.Scopes["*"] && !p.Scopes["cms:write"] && !(p.Scopes["campaigns:write"] && p.Scopes["campaigns:send"]) {
+			writeError(w, http.StatusForbidden, "forbidden", "The required capability is missing.")
+			return
+		}
+		next(w, r)
+	}
+}
+func requireCampaignScheduleUpdate(next http.HandlerFunc) http.HandlerFunc {
+	return requireAnyScope([]string{"campaigns:write", "cms:write"}, func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxAdminProxyBody))
+		if err != nil {
+			writeError(w, http.StatusRequestEntityTooLarge, "request_too_large", "Request body is too large.")
+			return
+		}
+		r.Body = io.NopCloser(bytes.NewReader(body))
+		var request struct {
+			Enabled bool `json:"enabled"`
+		}
+		if json.Unmarshal(body, &request) == nil && request.Enabled {
+			requireAnyScope([]string{"campaigns:send", "cms:write"}, next)(w, r)
+			return
+		}
+		next(w, r)
+	})
 }
 func set(value string) map[string]bool {
 	result := map[string]bool{}
