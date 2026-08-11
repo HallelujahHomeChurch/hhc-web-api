@@ -35,6 +35,14 @@ func (h *Handler) adminBulletinTranslationPreview(w http.ResponseWriter, r *http
 	h.translationPreview(w, r, "bulletins", r.PathValue("issueID"))
 }
 
+func (h *Handler) adminCampaignTranslationPreview(w http.ResponseWriter, r *http.Request) {
+	h.translationPreview(w, r, "campaigns", r.PathValue("campaignID"))
+}
+
+func (h *Handler) adminCampaignScheduleTranslationPreview(w http.ResponseWriter, r *http.Request) {
+	h.translationPreview(w, r, "campaign-schedules", r.PathValue("scheduleID"))
+}
+
 func (h *Handler) translationPreview(w http.ResponseWriter, r *http.Request, module, resourceID string) {
 	if err := http.NewResponseController(w).SetWriteDeadline(h.translationNow().Add(h.translationTTL)); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "The request could not be completed.")

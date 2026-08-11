@@ -52,6 +52,19 @@ type Generator interface {
 	Generate(context.Context, Request) (Result, error)
 }
 
+type SavedSource struct {
+	ResourceID       string            `json:"resourceId"`
+	SourceLocale     string            `json:"sourceLocale"`
+	Channel          string            `json:"channel"`
+	Version          int64             `json:"version"`
+	Fields           map[string]string `json:"fields"`
+	AvailableLocales []string          `json:"availableLocales"`
+}
+
+type SavedSourceLoader interface {
+	GetTranslationSource(context.Context, string, string) (SavedSource, error)
+}
+
 type PreviewRequest struct {
 	Module          string
 	ResourceID      string

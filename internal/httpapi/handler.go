@@ -94,6 +94,8 @@ func (h *Handler) Routes() http.Handler {
 	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/revisions/{revision}/restore", requireScope("cms:write", h.adminRestoreIssueRevision))
 	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/translation-previews/{targetLocale}", requireScope("cms:write", h.adminBulletinTranslationPreview))
 	admin.HandleFunc("POST /api/admin/content/{module}/{contentID}/translation-previews/{targetLocale}", requireScope("cms:write", h.adminContentTranslationPreview))
+	admin.HandleFunc("POST /api/admin/campaigns/{campaignID}/translation-previews/{targetLocale}", requireAnyScope([]string{"campaigns:write", "cms:write"}, h.adminCampaignTranslationPreview))
+	admin.HandleFunc("POST /api/admin/campaign-schedules/{scheduleID}/translation-previews/{targetLocale}", requireAnyScope([]string{"campaigns:write", "cms:write"}, h.adminCampaignScheduleTranslationPreview))
 	if h.content != nil {
 		h.contentRoutes(mux, admin)
 	}

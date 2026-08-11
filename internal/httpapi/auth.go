@@ -50,6 +50,22 @@ func requireScopes(scopes []string, next http.HandlerFunc) http.HandlerFunc {
 		next(w, r)
 	}
 }
+func requireAnyScope(scopes []string, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		p, ok := r.Context().Value(principalKey{}).(principal)
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "unauthorized", "Trusted gateway identity is required.")
+			return
+		}
+		for _, scope := range scopes {
+			if p.Scopes[scope] || p.Scopes["*"] {
+				next(w, r)
+				return
+			}
+		}
+		writeError(w, http.StatusForbidden, "forbidden", "The required capability is missing.")
+	}
+}
 func set(value string) map[string]bool {
 	result := map[string]bool{}
 	for _, v := range strings.FieldsFunc(value, func(r rune) bool { return r == ' ' || r == ',' }) {

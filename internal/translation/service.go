@@ -57,13 +57,18 @@ type ServiceConfig struct {
 type Service struct {
 	content    ContentSource
 	bulletins  BulletinSource
+	sources    SavedSourceLoader
 	generator  Generator
 	repository LimiterAuditor
 	config     ServiceConfig
 }
 
-func NewService(contentSource ContentSource, bulletinSource BulletinSource, generator Generator, repository LimiterAuditor, config ServiceConfig) *Service {
-	return &Service{content: contentSource, bulletins: bulletinSource, generator: generator, repository: repository, config: config}
+func NewService(contentSource ContentSource, bulletinSource BulletinSource, generator Generator, repository LimiterAuditor, config ServiceConfig, sources ...SavedSourceLoader) *Service {
+	service := &Service{content: contentSource, bulletins: bulletinSource, generator: generator, repository: repository, config: config}
+	if len(sources) > 0 {
+		service.sources = sources[0]
+	}
+	return service
 }
 
 func (s *Service) Preview(ctx context.Context, request PreviewRequest) (Preview, error) {
@@ -76,8 +81,11 @@ func (s *Service) Preview(ctx context.Context, request PreviewRequest) (Preview,
 	fields, version, targetExists, err := s.load(ctx, request)
 	state.sourceVersion = version
 	if err != nil {
-		if errors.Is(err, content.ErrNotFound) || errors.Is(err, bulletins.ErrNotFound) {
+		if errors.Is(err, content.ErrNotFound) || errors.Is(err, bulletins.ErrNotFound) || errors.Is(err, ErrNotFound) {
 			return s.finish(ctx, state, started, OutcomeNotFound, Preview{}, ErrNotFound)
+		}
+		if errors.Is(err, ErrInvalidRequest) {
+			return s.finish(ctx, state, started, OutcomeInvalid, Preview{}, ErrInvalidRequest)
 		}
 		return s.finish(ctx, state, started, OutcomeInternalFailure, Preview{}, ErrInternal)
 	}
@@ -168,6 +176,31 @@ func (s *Service) finish(ctx context.Context, state previewState, started time.T
 }
 
 func (s *Service) load(ctx context.Context, request PreviewRequest) (map[string]string, int64, bool, error) {
+	if request.Module == "campaigns" || request.Module == "campaign-schedules" {
+		if s.sources == nil {
+			return nil, 0, false, ErrInternal
+		}
+		source, err := s.sources.GetTranslationSource(ctx, request.Module, request.ResourceID)
+		if err != nil {
+			return nil, 0, false, err
+		}
+		if source.ResourceID != request.ResourceID || source.SourceLocale != "zh-Hant" || source.Version < 1 || (source.Channel != "email" && source.Channel != "web_push") || len(source.Fields) != 2 {
+			return nil, source.Version, false, ErrInvalidRequest
+		}
+		if _, ok := source.Fields["subject"]; !ok {
+			return nil, source.Version, false, ErrInvalidRequest
+		}
+		if _, ok := source.Fields["body"]; !ok {
+			return nil, source.Version, false, ErrInvalidRequest
+		}
+		targetExists := false
+		for _, locale := range source.AvailableLocales {
+			if locale == request.TargetLocale {
+				targetExists = true
+			}
+		}
+		return source.Fields, source.Version, targetExists, nil
+	}
 	if request.Module == "bulletins" {
 		issue, err := s.bulletins.GetIssue(ctx, request.ResourceID)
 		if err != nil {
@@ -220,7 +253,7 @@ func validPreviewRequest(request PreviewRequest) bool {
 		return false
 	}
 	switch request.Module {
-	case "news", "history", "videos", "bulletins":
+	case "news", "history", "videos", "bulletins", "campaigns", "campaign-schedules":
 		return true
 	default:
 		return false
@@ -230,6 +263,9 @@ func validPreviewRequest(request PreviewRequest) bool {
 func validTarget(module, locale string) bool {
 	if module == "bulletins" {
 		return bulletins.IsBulletinTranslationTarget(locale)
+	}
+	if module == "campaigns" || module == "campaign-schedules" {
+		return locale == "en" || locale == "ja" || locale == "ko"
 	}
 	return locale == "zh-Hans" || locale == "en" || locale == "ja" || locale == "ko"
 }
@@ -244,6 +280,12 @@ func resourceType(module string) string {
 	}
 	if module == "news" || module == "history" || module == "videos" {
 		return module
+	}
+	if module == "campaigns" {
+		return "campaign"
+	}
+	if module == "campaign-schedules" {
+		return "campaign_schedule"
 	}
 	return ""
 }
@@ -271,10 +313,14 @@ func validResult(module string, source, result map[string]string) bool {
 			return false
 		}
 	}
-	if strings.TrimSpace(result["title"]) == "" {
+	required := "title"
+	if module == "campaigns" || module == "campaign-schedules" {
+		required = "subject"
+	}
+	if strings.TrimSpace(result[required]) == "" {
 		return false
 	}
-	limits := map[string]int{"title": 200, "subtitle": 300, "body": 100_000, "imageAlt": 300}
+	limits := map[string]int{"title": 200, "subject": 200, "subtitle": 300, "body": 100_000, "imageAlt": 300}
 	for key, value := range result {
 		limit, ok := limits[key]
 		length := utf8.RuneCountInString(normalizeLines(value))
@@ -285,5 +331,5 @@ func validResult(module string, source, result map[string]string) bool {
 			return false
 		}
 	}
-	return module == "news" || module == "history" || module == "videos" || module == "bulletins"
+	return module == "news" || module == "history" || module == "videos" || module == "bulletins" || module == "campaigns" || module == "campaign-schedules"
 }
