@@ -14,6 +14,33 @@ var (
 	ErrNotPublishable = errors.New("not publishable")
 )
 
+type BulletinEdition string
+
+const (
+	BulletinEditionTraditionalChinese BulletinEdition = "zh-Hant"
+	BulletinEditionSimplifiedChinese  BulletinEdition = "zh-Hans"
+	BulletinEditionEnglish            BulletinEdition = "en"
+)
+
+var BulletinEditionOrder = [...]BulletinEdition{
+	BulletinEditionTraditionalChinese,
+	BulletinEditionSimplifiedChinese,
+	BulletinEditionEnglish,
+}
+
+func IsBulletinEdition(value string) bool {
+	for _, edition := range BulletinEditionOrder {
+		if value == string(edition) {
+			return true
+		}
+	}
+	return false
+}
+
+func IsBulletinTranslationTarget(value string) bool {
+	return value == string(BulletinEditionSimplifiedChinese) || value == string(BulletinEditionEnglish)
+}
+
 type Issue struct {
 	ID                    string     `json:"id"`
 	IssueNumber           *int       `json:"issueNumber,omitempty"`

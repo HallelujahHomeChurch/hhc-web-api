@@ -110,14 +110,6 @@ func TestLivenessRouteDoesNotRequireDependencies(t *testing.T) {
 	}
 }
 
-func TestBulletinHTTPValidationAcceptsJapaneseAndKoreanLocales(t *testing.T) {
-	for _, locale := range []string{"ja", "ko"} {
-		if !validLocale(locale) {
-			t.Fatalf("locale %q rejected", locale)
-		}
-	}
-}
-
 func TestAdminRoutesRequireDaprAPITokenWhenConfigured(t *testing.T) {
 	handler := NewWithContent(
 		bulletins.NewService(&apiRepository{}, time.Now),
@@ -316,6 +308,22 @@ func TestBulletinRevisionRestoreRejectsMissingAssetBeforeMutation(t *testing.T) 
 	}
 }
 
+func TestBulletinRevisionRestoreRejectsUnsupportedEditionBeforeAssetLookup(t *testing.T) {
+	repo := &apiRepository{issue: bulletinIssue(), revisions: []bulletins.Revision{{
+		Version:  1,
+		Snapshot: bulletins.Issue{ID: "issue-1", Versions: []bulletins.Version{{IssueID: "issue-1", Locale: "ja", PDFAssetID: "asset-ja"}}},
+	}}}
+	uploads := &apiUploads{}
+	request := httptest.NewRequest(http.MethodPost, "/api/admin/bulletins/issue-1/revisions/1/restore", nil)
+	trusted(request, "cms:write")
+	request.Header.Set("If-Match", `"1"`)
+	response := httptest.NewRecorder()
+	testHandlerWithUploads(repo, uploads).ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest || uploads.getCalls != 0 || repo.restoredRevision != 0 {
+		t.Fatalf("status=%d get=%d restored=%d body=%s", response.Code, uploads.getCalls, repo.restoredRevision, response.Body.String())
+	}
+}
+
 func TestBulletinRevisionRestoreMapsStaleVersion(t *testing.T) {
 	repo := &apiRepository{issue: bulletinIssue(), revisions: []bulletins.Revision{{Version: 1, Snapshot: bulletins.Issue{ID: "issue-1"}}}, restoreError: bulletins.ErrPrecondition}
 	request := httptest.NewRequest(http.MethodPost, "/api/admin/bulletins/issue-1/revisions/1/restore", nil)
@@ -338,6 +346,21 @@ func TestPublicLatestUsesPublishedProjection(t *testing.T) {
 	}
 	if response.Header().Get("Cache-Control") == "" {
 		t.Fatal("missing cache policy")
+	}
+}
+
+func TestPublicBulletinRoutesRejectUnsupportedEditionsBeforeRepository(t *testing.T) {
+	for _, path := range []string{
+		"/api/bulletins/latest?locale=ja",
+		"/api/bulletins/2026-08-02?locale=ko",
+		"/api/bulletins/by-number/1732?locale=ja",
+	} {
+		repo := &apiRepository{}
+		response := httptest.NewRecorder()
+		testHandler(repo).ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+		if response.Code != http.StatusBadRequest || repo.publicCalls != 0 {
+			t.Fatalf("path=%q status=%d calls=%d body=%s", path, response.Code, repo.publicCalls, response.Body.String())
+		}
 	}
 }
 
@@ -431,6 +454,32 @@ func TestBulletinUploadSessionRequiresBothCMSAndAssetScopes(t *testing.T) {
 	}
 	if uploads.createdIssue != "issue-1" || uploads.createdLocale != "zh-Hant" {
 		t.Fatalf("upload issue=%q locale=%q", uploads.createdIssue, uploads.createdLocale)
+	}
+}
+
+func TestBulletinUploadCreateAndCompletionRejectUnsupportedEditionBeforeAssetCalls(t *testing.T) {
+	for _, locale := range []string{"ja", "ko"} {
+		t.Run(locale, func(t *testing.T) {
+			repo := &apiRepository{issue: bulletinIssue()}
+			uploads := &apiUploads{}
+			handler := testHandlerWithUploads(repo, uploads)
+
+			create := httptest.NewRequest(http.MethodPost, "/api/admin/bulletins/issue-1/upload-sessions", bytes.NewBufferString(`{"locale":"`+locale+`","fileName":"weekly.pdf","mimeType":"application/pdf","sizeBytes":128}`))
+			trusted(create, "cms:write assets:write")
+			create.Header.Set("Idempotency-Key", "upload-1")
+			createResponse := httptest.NewRecorder()
+			handler.ServeHTTP(createResponse, create)
+
+			complete := httptest.NewRequest(http.MethodPost, "/api/admin/bulletins/issue-1/assets/asset-1/complete", bytes.NewBufferString(`{"locale":"`+locale+`","title":"Weekly","fileName":"weekly.pdf","mimeType":"application/pdf","sizeBytes":128,"checksumSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`))
+			trusted(complete, "cms:write assets:write")
+			complete.Header.Set("If-Match", `"1"`)
+			completeResponse := httptest.NewRecorder()
+			handler.ServeHTTP(completeResponse, complete)
+
+			if createResponse.Code != http.StatusBadRequest || completeResponse.Code != http.StatusBadRequest || uploads.createdLocale != "" || uploads.getCalls != 0 || uploads.completeCalls != 0 || repo.put.Locale != "" {
+				t.Fatalf("create=%d complete=%d created=%q get=%d completed=%d put=%#v", createResponse.Code, completeResponse.Code, uploads.createdLocale, uploads.getCalls, uploads.completeCalls, repo.put)
+			}
+		})
 	}
 }
 
@@ -564,6 +613,7 @@ type apiRepository struct {
 	publicLocale       string
 	publicError        error
 	notifySubscribers  bool
+	publicCalls        int
 }
 
 func (r *apiRepository) CreateIssue(_ context.Context, number int, date, actor, key string, now time.Time) (bulletins.Issue, error) {
@@ -603,6 +653,7 @@ type apiUploads struct {
 	completed                   assetclient.Asset
 	completeCalls               int
 	getError                    error
+	getCalls                    int
 	requeueCalls                int
 }
 
@@ -620,6 +671,7 @@ func (u *apiUploads) CompleteUpload(context.Context, string, assetclient.Complet
 	return u.completed, nil
 }
 func (u *apiUploads) Get(context.Context, string) (assetclient.Asset, error) {
+	u.getCalls++
 	return u.completed, u.getError
 }
 func (u *apiUploads) RequeueScan(context.Context, string) error {
@@ -664,12 +716,15 @@ func (r *apiRepository) RestoreIssueRevision(_ context.Context, _ string, revisi
 	return r.issue, nil
 }
 func (r *apiRepository) GetPublicLatest(context.Context, string) (bulletins.PublicBulletin, error) {
+	r.publicCalls++
 	return r.public, nil
 }
 func (r *apiRepository) GetPublicByDate(context.Context, string, string) (bulletins.PublicBulletin, error) {
+	r.publicCalls++
 	return r.public, nil
 }
 func (r *apiRepository) GetPublicByNumber(_ context.Context, issueNumber int, locale string) (bulletins.PublicBulletin, error) {
+	r.publicCalls++
 	r.publicIssueNumber, r.publicLocale = issueNumber, locale
 	return r.public, r.publicError
 }

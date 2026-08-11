@@ -23,7 +23,7 @@ func TestTranslationPreviewRoutesUseExactContract(t *testing.T) {
 		target string
 	}{
 		{name: "content", path: "/api/admin/content/news/10000000-0000-4000-8000-000000000001/translation-previews/ja", module: "news", target: "ja"},
-		{name: "bulletin", path: "/api/admin/bulletins/10000000-0000-4000-8000-000000000001/translation-previews/ko", module: "bulletins", target: "ko"},
+		{name: "bulletin", path: "/api/admin/bulletins/10000000-0000-4000-8000-000000000001/translation-previews/en", module: "bulletins", target: "en"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			previewer := &translationPreviewerStub{preview: translation.Preview{SourceLocale: "zh-Hant", TargetLocale: test.target, SourceVersion: 7, Translation: map[string]string{"title": "translated"}}}
@@ -45,6 +45,23 @@ func TestTranslationPreviewRoutesUseExactContract(t *testing.T) {
 				t.Fatalf("body = %s", response.Body.String())
 			}
 		})
+	}
+}
+
+func TestBulletinTranslationPreviewRejectsJapaneseAndKoreanBeforeService(t *testing.T) {
+	for _, locale := range []string{"ja", "ko"} {
+		previewer := &translationPreviewerStub{}
+		handler := testTranslationHandler(previewer, time.Now(), 50*time.Second)
+		request := httptest.NewRequest(http.MethodPost, "/api/admin/bulletins/10000000-0000-4000-8000-000000000001/translation-previews/"+locale, strings.NewReader(`{"sourceLocale":"zh-Hant","replaceExisting":false}`))
+		trusted(request, "cms:write")
+		request.Header.Set("If-Match", `"7"`)
+		response := newDeadlineRecorder()
+
+		handler.ServeHTTP(response, request)
+
+		if response.Code != http.StatusBadRequest || previewer.calls != 0 {
+			t.Fatalf("target=%s status=%d calls=%d body=%s", locale, response.Code, previewer.calls, response.Body.String())
+		}
 	}
 }
 

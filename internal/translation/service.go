@@ -133,7 +133,7 @@ func (s *Service) finish(ctx context.Context, state previewState, started time.T
 		sourceLocale = state.request.SourceLocale
 	}
 	targetLocale := ""
-	if validTarget(state.request.TargetLocale) {
+	if validTarget(state.request.Module, state.request.TargetLocale) {
 		targetLocale = state.request.TargetLocale
 	}
 	trace.SpanFromContext(ctx).SetAttributes(
@@ -208,7 +208,7 @@ func (s *Service) load(ctx context.Context, request PreviewRequest) (map[string]
 }
 
 func validPreviewRequest(request PreviewRequest) bool {
-	if !resourceIDPattern.MatchString(request.ResourceID) || strings.TrimSpace(request.Actor) == "" || request.ExpectedVersion < 1 || request.SourceLocale != "zh-Hant" || !validTarget(request.TargetLocale) {
+	if !resourceIDPattern.MatchString(request.ResourceID) || strings.TrimSpace(request.Actor) == "" || request.ExpectedVersion < 1 || request.SourceLocale != "zh-Hant" || !validTarget(request.Module, request.TargetLocale) {
 		return false
 	}
 	switch request.Module {
@@ -219,7 +219,10 @@ func validPreviewRequest(request PreviewRequest) bool {
 	}
 }
 
-func validTarget(locale string) bool {
+func validTarget(module, locale string) bool {
+	if module == "bulletins" {
+		return bulletins.IsBulletinTranslationTarget(locale)
+	}
 	return locale == "zh-Hans" || locale == "en" || locale == "ja" || locale == "ko"
 }
 

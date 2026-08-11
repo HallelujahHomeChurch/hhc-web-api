@@ -362,7 +362,7 @@ func TestRepositoryPublishWaitsForAssetWorkflow(t *testing.T) {
 	}
 }
 
-func TestRepositorySupportsJapaneseAndKoreanBulletinLifecycle(t *testing.T) {
+func TestRepositoryRejectsJapaneseAndKoreanBulletinLifecycle(t *testing.T) {
 	databaseURL := os.Getenv("HHW_TEST_DATABASE_URL")
 	if databaseURL == "" {
 		t.Skip("HHW_TEST_DATABASE_URL is not configured")
@@ -382,64 +382,24 @@ func TestRepositorySupportsJapaneseAndKoreanBulletinLifecycle(t *testing.T) {
 
 	now := time.Date(2026, 8, 11, 9, 0, 0, 0, time.UTC)
 	service := bulletins.NewService(New(db), func() time.Time { return now })
-	issue, err := service.CreateIssue(ctx, bulletins.CreateIssueInput{IssueNumber: 1733, IssueDate: "2026-08-16"}, "user-1", "five-locale-bulletin")
+	issue, err := service.CreateIssue(ctx, bulletins.CreateIssueInput{IssueNumber: 1733, IssueDate: "2026-08-16"}, "user-1", "three-edition-bulletin")
 	if err != nil {
 		t.Fatal(err)
 	}
-	issue, err = service.PutVersion(ctx, issue.ID, issue.Version, bulletins.PutVersionInput{Locale: "ja", Title: "週報", PDFAssetID: "asset-ja", PDFFileName: "weekly-ja.pdf"}, "user-1")
-	if err != nil {
+	for _, locale := range []string{"ja", "ko"} {
+		if _, err := service.PutVersion(ctx, issue.ID, issue.Version, bulletins.PutVersionInput{Locale: locale, Title: "Weekly", PDFAssetID: "asset-" + locale, PDFFileName: "weekly.pdf"}, "user-1"); !errors.Is(err, bulletins.ErrInvalid) {
+			t.Fatalf("locale=%s error=%v", locale, err)
+		}
+	}
+	var versions, events int
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM hhc_web.bulletin_version WHERE issue_id=$1`, issue.ID).Scan(&versions); err != nil {
 		t.Fatal(err)
 	}
-	issue, err = service.UpdateVersion(ctx, issue.ID, "ja", issue.Version, bulletins.UpdateVersionInput{Title: "今週の週報"}, "user-1")
-	if err != nil {
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM hhc_web.outbox_event WHERE aggregate_id=$1`, issue.ID).Scan(&events); err != nil {
 		t.Fatal(err)
 	}
-	issue, err = service.PutVersion(ctx, issue.ID, issue.Version, bulletins.PutVersionInput{Locale: "ko", Title: "주보", PDFAssetID: "asset-ko", PDFFileName: "weekly-ko.pdf"}, "user-1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := service.Publish(ctx, issue.ID, "ja", issue.Version, false, "user-1"); err != nil {
-		t.Fatal(err)
-	}
-	repository := New(db)
-	event, found, err := repository.Claim(ctx, now, 30*time.Second)
-	if err != nil || !found {
-		t.Fatalf("claim Japanese publish found=%v err=%v", found, err)
-	}
-	if err := repository.CompletePublish(ctx, event, "grant-ja", "/api/assets/public/asset-ja", now); err != nil {
-		t.Fatal(err)
-	}
-	if public, err := service.GetPublicLatest(ctx, "ja"); err != nil || public.Title != "今週の週報" {
-		t.Fatalf("Japanese public=%#v err=%v", public, err)
-	}
-
-	issue, err = service.GetIssue(ctx, issue.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := service.Publish(ctx, issue.ID, "ko", issue.Version, false, "user-1"); err != nil {
-		t.Fatal(err)
-	}
-	event, found, err = repository.Claim(ctx, now, 30*time.Second)
-	if err != nil || !found {
-		t.Fatalf("claim Korean publish found=%v err=%v", found, err)
-	}
-	if err := repository.CompletePublish(ctx, event, "grant-ko", "/api/assets/public/asset-ko", now); err != nil {
-		t.Fatal(err)
-	}
-	if public, err := service.GetPublicLatest(ctx, "ko"); err != nil || public.Title != "주보" {
-		t.Fatalf("Korean public=%#v err=%v", public, err)
-	}
-
-	issue, err = service.GetIssue(ctx, issue.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := service.Unpublish(ctx, issue.ID, "ko", issue.Version, "user-1"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := service.GetPublicLatest(ctx, "ko"); !errors.Is(err, bulletins.ErrNotFound) {
-		t.Fatalf("Korean public after unpublish=%v", err)
+	if versions != 0 || events != 0 {
+		t.Fatalf("versions=%d events=%d", versions, events)
 	}
 }
 

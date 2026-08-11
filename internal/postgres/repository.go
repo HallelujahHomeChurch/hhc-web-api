@@ -230,6 +230,9 @@ func queryVersions(ctx context.Context, query bulletinQueryer, ids ...string) ([
 }
 
 func (r *Repository) PutVersion(ctx context.Context, id string, expected int64, input bulletins.PutVersionInput, actor string, now time.Time) (bulletins.Issue, error) {
+	if !bulletins.IsBulletinEdition(input.Locale) {
+		return bulletins.Issue{}, bulletins.ErrInvalid
+	}
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return bulletins.Issue{}, err
@@ -285,6 +288,9 @@ func (r *Repository) PutVersion(ctx context.Context, id string, expected int64, 
 }
 
 func (r *Repository) UpdateVersion(ctx context.Context, id, locale string, expected int64, title, subtitle, actor string, now time.Time) (bulletins.Issue, error) {
+	if !bulletins.IsBulletinEdition(locale) {
+		return bulletins.Issue{}, bulletins.ErrInvalid
+	}
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return bulletins.Issue{}, err
@@ -304,6 +310,9 @@ func (r *Repository) UpdateVersion(ctx context.Context, id, locale string, expec
 }
 
 func (r *Repository) DeleteVersion(ctx context.Context, id, locale string, expected int64, actor string, now time.Time) (bulletins.Issue, error) {
+	if !bulletins.IsBulletinEdition(locale) {
+		return bulletins.Issue{}, bulletins.ErrInvalid
+	}
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return bulletins.Issue{}, err
@@ -425,6 +434,11 @@ func (r *Repository) RestoreIssueRevision(ctx context.Context, id string, revisi
 	if snapshot.ID != id || !validStoredIssueDate(snapshot.IssueDate) {
 		return bulletins.Issue{}, bulletins.ErrConflict
 	}
+	for _, version := range snapshot.Versions {
+		if !bulletins.IsBulletinEdition(version.Locale) {
+			return bulletins.Issue{}, bulletins.ErrInvalid
+		}
+	}
 	metadataChanged := currentDate != snapshot.IssueDate || currentNumber.Valid != (snapshot.IssueNumber != nil)
 	if currentNumber.Valid && snapshot.IssueNumber != nil {
 		metadataChanged = metadataChanged || currentNumber.Int64 != int64(*snapshot.IssueNumber)
@@ -511,6 +525,9 @@ func validStoredIssueDate(value string) bool {
 }
 
 func (r *Repository) StartPublish(ctx context.Context, id, locale string, expected int64, notifySubscribers bool, actor string, now time.Time) (bulletins.Workflow, error) {
+	if !bulletins.IsBulletinEdition(locale) {
+		return bulletins.Workflow{}, bulletins.ErrInvalid
+	}
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return bulletins.Workflow{}, err
@@ -557,6 +574,9 @@ func (r *Repository) StartPublish(ctx context.Context, id, locale string, expect
 }
 
 func (r *Repository) Unpublish(ctx context.Context, id, locale string, expected int64, actor string, now time.Time) (bulletins.Issue, error) {
+	if !bulletins.IsBulletinEdition(locale) {
+		return bulletins.Issue{}, bulletins.ErrInvalid
+	}
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return bulletins.Issue{}, err
@@ -697,12 +717,21 @@ func bulletinAssetIDs(ctx context.Context, tx *sql.Tx, id string) ([]string, err
 }
 
 func (r *Repository) GetPublicLatest(ctx context.Context, locale string) (bulletins.PublicBulletin, error) {
+	if !bulletins.IsBulletinEdition(locale) {
+		return bulletins.PublicBulletin{}, bulletins.ErrInvalid
+	}
 	return r.publicProjection(ctx, fmt.Sprintf("bulletins:latest:%s", locale))
 }
 func (r *Repository) GetPublicByDate(ctx context.Context, date, locale string) (bulletins.PublicBulletin, error) {
+	if !bulletins.IsBulletinEdition(locale) {
+		return bulletins.PublicBulletin{}, bulletins.ErrInvalid
+	}
 	return r.publicProjection(ctx, fmt.Sprintf("bulletins:issue:%s:%s", locale, date))
 }
 func (r *Repository) GetPublicByNumber(ctx context.Context, issueNumber int, locale string) (bulletins.PublicBulletin, error) {
+	if !bulletins.IsBulletinEdition(locale) {
+		return bulletins.PublicBulletin{}, bulletins.ErrInvalid
+	}
 	var payload []byte
 	err := r.db.QueryRowContext(ctx, `
 		SELECT p.payload_json
@@ -730,18 +759,21 @@ func decodePublicBulletin(payload []byte, err error) (bulletins.PublicBulletin, 
 	if err := json.Unmarshal(payload, &v); err != nil {
 		return bulletins.PublicBulletin{}, err
 	}
+	if !bulletins.IsBulletinEdition(v.Locale) {
+		return bulletins.PublicBulletin{}, bulletins.ErrNotFound
+	}
 	return v, nil
 }
 func (r *Repository) ListPublic(ctx context.Context, page, size int) (bulletins.PublicPage, error) {
 	var total int64
-	if err := r.db.QueryRowContext(ctx, `SELECT count(DISTINCT resource_id) FROM hhc_web.public_projection WHERE resource_type='bulletin_issue'`).Scan(&total); err != nil {
+	if err := r.db.QueryRowContext(ctx, `SELECT count(DISTINCT resource_id) FROM hhc_web.public_projection WHERE resource_type='bulletin_issue' AND locale IN ('zh-Hant','zh-Hans','en')`).Scan(&total); err != nil {
 		return bulletins.PublicPage{}, err
 	}
 	rows, err := r.db.QueryContext(ctx, `
 		WITH issues AS (
 			SELECT resource_id, max(COALESCE((payload_json->>'issueNumber')::integer,0)) AS issue_number, max(payload_json->>'issueDate') AS issue_date
 			FROM hhc_web.public_projection
-			WHERE resource_type='bulletin_issue'
+			WHERE resource_type='bulletin_issue' AND locale IN ('zh-Hant','zh-Hans','en')
 			GROUP BY resource_id
 			ORDER BY issue_number DESC,issue_date DESC
 			LIMIT $1 OFFSET $2
@@ -749,9 +781,9 @@ func (r *Repository) ListPublic(ctx context.Context, page, size int) (bulletins.
 		SELECT p.payload_json
 		FROM issues i
 		JOIN hhc_web.public_projection p
-		  ON p.resource_type='bulletin_issue' AND p.resource_id=i.resource_id
+		  ON p.resource_type='bulletin_issue' AND p.resource_id=i.resource_id AND p.locale IN ('zh-Hant','zh-Hans','en')
 		ORDER BY i.issue_number DESC,i.issue_date DESC,
-		  CASE p.locale WHEN 'zh-Hant' THEN 1 WHEN 'zh-Hans' THEN 2 WHEN 'en' THEN 3 WHEN 'ja' THEN 4 WHEN 'ko' THEN 5 ELSE 6 END`,
+		  CASE p.locale WHEN 'zh-Hant' THEN 1 WHEN 'zh-Hans' THEN 2 WHEN 'en' THEN 3 ELSE 4 END`,
 		size, (page-1)*size)
 	if err != nil {
 		return bulletins.PublicPage{}, err
@@ -766,6 +798,9 @@ func (r *Repository) ListPublic(ctx context.Context, page, size int) (bulletins.
 		}
 		if err := json.Unmarshal(payload, &item); err != nil {
 			return bulletins.PublicPage{}, err
+		}
+		if !bulletins.IsBulletinEdition(item.Locale) {
+			continue
 		}
 		if len(items) == 0 || items[len(items)-1].IssueDate != item.IssueDate {
 			items = append(items, bulletins.PublicIssue{IssueNumber: item.IssueNumber, IssueDate: item.IssueDate, Versions: []bulletins.PublicBulletin{}})
@@ -942,6 +977,9 @@ func (r *Repository) CompletePublish(ctx context.Context, event publication.Even
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
 		return err
 	}
+	if !bulletins.IsBulletinEdition(payload.Locale) {
+		return bulletins.ErrInvalid
+	}
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -1046,7 +1084,7 @@ const englishBulletinNotificationFallback = "The latest weekly bulletin is now a
 func buildBulletinNotification(issueID string, issueNumber sql.NullInt64, actor string, enableFiveLocalesAfterFluentReview bool, versions []bulletins.Version) publication.BulletinNotificationPayload {
 	copyByLocale := make(map[string]string, len(versions))
 	for _, version := range versions {
-		if version.Status != "published" {
+		if version.Status != "published" || !bulletins.IsBulletinEdition(version.Locale) {
 			continue
 		}
 		body := strings.TrimSpace(version.Subtitle)
