@@ -87,6 +87,37 @@ func TestServiceRejectsJapaneseAndKoreanBulletinTargetsBeforeLoadOrProvider(t *t
 	}
 }
 
+func TestServiceLoadsSavedCampaignSources(t *testing.T) {
+	for _, module := range []string{"campaigns", "campaign-schedules"} {
+		t.Run(module, func(t *testing.T) {
+			source := SavedSource{ResourceID: "10000000-0000-4000-8000-000000000001", SourceLocale: "zh-Hant", Channel: "email", Version: 7, Fields: map[string]string{"subject": "主旨", "body": "內容"}, AvailableLocales: []string{"zh-Hant"}}
+			generator := &generatorStub{result: Result{Fields: map[string]string{"subject": "Subject", "body": "Body"}}}
+			service := NewService(contentSourceStub{}, bulletinSourceStub{}, generator, &translationRepositoryStub{}, testServiceConfig(), savedSourceStub{source: source})
+			request := previewRequest(module)
+			if _, err := service.Preview(context.Background(), request); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(generator.request.Fields, source.Fields) || generator.request.Module != module {
+				t.Fatalf("provider request=%#v", generator.request)
+			}
+		})
+	}
+}
+
+func TestServiceRestrictsCampaignTargetsAndExistingTranslations(t *testing.T) {
+	source := SavedSource{ResourceID: "10000000-0000-4000-8000-000000000001", SourceLocale: "zh-Hant", Channel: "web_push", Version: 7, Fields: map[string]string{"subject": "主旨", "body": "內容"}, AvailableLocales: []string{"zh-Hant", "ko"}}
+	service := NewService(contentSourceStub{}, bulletinSourceStub{}, &generatorStub{}, &translationRepositoryStub{}, testServiceConfig(), savedSourceStub{source: source})
+	request := previewRequest("campaigns")
+	request.TargetLocale = "zh-Hans"
+	if _, err := service.Preview(context.Background(), request); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("zh-Hans error=%v", err)
+	}
+	request.TargetLocale = "ko"
+	if _, err := service.Preview(context.Background(), request); !errors.Is(err, ErrTranslationExists) {
+		t.Fatalf("existing ko error=%v", err)
+	}
+}
+
 func TestServiceChecksVersionBeforeExistingTarget(t *testing.T) {
 	item := content.Item{ID: "10000000-0000-4000-8000-000000000001", Module: content.ModuleNews, Version: 8, Translations: []content.Translation{
 		{Locale: "zh-Hant", Title: "來源"}, {Locale: "ja", Title: "既有"},
@@ -397,6 +428,15 @@ func (s contentSourceStub) GetContent(context.Context, content.Module, string) (
 type bulletinSourceStub struct {
 	issue bulletins.Issue
 	err   error
+}
+
+type savedSourceStub struct {
+	source SavedSource
+	err    error
+}
+
+func (s savedSourceStub) GetTranslationSource(context.Context, string, string) (SavedSource, error) {
+	return s.source, s.err
 }
 
 func (s bulletinSourceStub) GetIssue(context.Context, string) (bulletins.Issue, error) {

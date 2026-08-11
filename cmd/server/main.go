@@ -64,7 +64,7 @@ func run() error {
 			Deployment: cfg.Translation.AzureDeployment, HandlerTimeout: cfg.Translation.HandlerTimeout, SourceCharLimit: cfg.Translation.SourceCharLimit,
 			ActorLimit: cfg.Translation.ActorLimit, DeploymentLimit: cfg.Translation.DeploymentLimit,
 			ActorDailyLimit: cfg.Translation.ActorDailyLimit, DeploymentDailyLimit: cfg.Translation.DeploymentDailyLimit, Cooldown: cfg.Translation.Cooldown, Now: time.Now,
-		})
+		}, engagementClient)
 	}
 	handler := httpapi.NewWithTranslation(service, contentService, db, assetClient, cfg.AdminAllowedCaller, cfg.DaprAPIToken, cfg.AllowDevCaller, previewer, cfg.Translation.WriteDeadline, time.Now, engagementClient)
 	assets := publication.NewAssetAdapter(assetClient)

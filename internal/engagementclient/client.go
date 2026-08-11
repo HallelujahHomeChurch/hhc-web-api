@@ -11,12 +11,46 @@ import (
 	"time"
 
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/publication"
+	"github.com/HallelujahHomeChurch/hhc-web-api/internal/translation"
 )
 
 type Client struct {
 	baseURL string
 	caller  string
 	http    *http.Client
+}
+
+func (c *Client) GetTranslationSource(ctx context.Context, module, resourceID string) (translation.SavedSource, error) {
+	if module != "campaigns" && module != "campaign-schedules" {
+		return translation.SavedSource{}, translation.ErrInvalidRequest
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/priv/"+module+"/"+resourceID+"/translation-source", nil)
+	if err != nil {
+		return translation.SavedSource{}, err
+	}
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("X-HHC-Caller-App-Id", c.caller)
+	response, err := c.http.Do(request)
+	if err != nil {
+		return translation.SavedSource{}, fmt.Errorf("engagement api unavailable: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode == http.StatusBadRequest {
+		return translation.SavedSource{}, translation.ErrInvalidRequest
+	}
+	if response.StatusCode == http.StatusNotFound {
+		return translation.SavedSource{}, translation.ErrNotFound
+	}
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return translation.SavedSource{}, responseError{status: response.StatusCode}
+	}
+	var body struct {
+		Data translation.SavedSource `json:"data"`
+	}
+	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&body); err != nil {
+		return translation.SavedSource{}, responseError{status: http.StatusBadGateway}
+	}
+	return body.Data, nil
 }
 
 func (c *Client) QueueBulletinNotification(ctx context.Context, payload publication.BulletinNotificationPayload) error {

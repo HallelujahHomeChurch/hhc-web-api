@@ -13,6 +13,8 @@ func translationInstructions(module, targetLocale string) string {
 		moduleRule = "Video titles should be concise and natural."
 	case "bulletins":
 		moduleRule = "Bulletin metadata should be concise and informational."
+	case "campaigns", "campaign-schedules":
+		moduleRule = "Notification subjects should be concise; bodies should be clear, warm, and preserve every operational fact and link."
 	}
 
 	localeRule := ""

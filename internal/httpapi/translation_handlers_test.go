@@ -24,6 +24,8 @@ func TestTranslationPreviewRoutesUseExactContract(t *testing.T) {
 	}{
 		{name: "content", path: "/api/admin/content/news/10000000-0000-4000-8000-000000000001/translation-previews/ja", module: "news", target: "ja"},
 		{name: "bulletin", path: "/api/admin/bulletins/10000000-0000-4000-8000-000000000001/translation-previews/en", module: "bulletins", target: "en"},
+		{name: "campaign", path: "/api/admin/campaigns/10000000-0000-4000-8000-000000000001/translation-previews/ja", module: "campaigns", target: "ja"},
+		{name: "schedule", path: "/api/admin/campaign-schedules/10000000-0000-4000-8000-000000000001/translation-previews/ko", module: "campaign-schedules", target: "ko"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			previewer := &translationPreviewerStub{preview: translation.Preview{SourceLocale: "zh-Hant", TargetLocale: test.target, SourceVersion: 7, Translation: map[string]string{"title": "translated"}}}
@@ -45,6 +47,21 @@ func TestTranslationPreviewRoutesUseExactContract(t *testing.T) {
 				t.Fatalf("body = %s", response.Body.String())
 			}
 		})
+	}
+}
+
+func TestCampaignTranslationPreviewAcceptsNewOrLegacyWriteScope(t *testing.T) {
+	for _, scope := range []string{"campaigns:write", "cms:write"} {
+		previewer := &translationPreviewerStub{preview: translation.Preview{SourceLocale: "zh-Hant", TargetLocale: "en", SourceVersion: 7, Translation: map[string]string{"subject": "Subject", "body": "Body"}}}
+		handler := testTranslationHandler(previewer, time.Now(), 50*time.Second)
+		request := httptest.NewRequest(http.MethodPost, "/api/admin/campaigns/10000000-0000-4000-8000-000000000001/translation-previews/en", strings.NewReader(`{"sourceLocale":"zh-Hant","replaceExisting":false}`))
+		trusted(request, scope)
+		request.Header.Set("If-Match", `"7"`)
+		response := newDeadlineRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusOK || previewer.calls != 1 {
+			t.Fatalf("scope=%s status=%d calls=%d body=%s", scope, response.Code, previewer.calls, response.Body.String())
+		}
 	}
 }
 

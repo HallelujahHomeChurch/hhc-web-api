@@ -56,6 +56,28 @@ paths:
       parameters:
         - { name: campaignId, in: path, required: true, schema: { type: string, format: uuid } }
       responses: { '200': { description: Campaign audience snapshotted and queued } }
+  /admin/campaigns/{campaignId}/translation-previews/{targetLocale}:
+    post:
+      operationId: previewCampaignTranslation
+      security: [{ bearerAuth: [] }]
+      x-required-any-scopes: ['campaigns:write', 'cms:write']
+      parameters:
+        - { name: campaignId, in: path, required: true, schema: { type: string, format: uuid } }
+        - $ref: '#/components/parameters/CampaignTranslationTargetLocale'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody: { $ref: '#/components/requestBodies/TranslationPreviewInput' }
+      responses:
+        '200': { $ref: '#/components/responses/CampaignTranslationPreview' }
+        '400': { $ref: '#/components/responses/InvalidTranslationRequest' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/TranslationNotFound' }
+        '409': { $ref: '#/components/responses/TranslationExists' }
+        '412': { $ref: '#/components/responses/TranslationVersionMismatch' }
+        '429': { $ref: '#/components/responses/TranslationRateLimited' }
+        '500': { $ref: '#/components/responses/Error' }
+        '502': { $ref: '#/components/responses/TranslationProviderError' }
+        '503': { $ref: '#/components/responses/TranslationDisabled' }
+        '504': { $ref: '#/components/responses/TranslationTimeout' }
   /admin/campaigns/{campaignId}/deliveries:
     get:
       operationId: listCampaignDeliveries
@@ -113,6 +135,28 @@ paths:
       security: [{ bearerAuth: [] }]
       x-required-scopes: ['cms:write']
       responses: { '204': { description: Campaign schedule deleted } }
+  /admin/campaign-schedules/{scheduleId}/translation-previews/{targetLocale}:
+    post:
+      operationId: previewCampaignScheduleTranslation
+      security: [{ bearerAuth: [] }]
+      x-required-any-scopes: ['campaigns:write', 'cms:write']
+      parameters:
+        - { name: scheduleId, in: path, required: true, schema: { type: string, format: uuid } }
+        - $ref: '#/components/parameters/CampaignTranslationTargetLocale'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody: { $ref: '#/components/requestBodies/TranslationPreviewInput' }
+      responses:
+        '200': { $ref: '#/components/responses/CampaignTranslationPreview' }
+        '400': { $ref: '#/components/responses/InvalidTranslationRequest' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/TranslationNotFound' }
+        '409': { $ref: '#/components/responses/TranslationExists' }
+        '412': { $ref: '#/components/responses/TranslationVersionMismatch' }
+        '429': { $ref: '#/components/responses/TranslationRateLimited' }
+        '500': { $ref: '#/components/responses/Error' }
+        '502': { $ref: '#/components/responses/TranslationProviderError' }
+        '503': { $ref: '#/components/responses/TranslationDisabled' }
+        '504': { $ref: '#/components/responses/TranslationTimeout' }
   /bulletins:
     get:
       operationId: listPublicBulletins
@@ -664,6 +708,7 @@ components:
     ContentID: { name: contentId, in: path, required: true, schema: { type: string, format: uuid } }
     ContentTranslationTargetLocale: { name: targetLocale, in: path, required: true, schema: { $ref: '#/components/schemas/ContentTranslationTargetLocale' } }
     BulletinTranslationTargetEdition: { name: targetLocale, in: path, required: true, schema: { $ref: '#/components/schemas/BulletinTranslationTargetEdition' } }
+    CampaignTranslationTargetLocale: { name: targetLocale, in: path, required: true, schema: { $ref: '#/components/schemas/CampaignTranslationTargetLocale' } }
     Revision: { name: revision, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
   requestBodies:
     PublicationInput:
@@ -728,6 +773,11 @@ components:
       content:
         application/json:
           schema: { $ref: '#/components/schemas/BulletinTranslationPreviewEnvelope' }
+    CampaignTranslationPreview:
+      description: Review-only generated campaign translation preview; no campaign or schedule state is changed.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/CampaignTranslationPreviewEnvelope' }
     InvalidTranslationRequest:
       description: invalid_translation_request
       content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
@@ -851,6 +901,9 @@ components:
     BulletinTranslationTargetEdition:
       type: string
       enum: [zh-Hans, en]
+    CampaignTranslationTargetLocale:
+      type: string
+      enum: [en, ja, ko]
     BulletinStatus:
       type: string
       enum: [draft, publishing, published, unpublishing, unpublish_failed, unpublished]
@@ -1092,6 +1145,22 @@ components:
         targetLocale: { $ref: '#/components/schemas/BulletinTranslationTargetEdition' }
         sourceVersion: { type: integer, format: int64, minimum: 1 }
         translation: { $ref: '#/components/schemas/BulletinTranslationFields' }
+    CampaignTranslationPreview:
+      type: object
+      additionalProperties: false
+      required: [sourceLocale, targetLocale, sourceVersion, translation]
+      properties:
+        sourceLocale: { type: string, const: zh-Hant }
+        targetLocale: { $ref: '#/components/schemas/CampaignTranslationTargetLocale' }
+        sourceVersion: { type: integer, format: int64, minimum: 1 }
+        translation: { $ref: '#/components/schemas/CampaignTranslationFields' }
+    CampaignTranslationFields:
+      type: object
+      additionalProperties: false
+      required: [subject, body]
+      properties:
+        subject: { type: string, minLength: 1, maxLength: 200 }
+        body: { type: string, maxLength: 100000 }
     NewsTranslationPreview:
       type: object
       additionalProperties: false
@@ -1269,6 +1338,13 @@ components:
       required: [data, meta, error]
       properties:
         data: { $ref: '#/components/schemas/BulletinTranslationPreview' }
+        meta: { type: object, additionalProperties: true }
+        error: { type: ['null'] }
+    CampaignTranslationPreviewEnvelope:
+      type: object
+      required: [data, meta, error]
+      properties:
+        data: { $ref: '#/components/schemas/CampaignTranslationPreview' }
         meta: { type: object, additionalProperties: true }
         error: { type: ['null'] }
     ContentListEnvelope:

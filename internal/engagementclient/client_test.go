@@ -7,11 +7,36 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/publication"
+	"github.com/HallelujahHomeChurch/hhc-web-api/internal/translation"
 )
+
+func TestGetTranslationSourceUsesContentOnlyPrivateEndpoint(t *testing.T) {
+	const id = "10000000-0000-4000-8000-000000000001"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/priv/campaign-schedules/"+id+"/translation-source" || r.Header.Get("X-HHC-Caller-App-Id") != "hhc-web-api" {
+			t.Fatalf("request method=%s path=%s headers=%v", r.Method, r.URL.Path, r.Header)
+		}
+		_, _ = w.Write([]byte(`{"data":{"resourceId":"` + id + `","sourceLocale":"zh-Hant","channel":"email","version":7,"fields":{"subject":"主旨","body":"內容"},"availableLocales":["zh-Hant","en"]}}`))
+	}))
+	defer server.Close()
+
+	source, err := New(server.URL, "hhc-web-api").GetTranslationSource(context.Background(), "campaign-schedules", id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := translation.SavedSource{ResourceID: id, SourceLocale: "zh-Hant", Channel: "email", Version: 7, Fields: map[string]string{"subject": "主旨", "body": "內容"}, AvailableLocales: []string{"zh-Hant", "en"}}
+	if !reflect.DeepEqual(source, want) {
+		t.Fatalf("source=%#v want=%#v", source, want)
+	}
+	if _, err := New(server.URL, "hhc-web-api").GetTranslationSource(context.Background(), "content", id); !errors.Is(err, translation.ErrInvalidRequest) {
+		t.Fatalf("invalid module error=%v", err)
+	}
+}
 
 func TestForwardInjectsTrustedServiceAndActorHeaders(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
