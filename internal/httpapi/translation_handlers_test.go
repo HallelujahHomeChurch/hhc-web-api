@@ -129,6 +129,19 @@ func TestTranslationPreviewMapsBoundedErrors(t *testing.T) {
 	}
 }
 
+func TestTranslationPreviewReturnsExactRetryAfter(t *testing.T) {
+	handler := testTranslationHandler(&translationPreviewerStub{err: &translation.RateLimitError{RetryAfter: 73 * time.Second}}, time.Now(), 50*time.Second)
+	request := httptest.NewRequest(http.MethodPost, "/api/admin/content/videos/10000000-0000-4000-8000-000000000001/translation-previews/en", strings.NewReader(`{"sourceLocale":"zh-Hant","replaceExisting":false}`))
+	trusted(request, "cms:write")
+	request.Header.Set("If-Match", `"3"`)
+	response := newDeadlineRecorder()
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusTooManyRequests || response.Header().Get("Retry-After") != "73" || !strings.Contains(response.Body.String(), `"code":"translation_rate_limited"`) {
+		t.Fatalf("status=%d retry=%q body=%s", response.Code, response.Header().Get("Retry-After"), response.Body.String())
+	}
+}
+
 func TestTranslationPreviewDisabledAndDeadlineFailureStopService(t *testing.T) {
 	now := time.Date(2026, 8, 11, 8, 0, 0, 0, time.UTC)
 	for _, test := range []struct {

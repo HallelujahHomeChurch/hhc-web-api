@@ -12,16 +12,19 @@ import (
 const translationGatewayDeadline = 60 * time.Second
 
 type TranslationConfig struct {
-	Enabled         bool
-	AzureEndpoint   string
-	AzureDeployment string
-	AzureAPIKey     string
-	ProviderTimeout time.Duration
-	HandlerTimeout  time.Duration
-	WriteDeadline   time.Duration
-	SourceCharLimit int
-	ActorLimit      int
-	DeploymentLimit int
+	Enabled              bool
+	AzureEndpoint        string
+	AzureDeployment      string
+	AzureAPIKey          string
+	ProviderTimeout      time.Duration
+	HandlerTimeout       time.Duration
+	WriteDeadline        time.Duration
+	SourceCharLimit      int
+	ActorLimit           int
+	DeploymentLimit      int
+	ActorDailyLimit      int
+	DeploymentDailyLimit int
+	Cooldown             time.Duration
 }
 
 type Config struct {
@@ -57,16 +60,19 @@ func Load() (Config, error) {
 		PublicBaseURL:     value("PUBLIC_BASE_URL", "http://127.0.0.1:8082/assets"),
 		OutboxMaxAttempts: 20,
 		Translation: TranslationConfig{
-			Enabled:         strings.EqualFold(strings.TrimSpace(os.Getenv("CMS_TRANSLATION_ENABLED")), "true"),
-			AzureEndpoint:   strings.TrimSpace(os.Getenv("AZURE_OPENAI_ENDPOINT")),
-			AzureDeployment: strings.TrimSpace(os.Getenv("AZURE_OPENAI_DEPLOYMENT")),
-			AzureAPIKey:     strings.TrimSpace(os.Getenv("AZURE_OPENAI_API_KEY")),
-			ProviderTimeout: 40 * time.Second,
-			HandlerTimeout:  45 * time.Second,
-			WriteDeadline:   50 * time.Second,
-			SourceCharLimit: 20000,
-			ActorLimit:      10,
-			DeploymentLimit: 60,
+			Enabled:              strings.EqualFold(strings.TrimSpace(os.Getenv("CMS_TRANSLATION_ENABLED")), "true"),
+			AzureEndpoint:        strings.TrimSpace(os.Getenv("AZURE_OPENAI_ENDPOINT")),
+			AzureDeployment:      strings.TrimSpace(os.Getenv("AZURE_OPENAI_DEPLOYMENT")),
+			AzureAPIKey:          strings.TrimSpace(os.Getenv("AZURE_OPENAI_API_KEY")),
+			ProviderTimeout:      40 * time.Second,
+			HandlerTimeout:       45 * time.Second,
+			WriteDeadline:        50 * time.Second,
+			SourceCharLimit:      20000,
+			ActorLimit:           10,
+			DeploymentLimit:      60,
+			ActorDailyLimit:      30,
+			DeploymentDailyLimit: 300,
+			Cooldown:             10 * time.Minute,
 		},
 	}
 	if cfg.DatabaseURL == "" {
@@ -112,7 +118,7 @@ func (cfg TranslationConfig) validate() error {
 	if cfg.ProviderTimeout <= 0 || cfg.HandlerTimeout <= cfg.ProviderTimeout || cfg.WriteDeadline <= cfg.HandlerTimeout || cfg.WriteDeadline >= translationGatewayDeadline {
 		return fmt.Errorf("invalid translation timeout ordering")
 	}
-	if cfg.SourceCharLimit <= 0 || cfg.ActorLimit <= 0 || cfg.DeploymentLimit <= 0 {
+	if cfg.SourceCharLimit <= 0 || cfg.ActorLimit <= 0 || cfg.DeploymentLimit <= 0 || cfg.ActorDailyLimit <= 0 || cfg.DeploymentDailyLimit <= 0 || cfg.Cooldown <= 0 {
 		return fmt.Errorf("invalid translation limits")
 	}
 	if !cfg.Enabled {

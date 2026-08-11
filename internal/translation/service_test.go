@@ -50,7 +50,7 @@ func TestServicePreviewsOnlyModuleFieldsFromSavedTraditionalChinese(t *testing.T
 			repository := &translationRepositoryStub{}
 			service := NewService(
 				contentSourceStub{item: test.content}, bulletinSourceStub{issue: test.bulletin}, generator, repository,
-				ServiceConfig{Deployment: "cms-translator", HandlerTimeout: time.Second, SourceCharLimit: 20_000, ActorLimit: 10, DeploymentLimit: 60, Now: func() time.Time { return now }},
+				ServiceConfig{Deployment: "cms-translator", HandlerTimeout: time.Second, SourceCharLimit: 20_000, ActorLimit: 10, DeploymentLimit: 60, ActorDailyLimit: 30, DeploymentDailyLimit: 300, Cooldown: 10 * time.Minute, Now: func() time.Time { return now }},
 			)
 
 			preview, err := service.Preview(context.Background(), test.request)
@@ -235,6 +235,17 @@ func TestServiceMapsBoundedFailuresAndAuditsEveryOutcome(t *testing.T) {
 	}
 }
 
+func TestServicePreservesSafeRetryAfter(t *testing.T) {
+	item := content.Item{ID: "10000000-0000-4000-8000-000000000001", Module: content.ModuleVideos, Version: 7, Translations: []content.Translation{{Locale: "zh-Hant", Title: "來源"}}}
+	repository := &translationRepositoryStub{reserveErr: &RateLimitError{RetryAfter: 73 * time.Second}}
+	service := NewService(contentSourceStub{item: item}, bulletinSourceStub{}, &generatorStub{}, repository, testServiceConfig())
+	_, err := service.Preview(context.Background(), previewRequest("videos"))
+	var limited *RateLimitError
+	if !errors.As(err, &limited) || limited.RetryAfter != 73*time.Second {
+		t.Fatalf("error = %#v", err)
+	}
+}
+
 func TestServiceBoundsGeneratorWithChildTimeout(t *testing.T) {
 	item := content.Item{ID: "10000000-0000-4000-8000-000000000001", Module: content.ModuleVideos, Version: 7, Translations: []content.Translation{{Locale: "zh-Hant", Title: "來源"}}}
 	repository := &translationRepositoryStub{}
@@ -246,6 +257,23 @@ func TestServiceBoundsGeneratorWithChildTimeout(t *testing.T) {
 	}
 	if len(repository.audits) != 1 || repository.audits[0].Outcome != OutcomeTimeout {
 		t.Fatalf("audits = %#v", repository.audits)
+	}
+}
+
+func TestServiceReservesExactResourceTargetAndBudgets(t *testing.T) {
+	repository := &translationRepositoryStub{}
+	config := testServiceConfig()
+	item := content.Item{ID: "10000000-0000-4000-8000-000000000001", Module: content.ModuleVideos, Version: 7, Translations: []content.Translation{{Locale: "zh-Hant", Title: "來源"}}}
+	service := NewService(contentSourceStub{item: item}, bulletinSourceStub{}, &generatorStub{result: Result{Fields: map[string]string{"title": "translated"}}}, repository, config)
+	if _, err := service.Preview(context.Background(), previewRequest("videos")); err != nil {
+		t.Fatal(err)
+	}
+	want := Reservation{
+		Actor: "actor-1", ResourceType: "videos", ResourceID: item.ID, SourceVersion: 7, TargetLocale: "ja", Now: config.Now(),
+		ActorMinuteLimit: 10, DeploymentMinuteLimit: 60, ActorDailyLimit: 30, DeploymentDailyLimit: 300, Cooldown: 10 * time.Minute,
+	}
+	if !reflect.DeepEqual(repository.reservation, want) {
+		t.Fatalf("reservation = %#v, want %#v", repository.reservation, want)
 	}
 }
 
@@ -346,7 +374,7 @@ func previewRequest(module string) PreviewRequest {
 }
 
 func testServiceConfig() ServiceConfig {
-	return ServiceConfig{Deployment: "cms-translator", HandlerTimeout: time.Second, SourceCharLimit: 20_000, ActorLimit: 10, DeploymentLimit: 60, Now: func() time.Time { return time.Date(2026, 8, 11, 8, 0, 0, 0, time.UTC) }}
+	return ServiceConfig{Deployment: "cms-translator", HandlerTimeout: time.Second, SourceCharLimit: 20_000, ActorLimit: 10, DeploymentLimit: 60, ActorDailyLimit: 30, DeploymentDailyLimit: 300, Cooldown: 10 * time.Minute, Now: func() time.Time { return time.Date(2026, 8, 11, 8, 0, 0, 0, time.UTC) }}
 }
 
 func translated(fields map[string]string) map[string]string {
@@ -396,12 +424,14 @@ func (s *generatorStub) Generate(ctx context.Context, request Request) (Result, 
 type translationRepositoryStub struct {
 	reserveCalls int
 	reserveErr   error
+	reservation  Reservation
 	audits       []AuditEvent
 	auditErr     error
 }
 
-func (s *translationRepositoryStub) ReserveTranslation(context.Context, string, time.Time, int, int) error {
+func (s *translationRepositoryStub) ReserveTranslation(_ context.Context, reservation Reservation) error {
 	s.reserveCalls++
+	s.reservation = reservation
 	return s.reserveErr
 }
 

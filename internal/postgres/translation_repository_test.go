@@ -4,12 +4,15 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/HallelujahHomeChurch/hhc-web-api/internal/translation"
 )
 
 func TestReserveTranslationRejectsNonPositiveLimitsBeforeDatabaseAccess(t *testing.T) {
 	repository := New(nil)
-	for _, limits := range [][2]int{{0, 1}, {1, 0}, {-1, 1}, {1, -1}} {
-		if err := repository.ReserveTranslation(context.Background(), "actor-1", time.Now(), limits[0], limits[1]); err == nil {
+	for _, limits := range [][4]int{{0, 1, 1, 1}, {1, 0, 1, 1}, {1, 1, 0, 1}, {1, 1, 1, 0}} {
+		reservation := translation.Reservation{Actor: "actor-1", ResourceType: "news", ResourceID: "resource-1", SourceVersion: 1, TargetLocale: "ja", Now: time.Now(), ActorMinuteLimit: limits[0], DeploymentMinuteLimit: limits[1], ActorDailyLimit: limits[2], DeploymentDailyLimit: limits[3], Cooldown: time.Minute}
+		if err := repository.ReserveTranslation(context.Background(), reservation); err == nil {
 			t.Fatalf("limits %v were accepted", limits)
 		}
 	}

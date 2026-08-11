@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -91,6 +92,14 @@ func handleTranslationError(w http.ResponseWriter, err error) {
 	case errors.Is(err, translation.ErrVersionMismatch):
 		writeError(w, http.StatusPreconditionFailed, "version_mismatch", "The source changed. Reload and try again.")
 	case errors.Is(err, translation.ErrRateLimited):
+		var limited *translation.RateLimitError
+		if errors.As(err, &limited) {
+			seconds := int64(math.Ceil(limited.RetryAfter.Seconds()))
+			if seconds < 1 {
+				seconds = 1
+			}
+			w.Header().Set("Retry-After", strconv.FormatInt(seconds, 10))
+		}
 		writeError(w, http.StatusTooManyRequests, "translation_rate_limited", "The translation request limit was reached.")
 	case errors.Is(err, translation.ErrProvider):
 		writeError(w, http.StatusBadGateway, "translation_provider_error", "The translation provider could not complete the request.")

@@ -149,6 +149,8 @@ func TestOpenAPIDocumentsTranslationPreviewContracts(t *testing.T) {
 		"translation_exists",
 		"version_mismatch",
 		"translation_rate_limited",
+		"Retry-After:",
+		"Integer seconds until the caller may retry this translation target.",
 		"translation_provider_error",
 		"translation_timeout",
 		"translation_disabled",

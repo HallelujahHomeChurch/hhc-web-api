@@ -62,7 +62,8 @@ func run() error {
 		generator := translation.NewAzureOpenAI(cfg.Translation.AzureEndpoint, cfg.Translation.AzureDeployment, cfg.Translation.AzureAPIKey, http.DefaultClient, cfg.Translation.ProviderTimeout)
 		previewer = translation.NewService(contentService, service, generator, repository, translation.ServiceConfig{
 			Deployment: cfg.Translation.AzureDeployment, HandlerTimeout: cfg.Translation.HandlerTimeout, SourceCharLimit: cfg.Translation.SourceCharLimit,
-			ActorLimit: cfg.Translation.ActorLimit, DeploymentLimit: cfg.Translation.DeploymentLimit, Now: time.Now,
+			ActorLimit: cfg.Translation.ActorLimit, DeploymentLimit: cfg.Translation.DeploymentLimit,
+			ActorDailyLimit: cfg.Translation.ActorDailyLimit, DeploymentDailyLimit: cfg.Translation.DeploymentDailyLimit, Cooldown: cfg.Translation.Cooldown, Now: time.Now,
 		})
 	}
 	handler := httpapi.NewWithTranslation(service, contentService, db, assetClient, cfg.AdminAllowedCaller, cfg.DaprAPIToken, cfg.AllowDevCaller, previewer, cfg.Translation.WriteDeadline, time.Now, engagementClient)

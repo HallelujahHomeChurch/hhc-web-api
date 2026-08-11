@@ -742,6 +742,10 @@ components:
       content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
     TranslationRateLimited:
       description: translation_rate_limited
+      headers:
+        Retry-After:
+          description: Integer seconds until the caller may retry this translation target.
+          schema: { type: integer, minimum: 1 }
       content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
     TranslationProviderError:
       description: translation_provider_error
