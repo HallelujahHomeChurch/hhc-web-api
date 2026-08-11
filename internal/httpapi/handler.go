@@ -38,6 +38,9 @@ type Handler struct {
 	db             *sql.DB
 	uploads        assetUploads
 	engagement     engagementProxy
+	translation    TranslationPreviewer
+	translationNow func() time.Time
+	translationTTL time.Duration
 	trustedCaller  string
 	daprAPIToken   string
 	allowDevCaller bool
@@ -47,10 +50,17 @@ func New(service *bulletins.Service, db *sql.DB, uploads assetUploads) *Handler 
 	return NewWithContent(service, nil, db, uploads, "api-gateway", "", false)
 }
 func NewWithContent(service *bulletins.Service, contentService *content.Service, db *sql.DB, uploads assetUploads, trustedCaller, daprAPIToken string, allowDevCaller bool, engagement ...engagementProxy) *Handler {
-	handler := &Handler{service: service, content: contentService, db: db, uploads: uploads, trustedCaller: trustedCaller, daprAPIToken: daprAPIToken, allowDevCaller: allowDevCaller}
+	handler := &Handler{service: service, content: contentService, db: db, uploads: uploads, trustedCaller: trustedCaller, daprAPIToken: daprAPIToken, allowDevCaller: allowDevCaller, translationNow: time.Now, translationTTL: 50 * time.Second}
 	if len(engagement) > 0 {
 		handler.engagement = engagement[0]
 	}
+	return handler
+}
+func NewWithTranslation(service *bulletins.Service, contentService *content.Service, db *sql.DB, uploads assetUploads, trustedCaller, daprAPIToken string, allowDevCaller bool, previewer TranslationPreviewer, writeDeadline time.Duration, now func() time.Time, engagement ...engagementProxy) *Handler {
+	handler := NewWithContent(service, contentService, db, uploads, trustedCaller, daprAPIToken, allowDevCaller, engagement...)
+	handler.translation = previewer
+	handler.translationTTL = writeDeadline
+	handler.translationNow = now
 	return handler
 }
 func (h *Handler) Routes() http.Handler {
@@ -82,6 +92,8 @@ func (h *Handler) Routes() http.Handler {
 	admin.HandleFunc("DELETE /api/admin/bulletins/{issueID}", requireScope("cms:write", h.adminDelete))
 	admin.HandleFunc("GET /api/admin/bulletins/{issueID}/revisions", requireScope("cms:read", h.adminIssueRevisions))
 	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/revisions/{revision}/restore", requireScope("cms:write", h.adminRestoreIssueRevision))
+	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/translation-previews/{targetLocale}", requireScope("cms:write", h.adminBulletinTranslationPreview))
+	admin.HandleFunc("POST /api/admin/content/{module}/{contentID}/translation-previews/{targetLocale}", requireScope("cms:write", h.adminContentTranslationPreview))
 	if h.content != nil {
 		h.contentRoutes(mux, admin)
 	}
@@ -640,6 +652,10 @@ func (w *statusWriter) Write(body []byte) (int, error) {
 		w.status = http.StatusOK
 	}
 	return w.ResponseWriter.Write(body)
+}
+
+func (w *statusWriter) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
 }
 
 func accessLog(next http.Handler) http.Handler {

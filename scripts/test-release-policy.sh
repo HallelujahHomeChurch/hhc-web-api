@@ -34,6 +34,22 @@ grep -q 'enableRbacAuthorization: true' infra/main.bicep
 grep -q "workloadProfileName: 'Consumption'" infra/main.bicep
 grep -q 'cooldownPeriod: 300' infra/main.bicep
 grep -q 'pollingInterval: 30' infra/main.bicep
+grep -Fq 'param cmsTranslationEnabled bool = false' infra/main.bicep
+grep -Fq 'CMS_TRANSLATION_ENABLED: "false"' "$workflow"
+grep -Fq 'var translationConfigured = !empty(azureOpenAIEndpoint) && !empty(azureOpenAIDeployment)' infra/main.bicep
+test "$(grep -Fc 'translationConfigured ? [' infra/main.bicep)" -eq 2
+test "$(grep -Fc 'cmsTranslationEnabled ? [' infra/main.bicep)" -eq 0
+grep -Fq "{ name: 'CMS_TRANSLATION_ENABLED', value: cmsTranslationEnabled ? 'true' : 'false' }" infra/main.bicep
+grep -Fq "keyVaultUrl: '\${runtimeVault.properties.vaultUri}secrets/hhc-web-azure-openai-api-key'" infra/main.bicep
+grep -Fq 'translation_configured=false' "$workflow"
+grep -Fq 'if [[ -n "$AZURE_OPENAI_ENDPOINT" || -n "$AZURE_OPENAI_DEPLOYMENT" ]]; then' "$workflow"
+grep -Fq 'test -n "$AZURE_OPENAI_ENDPOINT" && test -n "$AZURE_OPENAI_DEPLOYMENT"' "$workflow"
+grep -Fq 'if [[ "$CMS_TRANSLATION_ENABLED" == "true" && "$translation_configured" != "true" ]]; then' "$workflow"
+grep -Fq 'if [[ -n "$AZURE_OPENAI_ENDPOINT" && -n "$AZURE_OPENAI_DEPLOYMENT" ]]; then' "$workflow"
+grep -Fq 'az keyvault secret show --vault-name alive-hhw-runtime-kv' "$workflow"
+grep -Fq -- '--name hhc-web-azure-openai-api-key --query name --output tsv --only-show-errors' "$workflow"
+grep -Fq '[[ "$translation_secret_name" == "hhc-web-azure-openai-api-key" ]]' "$workflow"
+test "$(grep -Fc 'cmsTranslationEnabled="$CMS_TRANSLATION_ENABLED" azureOpenAIEndpoint="$AZURE_OPENAI_ENDPOINT" azureOpenAIDeployment="$AZURE_OPENAI_DEPLOYMENT"' "$workflow")" -eq 3
 grep -q 'test-migration-policy-test.sh' .github/workflows/ci.yml
 grep -q 'test-what-if-policy.sh' .github/workflows/ci.yml
 grep -Fq 'test-migration-policy.sh internal/migrations/sql/*.sql' .github/workflows/ci.yml
@@ -48,3 +64,5 @@ if grep -Eq 'PREVIOUS_MIGRATION_IMAGE|Restore migration job|containerapp job upd
   echo 'release workflow must preserve the forward migration image' >&2
   exit 1
 fi
+
+echo 'release policy verified'

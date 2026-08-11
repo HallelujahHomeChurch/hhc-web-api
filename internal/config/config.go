@@ -2,11 +2,27 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 )
+
+const translationGatewayDeadline = 60 * time.Second
+
+type TranslationConfig struct {
+	Enabled         bool
+	AzureEndpoint   string
+	AzureDeployment string
+	AzureAPIKey     string
+	ProviderTimeout time.Duration
+	HandlerTimeout  time.Duration
+	WriteDeadline   time.Duration
+	SourceCharLimit int
+	ActorLimit      int
+	DeploymentLimit int
+}
 
 type Config struct {
 	Port                                                   string
@@ -25,6 +41,7 @@ type Config struct {
 	EnableFiveLocaleBulletinNotificationsAfterFluentReview bool
 	PublicBaseURL                                          string
 	OutboxMaxAttempts                                      int
+	Translation                                            TranslationConfig
 }
 
 func Load() (Config, error) {
@@ -39,12 +56,27 @@ func Load() (Config, error) {
 		EnableFiveLocaleBulletinNotificationsAfterFluentReview: strings.EqualFold(strings.TrimSpace(os.Getenv("ENABLE_FIVE_LOCALE_BULLETIN_NOTIFICATIONS_AFTER_FLUENT_REVIEW")), "true"),
 		PublicBaseURL:     value("PUBLIC_BASE_URL", "http://127.0.0.1:8082/assets"),
 		OutboxMaxAttempts: 20,
+		Translation: TranslationConfig{
+			Enabled:         strings.EqualFold(strings.TrimSpace(os.Getenv("CMS_TRANSLATION_ENABLED")), "true"),
+			AzureEndpoint:   strings.TrimSpace(os.Getenv("AZURE_OPENAI_ENDPOINT")),
+			AzureDeployment: strings.TrimSpace(os.Getenv("AZURE_OPENAI_DEPLOYMENT")),
+			AzureAPIKey:     strings.TrimSpace(os.Getenv("AZURE_OPENAI_API_KEY")),
+			ProviderTimeout: 40 * time.Second,
+			HandlerTimeout:  45 * time.Second,
+			WriteDeadline:   50 * time.Second,
+			SourceCharLimit: 20000,
+			ActorLimit:      10,
+			DeploymentLimit: 60,
+		},
 	}
 	if cfg.DatabaseURL == "" {
 		return Config{}, fmt.Errorf("DATABASE_URL is required")
 	}
 	if strings.EqualFold(cfg.Environment, "production") && cfg.DaprAPIToken == "" {
 		return Config{}, fmt.Errorf("APP_API_TOKEN is required in production")
+	}
+	if err := cfg.Translation.validate(); err != nil {
+		return Config{}, err
 	}
 	var err error
 	if cfg.DBMaxOpenConns, err = positiveInt("DB_MAX_OPEN_CONNS", cfg.DBMaxOpenConns); err != nil {
@@ -75,6 +107,30 @@ func Load() (Config, error) {
 	}
 	return cfg, nil
 }
+
+func (cfg TranslationConfig) validate() error {
+	if cfg.ProviderTimeout <= 0 || cfg.HandlerTimeout <= cfg.ProviderTimeout || cfg.WriteDeadline <= cfg.HandlerTimeout || cfg.WriteDeadline >= translationGatewayDeadline {
+		return fmt.Errorf("invalid translation timeout ordering")
+	}
+	if cfg.SourceCharLimit <= 0 || cfg.ActorLimit <= 0 || cfg.DeploymentLimit <= 0 {
+		return fmt.Errorf("invalid translation limits")
+	}
+	if !cfg.Enabled {
+		return nil
+	}
+	endpoint, err := url.Parse(cfg.AzureEndpoint)
+	if err != nil || !strings.EqualFold(endpoint.Scheme, "https") || endpoint.Host == "" {
+		return fmt.Errorf("AZURE_OPENAI_ENDPOINT must be an HTTPS URL when CMS translation is enabled")
+	}
+	if cfg.AzureDeployment == "" {
+		return fmt.Errorf("AZURE_OPENAI_DEPLOYMENT is required when CMS translation is enabled")
+	}
+	if cfg.AzureAPIKey == "" {
+		return fmt.Errorf("AZURE_OPENAI_API_KEY is required when CMS translation is enabled")
+	}
+	return nil
+}
+
 func value(key, fallback string) string {
 	if current := strings.TrimSpace(os.Getenv(key)); current != "" {
 		return current

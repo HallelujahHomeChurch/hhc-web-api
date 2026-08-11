@@ -73,6 +73,9 @@ jobs:
       AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
       AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
       AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      CMS_TRANSLATION_ENABLED: "false"
+      AZURE_OPENAI_ENDPOINT: ${{ vars.AZURE_OPENAI_ENDPOINT }}
+      AZURE_OPENAI_DEPLOYMENT: ${{ vars.AZURE_OPENAI_DEPLOYMENT }}
       RELEASE_CONFIRMATION: ${{ github.event_name == 'push' && 'deploy-hhc-web-api-production' || inputs.confirmation }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -83,6 +86,27 @@ jobs:
           for name in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID; do
             test -n "${!name:-}" || { echo "Missing repository variable: ${name}" >&2; exit 1; }
           done
+          translation_configured=false
+          if [[ -n "$AZURE_OPENAI_ENDPOINT" || -n "$AZURE_OPENAI_DEPLOYMENT" ]]; then
+            test -n "$AZURE_OPENAI_ENDPOINT" && test -n "$AZURE_OPENAI_DEPLOYMENT" || {
+              echo "AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_DEPLOYMENT must be configured together" >&2
+              exit 1
+            }
+            case "$AZURE_OPENAI_ENDPOINT" in
+              https://*) ;;
+              *) echo "AZURE_OPENAI_ENDPOINT must use HTTPS" >&2; exit 1 ;;
+            esac
+            translation_configured=true
+          fi
+          case "$CMS_TRANSLATION_ENABLED" in
+            false) ;;
+            true) ;;
+            *) echo "CMS_TRANSLATION_ENABLED must be true or false" >&2; exit 1 ;;
+          esac
+          if [[ "$CMS_TRANSLATION_ENABLED" == "true" && "$translation_configured" != "true" ]]; then
+            echo "Azure OpenAI provider configuration is required when CMS translation is enabled" >&2
+            exit 1
+          fi
       - name: Set image tag
         run: echo "IMAGE_TAG=main-${GITHUB_SHA::7}" >> "$GITHUB_ENV"
       - name: Sign in to Azure with OIDC
@@ -101,6 +125,11 @@ jobs:
           [[ "$(az role assignment list --scope "$runtime_vault" --assignee-object-id "$runtime_principal" --query "[?roleDefinitionName=='Key Vault Secrets User'] | length(@)" -o tsv --only-show-errors)" == "1" ]]
           [[ "$(az role assignment list --scope "$migration_vault" --assignee-object-id "$migration_principal" --query "[?roleDefinitionName=='Key Vault Secrets User'] | length(@)" -o tsv --only-show-errors)" == "1" ]]
           [[ "$(az keyvault show -g "$RESOURCE_GROUP" -n alive-vault --query "properties.accessPolicies[?objectId=='${runtime_principal}'] | length(@)" -o tsv --only-show-errors)" == "0" ]]
+          if [[ -n "$AZURE_OPENAI_ENDPOINT" && -n "$AZURE_OPENAI_DEPLOYMENT" ]]; then
+            translation_secret_name="$(az keyvault secret show --vault-name alive-hhw-runtime-kv \
+              --name hhc-web-azure-openai-api-key --query name --output tsv --only-show-errors)"
+            [[ "$translation_secret_name" == "hhc-web-azure-openai-api-key" ]]
+          fi
       - name: Capture rollback revision
         run: |
           resolve_image_ref() {
@@ -150,7 +179,7 @@ jobs:
           az deployment group what-if \
             --resource-group "$RESOURCE_GROUP" \
             --template-file infra/main.bicep \
-            --parameters migrationImage="$IMAGE_REF" runtimeImage="$IMAGE_REF" release="$GITHUB_SHA" deployRuntime=true provisionPermissions=false retainLegacyRuntimeSecret=false \
+            --parameters migrationImage="$IMAGE_REF" runtimeImage="$IMAGE_REF" release="$GITHUB_SHA" deployRuntime=true provisionPermissions=false retainLegacyRuntimeSecret=false cmsTranslationEnabled="$CMS_TRANSLATION_ENABLED" azureOpenAIEndpoint="$AZURE_OPENAI_ENDPOINT" azureOpenAIDeployment="$AZURE_OPENAI_DEPLOYMENT" \
             --validation-level Provider \
             --result-format FullResourcePayloads \
             --no-pretty-print \
@@ -164,7 +193,7 @@ jobs:
             --name "hhc-web-migrate-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
             --resource-group "$RESOURCE_GROUP" \
             --template-file infra/main.bicep \
-            --parameters migrationImage="$IMAGE_REF" runtimeImage="$IMAGE_REF" release="$GITHUB_SHA" deployRuntime=false provisionPermissions=false retainLegacyRuntimeSecret=false \
+            --parameters migrationImage="$IMAGE_REF" runtimeImage="$IMAGE_REF" release="$GITHUB_SHA" deployRuntime=false provisionPermissions=false retainLegacyRuntimeSecret=false cmsTranslationEnabled="$CMS_TRANSLATION_ENABLED" azureOpenAIEndpoint="$AZURE_OPENAI_ENDPOINT" azureOpenAIDeployment="$AZURE_OPENAI_DEPLOYMENT" \
             --only-show-errors --output none
       - name: Run migrations
         run: |
@@ -193,7 +222,7 @@ jobs:
             --name "hhc-web-runtime-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
             --resource-group "$RESOURCE_GROUP" \
             --template-file infra/main.bicep \
-            --parameters migrationImage="$IMAGE_REF" runtimeImage="$IMAGE_REF" release="$GITHUB_SHA" deployRuntime=true provisionPermissions=false retainLegacyRuntimeSecret=false \
+            --parameters migrationImage="$IMAGE_REF" runtimeImage="$IMAGE_REF" release="$GITHUB_SHA" deployRuntime=true provisionPermissions=false retainLegacyRuntimeSecret=false cmsTranslationEnabled="$CMS_TRANSLATION_ENABLED" azureOpenAIEndpoint="$AZURE_OPENAI_ENDPOINT" azureOpenAIDeployment="$AZURE_OPENAI_DEPLOYMENT" \
             --only-show-errors --output none
       - name: Wait for API revision
         run: |

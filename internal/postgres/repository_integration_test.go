@@ -7,7 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"reflect"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -15,8 +18,190 @@ import (
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/content"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/migrations"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/publication"
+	"github.com/HallelujahHomeChurch/hhc-web-api/internal/translation"
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
+
+func TestTranslationRateLimitsAndAudit(t *testing.T) {
+	databaseURL := os.Getenv("HHW_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("HHW_TEST_DATABASE_URL is not configured")
+	}
+	db, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	if err := migrations.Run(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	repository := New(db)
+	now := time.Date(2026, 8, 11, 12, 34, 45, 0, time.FixedZone("test", 8*60*60))
+	reset := func(t *testing.T) {
+		t.Helper()
+		if _, err := db.ExecContext(ctx, `DELETE FROM hhc_web.translation_rate_limit; DELETE FROM hhc_web.cms_audit_event WHERE action='translation_preview'`); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	t.Run("actor and deployment limits roll back atomically", func(t *testing.T) {
+		reset(t)
+		if err := repository.ReserveTranslation(ctx, "actor-a", now, 1, 3); err != nil {
+			t.Fatal(err)
+		}
+		if err := repository.ReserveTranslation(ctx, "actor-a", now, 1, 3); !errors.Is(err, translation.ErrRateLimited) {
+			t.Fatalf("actor limit error = %v", err)
+		}
+		var deploymentCount int
+		if err := db.QueryRowContext(ctx, `SELECT count FROM hhc_web.translation_rate_limit WHERE scope='deployment'`).Scan(&deploymentCount); err != nil {
+			t.Fatal(err)
+		}
+		if deploymentCount != 1 {
+			t.Fatalf("deployment count after actor rollback = %d", deploymentCount)
+		}
+		for _, actor := range []string{"actor-b", "actor-c"} {
+			if err := repository.ReserveTranslation(ctx, actor, now, 1, 3); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := repository.ReserveTranslation(ctx, "actor-d", now, 1, 3); !errors.Is(err, translation.ErrRateLimited) {
+			t.Fatalf("deployment limit error = %v", err)
+		}
+		if err := db.QueryRowContext(ctx, `SELECT count FROM hhc_web.translation_rate_limit WHERE scope='deployment'`).Scan(&deploymentCount); err != nil {
+			t.Fatal(err)
+		}
+		if deploymentCount != 3 {
+			t.Fatalf("deployment count = %d", deploymentCount)
+		}
+	})
+
+	t.Run("minute rollover", func(t *testing.T) {
+		reset(t)
+		if err := repository.ReserveTranslation(ctx, "actor-a", now, 1, 1); err != nil {
+			t.Fatal(err)
+		}
+		if err := repository.ReserveTranslation(ctx, "actor-a", now.Add(time.Minute), 1, 1); err != nil {
+			t.Fatal(err)
+		}
+		var rows int
+		if err := db.QueryRowContext(ctx, `SELECT count(*) FROM hhc_web.translation_rate_limit`).Scan(&rows); err != nil {
+			t.Fatal(err)
+		}
+		if rows != 4 {
+			t.Fatalf("counter rows = %d", rows)
+		}
+	})
+
+	t.Run("concurrent actor limit", func(t *testing.T) {
+		reset(t)
+		runConcurrentReservations(t, repository, now, 20, 5, 20, func(int) string { return "same-actor" }, 5)
+		var actorCount, deploymentCount int
+		if err := db.QueryRowContext(ctx, `SELECT count FROM hhc_web.translation_rate_limit WHERE scope='actor:same-actor'`).Scan(&actorCount); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.QueryRowContext(ctx, `SELECT count FROM hhc_web.translation_rate_limit WHERE scope='deployment'`).Scan(&deploymentCount); err != nil {
+			t.Fatal(err)
+		}
+		if actorCount != 5 || deploymentCount != 5 {
+			t.Fatalf("actor count = %d, deployment count = %d", actorCount, deploymentCount)
+		}
+	})
+
+	t.Run("concurrent deployment limit", func(t *testing.T) {
+		reset(t)
+		runConcurrentReservations(t, repository, now, 20, 1, 7, func(index int) string { return fmt.Sprintf("actor-%d", index) }, 7)
+		var deploymentCount, actorCount int
+		if err := db.QueryRowContext(ctx, `SELECT count FROM hhc_web.translation_rate_limit WHERE scope='deployment'`).Scan(&deploymentCount); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.QueryRowContext(ctx, `SELECT COALESCE(sum(count),0) FROM hhc_web.translation_rate_limit WHERE scope LIKE 'actor:%'`).Scan(&actorCount); err != nil {
+			t.Fatal(err)
+		}
+		if deploymentCount != 7 || actorCount != 7 {
+			t.Fatalf("deployment count = %d, actor count = %d", deploymentCount, actorCount)
+		}
+	})
+
+	t.Run("old windows are deleted", func(t *testing.T) {
+		reset(t)
+		if _, err := db.ExecContext(ctx, `INSERT INTO hhc_web.translation_rate_limit(scope,window_start,count) VALUES('old', $1, 1)`, now.UTC().Add(-2*time.Hour).Truncate(time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+		if err := repository.ReserveTranslation(ctx, "actor-a", now, 1, 1); err != nil {
+			t.Fatal(err)
+		}
+		var old int
+		if err := db.QueryRowContext(ctx, `SELECT count(*) FROM hhc_web.translation_rate_limit WHERE scope='old'`).Scan(&old); err != nil {
+			t.Fatal(err)
+		}
+		if old != 0 {
+			t.Fatalf("old counter rows = %d", old)
+		}
+	})
+
+	t.Run("audit stores metadata allowlist only", func(t *testing.T) {
+		reset(t)
+		event := translation.AuditEvent{
+			Action: "translation_preview", ResourceType: "news", ResourceID: "10000000-0000-4000-8000-000000000001", Actor: "actor-1",
+			SourceVersion: 12, SourceLocale: "zh-Hant", TargetLocale: "ja", Provider: "azure-openai", Deployment: "cms-translator",
+			PromptVersion: translation.PromptVersion, CharacterCount: 321, Duration: 1250 * time.Millisecond, Outcome: "succeeded", CreatedAt: now,
+		}
+		if err := repository.RecordTranslationAudit(ctx, event); err != nil {
+			t.Fatal(err)
+		}
+		var action, resourceType, resourceID, actor string
+		var payload []byte
+		var createdAt time.Time
+		if err := db.QueryRowContext(ctx, `SELECT action,resource_type,resource_id::text,actor,payload_json,created_at FROM hhc_web.cms_audit_event WHERE resource_id=$1`, event.ResourceID).Scan(&action, &resourceType, &resourceID, &actor, &payload, &createdAt); err != nil {
+			t.Fatal(err)
+		}
+		if action != event.Action || resourceType != event.ResourceType || resourceID != event.ResourceID || actor != event.Actor || !createdAt.Equal(now.UTC()) {
+			t.Fatalf("audit columns = %q %q %q %q %s", action, resourceType, resourceID, actor, createdAt)
+		}
+		var metadata map[string]any
+		if err := json.Unmarshal(payload, &metadata); err != nil {
+			t.Fatal(err)
+		}
+		want := map[string]any{
+			"sourceVersion": float64(12), "sourceLocale": "zh-Hant", "targetLocale": "ja", "provider": "azure-openai", "deployment": "cms-translator",
+			"promptVersion": translation.PromptVersion, "characterCount": float64(321), "durationMs": float64(1250), "outcome": "succeeded",
+		}
+		if !reflect.DeepEqual(metadata, want) {
+			t.Fatalf("audit metadata = %#v", metadata)
+		}
+	})
+}
+
+func runConcurrentReservations(t *testing.T, repository *Repository, now time.Time, attempts, actorLimit, deploymentLimit int, actor func(int) string, wantSuccess int32) {
+	t.Helper()
+	start := make(chan struct{})
+	errorsFound := make(chan error, attempts)
+	var success atomic.Int32
+	var wait sync.WaitGroup
+	for index := 0; index < attempts; index++ {
+		wait.Add(1)
+		go func(index int) {
+			defer wait.Done()
+			<-start
+			err := repository.ReserveTranslation(context.Background(), actor(index), now, actorLimit, deploymentLimit)
+			if err == nil {
+				success.Add(1)
+			} else if !errors.Is(err, translation.ErrRateLimited) {
+				errorsFound <- err
+			}
+		}(index)
+	}
+	close(start)
+	wait.Wait()
+	close(errorsFound)
+	for err := range errorsFound {
+		t.Errorf("reservation error = %v", err)
+	}
+	if success.Load() != wantSuccess {
+		t.Fatalf("successful reservations = %d, want %d", success.Load(), wantSuccess)
+	}
+}
 
 func TestRepositoryPublishWaitsForAssetWorkflow(t *testing.T) {
 	databaseURL := os.Getenv("HHW_TEST_DATABASE_URL")

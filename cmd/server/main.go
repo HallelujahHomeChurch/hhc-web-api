@@ -19,6 +19,7 @@ import (
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/httpapi"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/postgres"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/publication"
+	"github.com/HallelujahHomeChurch/hhc-web-api/internal/translation"
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
@@ -53,9 +54,18 @@ func run() error {
 	db.SetConnMaxLifetime(cfg.DBConnMaxLifetime)
 	repository := postgres.New(db, cfg.EnableFiveLocaleBulletinNotificationsAfterFluentReview)
 	service := bulletins.NewService(repository, time.Now)
+	contentService := content.NewService(repository, time.Now)
 	assetClient := assetclient.New(cfg.AssetAPIBaseURL, cfg.InternalCallerAppID, cfg.PublicBaseURL)
 	engagementClient := engagementclient.New(cfg.EngagementAPIBaseURL, cfg.InternalCallerAppID)
-	handler := httpapi.NewWithContent(service, content.NewService(repository, time.Now), db, assetClient, cfg.AdminAllowedCaller, cfg.DaprAPIToken, cfg.AllowDevCaller, engagementClient)
+	var previewer httpapi.TranslationPreviewer
+	if cfg.Translation.Enabled {
+		generator := translation.NewAzureOpenAI(cfg.Translation.AzureEndpoint, cfg.Translation.AzureDeployment, cfg.Translation.AzureAPIKey, http.DefaultClient, cfg.Translation.ProviderTimeout)
+		previewer = translation.NewService(contentService, service, generator, repository, translation.ServiceConfig{
+			Deployment: cfg.Translation.AzureDeployment, HandlerTimeout: cfg.Translation.HandlerTimeout, SourceCharLimit: cfg.Translation.SourceCharLimit,
+			ActorLimit: cfg.Translation.ActorLimit, DeploymentLimit: cfg.Translation.DeploymentLimit, Now: time.Now,
+		})
+	}
+	handler := httpapi.NewWithTranslation(service, contentService, db, assetClient, cfg.AdminAllowedCaller, cfg.DaprAPIToken, cfg.AllowDevCaller, previewer, cfg.Translation.WriteDeadline, time.Now, engagementClient)
 	assets := publication.NewAssetAdapter(assetClient)
 	worker := publication.NewWorker(repository, assets, cfg.OutboxMaxAttempts, engagementClient)
 	go func() {

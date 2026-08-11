@@ -15,9 +15,13 @@ param deployRuntime bool = true
 param deployMigrationJob bool = true
 param provisionPermissions bool = true
 param retainLegacyRuntimeSecret bool = false
+param cmsTranslationEnabled bool = false
+param azureOpenAIEndpoint string = ''
+param azureOpenAIDeployment string = ''
 
 var acrPullRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
 var keyVaultSecretsUserRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')
+var translationConfigured = !empty(azureOpenAIEndpoint) && !empty(azureOpenAIDeployment)
 var commonEnvironment = [
   { name: 'PORT', value: '8082' }
   { name: 'ENVIRONMENT', value: 'production' }
@@ -31,9 +35,15 @@ var commonEnvironment = [
   { name: 'ADMIN_ALLOWED_CALLER_APP_ID', value: 'api-gateway' }
   { name: 'ALLOW_DEV_CALLER_HEADER', value: 'false' }
   { name: 'ENABLE_FIVE_LOCALE_BULLETIN_NOTIFICATIONS_AFTER_FLUENT_REVIEW', value: 'false' }
+  { name: 'CMS_TRANSLATION_ENABLED', value: cmsTranslationEnabled ? 'true' : 'false' }
   { name: 'PUBLIC_BASE_URL', value: 'https://www.alive.org.tw/assets' }
   { name: 'OUTBOX_MAX_ATTEMPTS', value: '20' }
 ]
+var translationEnvironment = translationConfigured ? [
+  { name: 'AZURE_OPENAI_ENDPOINT', value: azureOpenAIEndpoint }
+  { name: 'AZURE_OPENAI_DEPLOYMENT', value: azureOpenAIDeployment }
+  { name: 'AZURE_OPENAI_API_KEY', secretRef: 'azure-openai-api-key' }
+] : []
 
 resource environment 'Microsoft.App/managedEnvironments@2024-03-01' existing = {
   name: containerAppEnvironmentName
@@ -166,7 +176,13 @@ resource api 'Microsoft.App/containerApps@2025-01-01' = if (deployRuntime) {
           keyVaultUrl: '${runtimeVault.properties.vaultUri}secrets/database-url'
           identity: apiIdentity.id
         }
-      ], retainLegacyRuntimeSecret ? [
+      ], translationConfigured ? [
+        {
+          name: 'azure-openai-api-key'
+          keyVaultUrl: '${runtimeVault.properties.vaultUri}secrets/hhc-web-azure-openai-api-key'
+          identity: apiIdentity.id
+        }
+      ] : [], retainLegacyRuntimeSecret ? [
         {
           name: 'database-url'
           keyVaultUrl: '${legacyVault.properties.vaultUri}secrets/hhc-web-database-url'
@@ -179,7 +195,7 @@ resource api 'Microsoft.App/containerApps@2025-01-01' = if (deployRuntime) {
         {
           name: 'hhc-web-api'
           image: runtimeImage
-          env: concat(commonEnvironment, [
+          env: concat(commonEnvironment, translationEnvironment, [
             { name: 'DATABASE_URL', secretRef: 'database-url-v2' }
           ])
           resources: {
