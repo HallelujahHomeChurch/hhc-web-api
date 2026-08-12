@@ -63,6 +63,9 @@ func TestServicePreviewsOnlyModuleFieldsFromSavedTraditionalChinese(t *testing.T
 			if preview.SourceLocale != "zh-Hant" || preview.TargetLocale != test.request.TargetLocale || preview.SourceVersion != 7 || !reflect.DeepEqual(preview.Translation, translated(test.wantFields)) {
 				t.Fatalf("preview = %#v", preview)
 			}
+			if preview.RetryAfterSeconds != 600 {
+				t.Fatalf("retry after = %d, want 600", preview.RetryAfterSeconds)
+			}
 			if repository.reserveCalls != 1 || len(repository.audits) != 1 || repository.audits[0].Outcome != OutcomeSuccess {
 				t.Fatalf("reserve calls = %d, audits = %#v", repository.reserveCalls, repository.audits)
 			}

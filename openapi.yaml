@@ -1127,11 +1127,12 @@ components:
     ContentTranslationPreview:
       type: object
       additionalProperties: false
-      required: [sourceLocale, targetLocale, sourceVersion, translation]
+      required: [sourceLocale, targetLocale, sourceVersion, translation, retryAfterSeconds]
       properties:
         sourceLocale: { type: string, const: zh-Hant }
         targetLocale: { $ref: '#/components/schemas/ContentTranslationTargetLocale' }
         sourceVersion: { type: integer, format: int64, minimum: 1 }
+        retryAfterSeconds: { type: integer, format: int64, minimum: 1, description: Integer seconds until this resource target may be translated again. }
         translation:
           oneOf:
             - $ref: '#/components/schemas/NewsTranslationPreview'
@@ -1140,20 +1141,22 @@ components:
     BulletinTranslationPreview:
       type: object
       additionalProperties: false
-      required: [sourceLocale, targetLocale, sourceVersion, translation]
+      required: [sourceLocale, targetLocale, sourceVersion, translation, retryAfterSeconds]
       properties:
         sourceLocale: { type: string, const: zh-Hant }
         targetLocale: { $ref: '#/components/schemas/BulletinTranslationTargetEdition' }
         sourceVersion: { type: integer, format: int64, minimum: 1 }
+        retryAfterSeconds: { type: integer, format: int64, minimum: 1, description: Integer seconds until this resource target may be translated again. }
         translation: { $ref: '#/components/schemas/BulletinTranslationFields' }
     CampaignTranslationPreview:
       type: object
       additionalProperties: false
-      required: [sourceLocale, targetLocale, sourceVersion, translation]
+      required: [sourceLocale, targetLocale, sourceVersion, translation, retryAfterSeconds]
       properties:
         sourceLocale: { type: string, const: zh-Hant }
         targetLocale: { $ref: '#/components/schemas/CampaignTranslationTargetLocale' }
         sourceVersion: { type: integer, format: int64, minimum: 1 }
+        retryAfterSeconds: { type: integer, format: int64, minimum: 1, description: Integer seconds until this resource target may be translated again. }
         translation: { $ref: '#/components/schemas/CampaignTranslationFields' }
     CampaignTranslationFields:
       type: object

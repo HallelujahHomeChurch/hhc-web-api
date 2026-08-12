@@ -159,6 +159,18 @@ func TestTranslationPreviewReturnsExactRetryAfter(t *testing.T) {
 	}
 }
 
+func TestTranslationPreviewReturnsSuccessCooldown(t *testing.T) {
+	handler := testTranslationHandler(&translationPreviewerStub{preview: translation.Preview{SourceLocale: "zh-Hant", TargetLocale: "en", SourceVersion: 3, Translation: map[string]string{"title": "Title"}, RetryAfterSeconds: 600}}, time.Now(), 50*time.Second)
+	request := httptest.NewRequest(http.MethodPost, "/api/admin/content/videos/10000000-0000-4000-8000-000000000001/translation-previews/en", strings.NewReader(`{"sourceLocale":"zh-Hant","replaceExisting":false}`))
+	trusted(request, "cms:write")
+	request.Header.Set("If-Match", `"3"`)
+	response := newDeadlineRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"retryAfterSeconds":600`) {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
 func TestTranslationPreviewDisabledAndDeadlineFailureStopService(t *testing.T) {
 	now := time.Date(2026, 8, 11, 8, 0, 0, 0, time.UTC)
 	for _, test := range []struct {

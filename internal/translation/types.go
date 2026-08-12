@@ -76,10 +76,11 @@ type PreviewRequest struct {
 }
 
 type Preview struct {
-	SourceLocale  string            `json:"sourceLocale"`
-	TargetLocale  string            `json:"targetLocale"`
-	SourceVersion int64             `json:"sourceVersion"`
-	Translation   map[string]string `json:"translation"`
+	SourceLocale      string            `json:"sourceLocale"`
+	TargetLocale      string            `json:"targetLocale"`
+	SourceVersion     int64             `json:"sourceVersion"`
+	Translation       map[string]string `json:"translation"`
+	RetryAfterSeconds int64             `json:"retryAfterSeconds"`
 }
 
 type AuditEvent struct {

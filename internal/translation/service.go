@@ -132,7 +132,14 @@ func (s *Service) Preview(ctx context.Context, request PreviewRequest) (Preview,
 	for key, value := range result.Fields {
 		result.Fields[key] = normalizeLines(value)
 	}
-	preview := Preview{SourceLocale: request.SourceLocale, TargetLocale: request.TargetLocale, SourceVersion: version, Translation: result.Fields}
+	retryAfterSeconds := int64(s.config.Cooldown / time.Second)
+	if s.config.Cooldown%time.Second != 0 {
+		retryAfterSeconds++
+	}
+	if retryAfterSeconds < 1 {
+		retryAfterSeconds = 1
+	}
+	preview := Preview{SourceLocale: request.SourceLocale, TargetLocale: request.TargetLocale, SourceVersion: version, Translation: result.Fields, RetryAfterSeconds: retryAfterSeconds}
 	return s.finish(ctx, state, started, OutcomeSuccess, preview, nil)
 }
 
