@@ -35,7 +35,7 @@ grep -q "workloadProfileName: 'Consumption'" infra/main.bicep
 grep -q 'cooldownPeriod: 300' infra/main.bicep
 grep -q 'pollingInterval: 30' infra/main.bicep
 grep -Fq 'param cmsTranslationEnabled bool = false' infra/main.bicep
-grep -Fq 'CMS_TRANSLATION_ENABLED: "false"' "$workflow"
+grep -Fq 'CMS_TRANSLATION_ENABLED: "true"' "$workflow"
 grep -Fq 'var translationConfigured = !empty(azureOpenAIEndpoint) && !empty(azureOpenAIDeployment)' infra/main.bicep
 test "$(grep -Fc 'translationConfigured ? [' infra/main.bicep)" -eq 2
 test "$(grep -Fc 'cmsTranslationEnabled ? [' infra/main.bicep)" -eq 0

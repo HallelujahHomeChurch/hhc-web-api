@@ -73,7 +73,7 @@ jobs:
       AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
       AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
       AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-      CMS_TRANSLATION_ENABLED: "false"
+      CMS_TRANSLATION_ENABLED: "true"
       AZURE_OPENAI_ENDPOINT: ${{ vars.AZURE_OPENAI_ENDPOINT }}
       AZURE_OPENAI_DEPLOYMENT: ${{ vars.AZURE_OPENAI_DEPLOYMENT }}
       RELEASE_CONFIRMATION: ${{ github.event_name == 'push' && 'deploy-hhc-web-api-production' || inputs.confirmation }}
