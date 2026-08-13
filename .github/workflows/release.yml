@@ -76,6 +76,8 @@ jobs:
       CMS_TRANSLATION_ENABLED: "true"
       AZURE_OPENAI_ENDPOINT: ${{ vars.AZURE_OPENAI_ENDPOINT }}
       AZURE_OPENAI_DEPLOYMENT: ${{ vars.AZURE_OPENAI_DEPLOYMENT }}
+      AZURE_OPENAI_ACCOUNT_NAME: "bible-text-embedding-resource"
+      AZURE_OPENAI_RAI_POLICY: "hhc-cms-translation-v1"
       RELEASE_CONFIRMATION: ${{ github.event_name == 'push' && 'deploy-hhc-web-api-production' || inputs.confirmation }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -126,6 +128,8 @@ jobs:
           [[ "$(az role assignment list --scope "$migration_vault" --assignee-object-id "$migration_principal" --query "[?roleDefinitionName=='Key Vault Secrets User'] | length(@)" -o tsv --only-show-errors)" == "1" ]]
           [[ "$(az keyvault show -g "$RESOURCE_GROUP" -n alive-vault --query "properties.accessPolicies[?objectId=='${runtime_principal}'] | length(@)" -o tsv --only-show-errors)" == "0" ]]
           if [[ -n "$AZURE_OPENAI_ENDPOINT" && -n "$AZURE_OPENAI_DEPLOYMENT" ]]; then
+            account_id="$(az cognitiveservices account show -g "$RESOURCE_GROUP" -n "$AZURE_OPENAI_ACCOUNT_NAME" --query id -o tsv --only-show-errors)"
+            test -n "$account_id"
             translation_secret_name="$(az keyvault secret show --vault-name alive-hhw-runtime-kv \
               --name hhc-web-azure-openai-api-key --query name --output tsv --only-show-errors)"
             [[ "$translation_secret_name" == "hhc-web-azure-openai-api-key" ]]
@@ -238,6 +242,22 @@ jobs:
           done
           echo "HHC web API did not become ready" >&2
           exit 1
+      - name: Verify translation guardrail
+        run: |
+          account_id="$(az cognitiveservices account show -g "$RESOURCE_GROUP" -n "$AZURE_OPENAI_ACCOUNT_NAME" --query id -o tsv --only-show-errors)"
+          az rest --method get \
+            --url "https://management.azure.com${account_id}/raiPolicies/$AZURE_OPENAI_RAI_POLICY?api-version=2024-10-01" \
+            --only-show-errors --output json > rai-policy.json
+          jq -e --arg name "$AZURE_OPENAI_RAI_POLICY" '
+            . as $policy
+            | $policy.name == $name
+            and $policy.properties.basePolicyName == "Microsoft.DefaultV2"
+            and $policy.properties.mode == "Blocking"
+            and (["Hate", "Sexual", "Violence", "Selfharm"] | all(. as $name |
+              ["Prompt", "Completion"] | all(. as $source |
+                [$policy.properties.contentFilters[] | select(.name == $name and .source == $source and .enabled == true and .blocking == true and .severityThreshold == "High")] | length == 1)))
+            and ([$policy.properties.contentFilters[] | select(.name == "Jailbreak" and .source == "Prompt" and .enabled == true and .blocking == false)] | length == 1)
+          ' rai-policy.json >/dev/null
       - name: Smoke HHC web API release
         run: ./scripts/smoke-release.sh
       - name: Roll back failed runtime

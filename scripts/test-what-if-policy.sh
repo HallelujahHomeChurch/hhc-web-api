@@ -8,6 +8,7 @@ cat >"$tmp/safe.json" <<'JSON'
 {"changes":[
   {"resourceId":"/subscriptions/test/resourceGroups/alive/providers/Microsoft.App/containerApps/hhc-web-api","changeType":"Modify","delta":[{"path":"properties.template.containers","propertyChangeType":"Array","children":[{"path":"image","propertyChangeType":"Modify"}]}]},
   {"resourceId":"/subscriptions/test/resourceGroups/alive/providers/Microsoft.App/jobs/hhc-web-migrate","changeType":"Modify","delta":[]},
+  {"resourceId":"/subscriptions/test/resourceGroups/alive/providers/Microsoft.CognitiveServices/accounts/bible-text-embedding-resource/raiPolicies/hhc-cms-translation-v1","changeType":"Create","delta":[]},
   {"resourceId":"/subscriptions/test/resourceGroups/alive/providers/Microsoft.KeyVault/vaults/other","changeType":"Ignore","delta":[]}
 ]}
 JSON
@@ -44,5 +45,13 @@ cat >"$tmp/unrelated-modify.json" <<'JSON'
 JSON
 if ./scripts/check-what-if.sh "$tmp/unrelated-modify.json" 2>/dev/null; then
   echo "unrelated infrastructure modification was not rejected" >&2
+  exit 1
+fi
+
+cat >"$tmp/unrelated-ai-policy.json" <<'JSON'
+{"changes":[{"resourceId":"/subscriptions/test/resourceGroups/alive/providers/Microsoft.CognitiveServices/accounts/bible-text-embedding-resource/raiPolicies/other-policy","changeType":"Create","delta":[]}]}
+JSON
+if ./scripts/check-what-if.sh "$tmp/unrelated-ai-policy.json" 2>/dev/null; then
+  echo "unrelated AI policy creation was not rejected" >&2
   exit 1
 fi

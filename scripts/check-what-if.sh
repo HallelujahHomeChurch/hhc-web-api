@@ -10,9 +10,10 @@ jq -e '
   and
   ([.changes[]
     | select(.changeType != "Ignore" and .changeType != "NoChange")
-    | select(
-        .changeType != "Modify"
-        or ((.resourceId | endswith("/Microsoft.App/containerApps/hhc-web-api") or endswith("/Microsoft.App/jobs/hhc-web-migrate")) | not)
-      )
+    | select((
+        (.changeType == "Modify" and (.resourceId | endswith("/Microsoft.App/containerApps/hhc-web-api") or endswith("/Microsoft.App/jobs/hhc-web-migrate")))
+        or
+        ((.changeType == "Create" or .changeType == "Modify") and (.resourceId | endswith("/Microsoft.CognitiveServices/accounts/bible-text-embedding-resource/raiPolicies/hhc-cms-translation-v1")))
+      ) | not)
   ] | length == 0)
 ' "$file" >/dev/null

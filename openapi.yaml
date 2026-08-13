@@ -73,6 +73,7 @@ paths:
         '404': { $ref: '#/components/responses/TranslationNotFound' }
         '409': { $ref: '#/components/responses/TranslationExists' }
         '412': { $ref: '#/components/responses/TranslationVersionMismatch' }
+        '422': { $ref: '#/components/responses/TranslationContentFiltered' }
         '429': { $ref: '#/components/responses/TranslationRateLimited' }
         '500': { $ref: '#/components/responses/Error' }
         '502': { $ref: '#/components/responses/TranslationProviderError' }
@@ -153,6 +154,7 @@ paths:
         '404': { $ref: '#/components/responses/TranslationNotFound' }
         '409': { $ref: '#/components/responses/TranslationExists' }
         '412': { $ref: '#/components/responses/TranslationVersionMismatch' }
+        '422': { $ref: '#/components/responses/TranslationContentFiltered' }
         '429': { $ref: '#/components/responses/TranslationRateLimited' }
         '500': { $ref: '#/components/responses/Error' }
         '502': { $ref: '#/components/responses/TranslationProviderError' }
@@ -477,6 +479,7 @@ paths:
         '404': { $ref: '#/components/responses/TranslationNotFound' }
         '409': { $ref: '#/components/responses/TranslationExists' }
         '412': { $ref: '#/components/responses/TranslationVersionMismatch' }
+        '422': { $ref: '#/components/responses/TranslationContentFiltered' }
         '429': { $ref: '#/components/responses/TranslationRateLimited' }
         '500': { $ref: '#/components/responses/Error' }
         '502': { $ref: '#/components/responses/TranslationProviderError' }
@@ -571,6 +574,7 @@ paths:
         '404': { $ref: '#/components/responses/TranslationNotFound' }
         '409': { $ref: '#/components/responses/TranslationExists' }
         '412': { $ref: '#/components/responses/TranslationVersionMismatch' }
+        '422': { $ref: '#/components/responses/TranslationContentFiltered' }
         '429': { $ref: '#/components/responses/TranslationRateLimited' }
         '500': { $ref: '#/components/responses/Error' }
         '502': { $ref: '#/components/responses/TranslationProviderError' }
@@ -797,6 +801,9 @@ components:
         Retry-After:
           description: Integer seconds until the caller may retry this translation target.
           schema: { type: integer, minimum: 1 }
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+    TranslationContentFiltered:
+      description: translation_content_filtered
       content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
     TranslationProviderError:
       description: translation_provider_error

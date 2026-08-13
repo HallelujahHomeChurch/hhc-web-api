@@ -244,23 +244,25 @@ func TestServiceMapsBoundedFailuresAndAuditsEveryOutcome(t *testing.T) {
 		generator   *generatorStub
 		wantErr     error
 		wantOutcome string
+		wantRelease int
 	}{
 		{name: "not found", contentErr: content.ErrNotFound, generator: &generatorStub{}, wantErr: ErrNotFound, wantOutcome: OutcomeNotFound},
 		{name: "rate limit", reserveErr: ErrRateLimited, generator: &generatorStub{}, wantErr: ErrRateLimited, wantOutcome: OutcomeRateLimited},
-		{name: "provider", generator: &generatorStub{err: errors.New("private provider body")}, wantErr: ErrProvider, wantOutcome: OutcomeProviderFailure},
-		{name: "timeout", generator: &generatorStub{err: context.DeadlineExceeded}, wantErr: ErrTimeout, wantOutcome: OutcomeTimeout},
-		{name: "unknown output", generator: &generatorStub{result: Result{Fields: map[string]string{"title": "譯", "extra": "private output"}}}, wantErr: ErrProvider, wantOutcome: OutcomeOutputValidationFailure},
-		{name: "missing title", generator: &generatorStub{result: Result{Fields: map[string]string{}}}, wantErr: ErrProvider, wantOutcome: OutcomeOutputValidationFailure},
-		{name: "invalid UTF-8", generator: &generatorStub{result: Result{Fields: map[string]string{"title": string([]byte{0xff})}}}, wantErr: ErrProvider, wantOutcome: OutcomeOutputValidationFailure},
-		{name: "oversized", generator: &generatorStub{result: Result{Fields: map[string]string{"title": strings.Repeat("長", 201)}}}, wantErr: ErrProvider, wantOutcome: OutcomeOutputValidationFailure},
+		{name: "content filtered", generator: &generatorStub{err: ErrContentFiltered}, wantErr: ErrContentFiltered, wantOutcome: OutcomeContentFiltered, wantRelease: 1},
+		{name: "provider", generator: &generatorStub{err: errors.New("private provider body")}, wantErr: ErrProvider, wantOutcome: OutcomeProviderFailure, wantRelease: 1},
+		{name: "timeout", generator: &generatorStub{err: context.DeadlineExceeded}, wantErr: ErrTimeout, wantOutcome: OutcomeTimeout, wantRelease: 1},
+		{name: "unknown output", generator: &generatorStub{result: Result{Fields: map[string]string{"title": "譯", "extra": "private output"}}}, wantErr: ErrProvider, wantOutcome: OutcomeOutputValidationFailure, wantRelease: 1},
+		{name: "missing title", generator: &generatorStub{result: Result{Fields: map[string]string{}}}, wantErr: ErrProvider, wantOutcome: OutcomeOutputValidationFailure, wantRelease: 1},
+		{name: "invalid UTF-8", generator: &generatorStub{result: Result{Fields: map[string]string{"title": string([]byte{0xff})}}}, wantErr: ErrProvider, wantOutcome: OutcomeOutputValidationFailure, wantRelease: 1},
+		{name: "oversized", generator: &generatorStub{result: Result{Fields: map[string]string{"title": strings.Repeat("長", 201)}}}, wantErr: ErrProvider, wantOutcome: OutcomeOutputValidationFailure, wantRelease: 1},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			repository := &translationRepositoryStub{reserveErr: test.reserveErr}
 			service := NewService(contentSourceStub{item: validItem, err: test.contentErr}, bulletinSourceStub{}, test.generator, repository, testServiceConfig())
 			_, err := service.Preview(context.Background(), previewRequest("videos"))
-			if !errors.Is(err, test.wantErr) || len(repository.audits) != 1 || repository.audits[0].Outcome != test.wantOutcome {
-				t.Fatalf("error=%v audit=%#v", err, repository.audits)
+			if !errors.Is(err, test.wantErr) || len(repository.audits) != 1 || repository.audits[0].Outcome != test.wantOutcome || repository.releaseCalls != test.wantRelease {
+				t.Fatalf("error=%v release=%d audit=%#v", err, repository.releaseCalls, repository.audits)
 			}
 			if strings.Contains(err.Error(), "private") {
 				t.Fatalf("error leaked content: %v", err)
@@ -277,6 +279,28 @@ func TestServicePreservesSafeRetryAfter(t *testing.T) {
 	var limited *RateLimitError
 	if !errors.As(err, &limited) || limited.RetryAfter != 73*time.Second {
 		t.Fatalf("error = %#v", err)
+	}
+}
+
+func TestServiceFailsClosedWhenCooldownReleaseFails(t *testing.T) {
+	item := content.Item{ID: "10000000-0000-4000-8000-000000000001", Module: content.ModuleVideos, Version: 7, Translations: []content.Translation{{Locale: "zh-Hant", Title: "來源"}}}
+	repository := &translationRepositoryStub{releaseErr: errors.New("private database failure")}
+	service := NewService(contentSourceStub{item: item}, bulletinSourceStub{}, &generatorStub{err: ErrContentFiltered}, repository, testServiceConfig())
+	_, err := service.Preview(context.Background(), previewRequest("videos"))
+	if !errors.Is(err, ErrInternal) || strings.Contains(err.Error(), "private") || repository.releaseCalls != 1 || len(repository.audits) != 1 || repository.audits[0].Outcome != OutcomeInternalFailure {
+		t.Fatalf("error=%v release=%d audits=%#v", err, repository.releaseCalls, repository.audits)
+	}
+}
+
+func TestServiceReleasesFailedCooldownAfterCallerCancellation(t *testing.T) {
+	item := content.Item{ID: "10000000-0000-4000-8000-000000000001", Module: content.ModuleVideos, Version: 7, Translations: []content.Translation{{Locale: "zh-Hant", Title: "來源"}}}
+	repository := &translationRepositoryStub{}
+	service := NewService(contentSourceStub{item: item}, bulletinSourceStub{}, &generatorStub{waitForContext: true}, repository, testServiceConfig())
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, _ = service.Preview(ctx, previewRequest("videos"))
+	if repository.releaseCalls != 1 || repository.releaseContextErr != nil || len(repository.audits) != 1 {
+		t.Fatalf("release=%d context=%v audits=%#v", repository.releaseCalls, repository.releaseContextErr, repository.audits)
 	}
 }
 
@@ -465,11 +489,21 @@ func (s *generatorStub) Generate(ctx context.Context, request Request) (Result, 
 }
 
 type translationRepositoryStub struct {
-	reserveCalls int
-	reserveErr   error
-	reservation  Reservation
-	audits       []AuditEvent
-	auditErr     error
+	reserveCalls      int
+	reserveErr        error
+	reservation       Reservation
+	releaseCalls      int
+	releaseErr        error
+	releaseContextErr error
+	audits            []AuditEvent
+	auditErr          error
+}
+
+func (s *translationRepositoryStub) ReleaseTranslation(ctx context.Context, reservation Reservation) error {
+	s.releaseCalls++
+	s.reservation = reservation
+	s.releaseContextErr = ctx.Err()
+	return s.releaseErr
 }
 
 func (s *translationRepositoryStub) ReserveTranslation(_ context.Context, reservation Reservation) error {

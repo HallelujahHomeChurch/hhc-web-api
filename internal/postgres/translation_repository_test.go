@@ -17,3 +17,10 @@ func TestReserveTranslationRejectsNonPositiveLimitsBeforeDatabaseAccess(t *testi
 		}
 	}
 }
+
+func TestReleaseTranslationRejectsIncompleteReservationBeforeDatabaseAccess(t *testing.T) {
+	repository := New(nil)
+	if err := repository.ReleaseTranslation(context.Background(), translation.Reservation{}); err == nil {
+		t.Fatal("incomplete reservation was accepted")
+	}
+}

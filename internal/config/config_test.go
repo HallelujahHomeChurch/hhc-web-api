@@ -69,6 +69,7 @@ func TestTranslationConfigurationDefaultsDisabledWithoutAzureValues(t *testing.T
 	t.Setenv("AZURE_OPENAI_ENDPOINT", "")
 	t.Setenv("AZURE_OPENAI_DEPLOYMENT", "")
 	t.Setenv("AZURE_OPENAI_API_KEY", "")
+	t.Setenv("AZURE_OPENAI_RAI_POLICY", "")
 
 	cfg, err := Load()
 	if err != nil {
@@ -96,13 +97,15 @@ func TestTranslationEnabledRequiresAzureConfiguration(t *testing.T) {
 		endpoint   string
 		deployment string
 		key        string
+		policy     string
 		wantErr    bool
 	}{
-		{name: "valid", endpoint: "https://example.openai.azure.com", deployment: "cms-translator", key: "test-key"},
-		{name: "missing endpoint", deployment: "cms-translator", key: "test-key", wantErr: true},
-		{name: "non-HTTPS endpoint", endpoint: "http://example.openai.azure.com", deployment: "cms-translator", key: "test-key", wantErr: true},
-		{name: "missing deployment", endpoint: "https://example.openai.azure.com", key: "test-key", wantErr: true},
-		{name: "missing key", endpoint: "https://example.openai.azure.com", deployment: "cms-translator", wantErr: true},
+		{name: "valid", endpoint: "https://example.openai.azure.com", deployment: "cms-translator", key: "test-key", policy: "hhc-cms-translation-v1"},
+		{name: "missing endpoint", deployment: "cms-translator", key: "test-key", policy: "hhc-cms-translation-v1", wantErr: true},
+		{name: "non-HTTPS endpoint", endpoint: "http://example.openai.azure.com", deployment: "cms-translator", key: "test-key", policy: "hhc-cms-translation-v1", wantErr: true},
+		{name: "missing deployment", endpoint: "https://example.openai.azure.com", key: "test-key", policy: "hhc-cms-translation-v1", wantErr: true},
+		{name: "missing key", endpoint: "https://example.openai.azure.com", deployment: "cms-translator", policy: "hhc-cms-translation-v1", wantErr: true},
+		{name: "missing policy", endpoint: "https://example.openai.azure.com", deployment: "cms-translator", key: "test-key", wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -111,12 +114,13 @@ func TestTranslationEnabledRequiresAzureConfiguration(t *testing.T) {
 			t.Setenv("AZURE_OPENAI_ENDPOINT", tt.endpoint)
 			t.Setenv("AZURE_OPENAI_DEPLOYMENT", tt.deployment)
 			t.Setenv("AZURE_OPENAI_API_KEY", tt.key)
+			t.Setenv("AZURE_OPENAI_RAI_POLICY", tt.policy)
 
 			cfg, err := Load()
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("Load() error = %v, wantErr %t", err, tt.wantErr)
 			}
-			if err == nil && (!cfg.Translation.Enabled || cfg.Translation.AzureEndpoint != tt.endpoint || cfg.Translation.AzureDeployment != tt.deployment || cfg.Translation.AzureAPIKey != tt.key) {
+			if err == nil && (!cfg.Translation.Enabled || cfg.Translation.AzureEndpoint != tt.endpoint || cfg.Translation.AzureDeployment != tt.deployment || cfg.Translation.AzureAPIKey != tt.key || cfg.Translation.AzureRAIPolicy != tt.policy) {
 				t.Fatalf("unexpected translation config: %#v", cfg.Translation)
 			}
 		})

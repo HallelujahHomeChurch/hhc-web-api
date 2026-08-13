@@ -36,6 +36,17 @@ grep -q 'cooldownPeriod: 300' infra/main.bicep
 grep -q 'pollingInterval: 30' infra/main.bicep
 grep -Fq 'param cmsTranslationEnabled bool = false' infra/main.bicep
 grep -Fq 'CMS_TRANSLATION_ENABLED: "true"' "$workflow"
+grep -Fq "var azureOpenAIRaiPolicyName = 'hhc-cms-translation-v1'" infra/main.bicep
+grep -Fq "name: 'AZURE_OPENAI_RAI_POLICY', value: azureOpenAIRaiPolicyName" infra/main.bicep
+grep -Fq "resource translationRAIPolicy 'Microsoft.CognitiveServices/accounts/raiPolicies@2024-10-01'" infra/main.bicep
+test "$(grep -Fc "severityThreshold: 'High'" infra/main.bicep)" -eq 8
+grep -Fq "name: 'Jailbreak'" infra/main.bicep
+grep -Fq 'blocking: false' infra/main.bicep
+grep -Fq 'AZURE_OPENAI_RAI_POLICY: "hhc-cms-translation-v1"' "$workflow"
+grep -Fq 'az rest --method get' "$workflow"
+grep -Fq 'raiPolicies/$AZURE_OPENAI_RAI_POLICY?api-version=2024-10-01' "$workflow"
+grep -Fq '. as $policy' "$workflow"
+grep -Fq '$policy.properties.contentFilters[]' "$workflow"
 grep -Fq 'var translationConfigured = !empty(azureOpenAIEndpoint) && !empty(azureOpenAIDeployment)' infra/main.bicep
 test "$(grep -Fc 'translationConfigured ? [' infra/main.bicep)" -eq 2
 test "$(grep -Fc 'cmsTranslationEnabled ? [' infra/main.bicep)" -eq 0

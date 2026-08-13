@@ -164,6 +164,34 @@ func TestTranslationRateLimitsAndAudit(t *testing.T) {
 		}
 	})
 
+	t.Run("failed preview releases only cooldown and retains attempt counters", func(t *testing.T) {
+		reset(t)
+		reservation := translation.Reservation{
+			Actor: "actor-a", ResourceType: "news", ResourceID: "10000000-0000-4000-8000-000000000001", SourceVersion: 1, TargetLocale: "ja", Now: now,
+			ActorMinuteLimit: 10, DeploymentMinuteLimit: 10, ActorDailyLimit: 10, DeploymentDailyLimit: 10, Cooldown: 10 * time.Minute,
+		}
+		if err := repository.ReserveTranslation(ctx, reservation); err != nil {
+			t.Fatal(err)
+		}
+		if err := repository.ReleaseTranslation(ctx, reservation); err != nil {
+			t.Fatal(err)
+		}
+		reservation.Now = now.Add(time.Second)
+		if err := repository.ReserveTranslation(ctx, reservation); err != nil {
+			t.Fatalf("released cooldown still blocked: %v", err)
+		}
+		var actorMinute, actorDay int
+		if err := db.QueryRowContext(ctx, `SELECT count FROM hhc_web.translation_rate_limit WHERE scope='actor:minute:actor-a'`).Scan(&actorMinute); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.QueryRowContext(ctx, `SELECT count FROM hhc_web.translation_rate_limit WHERE scope='actor:day:actor-a'`).Scan(&actorDay); err != nil {
+			t.Fatal(err)
+		}
+		if actorMinute != 2 || actorDay != 2 {
+			t.Fatalf("attempt counters = minute %d day %d", actorMinute, actorDay)
+		}
+	})
+
 	t.Run("actor and deployment daily budgets return UTC reset", func(t *testing.T) {
 		reset(t)
 		for version := int64(1); version <= 2; version++ {
