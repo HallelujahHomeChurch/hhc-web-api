@@ -1,6 +1,6 @@
 package translation
 
-const PromptVersion = "cms-translation-v1"
+const PromptVersion = "cms-translation-v2"
 
 func translationInstructions(module, targetLocale string) string {
 	moduleRule := ""

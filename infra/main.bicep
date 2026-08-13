@@ -21,6 +21,8 @@ param azureOpenAIDeployment string = ''
 
 var acrPullRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
 var keyVaultSecretsUserRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')
+var azureOpenAIAccountName = 'bible-text-embedding-resource'
+var azureOpenAIRaiPolicyName = 'hhc-cms-translation-v1'
 var translationConfigured = !empty(azureOpenAIEndpoint) && !empty(azureOpenAIDeployment)
 var commonEnvironment = [
   { name: 'PORT', value: '8082' }
@@ -43,6 +45,7 @@ var translationEnvironment = translationConfigured ? [
   { name: 'AZURE_OPENAI_ENDPOINT', value: azureOpenAIEndpoint }
   { name: 'AZURE_OPENAI_DEPLOYMENT', value: azureOpenAIDeployment }
   { name: 'AZURE_OPENAI_API_KEY', secretRef: 'azure-openai-api-key' }
+  { name: 'AZURE_OPENAI_RAI_POLICY', value: azureOpenAIRaiPolicyName }
 ] : []
 
 resource environment 'Microsoft.App/managedEnvironments@2024-03-01' existing = {
@@ -91,6 +94,30 @@ resource migrationVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
 
 resource legacyVault 'Microsoft.KeyVault/vaults@2023-07-01' existing = {
   name: legacyKeyVaultName
+}
+
+resource azureOpenAIAccount 'Microsoft.CognitiveServices/accounts@2024-10-01' existing = {
+  name: azureOpenAIAccountName
+}
+
+resource translationRAIPolicy 'Microsoft.CognitiveServices/accounts/raiPolicies@2024-10-01' = if (translationConfigured) {
+  parent: azureOpenAIAccount
+  name: azureOpenAIRaiPolicyName
+  properties: {
+    basePolicyName: 'Microsoft.DefaultV2'
+    mode: 'Blocking'
+    contentFilters: [
+      { name: 'Hate', source: 'Prompt', enabled: true, blocking: true, severityThreshold: 'High' }
+      { name: 'Hate', source: 'Completion', enabled: true, blocking: true, severityThreshold: 'High' }
+      { name: 'Sexual', source: 'Prompt', enabled: true, blocking: true, severityThreshold: 'High' }
+      { name: 'Sexual', source: 'Completion', enabled: true, blocking: true, severityThreshold: 'High' }
+      { name: 'Violence', source: 'Prompt', enabled: true, blocking: true, severityThreshold: 'High' }
+      { name: 'Violence', source: 'Completion', enabled: true, blocking: true, severityThreshold: 'High' }
+      { name: 'Selfharm', source: 'Prompt', enabled: true, blocking: true, severityThreshold: 'High' }
+      { name: 'Selfharm', source: 'Completion', enabled: true, blocking: true, severityThreshold: 'High' }
+      { name: 'Jailbreak', source: 'Prompt', enabled: true, blocking: false }
+    ]
+  }
 }
 
 resource apiIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
@@ -241,6 +268,7 @@ resource api 'Microsoft.App/containerApps@2025-01-01' = if (deployRuntime) {
   dependsOn: [
     apiAcrPull
     runtimeSecretAccess
+    translationRAIPolicy
   ]
 }
 

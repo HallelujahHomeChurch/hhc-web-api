@@ -109,6 +109,8 @@ func handleTranslationError(w http.ResponseWriter, err error) {
 			w.Header().Set("Retry-After", strconv.FormatInt(seconds, 10))
 		}
 		writeError(w, http.StatusTooManyRequests, "translation_rate_limited", "The translation request limit was reached.")
+	case errors.Is(err, translation.ErrContentFiltered):
+		writeError(w, http.StatusUnprocessableEntity, "translation_content_filtered", "The AI safety filter rejected this content.")
 	case errors.Is(err, translation.ErrProvider):
 		writeError(w, http.StatusBadGateway, "translation_provider_error", "The translation provider could not complete the request.")
 	case errors.Is(err, translation.ErrTimeout):

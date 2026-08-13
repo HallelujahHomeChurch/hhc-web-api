@@ -126,6 +126,7 @@ func TestTranslationPreviewMapsBoundedErrors(t *testing.T) {
 		{translation.ErrTranslationExists, 409, "translation_exists"},
 		{translation.ErrVersionMismatch, 412, "version_mismatch"},
 		{translation.ErrRateLimited, 429, "translation_rate_limited"},
+		{translation.ErrContentFiltered, 422, "translation_content_filtered"},
 		{translation.ErrProvider, 502, "translation_provider_error"},
 		{translation.ErrTimeout, 504, "translation_timeout"},
 		{translation.ErrAudit, 500, "internal_error"},

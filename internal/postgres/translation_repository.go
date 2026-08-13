@@ -79,6 +79,19 @@ func (r *Repository) ReserveTranslation(ctx context.Context, reservation transla
 	return tx.Commit()
 }
 
+func (r *Repository) ReleaseTranslation(ctx context.Context, reservation translation.Reservation) error {
+	if strings.TrimSpace(reservation.Actor) == "" || strings.TrimSpace(reservation.ResourceType) == "" || strings.TrimSpace(reservation.ResourceID) == "" || strings.TrimSpace(reservation.TargetLocale) == "" || reservation.SourceVersion <= 0 || reservation.Now.IsZero() || reservation.Cooldown <= 0 {
+		return errInvalidTranslationReservation
+	}
+	now := reservation.Now.UTC()
+	_, err := r.db.ExecContext(ctx, `
+		DELETE FROM hhc_web.translation_cooldown
+		WHERE actor=$1 AND resource_type=$2 AND resource_id=$3 AND source_version=$4 AND target_locale=$5
+		  AND updated_at=$6 AND next_allowed_at=$7`,
+		reservation.Actor, reservation.ResourceType, reservation.ResourceID, reservation.SourceVersion, reservation.TargetLocale, now, now.Add(reservation.Cooldown))
+	return err
+}
+
 func (r *Repository) RecordTranslationAudit(ctx context.Context, event translation.AuditEvent) error {
 	payload, err := json.Marshal(struct {
 		SourceVersion  int64  `json:"sourceVersion"`

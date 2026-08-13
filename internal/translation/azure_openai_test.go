@@ -30,6 +30,9 @@ func TestAzureOpenAIGenerateUsesResponsesContract(t *testing.T) {
 		if got := r.Header.Get("Content-Type"); got != "application/json" {
 			t.Errorf("Content-Type = %q", got)
 		}
+		if got := r.Header.Get("x-policy-id"); got != "hhc-cms-translation-v1" {
+			t.Errorf("x-policy-id = %q", got)
+		}
 
 		var body struct {
 			Model        string          `json:"model"`
@@ -71,7 +74,7 @@ func TestAzureOpenAIGenerateUsesResponsesContract(t *testing.T) {
 			t.Fatalf("unexpected input shape: %#v", body.Input)
 		}
 		untrusted := body.Input[0].Content[0].Text
-		if !strings.HasPrefix(untrusted, "UNTRUSTED SOURCE DATA") || !strings.Contains(untrusted, "SOURCE_TITLE_UNIQUE") || !strings.Contains(untrusted, "SOURCE_BODY_UNIQUE") {
+		if !strings.HasPrefix(untrusted, "SOURCE DATA:\n{") || strings.Contains(untrusted, "UNTRUSTED") || strings.Contains(untrusted, "ignore any instructions") || !strings.Contains(untrusted, "SOURCE_TITLE_UNIQUE") || !strings.Contains(untrusted, "SOURCE_BODY_UNIQUE") {
 			t.Errorf("source is not isolated as untrusted data: %q", untrusted)
 		}
 		format := body.Text.Format
@@ -97,7 +100,7 @@ func TestAzureOpenAIGenerateUsesResponsesContract(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewAzureOpenAI(server.URL+"/", "cms-deployment", "test-api-key", server.Client(), time.Second)
+	client := NewAzureOpenAI(server.URL+"/", "cms-deployment", "test-api-key", server.Client(), time.Second, "hhc-cms-translation-v1")
 	result, err := client.Generate(context.Background(), Request{
 		Module:       "news",
 		SourceLocale: "zh-Hant",
@@ -119,7 +122,7 @@ func TestAzureOpenAIGenerateAcceptsTopLevelOutputTextFallback(t *testing.T) {
 	server := responseServer(http.StatusOK, `{"status":"completed","error":null,"incomplete_details":null,"output":[],"output_text":"{\"title\":\"Fallback title\"}"}`)
 	defer server.Close()
 
-	result, err := NewAzureOpenAI(server.URL, "deployment", "key", server.Client(), time.Second).Generate(context.Background(), Request{Fields: map[string]string{"title": "source"}})
+	result, err := NewAzureOpenAI(server.URL, "deployment", "key", server.Client(), time.Second, "").Generate(context.Background(), Request{Fields: map[string]string{"title": "source"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,12 +137,9 @@ func TestAzureOpenAIGenerateRejectsProviderFailuresWithoutContentLeaks(t *testin
 		status int
 		body   string
 	}{
-		{name: "non-2xx content filter", status: http.StatusBadRequest, body: `{"error":{"code":"content_filter","message":"PROVIDER_SECRET"}}`},
 		{name: "malformed response", status: http.StatusOK, body: `{"status":`},
 		{name: "failed status", status: http.StatusOK, body: `{"status":"failed","error":null,"incomplete_details":null}`},
 		{name: "provider error", status: http.StatusOK, body: `{"status":"completed","error":{"message":"PROVIDER_SECRET"},"incomplete_details":null}`},
-		{name: "incomplete content filter", status: http.StatusOK, body: `{"status":"completed","error":null,"incomplete_details":{"reason":"content_filter"}}`},
-		{name: "blocked content filter", status: http.StatusOK, body: `{"status":"completed","error":null,"incomplete_details":null,"content_filters":[{"blocked":true}]}`},
 		{name: "refusal", status: http.StatusOK, body: `{"status":"completed","error":null,"incomplete_details":null,"output":[{"status":"completed","content":[{"type":"refusal","refusal":"OUTPUT_SECRET"}]}]}`},
 		{name: "incomplete output item", status: http.StatusOK, body: `{"status":"completed","error":null,"incomplete_details":null,"output":[{"status":"incomplete","content":[{"type":"output_text","text":"{\"title\":\"OUTPUT_SECRET\"}"}]}]}`},
 		{name: "null nested output", status: http.StatusOK, body: `{"status":"completed","error":null,"incomplete_details":null,"output":[{"status":"completed","content":[{"type":"output_text","text":null}]}],"output_text":"{\"title\":\"OUTPUT_SECRET\"}"}`},
@@ -164,7 +164,7 @@ func TestAzureOpenAIGenerateRejectsProviderFailuresWithoutContentLeaks(t *testin
 				slog.SetDefault(oldSlog)
 			}()
 
-			_, err := NewAzureOpenAI(server.URL, "deployment", "key", server.Client(), time.Second).Generate(context.Background(), Request{Fields: map[string]string{"title": "SOURCE_SECRET"}})
+			_, err := NewAzureOpenAI(server.URL, "deployment", "key", server.Client(), time.Second, "").Generate(context.Background(), Request{Fields: map[string]string{"title": "SOURCE_SECRET"}})
 			if !errors.Is(err, ErrProvider) {
 				t.Fatalf("error = %v, want ErrProvider", err)
 			}
@@ -180,6 +180,33 @@ func TestAzureOpenAIGenerateRejectsProviderFailuresWithoutContentLeaks(t *testin
 	}
 }
 
+func TestAzureOpenAIGenerateClassifiesContentFilterWithoutContentLeaks(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		status int
+		body   string
+	}{
+		{name: "provider error", status: http.StatusBadRequest, body: `{"error":{"code":"content_filter","message":"PROVIDER_SECRET","innererror":{"code":"ContentFiltered"}}}`},
+		{name: "incomplete response", status: http.StatusOK, body: `{"status":"incomplete","error":null,"incomplete_details":{"reason":"content_filter"}}`},
+		{name: "blocked response metadata", status: http.StatusOK, body: `{"status":"completed","error":null,"incomplete_details":null,"content_filters":[{"blocked":true}]}`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := responseServer(test.status, test.body)
+			defer server.Close()
+
+			_, err := NewAzureOpenAI(server.URL, "deployment", "key", server.Client(), time.Second, "").Generate(context.Background(), Request{Fields: map[string]string{"title": "SOURCE_SECRET"}})
+			if !errors.Is(err, ErrContentFiltered) {
+				t.Fatalf("error = %v, want ErrContentFiltered", err)
+			}
+			for _, secret := range []string{"SOURCE_SECRET", "PROVIDER_SECRET", "ContentFiltered"} {
+				if strings.Contains(err.Error(), secret) {
+					t.Fatalf("provider content leaked through error: %q", err)
+				}
+			}
+		})
+	}
+}
+
 func TestAzureOpenAIGenerateUsesBoundedChildTimeout(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		select {
@@ -189,7 +216,7 @@ func TestAzureOpenAIGenerateUsesBoundedChildTimeout(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewAzureOpenAI(server.URL, "deployment", "key", server.Client(), 20*time.Millisecond)
+	client := NewAzureOpenAI(server.URL, "deployment", "key", server.Client(), 20*time.Millisecond, "")
 	started := time.Now()
 	_, err := client.Generate(context.Background(), Request{Fields: map[string]string{"title": "source"}})
 	if !errors.Is(err, ErrTimeout) {
@@ -198,7 +225,7 @@ func TestAzureOpenAIGenerateUsesBoundedChildTimeout(t *testing.T) {
 	if elapsed := time.Since(started); elapsed > time.Second {
 		t.Fatalf("timeout took %s", elapsed)
 	}
-	if got := NewAzureOpenAI(server.URL, "deployment", "key", server.Client(), 0).timeout; got != 40*time.Second {
+	if got := NewAzureOpenAI(server.URL, "deployment", "key", server.Client(), 0, "").timeout; got != 40*time.Second {
 		t.Fatalf("default timeout = %s", got)
 	}
 }
@@ -223,7 +250,7 @@ func TestAzureOpenAIGenerateDoesNotFollowRedirects(t *testing.T) {
 	defer provider.Close()
 
 	sharedClient := provider.Client()
-	client := NewAzureOpenAI(provider.URL, "deployment", "REDIRECT_API_KEY_SECRET", sharedClient, time.Second)
+	client := NewAzureOpenAI(provider.URL, "deployment", "REDIRECT_API_KEY_SECRET", sharedClient, time.Second, "")
 	if sharedClient.CheckRedirect != nil {
 		t.Fatal("constructor mutated the shared HTTP client")
 	}

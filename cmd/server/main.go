@@ -59,7 +59,7 @@ func run() error {
 	engagementClient := engagementclient.New(cfg.EngagementAPIBaseURL, cfg.InternalCallerAppID)
 	var previewer httpapi.TranslationPreviewer
 	if cfg.Translation.Enabled {
-		generator := translation.NewAzureOpenAI(cfg.Translation.AzureEndpoint, cfg.Translation.AzureDeployment, cfg.Translation.AzureAPIKey, http.DefaultClient, cfg.Translation.ProviderTimeout)
+		generator := translation.NewAzureOpenAI(cfg.Translation.AzureEndpoint, cfg.Translation.AzureDeployment, cfg.Translation.AzureAPIKey, http.DefaultClient, cfg.Translation.ProviderTimeout, cfg.Translation.AzureRAIPolicy)
 		previewer = translation.NewService(contentService, service, generator, repository, translation.ServiceConfig{
 			Deployment: cfg.Translation.AzureDeployment, HandlerTimeout: cfg.Translation.HandlerTimeout, SourceCharLimit: cfg.Translation.SourceCharLimit,
 			ActorLimit: cfg.Translation.ActorLimit, DeploymentLimit: cfg.Translation.DeploymentLimit,

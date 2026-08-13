@@ -16,6 +16,7 @@ type TranslationConfig struct {
 	AzureEndpoint        string
 	AzureDeployment      string
 	AzureAPIKey          string
+	AzureRAIPolicy       string
 	ProviderTimeout      time.Duration
 	HandlerTimeout       time.Duration
 	WriteDeadline        time.Duration
@@ -64,6 +65,7 @@ func Load() (Config, error) {
 			AzureEndpoint:        strings.TrimSpace(os.Getenv("AZURE_OPENAI_ENDPOINT")),
 			AzureDeployment:      strings.TrimSpace(os.Getenv("AZURE_OPENAI_DEPLOYMENT")),
 			AzureAPIKey:          strings.TrimSpace(os.Getenv("AZURE_OPENAI_API_KEY")),
+			AzureRAIPolicy:       strings.TrimSpace(os.Getenv("AZURE_OPENAI_RAI_POLICY")),
 			ProviderTimeout:      40 * time.Second,
 			HandlerTimeout:       45 * time.Second,
 			WriteDeadline:        50 * time.Second,
@@ -133,6 +135,9 @@ func (cfg TranslationConfig) validate() error {
 	}
 	if cfg.AzureAPIKey == "" {
 		return fmt.Errorf("AZURE_OPENAI_API_KEY is required when CMS translation is enabled")
+	}
+	if cfg.AzureRAIPolicy == "" {
+		return fmt.Errorf("AZURE_OPENAI_RAI_POLICY is required when CMS translation is enabled")
 	}
 	return nil
 }

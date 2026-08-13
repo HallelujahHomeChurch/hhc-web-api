@@ -23,6 +23,7 @@ const (
 	OutcomeVersionMismatch         = "version_mismatch"
 	OutcomeExistingTarget          = "existing_target"
 	OutcomeRateLimited             = "rate_limited"
+	OutcomeContentFiltered         = "content_filtered"
 	OutcomeProviderFailure         = "provider_failure"
 	OutcomeTimeout                 = "timeout"
 	OutcomeOutputValidationFailure = "output_validation_failure"
@@ -39,6 +40,7 @@ type BulletinSource interface {
 
 type LimiterAuditor interface {
 	ReserveTranslation(context.Context, Reservation) error
+	ReleaseTranslation(context.Context, Reservation) error
 	RecordTranslationAudit(context.Context, AuditEvent) error
 }
 
@@ -122,12 +124,15 @@ func (s *Service) Preview(ctx context.Context, request PreviewRequest) (Preview,
 	result, err := s.generator.Generate(providerCtx, Request{Module: request.Module, SourceLocale: request.SourceLocale, TargetLocale: request.TargetLocale, Fields: fields})
 	if err != nil {
 		if errors.Is(err, ErrTimeout) || errors.Is(err, context.DeadlineExceeded) || errors.Is(providerCtx.Err(), context.DeadlineExceeded) {
-			return s.finish(ctx, state, started, OutcomeTimeout, Preview{}, ErrTimeout)
+			return s.failAfterReservation(ctx, reservation, state, started, OutcomeTimeout, ErrTimeout)
 		}
-		return s.finish(ctx, state, started, OutcomeProviderFailure, Preview{}, ErrProvider)
+		if errors.Is(err, ErrContentFiltered) {
+			return s.failAfterReservation(ctx, reservation, state, started, OutcomeContentFiltered, ErrContentFiltered)
+		}
+		return s.failAfterReservation(ctx, reservation, state, started, OutcomeProviderFailure, ErrProvider)
 	}
 	if !validResult(request.Module, fields, result.Fields) {
-		return s.finish(ctx, state, started, OutcomeOutputValidationFailure, Preview{}, ErrProvider)
+		return s.failAfterReservation(ctx, reservation, state, started, OutcomeOutputValidationFailure, ErrProvider)
 	}
 	for key, value := range result.Fields {
 		result.Fields[key] = normalizeLines(value)
@@ -141,6 +146,15 @@ func (s *Service) Preview(ctx context.Context, request PreviewRequest) (Preview,
 	}
 	preview := Preview{SourceLocale: request.SourceLocale, TargetLocale: request.TargetLocale, SourceVersion: version, Translation: result.Fields, RetryAfterSeconds: retryAfterSeconds}
 	return s.finish(ctx, state, started, OutcomeSuccess, preview, nil)
+}
+
+func (s *Service) failAfterReservation(ctx context.Context, reservation Reservation, state previewState, started time.Time, outcome string, resultErr error) (Preview, error) {
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
+	defer cancel()
+	if err := s.repository.ReleaseTranslation(cleanupCtx, reservation); err != nil {
+		return s.finish(cleanupCtx, state, started, OutcomeInternalFailure, Preview{}, ErrInternal)
+	}
+	return s.finish(cleanupCtx, state, started, outcome, Preview{}, resultErr)
 }
 
 type previewState struct {
