@@ -175,6 +175,7 @@ func (r *Repository) UpdateContent(ctx context.Context, module content.Module, i
 }
 
 func (r *Repository) PublishContent(ctx context.Context, module content.Module, id string, expected int64, actor string, now time.Time) (content.Item, error) {
+	now = now.Truncate(time.Microsecond)
 	if module == content.ModuleNews {
 		return r.startNewsPublish(ctx, id, expected, actor, now)
 	}
@@ -315,6 +316,7 @@ func (r *Repository) startNewsUnpublish(ctx context.Context, id string, expected
 }
 
 func (r *Repository) CompleteContentPublish(ctx context.Context, event publication.Event, assets []publication.PublishedAsset, now time.Time) error {
+	now = now.Truncate(time.Microsecond)
 	var payload publication.ContentPublishPayload
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
 		return err
