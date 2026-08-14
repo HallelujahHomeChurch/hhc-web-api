@@ -268,6 +268,22 @@ func TestPublicNewsFallbackUsesCanonicalAssetPath(t *testing.T) {
 	}
 }
 
+func TestPublicNewsIncludesAttributionAndPublicationTimestamps(t *testing.T) {
+	first := time.Date(2026, 8, 14, 1, 0, 0, 0, time.UTC)
+	last := first.Add(time.Hour)
+	got := publicContent(content.Item{
+		Module:           content.ModuleNews,
+		Slug:             "news",
+		AuthorName:       "王牧師",
+		FirstPublishedAt: &first,
+		PublishedAt:      &last,
+	}, content.Translation{Locale: "zh-Hant", Title: "消息"})
+
+	if got.AuthorName != "王牧師" || got.FirstPublishedAt == nil || !got.FirstPublishedAt.Equal(first) || got.LastPublishedAt == nil || !got.LastPublishedAt.Equal(last) {
+		t.Fatalf("public=%#v", got)
+	}
+}
+
 func TestPublicNewsPrefersDedicatedHomeImage(t *testing.T) {
 	item := content.Item{Module: content.ModuleNews, CoverAssetID: "detail-asset", HomeCoverAssetID: "home-asset", Slug: "news"}
 	got := publicContent(item, content.Translation{Locale: "zh-Hant", Title: "消息"})

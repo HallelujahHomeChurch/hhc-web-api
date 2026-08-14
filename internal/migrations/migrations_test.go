@@ -188,3 +188,25 @@ func TestTranslationCostLimitMigrationAddsResourceCooldown(t *testing.T) {
 		t.Fatal("cost-limit migration must be additive")
 	}
 }
+
+func TestNewsSEOMetadataMigrationBackfillsSourceAndPublicProjections(t *testing.T) {
+	contents, err := files.ReadFile("sql/025_news_seo_metadata.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := string(contents)
+	for _, expected := range []string{
+		"ADD COLUMN first_published_at timestamptz",
+		"ADD COLUMN author_name text NOT NULL DEFAULT ''",
+		"SET first_published_at=published_at",
+		"'firstPublishedAt'",
+		"'lastPublishedAt'",
+		"'authorName'",
+		"projection.resource_type='news'",
+		"etag=md5",
+	} {
+		if !strings.Contains(sql, expected) {
+			t.Fatalf("migration missing %q", expected)
+		}
+	}
+}

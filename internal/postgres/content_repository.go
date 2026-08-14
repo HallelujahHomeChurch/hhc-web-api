@@ -95,8 +95,8 @@ func (r *Repository) ListContent(ctx context.Context, module content.Module, opt
 			ORDER BY %s
 			LIMIT $%d OFFSET $%d
 		)
-		SELECT e.id::text,e.module,e.status,e.version,e.created_by,e.updated_by,e.published_at,e.created_at,e.updated_at,
-			COALESCE(n.slug,''),COALESCE(n.display_date::text,''),COALESCE(n.cover_asset_id,''),COALESCE(n.home_cover_asset_id,''),COALESCE(n.detail_layout,'top'),COALESCE(n.featured,false),
+		SELECT e.id::text,e.module,e.status,e.version,e.created_by,e.updated_by,e.first_published_at,e.published_at,e.created_at,e.updated_at,
+			COALESCE(n.slug,''),COALESCE(n.display_date::text,''),COALESCE(n.cover_asset_id,''),COALESCE(n.home_cover_asset_id,''),COALESCE(n.detail_layout,'top'),COALESCE(n.featured,false),COALESCE(n.author_name,''),
 			COALESCE(n.public_grant_id,''),COALESCE(n.home_public_grant_id,''),COALESCE(n.published_cover_asset_id,''),COALESCE(n.published_home_cover_asset_id,''),
 			COALESCE(h.event_date,''),COALESCE(v.youtube_video_id,''),COALESCE(v.home_eligible,false),
 			p.published_version,t.locale,t.title,t.summary,'' AS body,t.date_label,t.image_alt
@@ -123,8 +123,8 @@ func (r *Repository) ListContent(ctx context.Context, module content.Module, opt
 		var item content.Item
 		var translation content.Translation
 		if err := rows.Scan(
-			&item.ID, &item.Module, &item.Status, &item.Version, &item.CreatedBy, &item.UpdatedBy, &item.PublishedAt, &item.CreatedAt, &item.UpdatedAt,
-			&item.Slug, &item.DisplayDate, &item.CoverAssetID, &item.HomeCoverAssetID, &item.DetailLayout, &item.Featured, &item.PublicGrantID, &item.HomePublicGrantID, &item.PublishedCoverID, &item.PublishedHomeCoverID,
+			&item.ID, &item.Module, &item.Status, &item.Version, &item.CreatedBy, &item.UpdatedBy, &item.FirstPublishedAt, &item.PublishedAt, &item.CreatedAt, &item.UpdatedAt,
+			&item.Slug, &item.DisplayDate, &item.CoverAssetID, &item.HomeCoverAssetID, &item.DetailLayout, &item.Featured, &item.AuthorName, &item.PublicGrantID, &item.HomePublicGrantID, &item.PublishedCoverID, &item.PublishedHomeCoverID,
 			&item.EventDate, &item.YouTubeVideoID, &item.HomeEligible, &item.PublishedVersion,
 			&translation.Locale, &translation.Title, &translation.Summary, &translation.Body, &translation.DateLabel, &translation.ImageAlt,
 		); err != nil {
@@ -186,7 +186,7 @@ func (r *Repository) PublishContent(ctx context.Context, module content.Module, 
 	if err := lockContentVersion(ctx, tx, module, id, expected); err != nil {
 		return content.Item{}, err
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.content_entry SET status='published',version=version+1,published_at=$2,updated_by=$3,updated_at=$2 WHERE id=$1`, id, now, actor); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.content_entry SET status='published',version=version+1,first_published_at=COALESCE(first_published_at,$2),published_at=$2,updated_by=$3,updated_at=$2 WHERE id=$1`, id, now, actor); err != nil {
 		return content.Item{}, err
 	}
 	item, err := loadContent(ctx, tx, module, id)
@@ -349,6 +349,10 @@ func (r *Repository) CompleteContentPublish(ctx context.Context, event publicati
 		return err
 	}
 	item.Status = content.StatusPublished
+	if item.FirstPublishedAt == nil {
+		first := now
+		item.FirstPublishedAt = &first
+	}
 	item.PublishedAt = &now
 	detail, home := publishedAsset(assets, "detail"), publishedAsset(assets, "home")
 	if detail.AssetID != payload.AssetID || home.AssetID != payload.HomeAssetID {
@@ -375,7 +379,7 @@ func (r *Repository) CompleteContentPublish(ctx context.Context, event publicati
 			return err
 		}
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.content_entry SET status='published',published_at=$2,updated_at=$2 WHERE id=$1`, item.ID, now); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.content_entry SET status='published',first_published_at=COALESCE(first_published_at,$2),published_at=$2,updated_at=$2 WHERE id=$1`, item.ID, now); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.news_item SET public_grant_id=$2,published_cover_asset_id=$3,home_public_grant_id=$4,published_home_cover_asset_id=$5,published_version=$6 WHERE entry_id=$1`, item.ID, detail.GrantID, detail.AssetID, home.GrantID, home.AssetID, version); err != nil {
@@ -785,7 +789,7 @@ type contentQueryer interface {
 
 func loadContent(ctx context.Context, query contentQueryer, module content.Module, id string) (content.Item, error) {
 	var item content.Item
-	err := query.QueryRowContext(ctx, `SELECT id::text,module,status,version,created_by,updated_by,published_at,created_at,updated_at FROM hhc_web.content_entry WHERE id=$1 AND module=$2`, id, module).Scan(&item.ID, &item.Module, &item.Status, &item.Version, &item.CreatedBy, &item.UpdatedBy, &item.PublishedAt, &item.CreatedAt, &item.UpdatedAt)
+	err := query.QueryRowContext(ctx, `SELECT id::text,module,status,version,created_by,updated_by,first_published_at,published_at,created_at,updated_at FROM hhc_web.content_entry WHERE id=$1 AND module=$2`, id, module).Scan(&item.ID, &item.Module, &item.Status, &item.Version, &item.CreatedBy, &item.UpdatedBy, &item.FirstPublishedAt, &item.PublishedAt, &item.CreatedAt, &item.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return content.Item{}, content.ErrNotFound
 	}
@@ -795,8 +799,8 @@ func loadContent(ctx context.Context, query contentQueryer, module content.Modul
 	switch module {
 	case content.ModuleNews:
 		var publishedVersion sql.NullInt64
-		err = query.QueryRowContext(ctx, `SELECT slug,display_date::text,cover_asset_id,home_cover_asset_id,detail_layout,featured,public_grant_id,home_public_grant_id,published_cover_asset_id,published_home_cover_asset_id,published_version FROM hhc_web.news_item WHERE entry_id=$1`, id).
-			Scan(&item.Slug, &item.DisplayDate, &item.CoverAssetID, &item.HomeCoverAssetID, &item.DetailLayout, &item.Featured, &item.PublicGrantID, &item.HomePublicGrantID, &item.PublishedCoverID, &item.PublishedHomeCoverID, &publishedVersion)
+		err = query.QueryRowContext(ctx, `SELECT slug,display_date::text,cover_asset_id,home_cover_asset_id,detail_layout,featured,author_name,public_grant_id,home_public_grant_id,published_cover_asset_id,published_home_cover_asset_id,published_version FROM hhc_web.news_item WHERE entry_id=$1`, id).
+			Scan(&item.Slug, &item.DisplayDate, &item.CoverAssetID, &item.HomeCoverAssetID, &item.DetailLayout, &item.Featured, &item.AuthorName, &item.PublicGrantID, &item.HomePublicGrantID, &item.PublishedCoverID, &item.PublishedHomeCoverID, &publishedVersion)
 		if publishedVersion.Valid {
 			item.PublishedVersion = publishedVersion.Int64
 		}
@@ -874,10 +878,10 @@ func writeTypedContent(ctx context.Context, tx *sql.Tx, module content.Module, i
 			input.DetailLayout = "top"
 		}
 		if verb == "INSERT" {
-			_, err := tx.ExecContext(ctx, `INSERT INTO hhc_web.news_item(entry_id,slug,display_date,cover_asset_id,home_cover_asset_id,detail_layout,featured) VALUES($1,$2,$3,$4,$5,$6,$7)`, id, input.Slug, input.DisplayDate, input.CoverAssetID, input.HomeCoverAssetID, input.DetailLayout, input.Featured)
+			_, err := tx.ExecContext(ctx, `INSERT INTO hhc_web.news_item(entry_id,slug,display_date,cover_asset_id,home_cover_asset_id,detail_layout,featured,author_name) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, id, input.Slug, input.DisplayDate, input.CoverAssetID, input.HomeCoverAssetID, input.DetailLayout, input.Featured, input.AuthorName)
 			return err
 		}
-		_, err := tx.ExecContext(ctx, `UPDATE hhc_web.news_item SET slug=$2,display_date=$3,cover_asset_id=$4,home_cover_asset_id=$5,detail_layout=$6,featured=$7 WHERE entry_id=$1`, id, input.Slug, input.DisplayDate, input.CoverAssetID, input.HomeCoverAssetID, input.DetailLayout, input.Featured)
+		_, err := tx.ExecContext(ctx, `UPDATE hhc_web.news_item SET slug=$2,display_date=$3,cover_asset_id=$4,home_cover_asset_id=$5,detail_layout=$6,featured=$7,author_name=$8 WHERE entry_id=$1`, id, input.Slug, input.DisplayDate, input.CoverAssetID, input.HomeCoverAssetID, input.DetailLayout, input.Featured, input.AuthorName)
 		return err
 	case content.ModuleHistory:
 		if verb == "INSERT" {
@@ -938,7 +942,7 @@ func insertRevision(ctx context.Context, tx *sql.Tx, item content.Item, actor st
 	return err
 }
 func publicContent(item content.Item, translation content.Translation) content.PublicItem {
-	value := content.PublicItem{ID: item.ID, Title: translation.Title, Summary: translation.Summary, Body: translation.Body, DateLabel: translation.DateLabel, DisplayDate: item.DisplayDate, EventDate: item.EventDate, ImageAlt: translation.ImageAlt, YouTubeVideoID: item.YouTubeVideoID, Featured: item.Featured, HomeEligible: item.HomeEligible, DetailLayout: item.DetailLayout}
+	value := content.PublicItem{ID: item.ID, Title: translation.Title, Summary: translation.Summary, Body: translation.Body, DateLabel: translation.DateLabel, DisplayDate: item.DisplayDate, EventDate: item.EventDate, ImageAlt: translation.ImageAlt, YouTubeVideoID: item.YouTubeVideoID, Featured: item.Featured, HomeEligible: item.HomeEligible, DetailLayout: item.DetailLayout, AuthorName: item.AuthorName, FirstPublishedAt: item.FirstPublishedAt, LastPublishedAt: item.PublishedAt}
 	switch item.Module {
 	case content.ModuleNews:
 		if item.CoverURL != "" {
