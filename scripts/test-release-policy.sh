@@ -40,6 +40,7 @@ grep -Fq "var azureOpenAIRaiPolicyName = 'hhc-cms-translation-v1'" infra/main.bi
 grep -Fq "name: 'AZURE_OPENAI_RAI_POLICY', value: azureOpenAIRaiPolicyName" infra/main.bicep
 grep -Fq "resource translationRAIPolicy 'Microsoft.CognitiveServices/accounts/raiPolicies@2024-10-01'" infra/main.bicep
 test "$(grep -Fc "severityThreshold: 'High'" infra/main.bicep)" -eq 8
+test "$(grep -Fc "action: 'NONE'" infra/main.bicep)" -eq 9
 grep -Fq "name: 'Jailbreak'" infra/main.bicep
 grep -Fq 'blocking: false' infra/main.bicep
 grep -Fq 'AZURE_OPENAI_RAI_POLICY: "hhc-cms-translation-v1"' "$workflow"
