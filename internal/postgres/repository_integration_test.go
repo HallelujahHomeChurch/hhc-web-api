@@ -783,7 +783,7 @@ func TestNewsPublicationKeepsLiveProjectionUntilReplacement(t *testing.T) {
 	repository := New(db)
 	now := time.Now().UTC()
 	input := content.WriteInput{
-		Slug: "first-news", DisplayDate: "2026-07-30", CoverAssetID: "asset-1",
+		Slug: "first-news", AuthorName: "王牧師", DisplayDate: "2026-07-30", CoverAssetID: "asset-1",
 		Translations: []content.Translation{{Locale: "zh-Hant", Title: "最新消息"}, {Locale: "en", Title: "News"}},
 	}
 	item, err := repository.CreateContent(ctx, content.ModuleNews, input, "user-1", "news-create-1", now)
@@ -807,10 +807,12 @@ func TestNewsPublicationKeepsLiveProjectionUntilReplacement(t *testing.T) {
 		t.Fatalf("event=%#v found=%v err=%v", event, found, err)
 	}
 	published := []publication.PublishedAsset{{Usage: "detail", AssetID: "asset-1", GrantID: "grant-1", PublicURL: "/api/assets/public/asset-1"}}
-	if err := repository.CompleteContentPublish(ctx, event, published, now.Add(2*time.Minute)); err != nil {
+	firstSuccessfulPublish := now.Add(2 * time.Minute)
+	expectedFirstPublishedAt := firstSuccessfulPublish.Truncate(time.Microsecond)
+	if err := repository.CompleteContentPublish(ctx, event, published, firstSuccessfulPublish); err != nil {
 		t.Fatal(err)
 	}
-	if err := repository.CompleteContentPublish(ctx, event, published, now.Add(2*time.Minute)); err != nil {
+	if err := repository.CompleteContentPublish(ctx, event, published, firstSuccessfulPublish); err != nil {
 		t.Fatalf("replayed news publish completion: %v", err)
 	}
 	public, err := repository.PublicContent(ctx, content.ModuleNews, "zh-Hant", 1, 20)
@@ -818,7 +820,7 @@ func TestNewsPublicationKeepsLiveProjectionUntilReplacement(t *testing.T) {
 		t.Fatalf("public=%#v err=%v", public, err)
 	}
 	detail, etag, err := repository.PublicNews(ctx, "zh-Hant", "first-news")
-	if err != nil || detail.ID != item.ID || etag == "" {
+	if err != nil || detail.ID != item.ID || etag == "" || detail.AuthorName != "王牧師" || detail.FirstPublishedAt == nil || !detail.FirstPublishedAt.Equal(expectedFirstPublishedAt) || detail.LastPublishedAt == nil || !detail.LastPublishedAt.Equal(expectedFirstPublishedAt) {
 		t.Fatalf("detail=%#v etag=%q err=%v", detail, etag, err)
 	}
 	fallback, fallbackETag, err := repository.PublicNews(ctx, "ja", "first-news")
@@ -856,11 +858,13 @@ func TestNewsPublicationKeepsLiveProjectionUntilReplacement(t *testing.T) {
 		t.Fatalf("replacement=%#v found=%v err=%v", replacement, found, err)
 	}
 	replacementAssets := []publication.PublishedAsset{{Usage: "detail", AssetID: "asset-2", GrantID: "grant-2", PublicURL: "/api/assets/public/asset-2"}}
-	if err := repository.CompleteContentPublish(ctx, replacement, replacementAssets, now.Add(5*time.Minute)); err != nil {
+	republishTime := now.Add(5 * time.Minute)
+	expectedRepublishTime := republishTime.Truncate(time.Microsecond)
+	if err := repository.CompleteContentPublish(ctx, replacement, replacementAssets, republishTime); err != nil {
 		t.Fatal(err)
 	}
 	detail, replacementETag, err := repository.PublicNews(ctx, "zh-Hant", "first-news")
-	if err != nil || detail.Title != "更新消息" || detail.ImageURL != "/api/assets/public/asset-2/large" || replacementETag == etag {
+	if err != nil || detail.Title != "更新消息" || detail.ImageURL != "/api/assets/public/asset-2/large" || replacementETag == etag || detail.FirstPublishedAt == nil || !detail.FirstPublishedAt.Equal(expectedFirstPublishedAt) || detail.LastPublishedAt == nil || !detail.LastPublishedAt.Equal(expectedRepublishTime) {
 		t.Fatalf("replacement detail=%#v etag=%q err=%v", detail, replacementETag, err)
 	}
 	retire, found, err := repository.Claim(ctx, now.Add(5*time.Minute), 30*time.Second)
@@ -899,7 +903,7 @@ func TestNewsPublicationKeepsLiveProjectionUntilReplacement(t *testing.T) {
 		t.Fatalf("replayed news unpublish completion: %v", err)
 	}
 	item, err = repository.GetContent(ctx, content.ModuleNews, item.ID)
-	if err != nil || item.IsPublished || item.Status != content.StatusUnpublished {
+	if err != nil || item.IsPublished || item.Status != content.StatusUnpublished || item.FirstPublishedAt == nil || !item.FirstPublishedAt.Equal(expectedFirstPublishedAt) || item.PublishedAt == nil || !item.PublishedAt.Equal(expectedRepublishTime) {
 		t.Fatalf("unpublished=%#v err=%v", item, err)
 	}
 }

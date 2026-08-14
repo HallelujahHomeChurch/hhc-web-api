@@ -99,6 +99,23 @@ func TestOpenAPIDocumentsPublicContentLocaleResolution(t *testing.T) {
 	}
 }
 
+func TestOpenAPIDocumentsNewsSEOFields(t *testing.T) {
+	contents, err := os.ReadFile("openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := string(contents)
+	for _, expected := range []string{
+		"authorName: { type: string, maxLength: 200 }",
+		"firstPublishedAt: { type: string, format: date-time }",
+		"lastPublishedAt: { type: string, format: date-time }",
+	} {
+		if !strings.Contains(document, expected) {
+			t.Fatalf("OpenAPI missing %q", expected)
+		}
+	}
+}
+
 func TestOpenAPISplitsContentLocalesFromWeeklyEditions(t *testing.T) {
 	contents, err := os.ReadFile("openapi.yaml")
 	if err != nil {
