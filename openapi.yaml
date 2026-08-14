@@ -1205,6 +1205,7 @@ components:
       additionalProperties: false
       required: [translations]
       properties:
+        authorName: { type: string, maxLength: 200 }
         slug: { type: string, minLength: 1, maxLength: 120, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$' }
         displayDate: { type: string, format: date }
         eventDate: { type: string, pattern: '^\d{4}(?:-\d{2}(?:-\d{2})?)?$' }
@@ -1274,6 +1275,9 @@ components:
         featured: { type: boolean }
         homeEligible: { type: boolean }
         detailLayout: { type: string, enum: [top, left, right] }
+        authorName: { type: string, maxLength: 200 }
+        firstPublishedAt: { type: string, format: date-time }
+        lastPublishedAt: { type: string, format: date-time }
     BulletinIssueEnvelope:
       type: object
       required: [data, meta]
