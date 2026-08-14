@@ -106,17 +106,17 @@ resource translationRAIPolicy 'Microsoft.CognitiveServices/accounts/raiPolicies@
   properties: {
     basePolicyName: 'Microsoft.DefaultV2'
     mode: 'Blocking'
-    contentFilters: [
-      { name: 'Hate', source: 'Prompt', enabled: true, blocking: true, severityThreshold: 'High' }
-      { name: 'Hate', source: 'Completion', enabled: true, blocking: true, severityThreshold: 'High' }
-      { name: 'Sexual', source: 'Prompt', enabled: true, blocking: true, severityThreshold: 'High' }
-      { name: 'Sexual', source: 'Completion', enabled: true, blocking: true, severityThreshold: 'High' }
-      { name: 'Violence', source: 'Prompt', enabled: true, blocking: true, severityThreshold: 'High' }
-      { name: 'Violence', source: 'Completion', enabled: true, blocking: true, severityThreshold: 'High' }
-      { name: 'Selfharm', source: 'Prompt', enabled: true, blocking: true, severityThreshold: 'High' }
-      { name: 'Selfharm', source: 'Completion', enabled: true, blocking: true, severityThreshold: 'High' }
-      { name: 'Jailbreak', source: 'Prompt', enabled: true, blocking: false }
-    ]
+    contentFilters: any([
+      { name: 'Hate', source: 'Prompt', action: 'NONE', enabled: true, blocking: true, severityThreshold: 'High' }
+      { name: 'Hate', source: 'Completion', action: 'NONE', enabled: true, blocking: true, severityThreshold: 'High' }
+      { name: 'Sexual', source: 'Prompt', action: 'NONE', enabled: true, blocking: true, severityThreshold: 'High' }
+      { name: 'Sexual', source: 'Completion', action: 'NONE', enabled: true, blocking: true, severityThreshold: 'High' }
+      { name: 'Violence', source: 'Prompt', action: 'NONE', enabled: true, blocking: true, severityThreshold: 'High' }
+      { name: 'Violence', source: 'Completion', action: 'NONE', enabled: true, blocking: true, severityThreshold: 'High' }
+      { name: 'Selfharm', source: 'Prompt', action: 'NONE', enabled: true, blocking: true, severityThreshold: 'High' }
+      { name: 'Selfharm', source: 'Completion', action: 'NONE', enabled: true, blocking: true, severityThreshold: 'High' }
+      { name: 'Jailbreak', source: 'Prompt', action: 'NONE', enabled: true, blocking: false }
+    ])
   }
 }
 
