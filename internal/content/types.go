@@ -43,6 +43,7 @@ type Translation struct {
 }
 
 type WriteInput struct {
+	AuthorName       string        `json:"authorName,omitempty"`
 	Slug             string        `json:"slug,omitempty"`
 	DisplayDate      string        `json:"displayDate,omitempty"`
 	EventDate        string        `json:"eventDate,omitempty"`
@@ -76,12 +77,14 @@ type Item struct {
 	PublishedHomeCoverID string        `json:"-"`
 	IsPublished          bool          `json:"isPublished"`
 	PublishedVersion     int64         `json:"publishedVersion,omitempty"`
+	AuthorName           string        `json:"authorName,omitempty"`
 	Featured             bool          `json:"featured,omitempty"`
 	HomeEligible         bool          `json:"homeEligible,omitempty"`
 	Translations         []Translation `json:"translations"`
 	CreatedBy            string        `json:"createdBy"`
 	UpdatedBy            string        `json:"updatedBy"`
 	PublishedAt          *time.Time    `json:"publishedAt,omitempty"`
+	FirstPublishedAt     *time.Time    `json:"-"`
 	CreatedAt            time.Time     `json:"createdAt"`
 	UpdatedAt            time.Time     `json:"updatedAt"`
 }
@@ -94,23 +97,26 @@ type Revision struct {
 }
 
 type PublicItem struct {
-	ID               string   `json:"id"`
-	Title            string   `json:"title"`
-	Summary          string   `json:"summary,omitempty"`
-	Body             string   `json:"body,omitempty"`
-	DateLabel        string   `json:"dateLabel,omitempty"`
-	DisplayDate      string   `json:"displayDate,omitempty"`
-	EventDate        string   `json:"eventDate,omitempty"`
-	ImageAlt         string   `json:"imageAlt,omitempty"`
-	ImageURL         string   `json:"imageUrl,omitempty"`
-	HomeImageURL     string   `json:"homeImageUrl,omitempty"`
-	Href             string   `json:"href,omitempty"`
-	YouTubeVideoID   string   `json:"youtubeVideoId,omitempty"`
-	Featured         bool     `json:"featured,omitempty"`
-	HomeEligible     bool     `json:"homeEligible,omitempty"`
-	DetailLayout     string   `json:"detailLayout,omitempty"`
-	ResolvedLocale   string   `json:"resolvedLocale"`
-	AvailableLocales []string `json:"availableLocales"`
+	ID               string     `json:"id"`
+	Title            string     `json:"title"`
+	Summary          string     `json:"summary,omitempty"`
+	Body             string     `json:"body,omitempty"`
+	DateLabel        string     `json:"dateLabel,omitempty"`
+	DisplayDate      string     `json:"displayDate,omitempty"`
+	EventDate        string     `json:"eventDate,omitempty"`
+	ImageAlt         string     `json:"imageAlt,omitempty"`
+	ImageURL         string     `json:"imageUrl,omitempty"`
+	HomeImageURL     string     `json:"homeImageUrl,omitempty"`
+	Href             string     `json:"href,omitempty"`
+	YouTubeVideoID   string     `json:"youtubeVideoId,omitempty"`
+	Featured         bool       `json:"featured,omitempty"`
+	HomeEligible     bool       `json:"homeEligible,omitempty"`
+	DetailLayout     string     `json:"detailLayout,omitempty"`
+	AuthorName       string     `json:"authorName,omitempty"`
+	FirstPublishedAt *time.Time `json:"firstPublishedAt,omitempty"`
+	LastPublishedAt  *time.Time `json:"lastPublishedAt,omitempty"`
+	ResolvedLocale   string     `json:"resolvedLocale"`
+	AvailableLocales []string   `json:"availableLocales"`
 }
 
 type Page struct {

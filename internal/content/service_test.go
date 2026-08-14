@@ -71,6 +71,47 @@ func TestNewsCreateDerivesSlugAndSummary(t *testing.T) {
 	}
 }
 
+func TestNewsAuthorIsTrimmedAndBounded(t *testing.T) {
+	repo := &serviceRepository{}
+	service := NewService(repo, time.Now)
+	input := WriteInput{
+		AuthorName:   "  王牧師  ",
+		DisplayDate:  "2026-08-14",
+		Translations: translations(),
+	}
+	item, err := service.CreateContent(context.Background(), ModuleNews, input, "admin", "author-create")
+	if err != nil || item.AuthorName != "王牧師" {
+		t.Fatalf("item=%#v err=%v", item, err)
+	}
+	input.AuthorName = strings.Repeat("人", 201)
+	if _, err := service.CreateContent(context.Background(), ModuleNews, input, "admin", "author-too-long"); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("error=%v", err)
+	}
+}
+
+func TestNonNewsRejectsPublicAuthor(t *testing.T) {
+	service := NewService(&serviceRepository{}, time.Now)
+	input := historyInput("2026")
+	input.AuthorName = "王牧師"
+	if _, err := service.CreateContent(context.Background(), ModuleHistory, input, "admin", "history-author"); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("error=%v", err)
+	}
+}
+
+func TestRestoreContentPreservesPublicAuthor(t *testing.T) {
+	repo := &serviceRepository{
+		item:     Item{ID: "news-1", Module: ModuleNews, Version: 2, Slug: "news", DisplayDate: "2026-08-14", Translations: translations()},
+		revision: Revision{Version: 1, Snapshot: Item{AuthorName: "王牧師", Slug: "news", DisplayDate: "2026-08-14", Translations: translations()}},
+	}
+	service := NewService(repo, time.Now)
+	if _, err := service.RestoreContent(context.Background(), ModuleNews, "news-1", 1, 2, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	if repo.updateInput.AuthorName != "王牧師" {
+		t.Fatalf("authorName=%q", repo.updateInput.AuthorName)
+	}
+}
+
 func TestNewsRejectsInvalidDetailLayout(t *testing.T) {
 	service := NewService(&serviceRepository{}, time.Now)
 	input := WriteInput{DisplayDate: "2026-08-02", DetailLayout: "custom", Translations: translations()}
@@ -434,7 +475,7 @@ type serviceRepository struct {
 }
 
 func (r *serviceRepository) CreateContent(_ context.Context, module Module, input WriteInput, actor, key string, now time.Time) (Item, error) {
-	r.item = Item{ID: "item-1", Module: module, Status: StatusDraft, Version: 1, Slug: input.Slug, DisplayDate: input.DisplayDate, EventDate: input.EventDate, YouTubeVideoID: input.YouTubeVideoID, CoverAssetID: input.CoverAssetID, HomeCoverAssetID: input.HomeCoverAssetID, DetailLayout: input.DetailLayout, Featured: input.Featured, HomeEligible: input.HomeEligible, Translations: input.Translations}
+	r.item = Item{ID: "item-1", Module: module, Status: StatusDraft, Version: 1, AuthorName: input.AuthorName, Slug: input.Slug, DisplayDate: input.DisplayDate, EventDate: input.EventDate, YouTubeVideoID: input.YouTubeVideoID, CoverAssetID: input.CoverAssetID, HomeCoverAssetID: input.HomeCoverAssetID, DetailLayout: input.DetailLayout, Featured: input.Featured, HomeEligible: input.HomeEligible, Translations: input.Translations}
 	return r.item, nil
 }
 func (r *serviceRepository) ListContent(_ context.Context, _ Module, options ListOptions) (Page, error) {
@@ -448,6 +489,7 @@ func (r *serviceRepository) GetContent(context.Context, Module, string) (Item, e
 func (r *serviceRepository) UpdateContent(_ context.Context, _ Module, _ string, _ int64, input WriteInput, _ string, _ time.Time) (Item, error) {
 	r.updateCalls++
 	r.updateInput = input
+	r.item.AuthorName = input.AuthorName
 	r.item.Slug = input.Slug
 	r.item.Translations = input.Translations
 	return r.item, nil
