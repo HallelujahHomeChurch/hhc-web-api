@@ -1,6 +1,6 @@
 package translation
 
-const PromptVersion = "cms-translation-v3"
+const PromptVersion = "cms-translation-v4"
 
 func translationInstructions(module, targetLocale string) string {
 	moduleRule := ""
@@ -29,7 +29,7 @@ func translationInstructions(module, targetLocale string) string {
 		localeRule = "Use natural contemporary English rather than preserving Traditional Chinese sentence order."
 	}
 	if module == "news" && targetLocale == "ja" {
-		localeRule += ` For the private titleRule result, recognize 綠野仙蹤 as HHC's gospel-dinner series name, not a literal Wizard of Oz reference. Set kind to gospel_dinner only for that series. Extract occurrence digits, the exact source qualifier and event name, and translate only their localized counterparts. Use empty strings for absent parts. Do not invent an occurrence number, qualifier, or event name.`
+		localeRule += ` For the private titleRule result, recognize 綠野仙蹤 as HHC's gospel-dinner series name, not a literal Wizard of Oz reference. Set kind to gospel_dinner only for that series. Extract occurrence digits, the exact source qualifier and event name, and translate only their localized counterparts. Use empty strings for absent parts. Do not invent an occurrence number, qualifier, or event name. The sequence contains ASCII occurrence digits only. The fixed series words 綠野仙蹤 and 福音餐會 are not a qualifier or event name. A qualifier is only an extra descriptor such as 十週年. For example, 432次綠野仙蹤福音餐會 - 璨恩的尋根 has sequence 432, empty qualifiers, sourceEventName 璨恩的尋根, and localizedEventName equal to its Japanese translation.`
 	}
 
 	return PromptVersion + `. Translate the requested CMS fields into natural, contemporary language for local readers.
