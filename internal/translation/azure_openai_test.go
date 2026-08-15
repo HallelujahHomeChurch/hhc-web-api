@@ -81,11 +81,23 @@ func TestAzureOpenAIGenerateUsesResponsesContract(t *testing.T) {
 		if format.Type != "json_schema" || format.Name != "cms_translation" || !format.Strict || format.Schema.Type != "object" || format.Schema.AdditionalProperties == nil || *format.Schema.AdditionalProperties {
 			t.Errorf("unexpected response format: %#v", format)
 		}
-		if !reflect.DeepEqual(format.Schema.Required, []string{"body", "title"}) {
+		if !reflect.DeepEqual(format.Schema.Required, []string{"body", "title", "titleRule"}) {
 			t.Errorf("required = %#v", format.Schema.Required)
 		}
-		if !reflect.DeepEqual(format.Schema.Properties, map[string]map[string]any{"body": {"type": "string"}, "title": {"type": "string"}}) {
-			t.Errorf("properties = %#v", format.Schema.Properties)
+		if !reflect.DeepEqual(format.Schema.Properties["body"], map[string]any{"type": "string"}) || !reflect.DeepEqual(format.Schema.Properties["title"], map[string]any{"type": "string"}) {
+			t.Errorf("field properties = %#v", format.Schema.Properties)
+		}
+		ruleSchema := format.Schema.Properties["titleRule"]
+		if ruleSchema["type"] != "object" || ruleSchema["additionalProperties"] != false {
+			t.Errorf("title rule schema = %#v", ruleSchema)
+		}
+		ruleProperties, ok := ruleSchema["properties"].(map[string]any)
+		if !ok || len(ruleProperties) != 6 {
+			t.Fatalf("title rule properties = %#v", ruleSchema["properties"])
+		}
+		kind, ok := ruleProperties["kind"].(map[string]any)
+		if !ok || kind["type"] != "string" || !reflect.DeepEqual(kind["enum"], []any{"none", "gospel_dinner"}) {
+			t.Errorf("title rule kind = %#v", ruleProperties["kind"])
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -94,7 +106,7 @@ func TestAzureOpenAIGenerateUsesResponsesContract(t *testing.T) {
 			"error":null,
 			"incomplete_details":null,
 			"content_filters":[],
-			"output":[{"type":"message","status":"completed","content":[{"type":"output_text","text":"{\"body\":\"Translated body\",\"title\":\"Translated title\"}"}]}],
+			"output":[{"type":"message","status":"completed","content":[{"type":"output_text","text":"{\"body\":\"Translated body\",\"title\":\"Ignored full title\",\"titleRule\":{\"kind\":\"gospel_dinner\",\"sequence\":\"432\",\"sourceQualifier\":\"\",\"localizedQualifier\":\"\",\"sourceEventName\":\"璨恩的尋根\",\"localizedEventName\":\"璨恩のルーツ探し\"}}"}]}],
 			"output_text":"{\"body\":\"wrong fallback\",\"title\":\"wrong fallback\"}"
 		}`))
 	}))
@@ -105,7 +117,7 @@ func TestAzureOpenAIGenerateUsesResponsesContract(t *testing.T) {
 		Module:       "news",
 		SourceLocale: "zh-Hant",
 		TargetLocale: "ja",
-		Fields:       map[string]string{"title": "SOURCE_TITLE_UNIQUE", "body": "SOURCE_BODY_UNIQUE"},
+		Fields:       map[string]string{"title": "432次綠野仙蹤福音餐會 - 璨恩的尋根 SOURCE_TITLE_UNIQUE", "body": "SOURCE_BODY_UNIQUE"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -113,8 +125,12 @@ func TestAzureOpenAIGenerateUsesResponsesContract(t *testing.T) {
 	if calls.Load() != 1 {
 		t.Fatalf("provider calls = %d, want 1", calls.Load())
 	}
-	if !reflect.DeepEqual(result.Fields, map[string]string{"body": "Translated body", "title": "Translated title"}) {
-		t.Fatalf("result = %#v", result)
+	if !reflect.DeepEqual(result.Fields, map[string]string{"body": "Translated body", "title": "Ignored full title"}) {
+		t.Fatalf("result fields = %#v", result.Fields)
+	}
+	wantRule := &TitleRuleResult{Kind: "gospel_dinner", Sequence: "432", SourceEventName: "璨恩的尋根", LocalizedEventName: "璨恩のルーツ探し"}
+	if !reflect.DeepEqual(result.TitleRule, wantRule) {
+		t.Fatalf("title rule = %#v, want %#v", result.TitleRule, wantRule)
 	}
 }
 
@@ -128,6 +144,37 @@ func TestAzureOpenAIGenerateAcceptsTopLevelOutputTextFallback(t *testing.T) {
 	}
 	if result.Fields["title"] != "Fallback title" {
 		t.Fatalf("result = %#v", result)
+	}
+	if result.TitleRule != nil {
+		t.Fatalf("unexpected title rule = %#v", result.TitleRule)
+	}
+}
+
+func TestAzureOpenAIGenerateRejectsMalformedTitleRule(t *testing.T) {
+	tests := []struct {
+		name string
+		rule string
+	}{
+		{name: "missing field", rule: `{"kind":"gospel_dinner","sequence":"432","sourceQualifier":"","localizedQualifier":"","sourceEventName":"璨恩的尋根"}`},
+		{name: "unknown field", rule: `{"kind":"none","sequence":"","sourceQualifier":"","localizedQualifier":"","sourceEventName":"","localizedEventName":"","extra":"value"}`},
+		{name: "wrong type", rule: `{"kind":"none","sequence":432,"sourceQualifier":"","localizedQualifier":"","sourceEventName":"","localizedEventName":""}`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			output := `{"title":"ignored","titleRule":` + test.rule + `}`
+			body, err := json.Marshal(map[string]any{"status": "completed", "error": nil, "incomplete_details": nil, "output": []any{}, "output_text": output})
+			if err != nil {
+				t.Fatal(err)
+			}
+			server := responseServer(http.StatusOK, string(body))
+			defer server.Close()
+
+			request := Request{Module: "news", SourceLocale: "zh-Hant", TargetLocale: "ja", Fields: map[string]string{"title": "綠野仙蹤"}}
+			_, err = NewAzureOpenAI(server.URL, "deployment", "key", server.Client(), time.Second, "").Generate(context.Background(), request)
+			if !errors.Is(err, ErrProvider) {
+				t.Fatalf("error = %v, want ErrProvider", err)
+			}
+		})
 	}
 }
 
