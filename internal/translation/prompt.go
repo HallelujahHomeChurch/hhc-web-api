@@ -1,6 +1,6 @@
 package translation
 
-const PromptVersion = "cms-translation-v2"
+const PromptVersion = "cms-translation-v3"
 
 func translationInstructions(module, targetLocale string) string {
 	moduleRule := ""
@@ -27,6 +27,9 @@ func translationInstructions(module, targetLocale string) string {
 		localeRule = "Use natural contemporary Simplified Chinese rather than mechanically converting characters."
 	case "en":
 		localeRule = "Use natural contemporary English rather than preserving Traditional Chinese sentence order."
+	}
+	if module == "news" && targetLocale == "ja" {
+		localeRule += ` For the private titleRule result, recognize 綠野仙蹤 as HHC's gospel-dinner series name, not a literal Wizard of Oz reference. Set kind to gospel_dinner only for that series. Extract occurrence digits, the exact source qualifier and event name, and translate only their localized counterparts. Use empty strings for absent parts. Do not invent an occurrence number, qualifier, or event name.`
 	}
 
 	return PromptVersion + `. Translate the requested CMS fields into natural, contemporary language for local readers.

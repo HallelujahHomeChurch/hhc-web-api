@@ -73,6 +73,49 @@ func TestServicePreviewsOnlyModuleFieldsFromSavedTraditionalChinese(t *testing.T
 	}
 }
 
+func TestServiceRendersJapaneseGospelDinnerTitlePreview(t *testing.T) {
+	item := content.Item{ID: "10000000-0000-4000-8000-000000000001", Module: content.ModuleNews, Version: 7, Translations: []content.Translation{{
+		Locale: "zh-Hant", Title: "432次綠野仙蹤福音餐會 - 璨恩的尋根", Body: "內文", ImageAlt: "福音餐會DM",
+	}}}
+	generator := &generatorStub{result: Result{
+		Fields:    map[string]string{"title": "model full title", "body": "本文", "imageAlt": "福音食事会の案内"},
+		TitleRule: &TitleRuleResult{Kind: "gospel_dinner", Sequence: "432", SourceEventName: "璨恩的尋根", LocalizedEventName: "璨恩のルーツ探し"},
+	}}
+	repository := &translationRepositoryStub{}
+	service := NewService(contentSourceStub{item: item}, bulletinSourceStub{}, generator, repository, testServiceConfig())
+
+	preview, err := service.Preview(context.Background(), previewRequest("news"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := preview.Translation["title"]; got != "第432回福音食事会 - 璨恩のルーツ探し" {
+		t.Fatalf("title = %q", got)
+	}
+	if generator.calls != 1 || len(repository.audits) != 1 || repository.audits[0].Outcome != OutcomeSuccess || repository.audits[0].PromptVersion != "cms-translation-v3" {
+		t.Fatalf("calls=%d audits=%#v", generator.calls, repository.audits)
+	}
+}
+
+func TestServiceRejectsInventedGospelDinnerOccurrence(t *testing.T) {
+	item := content.Item{ID: "10000000-0000-4000-8000-000000000001", Module: content.ModuleNews, Version: 7, Translations: []content.Translation{{
+		Locale: "zh-Hant", Title: "432次綠野仙蹤福音餐會 - 璨恩的尋根", Body: "內文", ImageAlt: "福音餐會DM",
+	}}}
+	generator := &generatorStub{result: Result{
+		Fields:    map[string]string{"title": "model full title", "body": "本文", "imageAlt": "福音食事会の案内"},
+		TitleRule: &TitleRuleResult{Kind: "gospel_dinner", Sequence: "442", SourceEventName: "璨恩的尋根", LocalizedEventName: "璨恩のルーツ探し"},
+	}}
+	repository := &translationRepositoryStub{}
+	service := NewService(contentSourceStub{item: item}, bulletinSourceStub{}, generator, repository, testServiceConfig())
+
+	_, err := service.Preview(context.Background(), previewRequest("news"))
+	if !errors.Is(err, ErrProvider) {
+		t.Fatalf("error = %v, want ErrProvider", err)
+	}
+	if repository.releaseCalls != 1 || len(repository.audits) != 1 || repository.audits[0].Outcome != OutcomeOutputValidationFailure {
+		t.Fatalf("release=%d audits=%#v", repository.releaseCalls, repository.audits)
+	}
+}
+
 func TestServiceRejectsJapaneseAndKoreanBulletinTargetsBeforeLoadOrProvider(t *testing.T) {
 	for _, locale := range []string{"ja", "ko"} {
 		request := previewRequest("bulletins")

@@ -6,7 +6,7 @@ import (
 )
 
 func TestTranslationPromptContract(t *testing.T) {
-	if PromptVersion != "cms-translation-v2" {
+	if PromptVersion != "cms-translation-v3" {
 		t.Fatalf("prompt version = %q", PromptVersion)
 	}
 
@@ -30,6 +30,15 @@ func TestTranslationPromptContract(t *testing.T) {
 
 	if japanese := translationInstructions("news", "ja"); !strings.Contains(japanese, "です・ます") || !strings.Contains(japanese, "concise natural title forms") {
 		t.Errorf("Japanese register rules missing: %q", japanese)
+	}
+	japaneseNews := translationInstructions("news", "ja")
+	for _, rule := range []string{"綠野仙蹤", "gospel-dinner series", "not a literal Wizard of Oz reference", "Do not invent an occurrence number, qualifier, or event name"} {
+		if !strings.Contains(japaneseNews, rule) {
+			t.Errorf("Japanese news rule missing %q: %q", rule, japaneseNews)
+		}
+	}
+	if japaneseHistory := translationInstructions("history", "ja"); strings.Contains(japaneseHistory, "綠野仙蹤") {
+		t.Errorf("Japanese news rule leaked into history: %q", japaneseHistory)
 	}
 	if korean := translationInstructions("history", "ko"); !strings.Contains(korean, "해요체") || !strings.Contains(korean, "합니다체") || !strings.Contains(korean, "never mix sentence-ending styles within one field") {
 		t.Errorf("Korean register rules missing: %q", korean)
