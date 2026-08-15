@@ -56,7 +56,7 @@ func validTitleRuleSource(source string, rule TitleRuleResult) bool {
 			}
 		}
 		markerIndex := strings.Index(source, gospelDinnerMarker)
-		if markerIndex < 0 || !containsDigitRun(source[:markerIndex], rule.Sequence) {
+		if markerIndex < 0 || digitRunIndex(source[:markerIndex], rule.Sequence) < 0 {
 			return false
 		}
 	}
@@ -66,15 +66,28 @@ func validTitleRuleSource(source string, rule TitleRuleResult) bool {
 	}
 
 	remaining := source
-	for _, part := range []string{gospelDinnerMarker, "福音餐會", rule.Sequence, rule.SourceQualifier, rule.SourceEventName} {
+	for _, part := range []string{rule.SourceQualifier, rule.SourceEventName} {
 		if part != "" {
 			remaining = strings.ReplaceAll(remaining, part, "")
 		}
 	}
+	if rule.Sequence != "" {
+		markerIndex := strings.Index(remaining, gospelDinnerMarker)
+		if markerIndex < 0 {
+			return false
+		}
+		sequenceIndex := digitRunIndex(remaining[:markerIndex], rule.Sequence)
+		if sequenceIndex < 0 {
+			return false
+		}
+		remaining = remaining[:sequenceIndex] + remaining[sequenceIndex+len(rule.Sequence):]
+	}
+	remaining = strings.ReplaceAll(remaining, gospelDinnerMarker, "")
+	remaining = strings.ReplaceAll(remaining, "福音餐會", "")
 	return strings.Trim(remaining, " \t\r\n第次回-–—:：·「」『』()（）[]【】") == ""
 }
 
-func containsDigitRun(source, sequence string) bool {
+func digitRunIndex(source, sequence string) int {
 	for start := 0; start < len(source); {
 		if source[start] < '0' || source[start] > '9' {
 			start++
@@ -85,9 +98,9 @@ func containsDigitRun(source, sequence string) bool {
 			end++
 		}
 		if source[start:end] == sequence {
-			return true
+			return start
 		}
 		start = end
 	}
-	return false
+	return -1
 }
