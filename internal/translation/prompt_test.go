@@ -6,7 +6,7 @@ import (
 )
 
 func TestTranslationPromptContract(t *testing.T) {
-	if PromptVersion != "cms-translation-v3" {
+	if PromptVersion != "cms-translation-v4" {
 		t.Fatalf("prompt version = %q", PromptVersion)
 	}
 
@@ -32,7 +32,7 @@ func TestTranslationPromptContract(t *testing.T) {
 		t.Errorf("Japanese register rules missing: %q", japanese)
 	}
 	japaneseNews := translationInstructions("news", "ja")
-	for _, rule := range []string{"綠野仙蹤", "gospel-dinner series", "not a literal Wizard of Oz reference", "Do not invent an occurrence number, qualifier, or event name"} {
+	for _, rule := range []string{"綠野仙蹤", "gospel-dinner series", "not a literal Wizard of Oz reference", "Do not invent an occurrence number, qualifier, or event name", "fixed series words 綠野仙蹤 and 福音餐會 are not a qualifier or event name", "432次綠野仙蹤福音餐會 - 璨恩的尋根"} {
 		if !strings.Contains(japaneseNews, rule) {
 			t.Errorf("Japanese news rule missing %q: %q", rule, japaneseNews)
 		}

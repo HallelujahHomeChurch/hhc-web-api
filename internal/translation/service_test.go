@@ -91,7 +91,7 @@ func TestServiceRendersJapaneseGospelDinnerTitlePreview(t *testing.T) {
 	if got := preview.Translation["title"]; got != "第432回福音食事会 - 璨恩のルーツ探し" {
 		t.Fatalf("title = %q", got)
 	}
-	if generator.calls != 1 || len(repository.audits) != 1 || repository.audits[0].Outcome != OutcomeSuccess || repository.audits[0].PromptVersion != "cms-translation-v3" {
+	if generator.calls != 1 || len(repository.audits) != 1 || repository.audits[0].Outcome != OutcomeSuccess || repository.audits[0].PromptVersion != "cms-translation-v4" {
 		t.Fatalf("calls=%d audits=%#v", generator.calls, repository.audits)
 	}
 }
