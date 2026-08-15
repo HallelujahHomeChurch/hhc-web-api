@@ -121,7 +121,8 @@ func (s *Service) Preview(ctx context.Context, request PreviewRequest) (Preview,
 
 	providerCtx, cancel := context.WithTimeout(ctx, s.config.HandlerTimeout)
 	defer cancel()
-	result, err := s.generator.Generate(providerCtx, Request{Module: request.Module, SourceLocale: request.SourceLocale, TargetLocale: request.TargetLocale, Fields: fields})
+	providerRequest := Request{Module: request.Module, SourceLocale: request.SourceLocale, TargetLocale: request.TargetLocale, Fields: fields}
+	result, err := s.generator.Generate(providerCtx, providerRequest)
 	if err != nil {
 		if errors.Is(err, ErrTimeout) || errors.Is(err, context.DeadlineExceeded) || errors.Is(providerCtx.Err(), context.DeadlineExceeded) {
 			return s.failAfterReservation(ctx, reservation, state, started, OutcomeTimeout, ErrTimeout)
@@ -130,6 +131,10 @@ func (s *Service) Preview(ctx context.Context, request PreviewRequest) (Preview,
 			return s.failAfterReservation(ctx, reservation, state, started, OutcomeContentFiltered, ErrContentFiltered)
 		}
 		return s.failAfterReservation(ctx, reservation, state, started, OutcomeProviderFailure, ErrProvider)
+	}
+	result, err = applyTitleRule(providerRequest, fields, result)
+	if err != nil {
+		return s.failAfterReservation(ctx, reservation, state, started, OutcomeOutputValidationFailure, ErrProvider)
 	}
 	if !validResult(request.Module, fields, result.Fields) {
 		return s.failAfterReservation(ctx, reservation, state, started, OutcomeOutputValidationFailure, ErrProvider)

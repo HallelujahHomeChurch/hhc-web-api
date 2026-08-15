@@ -14,7 +14,13 @@ func applyTitleRule(request Request, source map[string]string, result Result) (R
 	}
 	rule := result.TitleRule
 	marked := strings.Contains(source["title"], gospelDinnerMarker)
-	if rule == nil || marked != (rule.Kind == "gospel_dinner") {
+	if rule == nil {
+		if !marked {
+			return result, nil
+		}
+		return Result{}, ErrProvider
+	}
+	if marked != (rule.Kind == "gospel_dinner") {
 		return Result{}, ErrProvider
 	}
 	if rule.Kind == "none" {

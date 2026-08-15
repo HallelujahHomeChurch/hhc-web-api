@@ -102,6 +102,11 @@ func TestApplyTitleRuleLeavesUnrelatedTranslationsUnchanged(t *testing.T) {
 	}
 
 	request := Request{Module: "news", SourceLocale: "zh-Hant", TargetLocale: "ja"}
+	withoutMetadata, err := applyTitleRule(request, map[string]string{"title": "一般消息"}, Result{Fields: map[string]string{"title": "一般のお知らせ"}})
+	if err != nil || withoutMetadata.Fields["title"] != "一般のお知らせ" {
+		t.Fatalf("result=%#v error=%v", withoutMetadata, err)
+	}
+
 	got, err := applyTitleRule(request, map[string]string{"title": "一般消息"}, Result{Fields: map[string]string{"title": "一般のお知らせ"}, TitleRule: &TitleRuleResult{Kind: "none"}})
 	if err != nil || got.Fields["title"] != "一般のお知らせ" {
 		t.Fatalf("result=%#v error=%v", got, err)
