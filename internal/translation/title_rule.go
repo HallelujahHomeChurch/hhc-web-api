@@ -55,10 +55,39 @@ func validTitleRuleSource(source string, rule TitleRuleResult) bool {
 				return false
 			}
 		}
-		if !strings.Contains(source, rule.Sequence) {
+		markerIndex := strings.Index(source, gospelDinnerMarker)
+		if markerIndex < 0 || !containsDigitRun(source[:markerIndex], rule.Sequence) {
 			return false
 		}
 	}
-	return (rule.SourceQualifier == "" || strings.Contains(source, rule.SourceQualifier)) &&
-		(rule.SourceEventName == "" || strings.Contains(source, rule.SourceEventName))
+	if (rule.SourceQualifier != "" && !strings.Contains(source, rule.SourceQualifier)) ||
+		(rule.SourceEventName != "" && !strings.Contains(source, rule.SourceEventName)) {
+		return false
+	}
+
+	remaining := source
+	for _, part := range []string{gospelDinnerMarker, "福音餐會", rule.Sequence, rule.SourceQualifier, rule.SourceEventName} {
+		if part != "" {
+			remaining = strings.ReplaceAll(remaining, part, "")
+		}
+	}
+	return strings.Trim(remaining, " \t\r\n第次回-–—:：·「」『』()（）[]【】") == ""
+}
+
+func containsDigitRun(source, sequence string) bool {
+	for start := 0; start < len(source); {
+		if source[start] < '0' || source[start] > '9' {
+			start++
+			continue
+		}
+		end := start + 1
+		for end < len(source) && source[end] >= '0' && source[end] <= '9' {
+			end++
+		}
+		if source[start:end] == sequence {
+			return true
+		}
+		start = end
+	}
+	return false
 }

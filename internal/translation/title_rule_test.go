@@ -32,6 +32,12 @@ func TestApplyTitleRuleRendersJapaneseGospelDinnerTitles(t *testing.T) {
 			want:   "福音食事会10周年 - 璨恩のルーツ探し",
 		},
 		{
+			name:   "anniversary digits are not an occurrence",
+			source: "綠野仙蹤福音餐會10週年 - 璨恩的尋根",
+			rule:   TitleRuleResult{Kind: "gospel_dinner", SourceQualifier: "10週年", LocalizedQualifier: "10周年", SourceEventName: "璨恩的尋根", LocalizedEventName: "璨恩のルーツ探し"},
+			want:   "福音食事会10周年 - 璨恩のルーツ探し",
+		},
+		{
 			name:   "quoted event name",
 			source: "432次綠野仙蹤福音餐會「璨恩的尋根」",
 			rule:   TitleRuleResult{Kind: "gospel_dinner", Sequence: "432", SourceEventName: "璨恩的尋根", LocalizedEventName: "璨恩のルーツ探し"},
@@ -69,10 +75,14 @@ func TestApplyTitleRuleRejectsInconsistentModelMetadata(t *testing.T) {
 		{name: "missed marker", source: "432次綠野仙蹤福音餐會 - 璨恩的尋根", rule: &TitleRuleResult{Kind: "none"}},
 		{name: "false marker", source: "一般消息 - 璨恩的尋根", rule: &TitleRuleResult{Kind: "gospel_dinner", SourceEventName: "璨恩的尋根", LocalizedEventName: "璨恩のルーツ探し"}},
 		{name: "invented occurrence", source: "432次綠野仙蹤福音餐會 - 璨恩的尋根", rule: &TitleRuleResult{Kind: "gospel_dinner", Sequence: "442", SourceEventName: "璨恩的尋根", LocalizedEventName: "璨恩のルーツ探し"}},
+		{name: "partial occurrence", source: "432次綠野仙蹤福音餐會 - 璨恩的尋根", rule: &TitleRuleResult{Kind: "gospel_dinner", Sequence: "32", SourceEventName: "璨恩的尋根", LocalizedEventName: "璨恩のルーツ探し"}},
+		{name: "anniversary digits as occurrence", source: "綠野仙蹤福音餐會10週年 - 璨恩的尋根", rule: &TitleRuleResult{Kind: "gospel_dinner", Sequence: "10", SourceEventName: "璨恩的尋根", LocalizedEventName: "璨恩のルーツ探し"}},
 		{name: "non digit occurrence", source: "第四百三十二次綠野仙蹤福音餐會", rule: &TitleRuleResult{Kind: "gospel_dinner", Sequence: "四百三十二"}},
 		{name: "invented qualifier", source: "綠野仙蹤福音餐會 - 璨恩的尋根", rule: &TitleRuleResult{Kind: "gospel_dinner", SourceQualifier: "十週年", LocalizedQualifier: "10周年", SourceEventName: "璨恩的尋根", LocalizedEventName: "璨恩のルーツ探し"}},
 		{name: "unpaired qualifier", source: "綠野仙蹤福音餐會十週年", rule: &TitleRuleResult{Kind: "gospel_dinner", SourceQualifier: "十週年"}},
 		{name: "invented event name", source: "綠野仙蹤福音餐會 - 璨恩的尋根", rule: &TitleRuleResult{Kind: "gospel_dinner", SourceEventName: "另一個名稱", LocalizedEventName: "別の名前"}},
+		{name: "missing event name", source: "432次綠野仙蹤福音餐會 - 璨恩的尋根", rule: &TitleRuleResult{Kind: "gospel_dinner", Sequence: "432"}},
+		{name: "missing qualifier", source: "綠野仙蹤福音餐會十週年 - 璨恩的尋根", rule: &TitleRuleResult{Kind: "gospel_dinner", SourceEventName: "璨恩的尋根", LocalizedEventName: "璨恩のルーツ探し"}},
 		{name: "unpaired event name", source: "綠野仙蹤福音餐會 - 璨恩的尋根", rule: &TitleRuleResult{Kind: "gospel_dinner", SourceEventName: "璨恩的尋根"}},
 		{name: "unknown kind", source: "綠野仙蹤福音餐會", rule: &TitleRuleResult{Kind: "other"}},
 	}
