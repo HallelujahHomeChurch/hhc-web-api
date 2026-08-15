@@ -45,7 +45,17 @@ type Request struct {
 }
 
 type Result struct {
-	Fields map[string]string
+	Fields    map[string]string
+	TitleRule *TitleRuleResult
+}
+
+type TitleRuleResult struct {
+	Kind               string `json:"kind"`
+	Sequence           string `json:"sequence"`
+	SourceQualifier    string `json:"sourceQualifier"`
+	LocalizedQualifier string `json:"localizedQualifier"`
+	SourceEventName    string `json:"sourceEventName"`
+	LocalizedEventName string `json:"localizedEventName"`
 }
 
 type Generator interface {
