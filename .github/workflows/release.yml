@@ -3,6 +3,11 @@ name: Production Release
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - docs/**
+      - openapi.yaml
+      - openapi_test.go
+      - .github/workflows/ci.yml
   workflow_dispatch:
     inputs:
       confirmation:
