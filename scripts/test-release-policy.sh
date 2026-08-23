@@ -32,6 +32,9 @@ grep -q -- '--validation-level Provider' "$workflow"
 grep -q -- '--no-pretty-print' "$workflow"
 grep -q './scripts/check-what-if.sh what-if.json' "$workflow"
 grep -q 'PREVIOUS_IMAGE_REF=' "$workflow"
+grep -q 'RUNTIME_CPU=' "$workflow"
+grep -q 'RUNTIME_MEMORY=' "$workflow"
+test "$(grep -Fc 'runtimeCpu="$RUNTIME_CPU" runtimeMemory="$RUNTIME_MEMORY"' "$workflow")" -eq 3
 grep -q 'az containerapp revision copy' "$workflow"
 grep -q -- '--image "$PREVIOUS_IMAGE_REF"' "$workflow"
 grep -q 'Verify rolled back runtime' "$workflow"
@@ -47,6 +50,10 @@ grep -q 'enableRbacAuthorization: true' infra/main.bicep
 grep -q "workloadProfileName: 'Consumption'" infra/main.bicep
 grep -q 'cooldownPeriod: 300' infra/main.bicep
 grep -q 'pollingInterval: 30' infra/main.bicep
+grep -Fq 'param runtimeCpu string' infra/main.bicep
+grep -Fq 'param runtimeMemory string' infra/main.bicep
+grep -Fq "cpu: json(runtimeCpu)" infra/main.bicep
+grep -Fq 'memory: runtimeMemory' infra/main.bicep
 grep -Fq 'param cmsTranslationEnabled bool = false' infra/main.bicep
 grep -Fq 'CMS_TRANSLATION_ENABLED: "true"' "$workflow"
 grep -Fq "var azureOpenAIRaiPolicyName = 'hhc-cms-translation-v1'" infra/main.bicep
