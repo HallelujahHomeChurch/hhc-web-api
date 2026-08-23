@@ -160,10 +160,15 @@ jobs:
           revision="$(az containerapp show -g "$RESOURCE_GROUP" -n "$API_APP_NAME" \
             --query properties.latestReadyRevisionName -o tsv --only-show-errors)"
           test -n "$revision"
-          read -r image cpu memory < <(az containerapp revision show -g "$RESOURCE_GROUP" -n "$API_APP_NAME" \
+          image="$(az containerapp revision show -g "$RESOURCE_GROUP" -n "$API_APP_NAME" \
             --revision "$revision" \
-            --query '[properties.template.containers[0].image, properties.template.containers[0].resources.cpu, properties.template.containers[0].resources.memory]' \
-            -o tsv --only-show-errors)
+            --query properties.template.containers[0].image -o tsv --only-show-errors)"
+          cpu="$(az containerapp revision show -g "$RESOURCE_GROUP" -n "$API_APP_NAME" \
+            --revision "$revision" \
+            --query properties.template.containers[0].resources.cpu -o tsv --only-show-errors)"
+          memory="$(az containerapp revision show -g "$RESOURCE_GROUP" -n "$API_APP_NAME" \
+            --revision "$revision" \
+            --query properties.template.containers[0].resources.memory -o tsv --only-show-errors)"
           test -n "$image"
           test -n "$cpu"
           test -n "$memory"
@@ -244,9 +249,12 @@ jobs:
             latest="$(az containerapp show -g "$RESOURCE_GROUP" -n "$API_APP_NAME" --query properties.latestRevisionName -o tsv --only-show-errors)"
             ready="$(az containerapp show -g "$RESOURCE_GROUP" -n "$API_APP_NAME" --query properties.latestReadyRevisionName -o tsv --only-show-errors)"
             if [[ -n "$latest" && "$latest" == "$ready" ]]; then
-              read -r image cpu memory < <(az containerapp revision show -g "$RESOURCE_GROUP" -n "$API_APP_NAME" --revision "$ready" \
-                --query '[properties.template.containers[0].image, properties.template.containers[0].resources.cpu, properties.template.containers[0].resources.memory]' \
-                -o tsv --only-show-errors)
+              image="$(az containerapp revision show -g "$RESOURCE_GROUP" -n "$API_APP_NAME" --revision "$ready" \
+                --query properties.template.containers[0].image -o tsv --only-show-errors)"
+              cpu="$(az containerapp revision show -g "$RESOURCE_GROUP" -n "$API_APP_NAME" --revision "$ready" \
+                --query properties.template.containers[0].resources.cpu -o tsv --only-show-errors)"
+              memory="$(az containerapp revision show -g "$RESOURCE_GROUP" -n "$API_APP_NAME" --revision "$ready" \
+                --query properties.template.containers[0].resources.memory -o tsv --only-show-errors)"
               [[ "$image" == "$IMAGE_REF" && "$cpu" == "$RUNTIME_CPU" && "$memory" == "$RUNTIME_MEMORY" ]] && exit 0
             fi
             sleep 10
