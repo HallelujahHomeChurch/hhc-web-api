@@ -34,6 +34,8 @@ grep -q './scripts/check-what-if.sh what-if.json' "$workflow"
 grep -q 'PREVIOUS_IMAGE_REF=' "$workflow"
 grep -q 'RUNTIME_CPU=' "$workflow"
 grep -q 'RUNTIME_MEMORY=' "$workflow"
+grep -Fq -- '--query properties.template.containers[0].resources.cpu -o tsv' "$workflow"
+grep -Fq -- '--query properties.template.containers[0].resources.memory -o tsv' "$workflow"
 test "$(grep -Fc 'runtimeCpu="$RUNTIME_CPU" runtimeMemory="$RUNTIME_MEMORY"' "$workflow")" -eq 3
 grep -q 'az containerapp revision copy' "$workflow"
 grep -q -- '--image "$PREVIOUS_IMAGE_REF"' "$workflow"
