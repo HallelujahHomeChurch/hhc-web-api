@@ -10,6 +10,10 @@ param legacyKeyVaultName string = 'alive-vault'
 param migrationImage string
 @minLength(1)
 param runtimeImage string
+@minLength(1)
+param runtimeCpu string
+@minLength(1)
+param runtimeMemory string
 param release string = 'unknown'
 param deployRuntime bool = true
 param deployMigrationJob bool = true
@@ -226,8 +230,8 @@ resource api 'Microsoft.App/containerApps@2025-01-01' = if (deployRuntime) {
             { name: 'DATABASE_URL', secretRef: 'database-url-v2' }
           ])
           resources: {
-            cpu: json('0.5')
-            memory: '1Gi'
+            cpu: json(runtimeCpu)
+            memory: runtimeMemory
           }
           probes: [
             {

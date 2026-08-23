@@ -12,6 +12,7 @@ az deployment group create \
   --resource-group alive \
   --template-file infra/main.bicep \
   --parameters migrationImage=<current-image> runtimeImage=<current-image> \
+    runtimeCpu=<current-cpu> runtimeMemory=<current-memory> \
     deployRuntime=false deployMigrationJob=false provisionPermissions=true
 
 # 2. Temporarily grant the signed-in operator access, then migrate the existing
@@ -35,6 +36,7 @@ az deployment group create \
   --resource-group alive \
   --template-file infra/main.bicep \
   --parameters migrationImage=<current-image> runtimeImage=<current-image> \
+    runtimeCpu=<current-cpu> runtimeMemory=<current-memory> \
     deployRuntime=true deployMigrationJob=true provisionPermissions=false \
     retainLegacyRuntimeSecret=true
 
@@ -44,6 +46,7 @@ az deployment group create \
   --resource-group alive \
   --template-file infra/main.bicep \
   --parameters migrationImage=<current-image> runtimeImage=<current-image> \
+    runtimeCpu=<current-cpu> runtimeMemory=<current-memory> \
     deployRuntime=true deployMigrationJob=true provisionPermissions=false \
     retainLegacyRuntimeSecret=false
 runtime_principal="$(az identity show --resource-group alive --name hhc-web-api-identity --query principalId -o tsv)"
