@@ -201,7 +201,7 @@ func TestOpenAPICatalogContractRejectsInvalidMetadataAndRoutes(t *testing.T) {
 		{"missing visibility", "      x-hhc-visibility: operations\n", "", "missing x-hhc-visibility"},
 		{"unknown visibility", "      x-hhc-visibility: operations", "      x-hhc-visibility: partner", "unknown visibility"},
 		{"tag mismatch", "      tags: [Operations]", "      tags: [Public]", "does not match visibility"},
-		{"missing callers", "      x-hhc-callers: [azure-container-apps]\n", "", "missing x-hhc-callers"},
+		{"missing callers", "      x-hhc-callers: [api-gateway]\n", "", "missing x-hhc-callers"},
 		{"missing registered route", "  /health:\n", "  /missing-health:\n", "missing documented route GET /health"},
 	}
 	for _, test := range tests {
@@ -241,6 +241,91 @@ func TestOpenAPIDocumentsGatewayTrustAndServiceBoundaries(t *testing.T) {
 	}
 }
 
+func TestOpenAPIComposedSchemasRemainSatisfiable(t *testing.T) {
+	document := readOpenAPI(t)
+	tests := []struct {
+		name     string
+		contains []string
+	}{
+		{"ContentWriteInput", []string{"allOf:", "$ref: '#/components/schemas/ContentWriteFields'", "unevaluatedProperties: false"}},
+		{"ContentItem", []string{"$ref: '#/components/schemas/ContentWriteFields'", "required: [id, module, status, version, isPublished, createdBy, updatedBy, createdAt, updatedAt]", "unevaluatedProperties: false"}},
+		{"CreateCampaignSchedule", []string{"$ref: '#/components/schemas/CampaignScheduleFields'", "unevaluatedProperties: false"}},
+		{"UpdateCampaignSchedule", []string{"$ref: '#/components/schemas/CampaignScheduleFields'", "required: [enabled]", "enabled: { type: boolean }", "unevaluatedProperties: false"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			block := schemaBlock(document, test.name)
+			for _, expected := range test.contains {
+				if !strings.Contains(block, expected) {
+					t.Errorf("schema %s missing %q:\n%s", test.name, expected, block)
+				}
+			}
+		})
+	}
+	for _, fields := range []string{"ContentWriteFields", "CampaignScheduleFields"} {
+		if block := schemaBlock(document, fields); strings.Contains(block, "additionalProperties: false") || strings.Contains(block, "unevaluatedProperties: false") {
+			t.Errorf("shared schema %s closes properties before composition:\n%s", fields, block)
+		}
+	}
+}
+
+func TestOpenAPIDocumentsEngagementProxyParametersAndResponses(t *testing.T) {
+	document := readOpenAPI(t)
+	for _, operationID := range []string{"listCampaigns", "listCampaignDeliveries"} {
+		block := operationByID(t, document, operationID)
+		if !strings.Contains(block, "$ref: '#/components/parameters/PerPage'") || strings.Contains(block, "$ref: '#/components/parameters/PageSize'") {
+			t.Errorf("%s must forward Engagement perPage, not Website pageSize:\n%s", operationID, block)
+		}
+	}
+
+	tests := []struct {
+		operationID, success string
+		errors               []string
+	}{
+		{"listCampaigns", "'200': { $ref: '#/components/responses/CampaignPage' }", []string{"400"}},
+		{"createCampaign", "'201': { $ref: '#/components/responses/Campaign' }", []string{"400", "409"}},
+		{"getCampaign", "'200': { $ref: '#/components/responses/Campaign' }", []string{"400", "404"}},
+		{"updateCampaign", "'200': { $ref: '#/components/responses/Campaign' }", []string{"400", "409"}},
+		{"deleteCampaign", "'204': { description: Campaign draft deleted }", []string{"400", "409"}},
+		{"sendCampaign", "'200': { $ref: '#/components/responses/Campaign' }", []string{"400", "404", "409"}},
+		{"listCampaignDeliveries", "'200': { $ref: '#/components/responses/CampaignDeliveryPage' }", []string{"400", "404"}},
+		{"retryFailedCampaignDeliveries", "'200': { $ref: '#/components/responses/Campaign' }", []string{"400", "404", "409"}},
+		{"listCampaignSchedules", "'200': { $ref: '#/components/responses/CampaignScheduleList' }", nil},
+		{"createCampaignSchedule", "'201': { $ref: '#/components/responses/CampaignSchedule' }", []string{"400"}},
+		{"getCampaignSchedule", "'200': { $ref: '#/components/responses/CampaignSchedule' }", []string{"400", "404"}},
+		{"updateCampaignSchedule", "'200': { $ref: '#/components/responses/CampaignSchedule' }", []string{"400", "404"}},
+		{"deleteCampaignSchedule", "'204': { description: Campaign schedule deleted }", []string{"400", "404"}},
+	}
+	for _, test := range tests {
+		t.Run(test.operationID, func(t *testing.T) {
+			block := operationByID(t, document, test.operationID)
+			for _, expected := range []string{
+				test.success,
+				"'401': { $ref: '#/components/responses/AdminUnauthorized' }",
+				"'403': { $ref: '#/components/responses/AdminForbidden' }",
+				"'500': { $ref: '#/components/responses/EngagementError' }",
+				"'503': { $ref: '#/components/responses/EngagementUnavailable' }",
+			} {
+				if !strings.Contains(block, expected) {
+					t.Errorf("%s missing %q:\n%s", test.operationID, expected, block)
+				}
+			}
+			for _, status := range test.errors {
+				expected := "'" + status + "': { $ref: '#/components/responses/EngagementError' }"
+				if !strings.Contains(block, expected) {
+					t.Errorf("%s missing %q:\n%s", test.operationID, expected, block)
+				}
+			}
+		})
+	}
+
+	for _, schema := range []string{"CampaignEnvelope", "CampaignPageEnvelope", "CampaignDeliveryPageEnvelope", "CampaignScheduleEnvelope", "CampaignScheduleListEnvelope", "EngagementErrorEnvelope", "EngagementUnavailableEnvelope"} {
+		if schemaBlock(document, schema) == "" {
+			t.Errorf("missing proxy schema %s", schema)
+		}
+	}
+}
+
 func TestCIValidatesOpenAPIWithPinnedToolchain(t *testing.T) {
 	contents, err := os.ReadFile(".github/workflows/ci.yml")
 	if err != nil {
@@ -248,7 +333,7 @@ func TestCIValidatesOpenAPIWithPinnedToolchain(t *testing.T) {
 	}
 	workflow := string(contents)
 	for _, expected := range []string{
-		"actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0",
+		"actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0",
 		"node-version: 24",
 		"npx --yes @redocly/cli@2.47.0 lint openapi.yaml",
 	} {
@@ -289,6 +374,9 @@ func validateCatalogContract(document string) error {
 		if !strings.Contains(head, metadata) {
 			return fmt.Errorf("missing root %s", strings.TrimSpace(strings.SplitN(metadata, ":", 2)[0]))
 		}
+	}
+	if !strings.Contains(head, "servers:\n  - url: https://www.alive.org.tw/api\n") {
+		return fmt.Errorf("root server must resolve Public operations through www.alive.org.tw/api")
 	}
 
 	operations := parseCatalogOperations(document)
@@ -333,8 +421,26 @@ func validateCatalogContract(document string) error {
 			return fmt.Errorf("%s tag %q does not match visibility %q", name, tag, visibility)
 		}
 		callers, count := operationValue(operation.block, "x-hhc-callers")
-		if count != 1 || callers == "[]" || !strings.HasPrefix(callers, "[") || !strings.HasSuffix(callers, "]") {
+		if count != 1 || !strings.HasPrefix(callers, "[") || !strings.HasSuffix(callers, "]") {
 			return fmt.Errorf("%s missing x-hhc-callers", name)
+		}
+		servers, serverCount := operationValue(operation.block, "servers")
+		switch visibility {
+		case "public":
+			if serverCount != 0 {
+				return fmt.Errorf("%s must inherit the Public server", name)
+			}
+		case "admin":
+			if serverCount != 1 || servers != "[{ url: https://admin.alive.org.tw/api }]" {
+				return fmt.Errorf("%s must resolve through admin.alive.org.tw/api", name)
+			}
+		case "operations":
+			if serverCount != 1 || servers != "[{ url: / }]" {
+				return fmt.Errorf("%s must use a contract-relative direct-service server", name)
+			}
+			if callers != "[]" {
+				return fmt.Errorf("%s must declare an empty application caller list", name)
+			}
 		}
 		security, count := operationValue(operation.block, "security")
 		if visibility == "admin" && (count != 1 || security != adminSecurity) {
@@ -342,6 +448,13 @@ func validateCatalogContract(document string) error {
 		}
 		if visibility != "admin" && (count != 1 || security != "[]") {
 			return fmt.Errorf("%s must document its unauthenticated service boundary", name)
+		}
+		if visibility == "admin" {
+			for status, response := range map[string]string{"401": "AdminUnauthorized", "403": "AdminForbidden"} {
+				if !strings.Contains(operation.block, "'"+status+"': { $ref: '#/components/responses/"+response+"' }") {
+					return fmt.Errorf("%s missing trusted Admin %s response", name, status)
+				}
+			}
 		}
 	}
 	return nil
@@ -385,6 +498,37 @@ func operationValue(block, key string) (string, int) {
 		}
 	}
 	return value, count
+}
+
+func operationByID(t *testing.T, document, operationID string) string {
+	t.Helper()
+	for _, operation := range parseCatalogOperations(document) {
+		if value, count := operationValue(operation.block, "operationId"); count == 1 && value == operationID {
+			return operation.block
+		}
+	}
+	t.Fatalf("missing operationId %s", operationID)
+	return ""
+}
+
+func schemaBlock(document, name string) string {
+	_, schemas, ok := strings.Cut(document, "\n  schemas:\n")
+	if !ok {
+		return ""
+	}
+	lines := strings.Split(schemas, "\n")
+	marker := "    " + name + ":"
+	for start, line := range lines {
+		if line != marker {
+			continue
+		}
+		end := start + 1
+		for end < len(lines) && (!strings.HasPrefix(lines[end], "    ") || strings.HasPrefix(lines[end], "     ") || lines[end] == "") {
+			end++
+		}
+		return strings.Join(lines[start:end], "\n")
+	}
+	return ""
 }
 
 func canonicalPath(path string) string {

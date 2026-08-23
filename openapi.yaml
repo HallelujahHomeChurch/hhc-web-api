@@ -27,8 +27,9 @@ paths:
       summary: Get health
       tags: [Operations]
       x-hhc-visibility: operations
-      x-hhc-callers: [azure-container-apps]
+      x-hhc-callers: []
       security: []
+      servers: [{ url: / }]
       responses:
         '200': { $ref: '#/components/responses/Health' }
   /health/live:
@@ -37,8 +38,9 @@ paths:
       summary: Get liveness
       tags: [Operations]
       x-hhc-visibility: operations
-      x-hhc-callers: [azure-container-apps]
+      x-hhc-callers: []
       security: []
+      servers: [{ url: / }]
       responses:
         '200': { $ref: '#/components/responses/Health' }
   /ready:
@@ -47,8 +49,9 @@ paths:
       summary: Get readiness
       tags: [Operations]
       x-hhc-visibility: operations
-      x-hhc-callers: [azure-container-apps]
+      x-hhc-callers: []
       security: []
+      servers: [{ url: / }]
       responses:
         '200': { $ref: '#/components/responses/Health' }
         '503': { $ref: '#/components/responses/Error' }
@@ -58,8 +61,9 @@ paths:
       summary: Get health readiness
       tags: [Operations]
       x-hhc-visibility: operations
-      x-hhc-callers: [azure-container-apps]
+      x-hhc-callers: []
       security: []
+      servers: [{ url: / }]
       responses:
         '200': { $ref: '#/components/responses/Health' }
         '503': { $ref: '#/components/responses/Error' }
@@ -71,12 +75,19 @@ paths:
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
       security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-any-scopes: ['campaigns:read', 'cms:read']
       parameters:
         - $ref: '#/components/parameters/Page'
-        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/PerPage'
         - $ref: '#/components/parameters/SearchQuery'
-      responses: { '200': { description: Campaign page } }
+      responses:
+        '200': { $ref: '#/components/responses/CampaignPage' }
+        '400': { $ref: '#/components/responses/EngagementError' }
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
+        '500': { $ref: '#/components/responses/EngagementError' }
+        '503': { $ref: '#/components/responses/EngagementUnavailable' }
     post:
       operationId: createCampaign
       summary: Create campaign
@@ -84,13 +95,21 @@ paths:
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
       security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-any-scopes: ['campaigns:write', 'cms:write']
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: '#/components/schemas/CreateCampaign' }
-      responses: { '201': { description: Campaign draft created } }
+      responses:
+        '201': { $ref: '#/components/responses/Campaign' }
+        '400': { $ref: '#/components/responses/EngagementError' }
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
+        '409': { $ref: '#/components/responses/EngagementError' }
+        '500': { $ref: '#/components/responses/EngagementError' }
+        '503': { $ref: '#/components/responses/EngagementUnavailable' }
   /admin/campaigns/{campaignId}:
     parameters:
       - { name: campaignId, in: path, required: true, schema: { type: string, format: uuid } }
@@ -101,8 +120,16 @@ paths:
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
       security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-any-scopes: ['campaigns:read', 'cms:read']
-      responses: { '200': { description: Campaign detail } }
+      responses:
+        '200': { $ref: '#/components/responses/Campaign' }
+        '400': { $ref: '#/components/responses/EngagementError' }
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
+        '404': { $ref: '#/components/responses/EngagementError' }
+        '500': { $ref: '#/components/responses/EngagementError' }
+        '503': { $ref: '#/components/responses/EngagementUnavailable' }
     put:
       operationId: updateCampaign
       summary: Update campaign
@@ -110,13 +137,21 @@ paths:
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
       security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-any-scopes: ['campaigns:write', 'cms:write']
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: '#/components/schemas/UpdateCampaign' }
-      responses: { '200': { description: Campaign draft updated } }
+      responses:
+        '200': { $ref: '#/components/responses/Campaign' }
+        '400': { $ref: '#/components/responses/EngagementError' }
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
+        '409': { $ref: '#/components/responses/EngagementError' }
+        '500': { $ref: '#/components/responses/EngagementError' }
+        '503': { $ref: '#/components/responses/EngagementUnavailable' }
     delete:
       operationId: deleteCampaign
       summary: Delete campaign
@@ -124,8 +159,16 @@ paths:
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
       security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-any-scopes: ['campaigns:write', 'cms:write']
-      responses: { '204': { description: Campaign draft deleted } }
+      responses:
+        '204': { description: Campaign draft deleted }
+        '400': { $ref: '#/components/responses/EngagementError' }
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
+        '409': { $ref: '#/components/responses/EngagementError' }
+        '500': { $ref: '#/components/responses/EngagementError' }
+        '503': { $ref: '#/components/responses/EngagementUnavailable' }
   /admin/campaigns/{campaignId}/send:
     post:
       operationId: sendCampaign
@@ -134,10 +177,19 @@ paths:
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
       security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-any-scopes: ['campaigns:send', 'cms:write']
       parameters:
         - { name: campaignId, in: path, required: true, schema: { type: string, format: uuid } }
-      responses: { '200': { description: Campaign audience snapshotted and queued } }
+      responses:
+        '200': { $ref: '#/components/responses/Campaign' }
+        '400': { $ref: '#/components/responses/EngagementError' }
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
+        '404': { $ref: '#/components/responses/EngagementError' }
+        '409': { $ref: '#/components/responses/EngagementError' }
+        '500': { $ref: '#/components/responses/EngagementError' }
+        '503': { $ref: '#/components/responses/EngagementUnavailable' }
   /admin/campaigns/{campaignId}/translation-previews/{targetLocale}:
     post:
       operationId: previewCampaignTranslation
@@ -146,6 +198,7 @@ paths:
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
       security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-any-scopes: ['campaigns:write', 'cms:write']
       parameters:
         - { name: campaignId, in: path, required: true, schema: { type: string, format: uuid } }
@@ -153,9 +206,10 @@ paths:
         - $ref: '#/components/parameters/IfMatch'
       requestBody: { $ref: '#/components/requestBodies/TranslationPreviewInput' }
       responses:
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
         '200': { $ref: '#/components/responses/CampaignTranslationPreview' }
         '400': { $ref: '#/components/responses/InvalidTranslationRequest' }
-        '403': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
         '404': { $ref: '#/components/responses/TranslationNotFound' }
         '409': { $ref: '#/components/responses/TranslationExists' }
         '412': { $ref: '#/components/responses/TranslationVersionMismatch' }
@@ -173,12 +227,20 @@ paths:
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
       security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-any-scopes: ['campaigns:read', 'cms:read']
       parameters:
         - { name: campaignId, in: path, required: true, schema: { type: string, format: uuid } }
         - $ref: '#/components/parameters/Page'
-        - $ref: '#/components/parameters/PageSize'
-      responses: { '200': { description: Campaign delivery results and summary } }
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200': { $ref: '#/components/responses/CampaignDeliveryPage' }
+        '400': { $ref: '#/components/responses/EngagementError' }
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
+        '404': { $ref: '#/components/responses/EngagementError' }
+        '500': { $ref: '#/components/responses/EngagementError' }
+        '503': { $ref: '#/components/responses/EngagementUnavailable' }
   /admin/campaigns/{campaignId}/retry-failed:
     post:
       operationId: retryFailedCampaignDeliveries
@@ -187,10 +249,19 @@ paths:
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
       security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-any-scopes: ['campaigns:send', 'cms:write']
       parameters:
         - { name: campaignId, in: path, required: true, schema: { type: string, format: uuid } }
-      responses: { '200': { description: Failed deliveries queued for retry } }
+      responses:
+        '200': { $ref: '#/components/responses/Campaign' }
+        '400': { $ref: '#/components/responses/EngagementError' }
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
+        '404': { $ref: '#/components/responses/EngagementError' }
+        '409': { $ref: '#/components/responses/EngagementError' }
+        '500': { $ref: '#/components/responses/EngagementError' }
+        '503': { $ref: '#/components/responses/EngagementUnavailable' }
   /admin/campaign-schedules:
     get:
       operationId: listCampaignSchedules
@@ -199,8 +270,14 @@ paths:
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
       security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-any-scopes: ['campaigns:read', 'cms:read']
-      responses: { '200': { description: Campaign schedules } }
+      responses:
+        '200': { $ref: '#/components/responses/CampaignScheduleList' }
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
+        '500': { $ref: '#/components/responses/EngagementError' }
+        '503': { $ref: '#/components/responses/EngagementUnavailable' }
     post:
       operationId: createCampaignSchedule
       summary: Create campaign schedule
@@ -208,13 +285,20 @@ paths:
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
       security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-scope-sets: [['campaigns:write', 'campaigns:send'], ['cms:write']]
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: '#/components/schemas/CreateCampaignSchedule' }
-      responses: { '201': { description: Campaign schedule created } }
+      responses:
+        '201': { $ref: '#/components/responses/CampaignSchedule' }
+        '400': { $ref: '#/components/responses/EngagementError' }
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
+        '500': { $ref: '#/components/responses/EngagementError' }
+        '503': { $ref: '#/components/responses/EngagementUnavailable' }
   /admin/campaign-schedules/{scheduleId}:
     parameters:
       - { name: scheduleId, in: path, required: true, schema: { type: string, format: uuid } }
@@ -225,8 +309,16 @@ paths:
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
       security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-any-scopes: ['campaigns:read', 'cms:read']
-      responses: { '200': { description: Campaign schedule detail } }
+      responses:
+        '200': { $ref: '#/components/responses/CampaignSchedule' }
+        '400': { $ref: '#/components/responses/EngagementError' }
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
+        '404': { $ref: '#/components/responses/EngagementError' }
+        '500': { $ref: '#/components/responses/EngagementError' }
+        '503': { $ref: '#/components/responses/EngagementUnavailable' }
     put:
       operationId: updateCampaignSchedule
       summary: Update campaign schedule
@@ -234,6 +326,7 @@ paths:
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
       security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-any-scopes: ['campaigns:write', 'cms:write']
       description: Enabling a schedule additionally requires campaigns:send; legacy cms:write remains accepted during role migration.
       requestBody:
@@ -241,7 +334,14 @@ paths:
         content:
           application/json:
             schema: { $ref: '#/components/schemas/UpdateCampaignSchedule' }
-      responses: { '200': { description: Campaign schedule updated } }
+      responses:
+        '200': { $ref: '#/components/responses/CampaignSchedule' }
+        '400': { $ref: '#/components/responses/EngagementError' }
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
+        '404': { $ref: '#/components/responses/EngagementError' }
+        '500': { $ref: '#/components/responses/EngagementError' }
+        '503': { $ref: '#/components/responses/EngagementUnavailable' }
     delete:
       operationId: deleteCampaignSchedule
       summary: Delete campaign schedule
@@ -249,8 +349,16 @@ paths:
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
       security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-any-scopes: ['campaigns:write', 'cms:write']
-      responses: { '204': { description: Campaign schedule deleted } }
+      responses:
+        '204': { description: Campaign schedule deleted }
+        '400': { $ref: '#/components/responses/EngagementError' }
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
+        '404': { $ref: '#/components/responses/EngagementError' }
+        '500': { $ref: '#/components/responses/EngagementError' }
+        '503': { $ref: '#/components/responses/EngagementUnavailable' }
   /admin/campaign-schedules/{scheduleId}/translation-previews/{targetLocale}:
     post:
       operationId: previewCampaignScheduleTranslation
@@ -259,6 +367,7 @@ paths:
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
       security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-any-scopes: ['campaigns:write', 'cms:write']
       parameters:
         - { name: scheduleId, in: path, required: true, schema: { type: string, format: uuid } }
@@ -266,9 +375,10 @@ paths:
         - $ref: '#/components/parameters/IfMatch'
       requestBody: { $ref: '#/components/requestBodies/TranslationPreviewInput' }
       responses:
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
         '200': { $ref: '#/components/responses/CampaignTranslationPreview' }
         '400': { $ref: '#/components/responses/InvalidTranslationRequest' }
-        '403': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
         '404': { $ref: '#/components/responses/TranslationNotFound' }
         '409': { $ref: '#/components/responses/TranslationExists' }
         '412': { $ref: '#/components/responses/TranslationVersionMismatch' }
@@ -414,6 +524,7 @@ paths:
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
       security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-scopes: ['cms:read']
       parameters:
         - $ref: '#/components/parameters/Page'
@@ -425,6 +536,8 @@ paths:
           in: query
           schema: { type: string, maxLength: 200 }
       responses:
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
         '200':
           description: CMS bulletin list
           content:
@@ -437,6 +550,7 @@ paths:
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
       security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-scopes: ['cms:write']
       parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
       requestBody:
@@ -445,6 +559,8 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/CreateBulletinInput' }
       responses:
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
         '201': { $ref: '#/components/responses/BulletinIssue' }
         '409': { $ref: '#/components/responses/Error' }
   /admin/bulletins/{issueId}:
@@ -455,9 +571,12 @@ paths:
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
       security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-scopes: ['cms:read']
       parameters: [{ $ref: '#/components/parameters/IssueID' }]
       responses:
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
         '200': { $ref: '#/components/responses/BulletinIssue' }
         '404': { $ref: '#/components/responses/Error' }
     put:
@@ -467,6 +586,7 @@ paths:
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
       security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-scopes: ['cms:write']
       parameters:
         - $ref: '#/components/parameters/IssueID'
@@ -477,6 +597,8 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/UpdateBulletinInput' }
       responses:
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
         '200': { $ref: '#/components/responses/BulletinIssue' }
         '409': { $ref: '#/components/responses/Error' }
         '412': { $ref: '#/components/responses/Error' }
@@ -487,11 +609,14 @@ paths:
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
       security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-scopes: ['cms:write']
       parameters:
         - $ref: '#/components/parameters/IssueID'
         - $ref: '#/components/parameters/IfMatch'
       responses:
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
         '204': { description: Bulletin and its revisions deleted }
         '409': { $ref: '#/components/responses/Error' }
         '412': { $ref: '#/components/responses/Error' }
@@ -503,6 +628,7 @@ paths:
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
       security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-scopes: ['cms:write', 'assets:write']
       parameters:
         - $ref: '#/components/parameters/IssueID'
@@ -513,6 +639,8 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/CreateBulletinUploadInput' }
       responses:
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
         '201':
           description: Short-lived asset upload target created
           content:
@@ -526,6 +654,7 @@ paths:
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
       security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-scopes: ['cms:write']
       parameters:
         - $ref: '#/components/parameters/IssueID'
@@ -537,6 +666,8 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/UpdateBulletinVersionInput' }
       responses:
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
         '200': { $ref: '#/components/responses/BulletinIssue' }
         '409': { $ref: '#/components/responses/Error' }
         '412': { $ref: '#/components/responses/Error' }
@@ -547,12 +678,15 @@ paths:
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
       security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-scopes: ['cms:write']
       parameters:
         - $ref: '#/components/parameters/IssueID'
         - { name: locale, in: path, required: true, schema: { $ref: '#/components/schemas/BulletinEdition' } }
         - $ref: '#/components/parameters/IfMatch'
       responses:
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
         '200': { $ref: '#/components/responses/BulletinIssue' }
         '404': { $ref: '#/components/responses/Error' }
         '409': { $ref: '#/components/responses/Error' }
@@ -565,11 +699,14 @@ paths:
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
       security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-scopes: ['cms:read']
       parameters:
         - $ref: '#/components/parameters/IssueID'
         - { name: assetId, in: path, required: true, schema: { type: string } }
       responses:
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
         '200':
           description: Bulletin PDF scan status
           content:
@@ -584,11 +721,14 @@ paths:
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
       security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-scopes: ['cms:write', 'assets:write']
       parameters:
         - $ref: '#/components/parameters/IssueID'
         - { name: assetId, in: path, required: true, schema: { type: string } }
       responses:
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
         '200':
           description: Bulletin PDF scan requeued
           content:
@@ -603,6 +743,7 @@ paths:
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
       security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-scopes: ['cms:write', 'assets:write']
       parameters:
         - $ref: '#/components/parameters/IssueID'
@@ -614,6 +755,8 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/CompleteBulletinUploadInput' }
       responses:
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
         '200': { $ref: '#/components/responses/BulletinIssue' }
         '412': { $ref: '#/components/responses/Error' }
   /admin/bulletins/{issueId}/publish:
@@ -624,12 +767,15 @@ paths:
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
       security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-scopes: ['cms:publish']
       parameters:
         - $ref: '#/components/parameters/IssueID'
         - $ref: '#/components/parameters/IfMatch'
       requestBody: { $ref: '#/components/requestBodies/PublicationInput' }
       responses:
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
         '202':
           description: Publication workflow accepted
           content:
@@ -644,12 +790,15 @@ paths:
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
       security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-scopes: ['cms:publish']
       parameters:
         - $ref: '#/components/parameters/IssueID'
         - $ref: '#/components/parameters/IfMatch'
       requestBody: { $ref: '#/components/requestBodies/PublicationInput' }
       responses:
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
         '200': { $ref: '#/components/responses/BulletinIssue' }
         '412': { $ref: '#/components/responses/Error' }
   /admin/bulletins/{issueId}/revisions:
@@ -660,9 +809,12 @@ paths:
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
       security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-scopes: ['cms:read']
       parameters: [{ $ref: '#/components/parameters/IssueID' }]
       responses:
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
         '200':
           description: Bulletin revisions
           content:
@@ -676,12 +828,15 @@ paths:
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
       security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-scopes: ['cms:write']
       parameters:
         - $ref: '#/components/parameters/IssueID'
         - $ref: '#/components/parameters/Revision'
         - $ref: '#/components/parameters/IfMatch'
       responses:
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
         '200': { $ref: '#/components/responses/BulletinIssue' }
         '404': { $ref: '#/components/responses/Error' }
         '412': { $ref: '#/components/responses/Error' }
@@ -693,6 +848,7 @@ paths:
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
       security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-scopes: ['cms:write']
       parameters:
         - $ref: '#/components/parameters/IssueID'
@@ -700,9 +856,10 @@ paths:
         - $ref: '#/components/parameters/IfMatch'
       requestBody: { $ref: '#/components/requestBodies/TranslationPreviewInput' }
       responses:
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
         '200': { $ref: '#/components/responses/BulletinTranslationPreview' }
         '400': { $ref: '#/components/responses/InvalidTranslationRequest' }
-        '403': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
         '404': { $ref: '#/components/responses/TranslationNotFound' }
         '409': { $ref: '#/components/responses/TranslationExists' }
         '412': { $ref: '#/components/responses/TranslationVersionMismatch' }
@@ -720,6 +877,7 @@ paths:
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
       security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-scopes: ['cms:read']
       parameters:
         - $ref: '#/components/parameters/ContentModule'
@@ -730,6 +888,8 @@ paths:
         - { name: sort, in: query, schema: { type: string, enum: [updatedAt, displayDate, eventDate] } }
         - { name: direction, in: query, schema: { type: string, enum: [asc, desc] } }
       responses:
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
         '200':
           description: Typed content list
           content:
@@ -743,12 +903,15 @@ paths:
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
       security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-scopes: ['cms:write']
       parameters:
         - $ref: '#/components/parameters/ContentModule'
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody: { $ref: '#/components/requestBodies/ContentWriteInput' }
       responses:
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
         '201': { $ref: '#/components/responses/ContentItem' }
         '409': { $ref: '#/components/responses/Error' }
   /admin/content/{module}/{contentId}:
@@ -759,11 +922,14 @@ paths:
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
       security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-scopes: ['cms:read']
       parameters:
         - $ref: '#/components/parameters/ContentModule'
         - $ref: '#/components/parameters/ContentID'
       responses:
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
         '200': { $ref: '#/components/responses/ContentItem' }
         '404': { $ref: '#/components/responses/Error' }
     put:
@@ -773,6 +939,7 @@ paths:
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
       security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-scopes: ['cms:write']
       parameters:
         - $ref: '#/components/parameters/ContentModule'
@@ -780,6 +947,8 @@ paths:
         - $ref: '#/components/parameters/IfMatch'
       requestBody: { $ref: '#/components/requestBodies/ContentWriteInput' }
       responses:
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
         '200': { $ref: '#/components/responses/ContentItem' }
         '409':
           description: Existing locales omitted from `translations` must be listed in `deleteLocales` (error code `locale_set_mismatch`).
@@ -794,12 +963,15 @@ paths:
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
       security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-scopes: ['cms:write']
       parameters:
         - $ref: '#/components/parameters/ContentModule'
         - $ref: '#/components/parameters/ContentID'
         - $ref: '#/components/parameters/IfMatch'
       responses:
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
         '204': { description: Content and its revisions deleted }
         '409': { $ref: '#/components/responses/Error' }
         '412': { $ref: '#/components/responses/Error' }
@@ -811,6 +983,7 @@ paths:
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
       security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-scopes: ['cms:write']
       parameters:
         - $ref: '#/components/parameters/ContentModule'
@@ -819,9 +992,10 @@ paths:
         - $ref: '#/components/parameters/IfMatch'
       requestBody: { $ref: '#/components/requestBodies/TranslationPreviewInput' }
       responses:
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
         '200': { $ref: '#/components/responses/ContentTranslationPreview' }
         '400': { $ref: '#/components/responses/InvalidTranslationRequest' }
-        '403': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
         '404': { $ref: '#/components/responses/TranslationNotFound' }
         '409': { $ref: '#/components/responses/TranslationExists' }
         '412': { $ref: '#/components/responses/TranslationVersionMismatch' }
@@ -839,12 +1013,15 @@ paths:
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
       security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-scopes: ['cms:publish']
       parameters:
         - $ref: '#/components/parameters/ContentModule'
         - $ref: '#/components/parameters/ContentID'
         - $ref: '#/components/parameters/IfMatch'
       responses:
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
         '200': { $ref: '#/components/responses/ContentItem' }
         '422': { $ref: '#/components/responses/Error' }
   /admin/content/{module}/{contentId}/unpublish:
@@ -855,12 +1032,15 @@ paths:
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
       security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-scopes: ['cms:publish']
       parameters:
         - $ref: '#/components/parameters/ContentModule'
         - $ref: '#/components/parameters/ContentID'
         - $ref: '#/components/parameters/IfMatch'
       responses:
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
         '200': { $ref: '#/components/responses/ContentItem' }
   /admin/content/{module}/{contentId}/revisions:
     get:
@@ -870,11 +1050,14 @@ paths:
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
       security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-scopes: ['cms:read']
       parameters:
         - $ref: '#/components/parameters/ContentModule'
         - $ref: '#/components/parameters/ContentID'
       responses:
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
         '200':
           description: Content revisions
           content:
@@ -888,6 +1071,7 @@ paths:
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
       security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-scopes: ['cms:write']
       parameters:
         - $ref: '#/components/parameters/ContentModule'
@@ -895,6 +1079,8 @@ paths:
         - $ref: '#/components/parameters/Revision'
         - $ref: '#/components/parameters/IfMatch'
       responses:
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
         '200': { $ref: '#/components/responses/ContentItem' }
   /admin/content/news/{contentId}/upload-sessions:
     post:
@@ -904,6 +1090,7 @@ paths:
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
       security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-scopes: ['cms:write', 'assets:write']
       parameters:
         - $ref: '#/components/parameters/ContentID'
@@ -914,6 +1101,8 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/CreateImageUploadInput' }
       responses:
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
         '201':
           description: News cover upload target
           content:
@@ -927,11 +1116,14 @@ paths:
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
       security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-scopes: ['cms:read']
       parameters:
         - $ref: '#/components/parameters/ContentID'
         - { name: assetId, in: path, required: true, schema: { type: string } }
       responses:
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
         '200':
           description: News cover scan and processing status
           content:
@@ -945,11 +1137,14 @@ paths:
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
       security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-scopes: ['cms:write', 'assets:write']
       parameters:
         - { name: contentId, in: path, required: true, schema: { type: string } }
         - { name: assetId, in: path, required: true, schema: { type: string } }
       responses:
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
         '200':
           description: News cover scan requeued
           content:
@@ -964,6 +1159,7 @@ paths:
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
       security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-scopes: ['cms:write', 'assets:write']
       parameters:
         - $ref: '#/components/parameters/ContentID'
@@ -975,6 +1171,8 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/CompleteImageUploadInput' }
       responses:
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
         '200': { $ref: '#/components/responses/ContentItem' }
 components:
   securitySchemes:
@@ -1008,6 +1206,7 @@ components:
     BulletinEdition: { name: locale, in: query, schema: { $ref: '#/components/schemas/BulletinEdition' } }
     Page: { name: page, in: query, schema: { type: integer, minimum: 1, maximum: 10000, default: 1 } }
     PageSize: { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+    PerPage: { name: perPage, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
     SearchQuery:
       name: q
       in: query
@@ -1071,6 +1270,51 @@ components:
       content:
         application/json:
           schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    AdminUnauthorized:
+      description: Trusted gateway identity is missing or invalid.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    AdminForbidden:
+      description: The trusted Account identity lacks a required scope.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    Campaign:
+      description: Engagement-owned campaign response forwarded unchanged.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/CampaignEnvelope' }
+    CampaignPage:
+      description: Engagement-owned campaign page forwarded unchanged.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/CampaignPageEnvelope' }
+    CampaignDeliveryPage:
+      description: Engagement-owned campaign delivery page forwarded unchanged.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/CampaignDeliveryPageEnvelope' }
+    CampaignSchedule:
+      description: Engagement-owned campaign schedule forwarded unchanged.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/CampaignScheduleEnvelope' }
+    CampaignScheduleList:
+      description: Engagement-owned campaign schedule list forwarded unchanged.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/CampaignScheduleListEnvelope' }
+    EngagementError:
+      description: Engagement API rejected or could not complete the proxied request.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/EngagementErrorEnvelope' }
+    EngagementUnavailable:
+      description: Engagement API is unavailable locally or reports that it is not ready.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/EngagementUnavailableEnvelope' }
     ContentItem:
       description: Typed content item
       headers:
@@ -1152,6 +1396,159 @@ components:
           type: string
           maxLength: 2048
           pattern: '^/(?!/).*$'
+    CampaignStatus:
+      type: string
+      enum: [draft, queued, sending, completed, completed_with_failures, failed]
+    CampaignDeliverySummary:
+      type: object
+      additionalProperties: false
+      required: [total, pending, processing, submitted, sent, failed, suppressed]
+      properties:
+        total: { type: integer, minimum: 0 }
+        pending: { type: integer, minimum: 0 }
+        processing: { type: integer, minimum: 0 }
+        submitted: { type: integer, minimum: 0 }
+        sent: { type: integer, minimum: 0 }
+        failed: { type: integer, minimum: 0 }
+        suppressed: { type: integer, minimum: 0 }
+    Campaign:
+      type: object
+      additionalProperties: false
+      required: [id, name, audienceType, channel, translations, status, recipientCount, createdBy, createdAt, updatedAt, queuedAt, deliverySummary, version]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, maxLength: 120 }
+        audienceType: { type: string, enum: [newsletter, all, role, users] }
+        channel: { type: string, enum: [email, web_push] }
+        roleId: { type: string, format: uuid }
+        userIds:
+          type: array
+          maxItems: 500
+          uniqueItems: true
+          items: { type: string, format: uuid }
+        translations:
+          type: object
+          minProperties: 1
+          additionalProperties: { $ref: '#/components/schemas/CampaignTranslation' }
+        status: { $ref: '#/components/schemas/CampaignStatus' }
+        recipientCount: { type: integer, minimum: 0 }
+        createdBy: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        queuedAt: { type: [string, 'null'], format: date-time }
+        deliverySummary: { $ref: '#/components/schemas/CampaignDeliverySummary' }
+        version: { type: integer, format: int64, minimum: 1 }
+    CampaignPage:
+      type: object
+      additionalProperties: false
+      required: [items, page, perPage, total]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Campaign' } }
+        page: { type: integer, minimum: 1 }
+        perPage: { type: integer, minimum: 1, maximum: 100 }
+        total: { type: integer, minimum: 0 }
+    CampaignDelivery:
+      type: object
+      additionalProperties: false
+      required: [recipientId, channel, locale, status, attemptCount, updatedAt]
+      properties:
+        recipientId: { type: string }
+        userId: { type: string, format: uuid }
+        channel: { type: string, enum: [email, web_push] }
+        locale: { type: string }
+        status: { type: string, enum: [pending, processing, submitted, sent, failed, suppressed] }
+        attemptCount: { type: integer, minimum: 0 }
+        failureCode: { type: string }
+        updatedAt: { type: string, format: date-time }
+    CampaignDeliveryPage:
+      type: object
+      additionalProperties: false
+      required: [items, page, perPage, total, summary, campaignStatus]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/CampaignDelivery' } }
+        page: { type: integer, minimum: 1 }
+        perPage: { type: integer, minimum: 1, maximum: 100 }
+        total: { type: integer, minimum: 0 }
+        summary: { $ref: '#/components/schemas/CampaignDeliverySummary' }
+        campaignStatus: { $ref: '#/components/schemas/CampaignStatus' }
+    CampaignSchedule:
+      type: object
+      additionalProperties: false
+      required: [id, name, channel, audienceType, scheduleType, runAt, cronExpression, timezone, translations, enabled, nextRunAt, lastRunAt, createdBy, createdAt, updatedAt, version]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, maxLength: 120 }
+        channel: { type: string, enum: [email, web_push] }
+        audienceType: { type: string, enum: [newsletter, all, role, users] }
+        roleId: { type: string, format: uuid }
+        userIds:
+          type: array
+          maxItems: 500
+          uniqueItems: true
+          items: { type: string, format: uuid }
+        scheduleType: { type: string, enum: [once, cron] }
+        runAt: { type: [string, 'null'], format: date-time }
+        cronExpression: { type: string }
+        timezone: { type: string }
+        translations:
+          type: object
+          minProperties: 1
+          additionalProperties: { $ref: '#/components/schemas/CampaignTranslation' }
+        enabled: { type: boolean }
+        nextRunAt: { type: [string, 'null'], format: date-time }
+        lastRunAt: { type: [string, 'null'], format: date-time }
+        createdBy: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        version: { type: integer, format: int64, minimum: 1 }
+    CampaignEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/Campaign' }
+    CampaignPageEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/CampaignPage' }
+    CampaignDeliveryPageEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/CampaignDeliveryPage' }
+    CampaignScheduleEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/CampaignSchedule' }
+    CampaignScheduleListEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/CampaignSchedule' } }
+    EngagementErrorBody:
+      type: object
+      additionalProperties: false
+      required: [code]
+      properties:
+        code:
+          type: string
+          enum: [ENG_INVALID_REQUEST, ENG_REQUEST_INVALID, ENG_CAMPAIGN_NOT_FOUND, ENG_IDEMPOTENCY_CONFLICT, ENG_CAMPAIGN_STATE_CONFLICT, ENG_INTERNAL, ENG_NOT_READY, ENG_UNAUTHORIZED, ENG_FORBIDDEN]
+    EngagementErrorEnvelope:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error: { $ref: '#/components/schemas/EngagementErrorBody' }
+    EngagementUnavailableEnvelope:
+      oneOf:
+        - $ref: '#/components/schemas/ErrorEnvelope'
+        - $ref: '#/components/schemas/EngagementErrorEnvelope'
     CreateCampaign:
       type: object
       additionalProperties: false
@@ -1189,8 +1586,11 @@ components:
           minProperties: 1
           additionalProperties: { $ref: '#/components/schemas/CampaignTranslation' }
     CreateCampaignSchedule:
+      allOf:
+        - $ref: '#/components/schemas/CampaignScheduleFields'
+      unevaluatedProperties: false
+    CampaignScheduleFields:
       type: object
-      additionalProperties: false
       required: [name, channel, audienceType, scheduleType, translations]
       properties:
         name: { type: string, maxLength: 120 }
@@ -1212,11 +1612,12 @@ components:
           additionalProperties: { $ref: '#/components/schemas/CampaignTranslation' }
     UpdateCampaignSchedule:
       allOf:
-        - $ref: '#/components/schemas/CreateCampaignSchedule'
+        - $ref: '#/components/schemas/CampaignScheduleFields'
         - type: object
           required: [enabled]
           properties:
             enabled: { type: boolean }
+      unevaluatedProperties: false
     ContentLocale:
       type: string
       enum: [zh-Hant, zh-Hans, en, ja, ko]
@@ -1523,8 +1924,11 @@ components:
         title: { type: string, minLength: 1, maxLength: 200 }
         subtitle: { type: string, maxLength: 300 }
     ContentWriteInput:
+      allOf:
+        - $ref: '#/components/schemas/ContentWriteFields'
+      unevaluatedProperties: false
+    ContentWriteFields:
       type: object
-      additionalProperties: false
       required: [translations]
       properties:
         authorName: { type: string, maxLength: 200 }
@@ -1549,7 +1953,7 @@ components:
           items: { $ref: '#/components/schemas/ContentLocale' }
     ContentItem:
       allOf:
-        - $ref: '#/components/schemas/ContentWriteInput'
+        - $ref: '#/components/schemas/ContentWriteFields'
         - type: object
           required: [id, module, status, version, isPublished, createdBy, updatedBy, createdAt, updatedAt]
           properties:
@@ -1566,6 +1970,7 @@ components:
             publishedAt: { type: string, format: date-time }
             createdAt: { type: string, format: date-time }
             updatedAt: { type: string, format: date-time }
+      unevaluatedProperties: false
     ContentRevision:
       type: object
       required: [version, snapshot, createdBy, createdAt]
