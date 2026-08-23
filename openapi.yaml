@@ -2,13 +2,75 @@ openapi: 3.1.0
 info:
   title: HHC Web API
   version: 0.2.0
+  description: |-
+    Website API owns CMS records and publication state; asset-api owns file bytes, scanning, derivatives, and grants.
+    Campaign routes are authorization-preserving proxies to engagement-api, which owns campaign and consent state.
+tags:
+  - name: Public
+    description: Published website projections exposed through api-gateway.
+  - name: Admin
+    description: CMS administration exposed through api-gateway and authorized by trusted Account identity headers.
+  - name: Private
+    description: Service-to-service operations that are never browser-callable.
+  - name: Operations
+    description: Direct service health and readiness endpoints used by platform probes.
+x-hhc-service: hhc-web-api
+x-hhc-owner: HHC Platform
+x-hhc-repository: HallelujahHomeChurch/hhc-web-api
 servers:
   - url: https://www.alive.org.tw/api
+    description: Public and admin gateway surface; api-gateway validates browser JWTs and injects trusted identity headers.
 paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Get health
+      tags: [Operations]
+      x-hhc-visibility: operations
+      x-hhc-callers: [azure-container-apps]
+      security: []
+      responses:
+        '200': { $ref: '#/components/responses/Health' }
+  /health/live:
+    get:
+      operationId: getLiveness
+      summary: Get liveness
+      tags: [Operations]
+      x-hhc-visibility: operations
+      x-hhc-callers: [azure-container-apps]
+      security: []
+      responses:
+        '200': { $ref: '#/components/responses/Health' }
+  /ready:
+    get:
+      operationId: getReadiness
+      summary: Get readiness
+      tags: [Operations]
+      x-hhc-visibility: operations
+      x-hhc-callers: [azure-container-apps]
+      security: []
+      responses:
+        '200': { $ref: '#/components/responses/Health' }
+        '503': { $ref: '#/components/responses/Error' }
+  /health/ready:
+    get:
+      operationId: getHealthReadiness
+      summary: Get health readiness
+      tags: [Operations]
+      x-hhc-visibility: operations
+      x-hhc-callers: [azure-container-apps]
+      security: []
+      responses:
+        '200': { $ref: '#/components/responses/Health' }
+        '503': { $ref: '#/components/responses/Error' }
   /admin/campaigns:
     get:
       operationId: listCampaigns
-      security: [{ bearerAuth: [] }]
+      summary: List campaigns
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
       x-required-any-scopes: ['campaigns:read', 'cms:read']
       parameters:
         - $ref: '#/components/parameters/Page'
@@ -17,7 +79,11 @@ paths:
       responses: { '200': { description: Campaign page } }
     post:
       operationId: createCampaign
-      security: [{ bearerAuth: [] }]
+      summary: Create campaign
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
       x-required-any-scopes: ['campaigns:write', 'cms:write']
       requestBody:
         required: true
@@ -30,12 +96,20 @@ paths:
       - { name: campaignId, in: path, required: true, schema: { type: string, format: uuid } }
     get:
       operationId: getCampaign
-      security: [{ bearerAuth: [] }]
+      summary: Get campaign
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
       x-required-any-scopes: ['campaigns:read', 'cms:read']
       responses: { '200': { description: Campaign detail } }
     put:
       operationId: updateCampaign
-      security: [{ bearerAuth: [] }]
+      summary: Update campaign
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
       x-required-any-scopes: ['campaigns:write', 'cms:write']
       requestBody:
         required: true
@@ -45,13 +119,21 @@ paths:
       responses: { '200': { description: Campaign draft updated } }
     delete:
       operationId: deleteCampaign
-      security: [{ bearerAuth: [] }]
+      summary: Delete campaign
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
       x-required-any-scopes: ['campaigns:write', 'cms:write']
       responses: { '204': { description: Campaign draft deleted } }
   /admin/campaigns/{campaignId}/send:
     post:
       operationId: sendCampaign
-      security: [{ bearerAuth: [] }]
+      summary: Send campaign
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
       x-required-any-scopes: ['campaigns:send', 'cms:write']
       parameters:
         - { name: campaignId, in: path, required: true, schema: { type: string, format: uuid } }
@@ -59,7 +141,11 @@ paths:
   /admin/campaigns/{campaignId}/translation-previews/{targetLocale}:
     post:
       operationId: previewCampaignTranslation
-      security: [{ bearerAuth: [] }]
+      summary: Preview campaign translation
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
       x-required-any-scopes: ['campaigns:write', 'cms:write']
       parameters:
         - { name: campaignId, in: path, required: true, schema: { type: string, format: uuid } }
@@ -82,7 +168,11 @@ paths:
   /admin/campaigns/{campaignId}/deliveries:
     get:
       operationId: listCampaignDeliveries
-      security: [{ bearerAuth: [] }]
+      summary: List campaign deliveries
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
       x-required-any-scopes: ['campaigns:read', 'cms:read']
       parameters:
         - { name: campaignId, in: path, required: true, schema: { type: string, format: uuid } }
@@ -92,7 +182,11 @@ paths:
   /admin/campaigns/{campaignId}/retry-failed:
     post:
       operationId: retryFailedCampaignDeliveries
-      security: [{ bearerAuth: [] }]
+      summary: Retry failed campaign deliveries
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
       x-required-any-scopes: ['campaigns:send', 'cms:write']
       parameters:
         - { name: campaignId, in: path, required: true, schema: { type: string, format: uuid } }
@@ -100,12 +194,20 @@ paths:
   /admin/campaign-schedules:
     get:
       operationId: listCampaignSchedules
-      security: [{ bearerAuth: [] }]
+      summary: List campaign schedules
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
       x-required-any-scopes: ['campaigns:read', 'cms:read']
       responses: { '200': { description: Campaign schedules } }
     post:
       operationId: createCampaignSchedule
-      security: [{ bearerAuth: [] }]
+      summary: Create campaign schedule
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
       x-required-scope-sets: [['campaigns:write', 'campaigns:send'], ['cms:write']]
       requestBody:
         required: true
@@ -118,12 +220,20 @@ paths:
       - { name: scheduleId, in: path, required: true, schema: { type: string, format: uuid } }
     get:
       operationId: getCampaignSchedule
-      security: [{ bearerAuth: [] }]
+      summary: Get campaign schedule
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
       x-required-any-scopes: ['campaigns:read', 'cms:read']
       responses: { '200': { description: Campaign schedule detail } }
     put:
       operationId: updateCampaignSchedule
-      security: [{ bearerAuth: [] }]
+      summary: Update campaign schedule
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
       x-required-any-scopes: ['campaigns:write', 'cms:write']
       description: Enabling a schedule additionally requires campaigns:send; legacy cms:write remains accepted during role migration.
       requestBody:
@@ -134,13 +244,21 @@ paths:
       responses: { '200': { description: Campaign schedule updated } }
     delete:
       operationId: deleteCampaignSchedule
-      security: [{ bearerAuth: [] }]
+      summary: Delete campaign schedule
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
       x-required-any-scopes: ['campaigns:write', 'cms:write']
       responses: { '204': { description: Campaign schedule deleted } }
   /admin/campaign-schedules/{scheduleId}/translation-previews/{targetLocale}:
     post:
       operationId: previewCampaignScheduleTranslation
-      security: [{ bearerAuth: [] }]
+      summary: Preview campaign schedule translation
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
       x-required-any-scopes: ['campaigns:write', 'cms:write']
       parameters:
         - { name: scheduleId, in: path, required: true, schema: { type: string, format: uuid } }
@@ -163,6 +281,11 @@ paths:
   /bulletins:
     get:
       operationId: listPublicBulletins
+      summary: List public bulletins
+      tags: [Public]
+      x-hhc-visibility: public
+      x-hhc-callers: [api-gateway]
+      security: []
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PageSize'
@@ -175,6 +298,11 @@ paths:
   /bulletins/latest:
     get:
       operationId: getLatestPublicBulletin
+      summary: Get latest public bulletin
+      tags: [Public]
+      x-hhc-visibility: public
+      x-hhc-callers: [api-gateway]
+      security: []
       parameters: [{ $ref: '#/components/parameters/BulletinEdition' }]
       responses:
         '200': { $ref: '#/components/responses/PublicBulletin' }
@@ -182,6 +310,11 @@ paths:
   /bulletins/by-number/{issueNumber}:
     get:
       operationId: getPublicBulletinByNumber
+      summary: Get public bulletin by number
+      tags: [Public]
+      x-hhc-visibility: public
+      x-hhc-callers: [api-gateway]
+      security: []
       parameters:
         - { name: issueNumber, in: path, required: true, schema: { type: integer, format: int32, minimum: 1, maximum: 2147483647 } }
         - $ref: '#/components/parameters/BulletinEdition'
@@ -192,6 +325,11 @@ paths:
   /bulletins/{issueDate}:
     get:
       operationId: getPublicBulletinByDate
+      summary: Get public bulletin by date
+      tags: [Public]
+      x-hhc-visibility: public
+      x-hhc-callers: [api-gateway]
+      security: []
       parameters:
         - { name: issueDate, in: path, required: true, schema: { type: string, format: date } }
         - $ref: '#/components/parameters/BulletinEdition'
@@ -201,6 +339,11 @@ paths:
   /news:
     get:
       operationId: listPublicNews
+      summary: List public news
+      tags: [Public]
+      x-hhc-visibility: public
+      x-hhc-callers: [api-gateway]
+      security: []
       parameters:
         - $ref: '#/components/parameters/ContentLocale'
         - $ref: '#/components/parameters/Page'
@@ -209,6 +352,11 @@ paths:
   /news/{slug}:
     get:
       operationId: getPublicNews
+      summary: Get public news
+      tags: [Public]
+      x-hhc-visibility: public
+      x-hhc-callers: [api-gateway]
+      security: []
       parameters:
         - { name: slug, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 120, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$' } }
         - $ref: '#/components/parameters/ContentLocale'
@@ -220,6 +368,11 @@ paths:
   /history:
     get:
       operationId: listPublicHistory
+      summary: List public history
+      tags: [Public]
+      x-hhc-visibility: public
+      x-hhc-callers: [api-gateway]
+      security: []
       parameters:
         - $ref: '#/components/parameters/ContentLocale'
         - $ref: '#/components/parameters/Page'
@@ -228,6 +381,11 @@ paths:
   /videos:
     get:
       operationId: listPublicVideos
+      summary: List public videos
+      tags: [Public]
+      x-hhc-visibility: public
+      x-hhc-callers: [api-gateway]
+      security: []
       parameters:
         - $ref: '#/components/parameters/ContentLocale'
         - $ref: '#/components/parameters/Page'
@@ -236,6 +394,11 @@ paths:
   /home:
     get:
       operationId: getPublicHome
+      summary: Get public home
+      tags: [Public]
+      x-hhc-visibility: public
+      x-hhc-callers: [api-gateway]
+      security: []
       parameters: [{ $ref: '#/components/parameters/ContentLocale' }]
       responses:
         '200':
@@ -246,7 +409,11 @@ paths:
   /admin/bulletins:
     get:
       operationId: listAdminBulletins
-      security: [{ bearerAuth: [] }]
+      summary: List admin bulletins
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
       x-required-scopes: ['cms:read']
       parameters:
         - $ref: '#/components/parameters/Page'
@@ -265,7 +432,11 @@ paths:
               schema: { $ref: '#/components/schemas/BulletinListEnvelope' }
     post:
       operationId: createBulletinIssue
-      security: [{ bearerAuth: [] }]
+      summary: Create bulletin issue
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
       x-required-scopes: ['cms:write']
       parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
       requestBody:
@@ -279,7 +450,11 @@ paths:
   /admin/bulletins/{issueId}:
     get:
       operationId: getAdminBulletin
-      security: [{ bearerAuth: [] }]
+      summary: Get admin bulletin
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
       x-required-scopes: ['cms:read']
       parameters: [{ $ref: '#/components/parameters/IssueID' }]
       responses:
@@ -287,7 +462,11 @@ paths:
         '404': { $ref: '#/components/responses/Error' }
     put:
       operationId: updateBulletinIssue
-      security: [{ bearerAuth: [] }]
+      summary: Update bulletin issue
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
       x-required-scopes: ['cms:write']
       parameters:
         - $ref: '#/components/parameters/IssueID'
@@ -303,7 +482,11 @@ paths:
         '412': { $ref: '#/components/responses/Error' }
     delete:
       operationId: deleteBulletin
-      security: [{ bearerAuth: [] }]
+      summary: Delete bulletin
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
       x-required-scopes: ['cms:write']
       parameters:
         - $ref: '#/components/parameters/IssueID'
@@ -315,7 +498,11 @@ paths:
   /admin/bulletins/{issueId}/upload-sessions:
     post:
       operationId: createBulletinUploadSession
-      security: [{ bearerAuth: [] }]
+      summary: Create bulletin upload session
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
       x-required-scopes: ['cms:write', 'assets:write']
       parameters:
         - $ref: '#/components/parameters/IssueID'
@@ -334,7 +521,11 @@ paths:
   /admin/bulletins/{issueId}/versions/{locale}:
     put:
       operationId: updateBulletinVersion
-      security: [{ bearerAuth: [] }]
+      summary: Update bulletin version
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
       x-required-scopes: ['cms:write']
       parameters:
         - $ref: '#/components/parameters/IssueID'
@@ -351,7 +542,11 @@ paths:
         '412': { $ref: '#/components/responses/Error' }
     delete:
       operationId: deleteBulletinVersion
-      security: [{ bearerAuth: [] }]
+      summary: Delete bulletin version
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
       x-required-scopes: ['cms:write']
       parameters:
         - $ref: '#/components/parameters/IssueID'
@@ -365,7 +560,11 @@ paths:
   /admin/bulletins/{issueId}/assets/{assetId}:
     get:
       operationId: getBulletinAssetStatus
-      security: [{ bearerAuth: [] }]
+      summary: Get bulletin asset status
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
       x-required-scopes: ['cms:read']
       parameters:
         - $ref: '#/components/parameters/IssueID'
@@ -380,7 +579,11 @@ paths:
   /admin/bulletins/{issueId}/assets/{assetId}/scan/retry:
     post:
       operationId: retryBulletinAssetScan
-      security: [{ bearerAuth: [] }]
+      summary: Retry bulletin asset scan
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
       x-required-scopes: ['cms:write', 'assets:write']
       parameters:
         - $ref: '#/components/parameters/IssueID'
@@ -395,7 +598,11 @@ paths:
   /admin/bulletins/{issueId}/assets/{assetId}/complete:
     post:
       operationId: completeBulletinUpload
-      security: [{ bearerAuth: [] }]
+      summary: Complete bulletin upload
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
       x-required-scopes: ['cms:write', 'assets:write']
       parameters:
         - $ref: '#/components/parameters/IssueID'
@@ -412,7 +619,11 @@ paths:
   /admin/bulletins/{issueId}/publish:
     post:
       operationId: publishBulletin
-      security: [{ bearerAuth: [] }]
+      summary: Publish bulletin
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
       x-required-scopes: ['cms:publish']
       parameters:
         - $ref: '#/components/parameters/IssueID'
@@ -428,7 +639,11 @@ paths:
   /admin/bulletins/{issueId}/unpublish:
     post:
       operationId: unpublishBulletin
-      security: [{ bearerAuth: [] }]
+      summary: Unpublish bulletin
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
       x-required-scopes: ['cms:publish']
       parameters:
         - $ref: '#/components/parameters/IssueID'
@@ -440,7 +655,11 @@ paths:
   /admin/bulletins/{issueId}/revisions:
     get:
       operationId: listBulletinRevisions
-      security: [{ bearerAuth: [] }]
+      summary: List bulletin revisions
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
       x-required-scopes: ['cms:read']
       parameters: [{ $ref: '#/components/parameters/IssueID' }]
       responses:
@@ -452,7 +671,11 @@ paths:
   /admin/bulletins/{issueId}/revisions/{revision}/restore:
     post:
       operationId: restoreBulletinRevision
-      security: [{ bearerAuth: [] }]
+      summary: Restore bulletin revision
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
       x-required-scopes: ['cms:write']
       parameters:
         - $ref: '#/components/parameters/IssueID'
@@ -465,7 +688,11 @@ paths:
   /admin/bulletins/{issueId}/translation-previews/{targetLocale}:
     post:
       operationId: previewBulletinTranslation
-      security: [{ bearerAuth: [] }]
+      summary: Preview bulletin translation
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
       x-required-scopes: ['cms:write']
       parameters:
         - $ref: '#/components/parameters/IssueID'
@@ -488,7 +715,11 @@ paths:
   /admin/content/{module}:
     get:
       operationId: listAdminContent
-      security: [{ bearerAuth: [] }]
+      summary: List admin content
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
       x-required-scopes: ['cms:read']
       parameters:
         - $ref: '#/components/parameters/ContentModule'
@@ -507,7 +738,11 @@ paths:
         '400': { $ref: '#/components/responses/Error' }
     post:
       operationId: createContent
-      security: [{ bearerAuth: [] }]
+      summary: Create content
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
       x-required-scopes: ['cms:write']
       parameters:
         - $ref: '#/components/parameters/ContentModule'
@@ -519,7 +754,11 @@ paths:
   /admin/content/{module}/{contentId}:
     get:
       operationId: getAdminContent
-      security: [{ bearerAuth: [] }]
+      summary: Get admin content
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
       x-required-scopes: ['cms:read']
       parameters:
         - $ref: '#/components/parameters/ContentModule'
@@ -529,7 +768,11 @@ paths:
         '404': { $ref: '#/components/responses/Error' }
     put:
       operationId: updateContent
-      security: [{ bearerAuth: [] }]
+      summary: Update content
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
       x-required-scopes: ['cms:write']
       parameters:
         - $ref: '#/components/parameters/ContentModule'
@@ -546,7 +789,11 @@ paths:
         '412': { $ref: '#/components/responses/Error' }
     delete:
       operationId: deleteContent
-      security: [{ bearerAuth: [] }]
+      summary: Delete content
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
       x-required-scopes: ['cms:write']
       parameters:
         - $ref: '#/components/parameters/ContentModule'
@@ -559,7 +806,11 @@ paths:
   /admin/content/{module}/{contentId}/translation-previews/{targetLocale}:
     post:
       operationId: previewContentTranslation
-      security: [{ bearerAuth: [] }]
+      summary: Preview content translation
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
       x-required-scopes: ['cms:write']
       parameters:
         - $ref: '#/components/parameters/ContentModule'
@@ -583,7 +834,11 @@ paths:
   /admin/content/{module}/{contentId}/publish:
     post:
       operationId: publishContent
-      security: [{ bearerAuth: [] }]
+      summary: Publish content
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
       x-required-scopes: ['cms:publish']
       parameters:
         - $ref: '#/components/parameters/ContentModule'
@@ -595,7 +850,11 @@ paths:
   /admin/content/{module}/{contentId}/unpublish:
     post:
       operationId: unpublishContent
-      security: [{ bearerAuth: [] }]
+      summary: Unpublish content
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
       x-required-scopes: ['cms:publish']
       parameters:
         - $ref: '#/components/parameters/ContentModule'
@@ -606,7 +865,11 @@ paths:
   /admin/content/{module}/{contentId}/revisions:
     get:
       operationId: listContentRevisions
-      security: [{ bearerAuth: [] }]
+      summary: List content revisions
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
       x-required-scopes: ['cms:read']
       parameters:
         - $ref: '#/components/parameters/ContentModule'
@@ -620,7 +883,11 @@ paths:
   /admin/content/{module}/{contentId}/revisions/{revision}/restore:
     post:
       operationId: restoreContentRevision
-      security: [{ bearerAuth: [] }]
+      summary: Restore content revision
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
       x-required-scopes: ['cms:write']
       parameters:
         - $ref: '#/components/parameters/ContentModule'
@@ -632,7 +899,11 @@ paths:
   /admin/content/news/{contentId}/upload-sessions:
     post:
       operationId: createNewsCoverUpload
-      security: [{ bearerAuth: [] }]
+      summary: Create news cover upload
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
       x-required-scopes: ['cms:write', 'assets:write']
       parameters:
         - $ref: '#/components/parameters/ContentID'
@@ -651,7 +922,11 @@ paths:
   /admin/content/news/{contentId}/assets/{assetId}:
     get:
       operationId: getNewsCoverStatus
-      security: [{ bearerAuth: [] }]
+      summary: Get news cover status
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
       x-required-scopes: ['cms:read']
       parameters:
         - $ref: '#/components/parameters/ContentID'
@@ -665,7 +940,11 @@ paths:
   /admin/content/news/{contentId}/assets/{assetId}/scan/retry:
     post:
       operationId: retryNewsCoverScan
-      security: [{ bearerAuth: [] }]
+      summary: Retry news cover scan
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
       x-required-scopes: ['cms:write', 'assets:write']
       parameters:
         - { name: contentId, in: path, required: true, schema: { type: string } }
@@ -680,7 +959,11 @@ paths:
   /admin/content/news/{contentId}/assets/{assetId}/complete:
     post:
       operationId: completeNewsCoverUpload
-      security: [{ bearerAuth: [] }]
+      summary: Complete news cover upload
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
       x-required-scopes: ['cms:write', 'assets:write']
       parameters:
         - $ref: '#/components/parameters/ContentID'
@@ -695,7 +978,31 @@ paths:
         '200': { $ref: '#/components/responses/ContentItem' }
 components:
   securitySchemes:
-    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+    daprApiToken:
+      type: apiKey
+      in: header
+      name: dapr-api-token
+      description: Dapr API token supplied by api-gateway; the value is never published in this contract.
+    daprCallerAppId:
+      type: apiKey
+      in: header
+      name: Dapr-Caller-App-Id
+      description: Must identify the configured api-gateway Dapr application.
+    trustedUserId:
+      type: apiKey
+      in: header
+      name: X-HHC-User-ID
+      description: Sanitized Account user identifier injected by api-gateway.
+    trustedAuthProvider:
+      type: apiKey
+      in: header
+      name: X-HHC-Auth-Provider
+      description: Must be account-api.
+    trustedScopes:
+      type: apiKey
+      in: header
+      name: X-HHC-Scopes
+      description: Sanitized Account scopes injected by api-gateway and enforced per operation.
   parameters:
     ContentLocale: { name: locale, in: query, schema: { $ref: '#/components/schemas/ContentLocale' } }
     BulletinEdition: { name: locale, in: query, schema: { $ref: '#/components/schemas/BulletinEdition' } }
@@ -732,6 +1039,21 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/TranslationPreviewInput' }
   responses:
+    Health:
+      description: Service process is healthy or ready.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [data, meta, error]
+            properties:
+              data:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, enum: [healthy, ready] }
+              meta: { type: object }
+              error: { type: 'null' }
     BulletinIssue:
       description: Bulletin issue
       headers:
