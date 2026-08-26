@@ -3,7 +3,9 @@ package hhcwebapi
 import (
 	"fmt"
 	"os"
+	"reflect"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -187,6 +189,41 @@ func TestOpenAPICatalogContract(t *testing.T) {
 	if err := validateCatalogContract(document); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestOpenAPITagDefinitionsMatchOperations(t *testing.T) {
+	document := readOpenAPI(t)
+	want := []string{"Admin", "Operations", "Public"}
+	if got := topLevelTagNames(document); !reflect.DeepEqual(got, want) {
+		t.Fatalf("top-level tags = %v, want %v", got, want)
+	}
+	tags := map[string]bool{}
+	for _, operation := range parseCatalogOperations(document) {
+		tag, count := operationValue(operation.block, "tags")
+		if count == 1 {
+			tags[strings.TrimSpace(strings.Trim(tag, "[]"))] = true
+		}
+	}
+	got := make([]string, 0, len(tags))
+	for tag := range tags {
+		got = append(got, tag)
+	}
+	sort.Strings(got)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("operation tags = %v, want %v", got, want)
+	}
+}
+
+func topLevelTagNames(document string) []string {
+	head, _, _ := strings.Cut(document, "paths:\n")
+	var tags []string
+	for _, line := range strings.Split(head, "\n") {
+		if strings.HasPrefix(line, "  - name: ") {
+			tags = append(tags, strings.TrimPrefix(line, "  - name: "))
+		}
+	}
+	sort.Strings(tags)
+	return tags
 }
 
 func TestOpenAPICatalogContractRejectsInvalidMetadataAndRoutes(t *testing.T) {

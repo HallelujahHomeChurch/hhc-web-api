@@ -10,8 +10,6 @@ tags:
     description: Published website projections exposed through api-gateway.
   - name: Admin
     description: CMS administration exposed through api-gateway and authorized by trusted Account identity headers.
-  - name: Private
-    description: Service-to-service operations that are never browser-callable.
   - name: Operations
     description: Direct service health and readiness endpoints used by platform probes.
 x-hhc-service: hhc-web-api
