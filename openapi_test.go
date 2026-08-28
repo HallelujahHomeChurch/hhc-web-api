@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/getkin/kin-openapi/openapi3"
+	jsonschema "github.com/santhosh-tekuri/jsonschema/v6"
 )
 
 func TestOpenAPIDocumentsPublicBulletinByNumber(t *testing.T) {
@@ -168,29 +169,28 @@ func TestOpenAPIDocumentsSiteSettingsContracts(t *testing.T) {
 }
 
 func TestOpenAPISiteSettingsSchemasAcceptValidWireShapes(t *testing.T) {
-	document := loadOpenAPI(t)
-	if err := document.Components.Schemas["SiteLayout"].Value.VisitJSON(validPublicSiteLayout(), openapi3.EnableJSONSchema2020()); err != nil {
+	if err := compileOpenAPISchema(t, "SiteLayout").Validate(validPublicSiteLayout()); err != nil {
 		t.Fatalf("SiteLayout rejected valid payload: %v", err)
 	}
-	if err := document.Components.Schemas["SiteSettingsWriteInput"].Value.VisitJSON(validAdminSiteSettingsInput(), openapi3.EnableJSONSchema2020()); err != nil {
+	adminSchema := compileOpenAPISchema(t, "SiteSettingsWriteInput")
+	if err := adminSchema.Validate(validAdminSiteSettingsInput()); err != nil {
 		t.Fatalf("SiteSettingsWriteInput rejected valid payload: %v", err)
 	}
-	if err := document.Components.Schemas["SiteSettings"].Value.VisitJSON(validAdminSiteSettings(), openapi3.EnableJSONSchema2020()); err != nil {
+	if err := compileOpenAPISchema(t, "SiteSettings").Validate(validAdminSiteSettings()); err != nil {
 		t.Fatalf("SiteSettings rejected valid payload: %v", err)
 	}
 	for _, safeURL := range []string{"https://media.example.com/channel", "https://example.xn--fiqs8s/channel", "https://example.com/channel?%66oo=bar"} {
 		value := validAdminSiteSettingsInput()
 		externalLinks(value)["churchYoutube"] = safeURL
-		if err := document.Components.Schemas["SiteSettingsWriteInput"].Value.VisitJSON(value, openapi3.EnableJSONSchema2020()); err != nil {
+		if err := adminSchema.Validate(value); err != nil {
 			t.Fatalf("SiteSettingsWriteInput rejected runtime-valid URL %q: %v", safeURL, err)
 		}
 	}
 }
 
 func TestOpenAPISiteSettingsRejectsRuntimeInvalidWireShapes(t *testing.T) {
-	document := loadOpenAPI(t)
-	adminSchema := document.Components.Schemas["SiteSettingsWriteInput"].Value
-	publicSchema := document.Components.Schemas["SiteLayout"].Value
+	adminSchema := compileOpenAPISchema(t, "SiteSettingsWriteInput")
+	publicSchema := compileOpenAPISchema(t, "SiteLayout")
 
 	for _, test := range []struct {
 		name   string
@@ -198,6 +198,29 @@ func TestOpenAPISiteSettingsRejectsRuntimeInvalidWireShapes(t *testing.T) {
 	}{
 		{"admin concrete href", func(value map[string]any) { firstHeader(value)["href"] = "/zh-Hant/about" }},
 		{"admin cross-key href", func(value map[string]any) { firstHeader(value)["href"] = "/{locale}/news" }},
+		{"missing locale", func(value map[string]any) { value["locales"] = value["locales"].([]any)[:4] }},
+		{"duplicate locale key", func(value map[string]any) {
+			locales := value["locales"].([]any)
+			locales[1].(map[string]any)["locale"] = locales[0].(map[string]any)["locale"]
+		}},
+		{"missing header key", func(value map[string]any) {
+			locale := value["locales"].([]any)[0].(map[string]any)
+			locale["header"] = locale["header"].([]any)[:2]
+		}},
+		{"duplicate header key", func(value map[string]any) {
+			header := value["locales"].([]any)[0].(map[string]any)["header"].([]any)
+			header[1] = map[string]any{"key": "about", "label": "Other", "href": "/{locale}/about", "visible": true}
+		}},
+		{"missing legal key", func(value map[string]any) {
+			locale := value["locales"].([]any)[0].(map[string]any)
+			locale["legal"] = locale["legal"].([]any)[:1]
+		}},
+		{"duplicate legal key", func(value map[string]any) {
+			legal := value["locales"].([]any)[0].(map[string]any)["legal"].([]any)
+			legal[1] = map[string]any{"key": "privacy-policy", "label": "Other", "href": "/{locale}/privacy-policy", "visible": true}
+		}},
+		{"empty visible label", func(value map[string]any) { firstHeader(value)["label"] = "" }},
+		{"whitespace visible label", func(value map[string]any) { firstHeader(value)["label"] = " \t" }},
 		{"userinfo URL", func(value map[string]any) { externalLinks(value)["churchYoutube"] = "https://user@example.com/channel" }},
 		{"fragment URL", func(value map[string]any) {
 			externalLinks(value)["churchYoutube"] = "https://example.com/channel#private"
@@ -242,8 +265,18 @@ func TestOpenAPISiteSettingsRejectsRuntimeInvalidWireShapes(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			value := validAdminSiteSettingsInput()
 			test.mutate(value)
-			if err := adminSchema.VisitJSON(value, openapi3.EnableJSONSchema2020()); err == nil {
+			if err := adminSchema.Validate(value); err == nil {
 				t.Fatalf("SiteSettingsWriteInput accepted invalid payload: %#v", value)
+			}
+		})
+	}
+
+	for _, field := range []string{"siteName", "englishName", "copyrightHolder", "allRightsReserved", "seoTitleSuffix", "seoDescriptionFallback"} {
+		t.Run("whitespace-only "+field, func(t *testing.T) {
+			value := validAdminSiteSettingsInput()
+			value["locales"].([]any)[0].(map[string]any)[field] = " \t"
+			if err := adminSchema.Validate(value); err == nil {
+				t.Fatalf("SiteSettingsWriteInput accepted whitespace-only %s", field)
 			}
 		})
 	}
@@ -258,7 +291,7 @@ func TestOpenAPISiteSettingsRejectsRuntimeInvalidWireShapes(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			value := validPublicSiteLayout()
 			firstHeader(value)["href"] = test.href
-			if err := publicSchema.VisitJSON(value, openapi3.EnableJSONSchema2020()); err == nil {
+			if err := publicSchema.Validate(value); err == nil {
 				t.Fatalf("SiteLayout accepted invalid href %q", test.href)
 			}
 		})
@@ -272,6 +305,29 @@ func loadOpenAPI(t *testing.T) *openapi3.T {
 		t.Fatal(err)
 	}
 	return document
+}
+
+func compileOpenAPISchema(t *testing.T, name string) *jsonschema.Schema {
+	t.Helper()
+	document := loadOpenAPI(t)
+	encoded, err := json.Marshal(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var resource any
+	if err := json.Unmarshal(encoded, &resource); err != nil {
+		t.Fatal(err)
+	}
+	compiler := jsonschema.NewCompiler()
+	compiler.DefaultDraft(jsonschema.Draft2020)
+	if err := compiler.AddResource("openapi.json", resource); err != nil {
+		t.Fatal(err)
+	}
+	schema, err := compiler.Compile("openapi.json#/components/schemas/" + name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return schema
 }
 
 func validPublicSiteLayout() map[string]any {

@@ -2191,6 +2191,9 @@ components:
         - properties: { key: { const: about }, href: { const: '/{locale}/about' } }
         - properties: { key: { const: news }, href: { const: '/{locale}/news' } }
         - properties: { key: { const: literature-ministry }, href: { const: '/{locale}/literature-ministry' } }
+      allOf:
+        - if: { properties: { visible: { const: true } }, required: [visible] }
+          then: { properties: { label: { pattern: '\S' } } }
     AdminSiteLegalNavigationItem:
       type: object
       additionalProperties: false
@@ -2203,6 +2206,9 @@ components:
       oneOf:
         - properties: { key: { const: privacy-policy }, href: { const: '/{locale}/privacy-policy' } }
         - properties: { key: { const: terms-of-use }, href: { const: '/{locale}/terms-of-use' } }
+      allOf:
+        - if: { properties: { visible: { const: true } }, required: [visible] }
+          then: { properties: { label: { pattern: '\S' } } }
     PublicSiteHeaderNavigationItem:
       type: object
       additionalProperties: false
@@ -2252,12 +2258,12 @@ components:
       required: [locale, siteName, englishName, copyrightHolder, allRightsReserved, seoTitleSuffix, seoDescriptionFallback]
       properties:
         locale: { $ref: '#/components/schemas/ContentLocale' }
-        siteName: { type: string, minLength: 1 }
-        englishName: { type: string, minLength: 1 }
-        copyrightHolder: { type: string, minLength: 1 }
-        allRightsReserved: { type: string, minLength: 1 }
-        seoTitleSuffix: { type: string, minLength: 1 }
-        seoDescriptionFallback: { type: string, minLength: 1 }
+        siteName: { type: string, pattern: '\S' }
+        englishName: { type: string, pattern: '\S' }
+        copyrightHolder: { type: string, pattern: '\S' }
+        allRightsReserved: { type: string, pattern: '\S' }
+        seoTitleSuffix: { type: string, pattern: '\S' }
+        seoDescriptionFallback: { type: string, pattern: '\S' }
     SiteLocaleSettings:
       allOf:
         - $ref: '#/components/schemas/SiteDisplayFields'
@@ -2269,11 +2275,18 @@ components:
               minItems: 3
               maxItems: 3
               items: { $ref: '#/components/schemas/AdminSiteHeaderNavigationItem' }
+              allOf:
+                - { contains: { properties: { key: { const: about } }, required: [key] }, minContains: 1, maxContains: 1 }
+                - { contains: { properties: { key: { const: news } }, required: [key] }, minContains: 1, maxContains: 1 }
+                - { contains: { properties: { key: { const: literature-ministry } }, required: [key] }, minContains: 1, maxContains: 1 }
             legal:
               type: array
               minItems: 2
               maxItems: 2
               items: { $ref: '#/components/schemas/AdminSiteLegalNavigationItem' }
+              allOf:
+                - { contains: { properties: { key: { const: privacy-policy } }, required: [key] }, minContains: 1, maxContains: 1 }
+                - { contains: { properties: { key: { const: terms-of-use } }, required: [key] }, minContains: 1, maxContains: 1 }
       unevaluatedProperties: false
     SiteLayout:
       allOf:
@@ -2304,6 +2317,12 @@ components:
           minItems: 5
           maxItems: 5
           items: { $ref: '#/components/schemas/SiteLocaleSettings' }
+          allOf:
+            - { contains: { properties: { locale: { const: zh-Hant } }, required: [locale] }, minContains: 1, maxContains: 1 }
+            - { contains: { properties: { locale: { const: zh-Hans } }, required: [locale] }, minContains: 1, maxContains: 1 }
+            - { contains: { properties: { locale: { const: en } }, required: [locale] }, minContains: 1, maxContains: 1 }
+            - { contains: { properties: { locale: { const: ja } }, required: [locale] }, minContains: 1, maxContains: 1 }
+            - { contains: { properties: { locale: { const: ko } }, required: [locale] }, minContains: 1, maxContains: 1 }
         links: { $ref: '#/components/schemas/SiteExternalLinks' }
     SiteSettingsWriteInput:
       allOf:
