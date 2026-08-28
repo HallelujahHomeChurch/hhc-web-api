@@ -83,12 +83,12 @@ func TestLoadRejectsUnknownNestedFields(t *testing.T) {
 	}
 }
 
-func TestEmbeddedManifestLoadsLocationRecords(t *testing.T) {
+func TestEmbeddedManifestLoadsCumulativePageRecords(t *testing.T) {
 	manifest, hash, err := Load(contentmanifest.Manifest)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if hash == "" || manifest.SeedVersion != "2026-08-28-public-content-site-layout-v1" || len(manifest.Records) != 3 {
+	if hash == "" || manifest.SeedVersion != "2026-08-28-public-content-pages-v1" || len(manifest.Records) != 7 {
 		t.Fatalf("embedded manifest hash=%q version=%q records=%d", hash, manifest.SeedVersion, len(manifest.Records))
 	}
 	for i, sourceKey := range []string{"location:taipei", "location:zhongli"} {
@@ -98,5 +98,11 @@ func TestEmbeddedManifestLoadsLocationRecords(t *testing.T) {
 	}
 	if record := manifest.Records[2]; record.Kind != "site_layout" || record.SourceKey != "site-layout:default" || len(record.SourcePaths) != 6 {
 		t.Fatalf("site layout record = %#v", record)
+	}
+	for index, key := range []string{"home", "about", "privacy-policy", "terms-of-use"} {
+		record := manifest.Records[index+3]
+		if record.Kind != "page" || record.SourceKey != "page:"+key || len(record.SourcePaths) != 5 {
+			t.Fatalf("page record %d = %#v", index, record)
+		}
 	}
 }

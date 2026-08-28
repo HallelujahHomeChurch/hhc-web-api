@@ -200,6 +200,44 @@ func TestOpenAPIDocumentsSiteSettingsContracts(t *testing.T) {
 	}
 }
 
+func TestOpenAPIDocumentsFixedEditorialPageContracts(t *testing.T) {
+	document := readOpenAPI(t)
+	operation := operationByID(t, document, "getPublicPage")
+	for _, expected := range []string{
+		"x-hhc-visibility: public",
+		"x-hhc-callers: [api-gateway]",
+		"security: []",
+		"$ref: '#/components/parameters/PageKey'",
+		"$ref: '#/components/parameters/ContentLocale'",
+		"$ref: '#/components/parameters/IfNoneMatch'",
+		"$ref: '#/components/responses/PublicEditorialPage'",
+	} {
+		if !strings.Contains(operation, expected) {
+			t.Errorf("public page operation missing %q:\n%s", expected, operation)
+		}
+	}
+	for _, schema := range []string{"HomePageContentV1", "AboutPageContentV1", "LegalPageContentV1", "PageContent", "PublicEditorialPage"} {
+		if schemaBlock(document, schema) == "" {
+			t.Errorf("missing %s schema", schema)
+		}
+	}
+	pageContent := schemaBlock(document, "PageContent")
+	for _, expected := range []string{"oneOf:", "propertyName: template", "home.v1", "about.v1", "legal.v1"} {
+		if !strings.Contains(pageContent, expected) {
+			t.Errorf("PageContent missing %q:\n%s", expected, pageContent)
+		}
+	}
+	if !strings.Contains(schemaBlock(document, "ContentModule"), "enum: [news, history, videos, locations, pages]") {
+		t.Error("ContentModule must include pages")
+	}
+	if strings.Contains(schemaBlock(document, "CreatableContentModule"), "pages") || strings.Contains(schemaBlock(document, "TranslatableContentModule"), "pages") {
+		t.Error("generic create and AI translation modules must exclude pages")
+	}
+	if !strings.Contains(operationByID(t, document, "deleteContent"), "'405':") {
+		t.Error("deleteContent must document fixed-page 405")
+	}
+}
+
 func TestOpenAPISiteSettingsSchemasAcceptValidWireShapes(t *testing.T) {
 	if err := compileOpenAPISchema(t, "SiteLayout").Validate(validPublicSiteLayout()); err != nil {
 		t.Fatalf("SiteLayout rejected valid payload: %v", err)
@@ -429,6 +467,7 @@ func TestOpenAPIContentWriteInputKeepsExistingModulesCompatible(t *testing.T) {
 		{"news", `{"authorName":"Pastor","slug":"announcement","displayDate":"2026-08-28","detailLayout":"top","translations":[{"locale":"zh-Hant","title":"消息","summary":"摘要","body":"內容","imageAlt":"圖片"}]}`},
 		{"history", `{"eventDate":"1988-03","translations":[{"locale":"zh-Hant","title":"開始家庭聚會","body":"內容","dateLabel":"1988年3月"}]}`},
 		{"videos", `{"youtubeVideoId":"K3ckFWeSQ-k","homeEligible":true,"translations":[{"locale":"zh-Hant","title":"影片"}]}`},
+		{"pages", `{"pageKey":"home","pageTemplate":"home.v1","routePath":"/","indexable":true,"translations":[{"locale":"zh-Hant","bodyJson":{"schemaVersion":1,"template":"home.v1","data":{"heroTitle":"Home","heroSubtitle":"Welcome","newsTitle":"News","moreNews":"More","weeklyTitle":"Weekly","downloadWeekly":"Download","videosTitle":"Videos","videosSubtitle":"Music","watchMore":"Watch","aboutTitle":"About","aboutBody":"About us","aboutCta":"Meet us","locationsTitle":"Locations","mapLink":"Map"}}}]}`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			if err := validateOpenAPIContentWriteInput(schema, []byte(test.body)); err != nil {
@@ -944,6 +983,7 @@ func expectedCatalogRoutes() []string {
 		GET /history
 		GET /videos
 		GET /locations
+		GET /pages/{}
 		GET /site-layout
 		GET /home
 		GET /admin/site-settings

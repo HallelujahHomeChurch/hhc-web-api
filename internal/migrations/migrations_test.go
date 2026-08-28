@@ -287,3 +287,26 @@ func TestSiteSettingsMigrationAddsSingletonLocalesAndRevisions(t *testing.T) {
 		}
 	}
 }
+
+func TestFixedEditorialPagesMigrationAddsJSONAndFixedPageMetadata(t *testing.T) {
+	contents, err := files.ReadFile("sql/029_fixed_editorial_pages.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := string(contents)
+	for _, expected := range []string{
+		"ADD COLUMN body_json jsonb",
+		"content_translation_body_json_object_check",
+		"body_json @> '{}'::jsonb",
+		"CREATE TABLE hhc_web.page_item",
+		"'home','about','privacy-policy','terms-of-use'",
+		"'home.v1','about.v1','legal.v1'",
+		"page_key = 'home' AND page_template = 'home.v1' AND route_path = '/'",
+		"UNIQUE(page_key)",
+		"UNIQUE(route_path)",
+	} {
+		if !strings.Contains(sql, expected) {
+			t.Fatalf("migration missing %q", expected)
+		}
+	}
+}

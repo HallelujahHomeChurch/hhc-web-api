@@ -79,7 +79,8 @@ func (r *Repository) ListContent(ctx context.Context, module content.Module, opt
 			EXISTS(SELECT 1 FROM hhc_web.content_translation search WHERE search.entry_id=e.id AND strpos(lower(search.title || ' ' || search.summary || ' ' || search.body),lower($%d))>0)
 			OR EXISTS(SELECT 1 FROM hhc_web.video_item search_video WHERE search_video.entry_id=e.id AND strpos(lower(search_video.youtube_video_id),lower($%d))>0)
 			OR EXISTS(SELECT 1 FROM hhc_web.location_item search_location WHERE search_location.content_id=e.id AND strpos(lower(search_location.stable_key || ' ' || search_location.map_href),lower($%d))>0)
-		)`, len(args), len(args), len(args))
+			OR EXISTS(SELECT 1 FROM hhc_web.page_item search_page WHERE search_page.content_id=e.id AND strpos(lower(search_page.page_key),lower($%d))>0)
+		)`, len(args), len(args), len(args), len(args))
 	}
 	var total int64
 	if err := r.db.QueryRowContext(ctx, `SELECT count(*) FROM hhc_web.content_entry e`+where, args...).Scan(&total); err != nil {
@@ -101,13 +102,15 @@ func (r *Repository) ListContent(ctx context.Context, module content.Module, opt
 				COALESCE(n.public_grant_id,''),COALESCE(n.home_public_grant_id,''),COALESCE(n.published_cover_asset_id,''),COALESCE(n.published_home_cover_asset_id,''),
 				COALESCE(h.event_date,''),COALESCE(v.youtube_video_id,''),COALESCE(v.home_eligible,false),
 				COALESCE(l.stable_key,''),COALESCE(l.map_href,''),COALESCE(l.sort_order,0),
-				p.published_version,t.locale,t.title,t.summary,CASE WHEN e.module='locations' THEN t.body ELSE '' END AS body,t.date_label,t.image_alt
+				COALESCE(pg.page_key,''),COALESCE(pg.page_template,''),COALESCE(pg.route_path,''),COALESCE(pg.indexable,false),
+				p.published_version,t.locale,t.title,t.summary,CASE WHEN e.module='locations' THEN t.body ELSE '' END AS body,t.date_label,t.image_alt,t.body_json
 		FROM selected s
 		JOIN hhc_web.content_entry e ON e.id=s.id
 		LEFT JOIN hhc_web.news_item n ON n.entry_id=e.id
 		LEFT JOIN hhc_web.history_event h ON h.entry_id=e.id
 			LEFT JOIN hhc_web.video_item v ON v.entry_id=e.id
 			LEFT JOIN hhc_web.location_item l ON l.content_id=e.id
+			LEFT JOIN hhc_web.page_item pg ON pg.content_id=e.id
 		LEFT JOIN LATERAL (
 			SELECT COALESCE(MAX(version),0) AS published_version
 			FROM hhc_web.public_projection
@@ -125,14 +128,17 @@ func (r *Repository) ListContent(ctx context.Context, module content.Module, opt
 	for rows.Next() {
 		var item content.Item
 		var translation content.Translation
+		var bodyJSON []byte
 		if err := rows.Scan(
 			&item.ID, &item.Module, &item.Status, &item.Version, &item.CreatedBy, &item.UpdatedBy, &item.FirstPublishedAt, &item.PublishedAt, &item.CreatedAt, &item.UpdatedAt,
 			&item.Slug, &item.DisplayDate, &item.CoverAssetID, &item.HomeCoverAssetID, &item.DetailLayout, &item.Featured, &item.AuthorName, &item.PublicGrantID, &item.HomePublicGrantID, &item.PublishedCoverID, &item.PublishedHomeCoverID,
-			&item.EventDate, &item.YouTubeVideoID, &item.HomeEligible, &item.LocationKey, &item.MapHref, &item.SortOrder, &item.PublishedVersion,
-			&translation.Locale, &translation.Title, &translation.Summary, &translation.Body, &translation.DateLabel, &translation.ImageAlt,
+			&item.EventDate, &item.YouTubeVideoID, &item.HomeEligible, &item.LocationKey, &item.MapHref, &item.SortOrder,
+			&item.PageKey, &item.PageTemplate, &item.RoutePath, &item.Indexable, &item.PublishedVersion,
+			&translation.Locale, &translation.Title, &translation.Summary, &translation.Body, &translation.DateLabel, &translation.ImageAlt, &bodyJSON,
 		); err != nil {
 			return content.Page{}, err
 		}
+		translation.BodyJSON = bodyJSON
 		item.IsPublished = item.PublishedVersion > 0
 		index, exists := indexes[item.ID]
 		if !exists {
@@ -207,10 +213,21 @@ func (r *Repository) PublishContent(ctx context.Context, module content.Module, 
 		if module == content.ModuleLocations {
 			projection = publicLocation(item, translation)
 			routePath = "/locations"
+		} else if module == content.ModulePages {
+			availableLocales := make([]string, 0, len(item.Translations))
+			for _, candidate := range item.Translations {
+				availableLocales = append(availableLocales, candidate.Locale)
+			}
+			sortPublicLocales(availableLocales)
+			projection = content.PublicEditorialPage{PageKey: item.PageKey, Template: item.PageTemplate, RoutePath: item.RoutePath, Indexable: item.Indexable, Content: translation.BodyJSON, ResolvedLocale: translation.Locale, AvailableLocales: availableLocales, Version: item.Version, PublishedAt: *item.PublishedAt}
+			routePath = item.RoutePath
 		}
 		payload, _ := json.Marshal(projection)
 		etag := fmt.Sprintf(`%x`, sha256.Sum256(payload))
 		key := fmt.Sprintf("%s:%s:%s", module, translation.Locale, id)
+		if module == content.ModulePages {
+			key = fmt.Sprintf("page:%s:%s", translation.Locale, item.PageKey)
+		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO hhc_web.public_projection(projection_key,resource_type,resource_id,locale,route_path,version,etag,payload_json,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(projection_key) DO UPDATE SET route_path=EXCLUDED.route_path,version=EXCLUDED.version,etag=EXCLUDED.etag,payload_json=EXCLUDED.payload_json,updated_at=EXCLUDED.updated_at`, key, module, id, translation.Locale, routePath, item.Version, etag, payload, now); err != nil {
 			return content.Item{}, err
 		}
@@ -750,6 +767,23 @@ func (r *Repository) PublicLocations(ctx context.Context, locale string) ([]cont
 	return values, rows.Err()
 }
 
+func (r *Repository) PublicEditorialPage(ctx context.Context, key, locale string) (content.PublicEditorialPage, string, error) {
+	var payload []byte
+	var etag string
+	err := r.db.QueryRowContext(ctx, `SELECT payload_json,etag FROM hhc_web.public_projection WHERE projection_key=$1 AND resource_type='pages' AND locale=$2`, "page:"+locale+":"+key, locale).Scan(&payload, &etag)
+	if errors.Is(err, sql.ErrNoRows) {
+		return content.PublicEditorialPage{}, "", content.ErrNotFound
+	}
+	if err != nil {
+		return content.PublicEditorialPage{}, "", err
+	}
+	var page content.PublicEditorialPage
+	if err := json.Unmarshal(payload, &page); err != nil {
+		return content.PublicEditorialPage{}, "", err
+	}
+	return page, etag, nil
+}
+
 func enrichPublicItem(value *content.PublicItem, id, requestedLocale, resolvedLocale string, availableLocales []byte) error {
 	if err := json.Unmarshal(availableLocales, &value.AvailableLocales); err != nil {
 		return err
@@ -856,6 +890,8 @@ func loadContent(ctx context.Context, query contentQueryer, module content.Modul
 		err = query.QueryRowContext(ctx, `SELECT youtube_video_id,home_eligible FROM hhc_web.video_item WHERE entry_id=$1`, id).Scan(&item.YouTubeVideoID, &item.HomeEligible)
 	case content.ModuleLocations:
 		err = query.QueryRowContext(ctx, `SELECT stable_key,map_href,sort_order FROM hhc_web.location_item WHERE content_id=$1`, id).Scan(&item.LocationKey, &item.MapHref, &item.SortOrder)
+	case content.ModulePages:
+		err = query.QueryRowContext(ctx, `SELECT page_key,page_template,route_path,indexable FROM hhc_web.page_item WHERE content_id=$1`, id).Scan(&item.PageKey, &item.PageTemplate, &item.RoutePath, &item.Indexable)
 	}
 	if err != nil {
 		return content.Item{}, err
@@ -864,7 +900,7 @@ func loadContent(ctx context.Context, query contentQueryer, module content.Modul
 		Scan(&item.IsPublished, &item.PublishedVersion); err != nil {
 		return content.Item{}, err
 	}
-	rows, err := query.QueryContext(ctx, `SELECT locale,title,summary,body,date_label,image_alt FROM hhc_web.content_translation WHERE entry_id=$1 ORDER BY locale`, id)
+	rows, err := query.QueryContext(ctx, `SELECT locale,title,summary,body,date_label,image_alt,body_json FROM hhc_web.content_translation WHERE entry_id=$1 ORDER BY locale`, id)
 	if err != nil {
 		return content.Item{}, err
 	}
@@ -872,9 +908,11 @@ func loadContent(ctx context.Context, query contentQueryer, module content.Modul
 	item.Translations = []content.Translation{}
 	for rows.Next() {
 		var value content.Translation
-		if err := rows.Scan(&value.Locale, &value.Title, &value.Summary, &value.Body, &value.DateLabel, &value.ImageAlt); err != nil {
+		var bodyJSON []byte
+		if err := rows.Scan(&value.Locale, &value.Title, &value.Summary, &value.Body, &value.DateLabel, &value.ImageAlt, &bodyJSON); err != nil {
 			return content.Item{}, err
 		}
+		value.BodyJSON = bodyJSON
 		item.Translations = append(item.Translations, value)
 	}
 	return item, rows.Err()
@@ -962,6 +1000,19 @@ func writeTypedContent(ctx context.Context, tx *sql.Tx, module content.Module, i
 			return content.ErrInvalid
 		}
 		return nil
+	case content.ModulePages:
+		if verb == "INSERT" {
+			_, err := tx.ExecContext(ctx, `INSERT INTO hhc_web.page_item(content_id,page_key,page_template,route_path,indexable) VALUES($1,$2,$3,$4,$5)`, id, input.PageKey, input.PageTemplate, input.RoutePath, input.Indexable)
+			return err
+		}
+		result, err := tx.ExecContext(ctx, `UPDATE hhc_web.page_item SET indexable=$5 WHERE content_id=$1 AND page_key=$2 AND page_template=$3 AND route_path=$4`, id, input.PageKey, input.PageTemplate, input.RoutePath, input.Indexable)
+		if err != nil {
+			return err
+		}
+		if rows, _ := result.RowsAffected(); rows != 1 {
+			return content.ErrInvalid
+		}
+		return nil
 	}
 	return content.ErrInvalid
 }
@@ -970,11 +1021,18 @@ func replaceTranslations(ctx context.Context, tx *sql.Tx, id string, values []co
 		return err
 	}
 	for _, value := range values {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO hhc_web.content_translation(entry_id,locale,title,summary,body,date_label,image_alt) VALUES($1,$2,$3,$4,$5,$6,$7)`, id, value.Locale, value.Title, value.Summary, value.Body, value.DateLabel, value.ImageAlt); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO hhc_web.content_translation(entry_id,locale,title,summary,body,date_label,image_alt,body_json) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, id, value.Locale, value.Title, value.Summary, value.Body, value.DateLabel, value.ImageAlt, nullableJSON(value.BodyJSON)); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func nullableJSON(value json.RawMessage) any {
+	if len(value) == 0 {
+		return nil
+	}
+	return []byte(value)
 }
 func lockContentVersion(ctx context.Context, tx *sql.Tx, module content.Module, id string, expected int64) error {
 	var current int64

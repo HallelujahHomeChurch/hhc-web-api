@@ -19,6 +19,7 @@ func (h *Handler) contentRoutes(public, admin *http.ServeMux) {
 	public.HandleFunc("GET /api/history", h.publicContent(content.ModuleHistory))
 	public.HandleFunc("GET /api/videos", h.publicContent(content.ModuleVideos))
 	public.HandleFunc("GET /api/locations", h.publicLocations)
+	public.HandleFunc("GET /api/pages/{pageKey}", h.publicEditorialPage)
 	public.HandleFunc("GET /api/home", h.publicHome)
 	admin.HandleFunc("GET /api/admin/content/{module}", requireScope("cms:read", h.adminContentList))
 	admin.HandleFunc("POST /api/admin/content/{module}", requireScope("cms:write", h.adminContentCreate))
@@ -33,6 +34,25 @@ func (h *Handler) contentRoutes(public, admin *http.ServeMux) {
 	admin.HandleFunc("POST /api/admin/content/news/{contentID}/assets/{assetID}/complete", requireScopes([]string{"cms:write", "assets:write"}, h.adminNewsCoverComplete))
 	admin.HandleFunc("GET /api/admin/content/news/{contentID}/assets/{assetID}", requireScope("cms:read", h.adminNewsCoverStatus))
 	admin.HandleFunc("POST /api/admin/content/news/{contentID}/assets/{assetID}/scan/retry", requireScopes([]string{"cms:write", "assets:write"}, h.adminNewsCoverRetry))
+}
+
+func (h *Handler) publicEditorialPage(w http.ResponseWriter, r *http.Request) {
+	value, etag, err := h.content.PublicEditorialPage(r.Context(), r.PathValue("pageKey"), locale(r))
+	if err != nil {
+		if errors.Is(err, content.ErrNotFound) {
+			w.Header().Set("Cache-Control", "public, max-age=30, must-revalidate")
+		}
+		handleContentError(w, err)
+		return
+	}
+	etag = `"` + etag + `"`
+	w.Header().Set("Cache-Control", "public, max-age=30, must-revalidate")
+	w.Header().Set("ETag", etag)
+	if etagMatches(r.Header.Get("If-None-Match"), etag) {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+	writeData(w, http.StatusOK, value, nil)
 }
 
 func (h *Handler) publicNews(w http.ResponseWriter, r *http.Request) {
@@ -464,6 +484,8 @@ func handleContentError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusPreconditionFailed, "precondition_failed", "The content changed. Reload and try again.")
 	case errors.Is(err, content.ErrNotPublishable):
 		writeError(w, http.StatusUnprocessableEntity, "not_publishable", "The content is not ready to publish.")
+	case errors.Is(err, content.ErrMethodNotAllowed):
+		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "This operation is not allowed for fixed pages.")
 	default:
 		writeError(w, http.StatusInternalServerError, "internal_error", "The request could not be completed.")
 	}

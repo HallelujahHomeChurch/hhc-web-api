@@ -63,6 +63,9 @@ func TestRunCLIPrintsExactlyOnePlanJSONLine(t *testing.T) {
 	mock.ExpectQuery("SELECT content_id::text FROM hhc_web.location_item").WithArgs("taipei").WillReturnError(sql.ErrNoRows)
 	mock.ExpectQuery("SELECT content_id::text FROM hhc_web.location_item").WithArgs("zhongli").WillReturnError(sql.ErrNoRows)
 	mock.ExpectQuery("SELECT id FROM hhc_web.site_setting_set").WithArgs("default").WillReturnError(sql.ErrNoRows)
+	for _, key := range []string{"home", "about", "privacy-policy", "terms-of-use"} {
+		mock.ExpectQuery("SELECT content_id::text FROM hhc_web.page_item").WithArgs(key).WillReturnError(sql.ErrNoRows)
+	}
 	deps := defaultDependencies()
 	deps.getenv = func(string) string { return "postgres://test" }
 	deps.openDB = func(string, string) (*sql.DB, error) { return db, nil }
@@ -71,7 +74,7 @@ func TestRunCLIPrintsExactlyOnePlanJSONLine(t *testing.T) {
 	if code := runCLI(context.Background(), []string{"--mode=plan"}, &stdout, &stderr, deps); code != 0 {
 		t.Fatalf("exit code=%d stderr=%q", code, stderr.String())
 	}
-	const want = "{\"mode\":\"plan\",\"seedVersion\":\"2026-08-28-public-content-site-layout-v1\",\"manifestSHA256\":\"770637996ca20890af78241148fd3447c2cdb7f46de5547773ecbbb8a5542e2c\",\"inserts\":3,\"skips\":0,\"updates\":0,\"deletes\":0,\"warnings\":0,\"conflicts\":0}\n"
+	const want = "{\"mode\":\"plan\",\"seedVersion\":\"2026-08-28-public-content-pages-v1\",\"manifestSHA256\":\"32b639886249ab339af18ede34ba70dfe1e3c3c1274474f5d4dc3c2521d80ea4\",\"inserts\":7,\"skips\":0,\"updates\":0,\"deletes\":0,\"warnings\":0,\"conflicts\":0}\n"
 	if stdout.String() != want || stderr.Len() != 0 || strings.Count(stdout.String(), "\n") != 1 {
 		t.Fatalf("stdout=%q stderr=%q", stdout.String(), stderr.String())
 	}

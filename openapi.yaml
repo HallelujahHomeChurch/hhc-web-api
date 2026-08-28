@@ -512,6 +512,23 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/PublicLocationList' }
         '400': { $ref: '#/components/responses/Error' }
+  /pages/{pageKey}:
+    get:
+      operationId: getPublicPage
+      summary: Get one published fixed editorial page in an exact locale
+      description: Resolves only the four fixed page keys and never applies locale fallback.
+      tags: [Public]
+      x-hhc-visibility: public
+      x-hhc-callers: [api-gateway]
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/PageKey'
+        - $ref: '#/components/parameters/ContentLocale'
+        - $ref: '#/components/parameters/IfNoneMatch'
+      responses:
+        '200': { $ref: '#/components/responses/PublicEditorialPage' }
+        '304': { description: Page has not changed }
+        '404': { $ref: '#/components/responses/Error' }
   /site-layout:
     get:
       operationId: getPublicSiteLayout
@@ -1042,13 +1059,14 @@ paths:
       servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-scopes: ['cms:write']
       parameters:
-        - $ref: '#/components/parameters/ContentModule'
+        - $ref: '#/components/parameters/CreatableContentModule'
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody: { $ref: '#/components/requestBodies/ContentWriteInput' }
       responses:
         '401': { $ref: '#/components/responses/AdminUnauthorized' }
         '403': { $ref: '#/components/responses/AdminForbidden' }
         '201': { $ref: '#/components/responses/ContentItem' }
+        '405': { description: Fixed page records can only be created by the reviewed content importer }
         '409': { $ref: '#/components/responses/Error' }
   /admin/content/{module}/{contentId}:
     get:
@@ -1109,6 +1127,7 @@ paths:
         '401': { $ref: '#/components/responses/AdminUnauthorized' }
         '403': { $ref: '#/components/responses/AdminForbidden' }
         '204': { description: Content and its revisions deleted }
+        '405': { description: Fixed page records cannot be deleted }
         '409': { $ref: '#/components/responses/Error' }
         '412': { $ref: '#/components/responses/Error' }
   /admin/content/{module}/{contentId}/translation-previews/{targetLocale}:
@@ -1122,7 +1141,7 @@ paths:
       servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-scopes: ['cms:write']
       parameters:
-        - $ref: '#/components/parameters/ContentModule'
+        - $ref: '#/components/parameters/TranslatableContentModule'
         - $ref: '#/components/parameters/ContentID'
         - $ref: '#/components/parameters/ContentTranslationTargetLocale'
         - $ref: '#/components/parameters/IfMatch'
@@ -1357,6 +1376,9 @@ components:
       description: Conditional validator; weak validators and comma-separated lists are accepted.
       schema: { type: string }
     ContentModule: { name: module, in: path, required: true, schema: { $ref: '#/components/schemas/ContentModule' } }
+    CreatableContentModule: { name: module, in: path, required: true, schema: { $ref: '#/components/schemas/CreatableContentModule' } }
+    TranslatableContentModule: { name: module, in: path, required: true, schema: { $ref: '#/components/schemas/TranslatableContentModule' } }
+    PageKey: { name: pageKey, in: path, required: true, schema: { type: string, enum: [home, about, privacy-policy, terms-of-use] } }
     ContentID: { name: contentId, in: path, required: true, schema: { type: string, format: uuid } }
     ContentTranslationTargetLocale: { name: targetLocale, in: path, required: true, schema: { $ref: '#/components/schemas/ContentTranslationTargetLocale' } }
     BulletinTranslationTargetEdition: { name: targetLocale, in: path, required: true, schema: { $ref: '#/components/schemas/BulletinTranslationTargetEdition' } }
@@ -1480,6 +1502,14 @@ components:
       content:
         application/json:
           schema: { $ref: '#/components/schemas/PublicLocationListEnvelope' }
+    PublicEditorialPage:
+      description: Published fixed editorial page for the exact requested locale.
+      headers:
+        ETag: { schema: { type: string } }
+        Cache-Control: { schema: { type: string, const: 'public, max-age=30, must-revalidate' } }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/PublicEditorialPageEnvelope' }
     SiteLayout:
       description: Published Site Layout for the exact requested locale.
       headers:
@@ -1822,7 +1852,13 @@ components:
       enum: [draft, publishing, published, unpublishing, unpublish_failed, unpublished]
     ContentModule:
       type: string
+      enum: [news, history, videos, locations, pages]
+    CreatableContentModule:
+      type: string
       enum: [news, history, videos, locations]
+    TranslatableContentModule:
+      type: string
+      enum: [news, history, videos]
     ContentStatus:
       type: string
       enum: [draft, publishing, published, publish_failed, unpublishing, unpublish_failed, unpublished]
@@ -2015,10 +2051,153 @@ components:
           type: boolean
           default: false
           description: Queue one Web Push campaign after the bulletin is publicly available. Ignored by unpublish operations.
+    HomePageContentV1:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, template, data]
+      properties:
+        schemaVersion: { type: integer, const: 1 }
+        template: { type: string, const: home.v1 }
+        data:
+          type: object
+          additionalProperties: false
+          required: [heroTitle, heroSubtitle, newsTitle, moreNews, weeklyTitle, downloadWeekly, videosTitle, videosSubtitle, watchMore, aboutTitle, aboutBody, aboutCta, locationsTitle, mapLink]
+          properties:
+            heroTitle: { type: string, minLength: 1, maxLength: 200 }
+            heroSubtitle: { type: string, minLength: 1, maxLength: 500 }
+            newsTitle: { type: string, minLength: 1, maxLength: 200 }
+            moreNews: { type: string, minLength: 1, maxLength: 200 }
+            weeklyTitle: { type: string, minLength: 1, maxLength: 200 }
+            downloadWeekly: { type: string, minLength: 1, maxLength: 200 }
+            videosTitle: { type: string, minLength: 1, maxLength: 200 }
+            videosSubtitle: { type: string, minLength: 1, maxLength: 500 }
+            watchMore: { type: string, minLength: 1, maxLength: 200 }
+            aboutTitle: { type: string, minLength: 1, maxLength: 200 }
+            aboutBody: { type: string, minLength: 1, maxLength: 5000 }
+            aboutCta: { type: string, minLength: 1, maxLength: 200 }
+            locationsTitle: { type: string, minLength: 1, maxLength: 200 }
+            mapLink: { type: string, minLength: 1, maxLength: 200 }
+    AboutPageContentV1:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, template, data]
+      properties:
+        schemaVersion: { type: integer, const: 1 }
+        template: { type: string, const: about.v1 }
+        data:
+          type: object
+          additionalProperties: false
+          required: [heroTitle, heroSubtitle, vision, history]
+          properties:
+            heroTitle: { type: string, minLength: 1, maxLength: 200 }
+            heroSubtitle: { type: string, minLength: 1, maxLength: 500 }
+            vision:
+              type: object
+              additionalProperties: false
+              required: [intro, imageAlt, actionsImageAlt, sections]
+              properties:
+                intro: { type: string, minLength: 1, maxLength: 10000 }
+                imageAlt: { type: string, minLength: 1, maxLength: 300 }
+                actionsImageAlt: { type: string, minLength: 1, maxLength: 300 }
+                sections:
+                  type: array
+                  minItems: 4
+                  maxItems: 4
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [eyebrow, title]
+                    properties:
+                      eyebrow: { type: string, minLength: 1, maxLength: 200 }
+                      title: { type: string, minLength: 1, maxLength: 500 }
+                      body: { type: string, minLength: 1, maxLength: 10000 }
+                      cards:
+                        type: array
+                        minItems: 1
+                        maxItems: 20
+                        items:
+                          type: object
+                          additionalProperties: false
+                          required: [title, body]
+                          properties:
+                            title: { type: string, minLength: 1, maxLength: 500 }
+                            body: { type: string, minLength: 1, maxLength: 5000 }
+            history:
+              type: object
+              additionalProperties: false
+              required: [scripture, imageAlt, intro, title]
+              properties:
+                scripture:
+                  type: array
+                  minItems: 1
+                  maxItems: 10
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [lines, cite]
+                    properties:
+                      lines: { type: array, minItems: 1, maxItems: 20, items: { type: string, minLength: 1, maxLength: 10000 } }
+                      cite: { type: string, minLength: 1, maxLength: 500 }
+                imageAlt: { type: string, minLength: 1, maxLength: 300 }
+                intro: { type: string, minLength: 1, maxLength: 10000 }
+                title: { type: string, minLength: 1, maxLength: 200 }
+    LegalPageContentV1:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, template, data]
+      properties:
+        schemaVersion: { type: integer, const: 1 }
+        template: { type: string, const: legal.v1 }
+        data:
+          type: object
+          additionalProperties: false
+          required: [heroTitle, heroSubtitle, updatedAtLabel, updatedAt, intro, sections]
+          properties:
+            heroTitle: { type: string, minLength: 1, maxLength: 200 }
+            heroSubtitle: { type: string, maxLength: 500 }
+            updatedAtLabel: { type: string, minLength: 1, maxLength: 100 }
+            updatedAt: { type: string, minLength: 1, maxLength: 100 }
+            intro: { type: string, minLength: 1, maxLength: 10000 }
+            sections:
+              type: array
+              minItems: 1
+              maxItems: 50
+              items:
+                type: object
+                additionalProperties: false
+                required: [title, body]
+                properties:
+                  title: { type: string, minLength: 1, maxLength: 500 }
+                  body: { type: array, minItems: 1, maxItems: 50, items: { type: string, minLength: 1, maxLength: 10000 } }
+    PageContent:
+      oneOf:
+        - $ref: '#/components/schemas/HomePageContentV1'
+        - $ref: '#/components/schemas/AboutPageContentV1'
+        - $ref: '#/components/schemas/LegalPageContentV1'
+      discriminator:
+        propertyName: template
+        mapping:
+          home.v1: '#/components/schemas/HomePageContentV1'
+          about.v1: '#/components/schemas/AboutPageContentV1'
+          legal.v1: '#/components/schemas/LegalPageContentV1'
+    PublicEditorialPage:
+      type: object
+      additionalProperties: false
+      required: [pageKey, template, routePath, indexable, content, resolvedLocale, availableLocales, version, publishedAt]
+      properties:
+        pageKey: { type: string, enum: [home, about, privacy-policy, terms-of-use] }
+        template: { type: string, enum: [home.v1, about.v1, legal.v1] }
+        routePath: { type: string, enum: ['/', /about, /privacy-policy, /terms-of-use] }
+        indexable: { type: boolean }
+        content: { $ref: '#/components/schemas/PageContent' }
+        resolvedLocale: { $ref: '#/components/schemas/ContentLocale' }
+        availableLocales: { type: array, minItems: 1, maxItems: 5, uniqueItems: true, items: { $ref: '#/components/schemas/ContentLocale' } }
+        version: { type: integer, format: int64, minimum: 1 }
+        publishedAt: { type: string, format: date-time }
     ContentTranslation:
       type: object
       additionalProperties: false
-      required: [locale, title]
+      required: [locale]
       properties:
         locale: { $ref: '#/components/schemas/ContentLocale' }
         title: { type: string, minLength: 1, maxLength: 200 }
@@ -2026,6 +2205,7 @@ components:
         body: { type: string, maxLength: 100000 }
         dateLabel: { type: string, maxLength: 100 }
         imageAlt: { type: string, maxLength: 300 }
+        bodyJson: { $ref: '#/components/schemas/PageContent' }
     TranslationPreviewInput:
       type: object
       additionalProperties: false
@@ -2109,7 +2289,7 @@ components:
     ContentWriteFields:
       type: object
       required: [translations]
-      description: Location fields are optional wire fields for backward compatibility; locations requires them and other content modules reject them.
+      description: Location and fixed-page fields are an optional backward-compatible wire superset; backend validation applies the selected module contract.
       properties:
         authorName: { type: string, maxLength: 200 }
         slug: { type: string, minLength: 1, maxLength: 120, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$' }
@@ -2124,6 +2304,10 @@ components:
         locationKey: { type: string, minLength: 1, maxLength: 120, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$' }
         mapHref: { type: string, format: uri, pattern: '^https://' }
         sortOrder: { type: integer, minimum: 0 }
+        pageKey: { type: string, enum: [home, about, privacy-policy, terms-of-use] }
+        pageTemplate: { type: string, enum: [home.v1, about.v1, legal.v1] }
+        routePath: { type: string, enum: ['/', /about, /privacy-policy, /terms-of-use] }
+        indexable: { type: boolean }
         translations:
           type: array
           minItems: 1
@@ -2438,6 +2622,14 @@ components:
       required: [data, meta]
       properties:
         data: { $ref: '#/components/schemas/ContentItem' }
+        meta: { type: object, additionalProperties: true }
+        error: { type: ['null'] }
+    PublicEditorialPageEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, meta, error]
+      properties:
+        data: { $ref: '#/components/schemas/PublicEditorialPage' }
         meta: { type: object, additionalProperties: true }
         error: { type: ['null'] }
     ContentTranslationPreviewEnvelope:

@@ -76,6 +76,19 @@ type siteLayoutSeedPayload struct {
 	Links   sitesettings.ExternalLinks    `json:"links"`
 }
 
+type pageSeedTranslation struct {
+	Locale   string          `json:"locale"`
+	BodyJSON json.RawMessage `json:"bodyJson"`
+}
+
+type pageSeedPayload struct {
+	PageKey      string                `json:"pageKey"`
+	PageTemplate string                `json:"pageTemplate"`
+	RoutePath    string                `json:"routePath"`
+	Indexable    bool                  `json:"indexable"`
+	Translations []pageSeedTranslation `json:"translations"`
+}
+
 var plannerKinds = map[string]plannerKind{
 	"location": {
 		decode:    decodeLocationSeedPayload,
@@ -95,6 +108,18 @@ var plannerKinds = map[string]plannerKind{
 		lookupTarget: func(ctx context.Context, db seedQuerier, _ string) (string, bool, error) {
 			var targetID string
 			err := db.QueryRowContext(ctx, `SELECT id FROM hhc_web.site_setting_set WHERE id=$1`, sitesettings.SingletonID).Scan(&targetID)
+			if errors.Is(err, sql.ErrNoRows) {
+				return "", false, nil
+			}
+			return targetID, err == nil, err
+		},
+	},
+	"page": {
+		decode:    decodePageSeedPayload,
+		sourceKey: func(value any) string { return "page:" + value.(pageSeedPayload).PageKey },
+		lookupTarget: func(ctx context.Context, db seedQuerier, sourceKey string) (string, bool, error) {
+			var targetID string
+			err := db.QueryRowContext(ctx, `SELECT content_id::text FROM hhc_web.page_item WHERE page_key=$1`, strings.TrimPrefix(sourceKey, "page:")).Scan(&targetID)
 			if errors.Is(err, sql.ErrNoRows) {
 				return "", false, nil
 			}
@@ -220,6 +245,45 @@ func decodeSiteLayoutSeedPayload(raw json.RawMessage) (any, error) {
 		return nil, errors.New("site layout payload is invalid")
 	}
 	return siteLayoutSeedPayload{Locales: normalized.Locales, Links: normalized.Links}, nil
+}
+
+func decodePageSeedPayload(raw json.RawMessage) (any, error) {
+	var payload pageSeedPayload
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&payload); err != nil {
+		return nil, err
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			err = errors.New("payload contains multiple JSON values")
+		}
+		return nil, err
+	}
+	if content.ValidatePageDefinition(payload.PageKey, payload.PageTemplate, payload.RoutePath) != nil || len(payload.Translations) != 5 {
+		return nil, errors.New("page payload is invalid")
+	}
+	locales := [...]string{"zh-Hant", "zh-Hans", "en", "ja", "ko"}
+	for index, translation := range payload.Translations {
+		if translation.Locale != locales[index] || content.ValidatePagePayload(payload.PageKey, translation.BodyJSON) != nil {
+			return nil, errors.New("page payload is invalid")
+		}
+		var canonical any
+		if err := json.Unmarshal(translation.BodyJSON, &canonical); err != nil {
+			return nil, errors.New("page payload is invalid")
+		}
+		payload.Translations[index].BodyJSON, _ = json.Marshal(canonical)
+	}
+	return payload, nil
+}
+
+func (payload pageSeedPayload) writeInput() content.WriteInput {
+	translations := make([]content.Translation, len(payload.Translations))
+	for index, translation := range payload.Translations {
+		title, summary, _ := content.PagePayloadMetadata(payload.PageKey, translation.BodyJSON)
+		translations[index] = content.Translation{Locale: translation.Locale, Title: title, Summary: summary, BodyJSON: translation.BodyJSON}
+	}
+	return content.WriteInput{PageKey: payload.PageKey, PageTemplate: payload.PageTemplate, RoutePath: payload.RoutePath, Indexable: payload.Indexable, Translations: translations}
 }
 
 func canonicalSHA256(payload any) (string, error) {

@@ -292,6 +292,44 @@ func TestLocationPublishesWithAllFiveTranslations(t *testing.T) {
 	}
 }
 
+func TestPagesRejectGenericCreateAndDelete(t *testing.T) {
+	repo := &serviceRepository{}
+	service := NewService(repo, time.Now)
+	if _, err := service.CreateContent(context.Background(), ModulePages, pageInput("home", "home.v1", "/", validHomePagePayload()), "admin", "page-home"); !errors.Is(err, ErrMethodNotAllowed) {
+		t.Fatalf("create err=%v", err)
+	}
+	if err := service.DeleteContent(context.Background(), ModulePages, "page-1", 1, "admin"); !errors.Is(err, ErrMethodNotAllowed) {
+		t.Fatalf("delete err=%v", err)
+	}
+}
+
+func TestPageUpdateRequiresImmutableDefinitionAndDerivesMetadata(t *testing.T) {
+	input := pageInput("home", "home.v1", "/", validHomePagePayload())
+	repo := &serviceRepository{item: Item{ID: "page-1", Module: ModulePages, Version: 1, PageKey: input.PageKey, PageTemplate: input.PageTemplate, RoutePath: input.RoutePath, Indexable: true, Translations: input.Translations}}
+	service := NewService(repo, time.Now)
+	input.RoutePath = "/changed"
+	if _, err := service.UpdateContent(context.Background(), ModulePages, repo.item.ID, 1, input, "admin"); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("immutable route err=%v", err)
+	}
+	input.RoutePath = "/"
+	updated, err := service.UpdateContent(context.Background(), ModulePages, repo.item.ID, 1, input, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Translations[0].Title != "愛從家開始" || updated.Translations[0].Summary != "在愛中成長" {
+		t.Fatalf("translation=%#v", updated.Translations[0])
+	}
+}
+
+func TestPagePublishRequiresAllFiveExactLocales(t *testing.T) {
+	input := pageInput("home", "home.v1", "/", validHomePagePayload())
+	input.Translations = input.Translations[:4]
+	repo := &serviceRepository{item: Item{ID: "page-1", Module: ModulePages, Version: 1, PageKey: input.PageKey, PageTemplate: input.PageTemplate, RoutePath: input.RoutePath, Indexable: true, Translations: input.Translations}}
+	if _, err := NewService(repo, time.Now).PublishContent(context.Background(), ModulePages, repo.item.ID, 1, "admin"); !errors.Is(err, ErrNotPublishable) {
+		t.Fatalf("err=%v", err)
+	}
+}
+
 func TestRestoreContentPreservesLocationDetail(t *testing.T) {
 	repo := &serviceRepository{
 		item:     Item{ID: "location-1", Module: ModuleLocations, Version: 2, LocationKey: "taipei", MapHref: "https://maps.example.com/current", SortOrder: 20, Translations: locationInput().Translations},
@@ -660,6 +698,19 @@ func locationInput() WriteInput {
 	}
 }
 
+func pageInput(key, template, route string, payload json.RawMessage) WriteInput {
+	return WriteInput{
+		PageKey: key, PageTemplate: template, RoutePath: route, Indexable: true,
+		Translations: []Translation{
+			{Locale: "zh-Hant", BodyJSON: payload},
+			{Locale: "zh-Hans", BodyJSON: payload},
+			{Locale: "en", BodyJSON: payload},
+			{Locale: "ja", BodyJSON: payload},
+			{Locale: "ko", BodyJSON: payload},
+		},
+	}
+}
+
 type serviceRepository struct {
 	item                  Item
 	createInputs          []WriteInput
@@ -732,4 +783,7 @@ func (r *serviceRepository) PublicNews(context.Context, string, string) (PublicI
 
 func (r *serviceRepository) PublicLocations(context.Context, string) ([]PublicLocation, error) {
 	return nil, nil
+}
+func (r *serviceRepository) PublicEditorialPage(context.Context, string, string) (PublicEditorialPage, string, error) {
+	return PublicEditorialPage{}, "", nil
 }

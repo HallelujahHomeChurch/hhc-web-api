@@ -165,6 +165,9 @@ func applySeedRecord(ctx context.Context, tx *sql.Tx, record Record, actor strin
 	if record.Kind == "site_layout" {
 		return applySiteLayoutSeedRecord(ctx, tx, record, actor)
 	}
+	if record.Kind == "page" {
+		return applyPageSeedRecord(ctx, tx, record, actor)
+	}
 	if record.Kind != "location" {
 		return "", unreleasedTargetError(record.Kind)
 	}
@@ -197,6 +200,47 @@ func applySeedRecord(ctx context.Context, tx *sql.Tx, record Record, actor strin
 	snapshot, err := json.Marshal(content.Item{
 		ID: id, Module: content.ModuleLocations, Status: content.StatusDraft, Version: 1,
 		LocationKey: input.LocationKey, MapHref: input.MapHref, SortOrder: input.SortOrder, Translations: input.Translations,
+		CreatedBy: actor, UpdatedBy: actor, CreatedAt: now, UpdatedAt: now,
+	})
+	if err != nil {
+		return "", err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO hhc_web.content_revision(entry_id,version,snapshot_json,created_by,created_at) VALUES($1,1,$2,$3,$4)`, id, snapshot, actor, now); err != nil {
+		return "", fmt.Errorf("insert seeded revision: %w", err)
+	}
+	return id, nil
+}
+
+func applyPageSeedRecord(ctx context.Context, tx *sql.Tx, record Record, actor string) (string, error) {
+	decoded, err := decodePageSeedPayload(record.Payload)
+	if err != nil {
+		return "", err
+	}
+	payload := decoded.(pageSeedPayload)
+	input := payload.writeInput()
+	fingerprint, err := canonicalSHA256(payload)
+	if err != nil {
+		return "", err
+	}
+	id := platform.NewID()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	if _, err := tx.ExecContext(ctx, `INSERT INTO hhc_web.content_entry(
+		id,module,status,version,idempotency_key,idempotency_fingerprint,created_by,updated_by,created_at,updated_at
+	) VALUES($1,$2,'draft',1,$3,$4,$5,$5,$6,$6)`, id, content.ModulePages, record.SourceKey, fingerprint, actor, now); err != nil {
+		return "", fmt.Errorf("insert content entry: %w", err)
+	}
+	for _, translation := range input.Translations {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO hhc_web.content_translation(entry_id,locale,title,summary,body,date_label,image_alt,body_json)
+			VALUES($1,$2,$3,$4,'','','',$5)`, id, translation.Locale, translation.Title, translation.Summary, []byte(translation.BodyJSON)); err != nil {
+			return "", fmt.Errorf("insert %s translation: %w", translation.Locale, err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO hhc_web.page_item(content_id,page_key,page_template,route_path,indexable) VALUES($1,$2,$3,$4,$5)`, id, input.PageKey, input.PageTemplate, input.RoutePath, input.Indexable); err != nil {
+		return "", fmt.Errorf("insert page item: %w", err)
+	}
+	snapshot, err := json.Marshal(content.Item{
+		ID: id, Module: content.ModulePages, Status: content.StatusDraft, Version: 1,
+		PageKey: input.PageKey, PageTemplate: input.PageTemplate, RoutePath: input.RoutePath, Indexable: input.Indexable, Translations: input.Translations,
 		CreatedBy: actor, UpdatedBy: actor, CreatedAt: now, UpdatedAt: now,
 	})
 	if err != nil {
@@ -256,7 +300,7 @@ func applySiteLayoutSeedRecord(ctx context.Context, tx *sql.Tx, record Record, a
 
 func unreleasedTargetError(kind string) error {
 	switch kind {
-	case "site_layout", "page":
+	case "site_layout":
 		return fmt.Errorf("target kind %q is not released", kind)
 	default:
 		return fmt.Errorf("unsupported target kind %q", kind)
