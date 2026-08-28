@@ -129,10 +129,23 @@ func Inventory(ctx context.Context, db *sql.DB) (InventoryReport, error) {
 		query string
 		set   func(*InventoryReport, ModuleInventory)
 	}{
-		{name: "bulletins", query: `SELECT issue_number::text FROM hhc_web.bulletin_issue WHERE issue_number IS NOT NULL`, set: func(report *InventoryReport, value ModuleInventory) { report.Bulletins = value }},
-		{name: "news", query: `SELECT slug FROM hhc_web.news_item`, set: func(report *InventoryReport, value ModuleInventory) { report.News = value }},
-		{name: "history", query: `SELECT sort_order::text FROM hhc_web.history_event`, set: func(report *InventoryReport, value ModuleInventory) { report.History = value }},
-		{name: "videos", query: `SELECT youtube_video_id FROM hhc_web.video_item`, set: func(report *InventoryReport, value ModuleInventory) { report.Videos = value }},
+		{name: "bulletins", query: `SELECT DISTINCT bulletin.issue_number::text
+			FROM hhc_web.bulletin_issue bulletin
+			JOIN hhc_web.public_projection projection
+			  ON projection.resource_type='bulletin_issue' AND projection.resource_id=bulletin.id
+			WHERE bulletin.issue_number IS NOT NULL`, set: func(report *InventoryReport, value ModuleInventory) { report.Bulletins = value }},
+		{name: "news", query: `SELECT DISTINCT news.slug
+			FROM hhc_web.news_item news
+			JOIN hhc_web.public_projection projection
+			  ON projection.resource_type='news' AND projection.resource_id=news.entry_id`, set: func(report *InventoryReport, value ModuleInventory) { report.News = value }},
+		{name: "history", query: `SELECT DISTINCT history.sort_order::text
+			FROM hhc_web.history_event history
+			JOIN hhc_web.public_projection projection
+			  ON projection.resource_type='history' AND projection.resource_id=history.entry_id`, set: func(report *InventoryReport, value ModuleInventory) { report.History = value }},
+		{name: "videos", query: `SELECT DISTINCT video.youtube_video_id
+			FROM hhc_web.video_item video
+			JOIN hhc_web.public_projection projection
+			  ON projection.resource_type='videos' AND projection.resource_id=video.entry_id`, set: func(report *InventoryReport, value ModuleInventory) { report.Videos = value }},
 	}
 	var report InventoryReport
 	for _, module := range modules {

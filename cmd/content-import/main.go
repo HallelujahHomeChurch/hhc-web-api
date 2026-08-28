@@ -21,6 +21,8 @@ type dependencies struct {
 	getenv   func(string) string
 	readFile func(string) ([]byte, error)
 	openDB   func(string, string) (*sql.DB, error)
+	plan     func(context.Context, *sql.DB, contentseed.Manifest) (contentseed.PlanReport, error)
+	apply    func(context.Context, *sql.DB, contentseed.Manifest, string, string) (contentseed.Report, error)
 }
 
 type outputReport struct {
@@ -33,7 +35,14 @@ func main() {
 }
 
 func defaultDependencies() dependencies {
-	return dependencies{manifest: contentmanifest.Manifest, getenv: os.Getenv, readFile: os.ReadFile, openDB: sql.Open}
+	return dependencies{
+		manifest: contentmanifest.Manifest,
+		getenv:   os.Getenv,
+		readFile: os.ReadFile,
+		openDB:   sql.Open,
+		plan:     contentseed.Plan,
+		apply:    contentseed.Apply,
+	}
 }
 
 func runCLI(ctx context.Context, args []string, stdout, stderr io.Writer, deps dependencies) int {
@@ -86,6 +95,7 @@ func run(ctx context.Context, args []string, stdout io.Writer, deps dependencies
 	defer db.Close()
 
 	report := outputReport{Report: contentseed.Report{Mode: *mode, SeedVersion: manifest.SeedVersion, ManifestSHA256: manifestSHA}}
+	var operationErr error
 	switch *mode {
 	case "inventory":
 		inventory, err := contentseed.Inventory(ctx, db)
@@ -94,7 +104,7 @@ func run(ctx context.Context, args []string, stdout io.Writer, deps dependencies
 		}
 		report.Inventory = &inventory
 	case "plan":
-		planned, err := contentseed.Plan(ctx, db, manifest)
+		planned, err := deps.plan(ctx, db, manifest)
 		if err != nil {
 			return err
 		}
@@ -102,14 +112,21 @@ func run(ctx context.Context, args []string, stdout io.Writer, deps dependencies
 		report.Skips = planned.SkipCount
 		report.Conflicts = planned.ConflictCount
 	case "apply":
-		applied, err := contentseed.Apply(ctx, db, manifest, manifestSHA, "content-seed:"+manifest.SeedVersion)
-		if err != nil {
-			return err
-		}
+		applied, err := deps.apply(ctx, db, manifest, manifestSHA, "content-seed:"+manifest.SeedVersion)
 		report.Report = applied
+		operationErr = err
+	}
+	if operationErr != nil && report.Warnings == 0 && report.Conflicts == 0 {
+		return operationErr
+	}
+	if err := json.NewEncoder(stdout).Encode(report); err != nil {
+		return err
+	}
+	if operationErr != nil {
+		return operationErr
 	}
 	if report.Warnings != 0 || report.Conflicts != 0 {
 		return fmt.Errorf("%s has %d warnings and %d conflicts", report.Mode, report.Warnings, report.Conflicts)
 	}
-	return json.NewEncoder(stdout).Encode(report)
+	return nil
 }

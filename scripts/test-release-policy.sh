@@ -159,24 +159,46 @@ test -n "$input_validation_body"
 run_input_validation_case() {
   mode="$1"
   run_attempt="$2"
-  expected="$3"
+  github_ref="$3"
+  expected="$4"
+  event_file="$(mktemp)"
+  rm -f "$event_file"
   if AZURE_CLIENT_ID=test AZURE_TENANT_ID=test AZURE_SUBSCRIPTION_ID=test \
-    REQUESTED_MODE="$mode" RUN_ATTEMPT="$run_attempt" \
+    GITHUB_REF="$github_ref" REQUESTED_MODE="$mode" RUN_ATTEMPT="$run_attempt" \
     REVIEWED_SEED_VERSION=reviewed-v1 REVIEWED_MANIFEST_SHA=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
-    bash -euo pipefail -c "$input_validation_body" >/dev/null 2>&1; then
+    VALIDATION_BODY="$input_validation_body" EVENT_FILE="$event_file" bash -euo pipefail -c '
+      eval "$VALIDATION_BODY"
+      printf "login\nstart\n" > "$EVENT_FILE"
+    ' >/dev/null 2>&1; then
     status=0
   else
     status=$?
   fi
   case "$expected" in
-    pass) test "$status" -eq 0 ;;
-    fail) test "$status" -ne 0 ;;
+    pass)
+      test "$status" -eq 0
+      grep -Fxq login "$event_file"
+      grep -Fxq start "$event_file"
+      ;;
+    fail)
+      test "$status" -ne 0
+      test ! -e "$event_file"
+      ;;
   esac
+  rm -f "$event_file"
 }
-run_input_validation_case apply 1 pass
-run_input_validation_case apply 2 fail
-run_input_validation_case inventory 2 pass
-run_input_validation_case plan 2 pass
+run_input_validation_case apply 1 refs/heads/main pass
+run_input_validation_case apply 2 refs/heads/main fail
+run_input_validation_case inventory 2 refs/heads/main pass
+run_input_validation_case plan 2 refs/heads/main pass
+run_input_validation_case apply 1 refs/heads/feature fail
+run_input_validation_case inventory 1 refs/heads/feature fail
+run_input_validation_case plan 1 refs/tags/v1 fail
+input_validation_line="$(printf '%s\n' "$preflight_job" | grep -nF 'name: Validate workflow inputs' | cut -d: -f1)"
+azure_login_line="$(printf '%s\n' "$preflight_job" | grep -nF 'name: Sign in to Azure with OIDC' | cut -d: -f1)"
+preflight_start_line="$(printf '%s\n' "$preflight_job" | grep -nF 'az containerapp job start' | cut -d: -f1)"
+test "$input_validation_line" -lt "$azure_login_line"
+test "$azure_login_line" -lt "$preflight_start_line"
 if printf '%s\n' "$preflight_job" | grep -q 'environment: production'; then
   echo 'read-only content migration preflight must not require production approval' >&2
   exit 1
@@ -318,6 +340,16 @@ for validation_function in "$preflight_validation_function" "$apply_validation_f
   for field in updates deletes warnings conflicts; do
     nonzero_report="$(printf '%s\n' "$valid_report" | jq -c --arg field "$field" '.[$field] = 1')"
     run_report_validation_case "$nonzero_report" plan reviewed-v1 "$report_sha" fail
+  done
+  for field in inserts skips; do
+    missing_report="$(printf '%s\n' "$valid_report" | jq -c --arg field "$field" 'del(.[$field])')"
+    negative_report="$(printf '%s\n' "$valid_report" | jq -c --arg field "$field" '.[$field] = -1')"
+    fractional_report="$(printf '%s\n' "$valid_report" | jq -c --arg field "$field" '.[$field] = 0.5')"
+    string_report="$(printf '%s\n' "$valid_report" | jq -c --arg field "$field" '.[$field] = "0"')"
+    run_report_validation_case "$missing_report" plan reviewed-v1 "$report_sha" fail
+    run_report_validation_case "$negative_report" plan reviewed-v1 "$report_sha" fail
+    run_report_validation_case "$fractional_report" plan reviewed-v1 "$report_sha" fail
+    run_report_validation_case "$string_report" plan reviewed-v1 "$report_sha" fail
   done
 done
 

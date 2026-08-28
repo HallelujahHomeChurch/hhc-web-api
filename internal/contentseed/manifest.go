@@ -82,6 +82,7 @@ func validateManifest(manifest Manifest) error {
 		}
 	}
 	recordKeys := make(map[[2]string]struct{}, len(manifest.Records))
+	sourceKeys := make(map[[2]string]struct{}, len(manifest.Records))
 	for _, record := range manifest.Records {
 		switch record.Kind {
 		case "location", "site_layout", "page":
@@ -108,6 +109,11 @@ func validateManifest(manifest Manifest) error {
 			if path == "" || sourceCounts[path] != 1 {
 				return fmt.Errorf("record %q/%q source path %q must resolve exactly once", record.Kind, record.SourceKey, path)
 			}
+			sourceKey := [2]string{path, record.SourceKey}
+			if _, exists := sourceKeys[sourceKey]; exists {
+				return fmt.Errorf("duplicate source tuple %q/%q", path, record.SourceKey)
+			}
+			sourceKeys[sourceKey] = struct{}{}
 		}
 	}
 	return nil

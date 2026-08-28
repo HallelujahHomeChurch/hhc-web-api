@@ -26,6 +26,7 @@ func TestLoadHashesOriginalManifestBytes(t *testing.T) {
 
 func TestLoadRejectsInvalidManifest(t *testing.T) {
 	record := `{"kind":"location","sourcePaths":["source.json"],"sourceKey":"one","payload":{}}`
+	pageRecord := strings.Replace(record, `"kind":"location"`, `"kind":"page"`, 1)
 	withRecord := strings.Replace(validManifestJSON, `"records":[]`, `"records":[`+record+`]`, 1)
 	tests := []struct {
 		name    string
@@ -44,6 +45,7 @@ func TestLoadRejectsInvalidManifest(t *testing.T) {
 		{name: "empty_source_key", payload: strings.Replace(withRecord, `"sourceKey":"one"`, `"sourceKey":""`, 1)},
 		{name: "duplicate_source_path", payload: strings.Replace(validManifestJSON, `"sources":[`, `"sources":[{"path":"source.json","sha256":"`+strings.Repeat("c", 64)+`"},`, 1)},
 		{name: "duplicate_record_key", payload: strings.Replace(withRecord, `"records":[`+record+`]`, `"records":[`+record+`,`+record+`]`, 1)},
+		{name: "duplicate_cross_kind_source_tuple", payload: strings.Replace(withRecord, `"records":[`+record+`]`, `"records":[`+record+`,`+pageRecord+`]`, 1)},
 		{name: "duplicate_record_source_path", payload: strings.Replace(withRecord, `"sourcePaths":["source.json"]`, `"sourcePaths":["source.json","source.json"]`, 1)},
 		{name: "missing_record_source", payload: strings.Replace(withRecord, `"sourcePaths":["source.json"]`, `"sourcePaths":["missing.json"]`, 1)},
 		{name: "empty_record_sources", payload: strings.Replace(withRecord, `"sourcePaths":["source.json"]`, `"sourcePaths":[]`, 1)},

@@ -105,26 +105,27 @@ func TestPlanFailsClosedUntilRecordKindIsReleased(t *testing.T) {
 	}
 }
 
-func TestInventoryReturnsCountsAndDeterministicKeyHashes(t *testing.T) {
+func TestInventoryCountsDistinctPublishedNaturalKeys(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	mock.ExpectQuery("SELECT issue_number::text FROM hhc_web.bulletin_issue").WillReturnRows(sqlmock.NewRows([]string{"issue_number"}).AddRow("1732").AddRow("10"))
-	mock.ExpectQuery("SELECT slug FROM hhc_web.news_item").WillReturnRows(sqlmock.NewRows([]string{"slug"}).AddRow("z").AddRow("a"))
-	mock.ExpectQuery("SELECT sort_order::text FROM hhc_web.history_event").WillReturnRows(sqlmock.NewRows([]string{"sort_order"}).AddRow("2").AddRow("10"))
-	mock.ExpectQuery("SELECT youtube_video_id FROM hhc_web.video_item").WillReturnRows(sqlmock.NewRows([]string{"youtube_video_id"}).AddRow("bbb").AddRow("aaa"))
+	// DISTINCT collapses five locale projections; the join excludes draft-only aggregates.
+	mock.ExpectQuery(`(?s)SELECT DISTINCT bulletin\.issue_number::text.*FROM hhc_web\.bulletin_issue bulletin.*JOIN hhc_web\.public_projection projection.*projection\.resource_type='bulletin_issue'.*projection\.resource_id=bulletin\.id.*bulletin\.issue_number IS NOT NULL`).WillReturnRows(sqlmock.NewRows([]string{"issue_number"}).AddRow("1732"))
+	mock.ExpectQuery(`(?s)SELECT DISTINCT news\.slug.*FROM hhc_web\.news_item news.*JOIN hhc_web\.public_projection projection.*projection\.resource_type='news'.*projection\.resource_id=news\.entry_id`).WillReturnRows(sqlmock.NewRows([]string{"slug"}).AddRow("slug"))
+	mock.ExpectQuery(`(?s)SELECT DISTINCT history\.sort_order::text.*FROM hhc_web\.history_event history.*JOIN hhc_web\.public_projection projection.*projection\.resource_type='history'.*projection\.resource_id=history\.entry_id`).WillReturnRows(sqlmock.NewRows([]string{"sort_order"}).AddRow("2"))
+	mock.ExpectQuery(`(?s)SELECT DISTINCT video\.youtube_video_id.*FROM hhc_web\.video_item video.*JOIN hhc_web\.public_projection projection.*projection\.resource_type='videos'.*projection\.resource_id=video\.entry_id`).WillReturnRows(sqlmock.NewRows([]string{"youtube_video_id"}).AddRow("video-id"))
 
 	report, err := Inventory(context.Background(), db)
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := InventoryReport{
-		Bulletins: ModuleInventory{Count: 2, KeySetSHA256: "ca1adbb0cbc98df1af085ef2570b44cc344bef69c3f4d0e1cd9a49bf2d1da78d"},
-		News:      ModuleInventory{Count: 2, KeySetSHA256: "6e797633128ae4d28a36e783f981611a14cf25a1aa988147efa439741295cefe"},
-		History:   ModuleInventory{Count: 2, KeySetSHA256: "642b68fa2677cda2804e23d765700d175ee68268cf4620fd91712760d62d551f"},
-		Videos:    ModuleInventory{Count: 2, KeySetSHA256: "56b45eead554196f6aaf8b7b8d7eb26b33836e8be3a74761f8dbe5615072ee4f"},
+		Bulletins: ModuleInventory{Count: 1, KeySetSHA256: "c10502c4c464153d0d889fbbfc84a026db15107f99f029cb5724b8b550209c64"},
+		News:      ModuleInventory{Count: 1, KeySetSHA256: "27018d99df96711e1da801450a5b1270d61f36e1c01f31a73ac687393e892e55"},
+		History:   ModuleInventory{Count: 1, KeySetSHA256: "7c1ac2d094aaec5a8507a06b9878167f1d654a3423b0427015c4ac9f5fc44d1b"},
+		Videos:    ModuleInventory{Count: 1, KeySetSHA256: "6cbbbe84546bc85f35edd258d8e888a36433e3c45874172d4fe56b4611468dbf"},
 	}
 	gotJSON, _ := json.Marshal(report)
 	wantJSON, _ := json.Marshal(want)
@@ -133,6 +134,24 @@ func TestInventoryReturnsCountsAndDeterministicKeyHashes(t *testing.T) {
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestInventoryModuleHashesModuleAndBytewiseSortedKeysWithNewlines(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	mock.ExpectQuery("SELECT natural_key").WillReturnRows(sqlmock.NewRows([]string{"key"}).AddRow("z").AddRow("a"))
+
+	got, err := inventoryModule(context.Background(), db, "news", "SELECT natural_key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := ModuleInventory{Count: 2, KeySetSHA256: "6e797633128ae4d28a36e783f981611a14cf25a1aa988147efa439741295cefe"}
+	if got != want {
+		t.Fatalf("inventory = %#v, want %#v", got, want)
 	}
 }
 

@@ -55,6 +55,7 @@ jobs:
       - name: Validate workflow inputs
         run: |
           set -euo pipefail
+          [[ "$GITHUB_REF" == refs/heads/main ]] || { echo "Content migration is allowed only from refs/heads/main" >&2; exit 1; }
           for name in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID; do
             test -n "${!name:-}" || { echo "Missing repository variable: ${name}" >&2; exit 1; }
           done
@@ -91,6 +92,7 @@ jobs:
             jq -ce --arg mode "$expected_mode" --arg seed "$expected_seed" --arg sha "$expected_sha" '
               select(type == "object"
               and has("mode") and has("seedVersion") and has("manifestSHA256")
+              and has("inserts") and has("skips")
               and has("updates") and has("deletes") and has("warnings") and has("conflicts")
               and .mode == $mode
               and (if $seed == ""
@@ -101,6 +103,8 @@ jobs:
                 then (((.manifestSHA256 | type) == "string") and (.manifestSHA256 | test("^[0-9a-f]{64}$")))
                 else .manifestSHA256 == $sha
                 end)
+              and (.inserts | type == "number" and . >= 0 and . == floor)
+              and (.skips | type == "number" and . >= 0 and . == floor)
               and .updates == 0
               and .deletes == 0
               and .warnings == 0
@@ -245,6 +249,7 @@ jobs:
             jq -ce --arg mode "$expected_mode" --arg seed "$expected_seed" --arg sha "$expected_sha" '
               select(type == "object"
               and has("mode") and has("seedVersion") and has("manifestSHA256")
+              and has("inserts") and has("skips")
               and has("updates") and has("deletes") and has("warnings") and has("conflicts")
               and .mode == $mode
               and (if $seed == ""
@@ -255,6 +260,8 @@ jobs:
                 then (((.manifestSHA256 | type) == "string") and (.manifestSHA256 | test("^[0-9a-f]{64}$")))
                 else .manifestSHA256 == $sha
                 end)
+              and (.inserts | type == "number" and . >= 0 and . == floor)
+              and (.skips | type == "number" and . >= 0 and . == floor)
               and .updates == 0
               and .deletes == 0
               and .warnings == 0
