@@ -330,6 +330,19 @@ func TestPagePublishRequiresAllFiveExactLocales(t *testing.T) {
 	}
 }
 
+func TestPagePublishesWithAllFiveExactLocales(t *testing.T) {
+	input := normalize(ModulePages, pageInput("home", "home.v1", "/", validHomePagePayload()))
+	repo := &serviceRepository{item: Item{
+		ID: "page-1", Module: ModulePages, Version: 1,
+		PageKey: input.PageKey, PageTemplate: input.PageTemplate, RoutePath: input.RoutePath, Indexable: false,
+		Translations: input.Translations,
+	}}
+	item, err := NewService(repo, time.Now).PublishContent(context.Background(), ModulePages, repo.item.ID, 1, "admin")
+	if err != nil || item.Status != StatusPublished {
+		t.Fatalf("item=%#v err=%v", item, err)
+	}
+}
+
 func TestRestoreContentPreservesLocationDetail(t *testing.T) {
 	repo := &serviceRepository{
 		item:     Item{ID: "location-1", Module: ModuleLocations, Version: 2, LocationKey: "taipei", MapHref: "https://maps.example.com/current", SortOrder: 20, Translations: locationInput().Translations},

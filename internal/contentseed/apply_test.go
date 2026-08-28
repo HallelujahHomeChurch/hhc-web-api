@@ -621,6 +621,28 @@ func pageSeedTestRecord(key string) Record {
 	return Record{Kind: "page", SourceKey: "page:" + key, SourcePaths: paths, Payload: payload}
 }
 
+func TestPageSeedRequiresIndexablePresenceAndPreservesFalse(t *testing.T) {
+	record := pageSeedTestRecord("home")
+	var payload map[string]any
+	if err := json.Unmarshal(record.Payload, &payload); err != nil {
+		t.Fatal(err)
+	}
+	delete(payload, "indexable")
+	record.Payload, _ = json.Marshal(payload)
+	if _, err := decodePageSeedPayload(record.Payload); err == nil {
+		t.Fatal("page seed accepted omitted indexable")
+	}
+	payload["indexable"] = false
+	record.Payload, _ = json.Marshal(payload)
+	decoded, err := decodePageSeedPayload(record.Payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decoded.(pageSeedPayload).writeInput().Indexable {
+		t.Fatal("page seed lost explicit indexable=false")
+	}
+}
+
 type seedTestSuccess struct {
 	manifestSHA string
 	inserts     int

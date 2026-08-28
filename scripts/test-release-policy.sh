@@ -92,6 +92,7 @@ grep -Fq 'test-migration-policy.sh internal/migrations/sql/*.sql' "$workflow"
 grep -Fq 'npx --yes @redocly/cli@2.47.0 lint openapi.yaml' .github/workflows/ci.yml
 grep -Fq './scripts/test-release-policy.sh' .github/workflows/ci.yml
 grep -Fq 'SITE_LAYOUT_SMOKE_URL: https://www.alive.org.tw/api/site-layout?locale=zh-Hant' "$workflow"
+grep -Fq 'PAGE_SMOKE_BASE_URL: https://www.alive.org.tw/api/pages' "$workflow"
 
 run_smoke_case() {
   mode="$1"
@@ -106,6 +107,11 @@ run_smoke_case() {
   [ "$#" -lt 9 ] || site_layout_body="$9"
   expected_site_layout_request="${10:-unchecked}"
   site_layout_etag="${11:-}"
+  page_status="${12:-404}"
+  page_content_type="${13:-application/json}"
+  page_body='{"data":null,"meta":{},"error":{"code":"not_found","message":"The content was not found."}}'
+  [ "$#" -lt 14 ] || page_body="${14}"
+  expected_page_request="${15:-unchecked}"
   case_dir="$(mktemp -d)"
   mkdir "$case_dir/bin"
   cat >"$case_dir/bin/timeout" <<'SH'
@@ -149,6 +155,19 @@ case "$url" in
     printf '%s\n' "$SMOKE_SITE_LAYOUT_BODY" >"$body"
     printf '%s' "$SMOKE_SITE_LAYOUT_STATUS"
     ;;
+  */api/pages/*)
+    printf 'HTTP/1.1 %s\nContent-Type: %s\n\n' "$SMOKE_PAGE_STATUS" "$SMOKE_PAGE_CONTENT_TYPE" >"$headers"
+    page_key="${url%%\?*}"
+    page_key="${page_key##*/}"
+    case "$page_key" in
+      home) template=home.v1; route=/ ;;
+      about) template=about.v1; route=/about ;;
+      privacy-policy) template=legal.v1; route=/privacy-policy ;;
+      terms-of-use) template=legal.v1; route=/terms-of-use ;;
+    esac
+    printf '%s\n' "$SMOKE_PAGE_BODY" | sed "s|__PAGE_KEY__|$page_key|g; s|__TEMPLATE__|$template|g; s|__ROUTE__|$route|g" >"$body"
+    printf '%s' "$SMOKE_PAGE_STATUS"
+    ;;
 esac
 SH
   chmod +x "$case_dir/bin/timeout" "$case_dir/bin/script" "$case_dir/bin/curl"
@@ -158,6 +177,7 @@ SH
     SMOKE_LOCATION_BODY="$location_body" SMOKE_SITE_LAYOUT_STATUS="$site_layout_status" \
     SMOKE_SITE_LAYOUT_CONTENT_TYPE="$site_layout_content_type" SMOKE_SITE_LAYOUT_BODY="$site_layout_body" \
     SMOKE_SITE_LAYOUT_ETAG="$site_layout_etag" \
+    SMOKE_PAGE_STATUS="$page_status" SMOKE_PAGE_CONTENT_TYPE="$page_content_type" SMOKE_PAGE_BODY="$page_body" \
     ./scripts/smoke-release.sh >/dev/null 2>&1
   status=$?
   set -e
@@ -172,6 +192,16 @@ SH
   case "$expected_site_layout_request" in
     requested) grep -Eq '/api/site-layout([?]|$)' "$case_dir/events" ;;
     skipped) ! grep -Eq '/api/site-layout([?]|$)' "$case_dir/events" 2>/dev/null ;;
+  esac
+  case "$expected_page_request" in
+    requested)
+      for page_key in home about privacy-policy terms-of-use; do
+        grep -Eq "/api/pages/$page_key[?]locale=zh-Hant$" "$case_dir/events"
+      done
+      test "$(grep -Ec '/api/pages/(home|about|privacy-policy|terms-of-use)[?]locale=zh-Hant$' "$case_dir/events")" -eq 4
+      ;;
+    started) grep -Eq '/api/pages/home[?]locale=zh-Hant$' "$case_dir/events" ;;
+    skipped) ! grep -Eq '/api/pages/' "$case_dir/events" 2>/dev/null ;;
   esac
   rm -rf "$case_dir"
 }
@@ -209,6 +239,16 @@ run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}'
 run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' fail requested 200 application/json "$duplicate_site_layout" requested
 run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' fail requested 200 application/json "$visible_empty_site_layout" requested
 run_smoke_case rollback 404 application/json '{"data":null,"meta":{},"error":{"code":"not_found"}}' pass skipped 404 application/json "$backend_site_layout_not_found" skipped
+
+valid_page='{"data":{"pageKey":"__PAGE_KEY__","template":"__TEMPLATE__","routePath":"__ROUTE__","indexable":true,"content":{"schemaVersion":1,"template":"__TEMPLATE__","data":{}},"resolvedLocale":"zh-Hant","availableLocales":["zh-Hant","zh-Hans","en","ja","ko"],"version":3,"publishedAt":"2026-08-29T00:00:00Z"},"meta":{},"error":null}'
+backend_page_not_found='{"data":null,"meta":{},"error":{"code":"not_found","message":"The content was not found."}}'
+gateway_page_not_found='{"error":"Not Found","message":"The requested resource was not found.","service":"api-gateway"}'
+run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' pass requested 200 application/json "$valid_site_layout" requested '"site-layout-1"' 200 application/json "$valid_page" requested
+run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' pass requested 200 application/json "$valid_site_layout" requested '"site-layout-1"' 404 application/json "$backend_page_not_found" requested
+run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' fail requested 200 application/json "$valid_site_layout" requested '"site-layout-1"' 404 application/json "$gateway_page_not_found" started
+run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' fail requested 200 application/json "$valid_site_layout" requested '"site-layout-1"' 404 text/plain '' started
+run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' fail requested 200 application/json "$valid_site_layout" requested '"site-layout-1"' 200 application/json '{"data":{},"meta":{},"error":null}' started
+run_smoke_case rollback 404 application/json '{"data":null,"meta":{},"error":{"code":"not_found"}}' pass skipped 404 application/json "$backend_site_layout_not_found" skipped '' 404 application/json "$backend_page_not_found" skipped
 
 forward_smoke_line="$(grep -nF 'SMOKE_MODE=forward ./scripts/smoke-release.sh' "$workflow" | cut -d: -f1)"
 pointer_upload_line="$(grep -nF -- '--name current.json' "$workflow" | tail -1 | cut -d: -f1)"

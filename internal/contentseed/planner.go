@@ -85,7 +85,7 @@ type pageSeedPayload struct {
 	PageKey      string                `json:"pageKey"`
 	PageTemplate string                `json:"pageTemplate"`
 	RoutePath    string                `json:"routePath"`
-	Indexable    bool                  `json:"indexable"`
+	Indexable    *bool                 `json:"indexable"`
 	Translations []pageSeedTranslation `json:"translations"`
 }
 
@@ -260,7 +260,7 @@ func decodePageSeedPayload(raw json.RawMessage) (any, error) {
 		}
 		return nil, err
 	}
-	if content.ValidatePageDefinition(payload.PageKey, payload.PageTemplate, payload.RoutePath) != nil || len(payload.Translations) != 5 {
+	if content.ValidatePageDefinition(payload.PageKey, payload.PageTemplate, payload.RoutePath) != nil || payload.Indexable == nil || len(payload.Translations) != 5 {
 		return nil, errors.New("page payload is invalid")
 	}
 	locales := [...]string{"zh-Hant", "zh-Hans", "en", "ja", "ko"}
@@ -283,7 +283,7 @@ func (payload pageSeedPayload) writeInput() content.WriteInput {
 		title, summary, _ := content.PagePayloadMetadata(payload.PageKey, translation.BodyJSON)
 		translations[index] = content.Translation{Locale: translation.Locale, Title: title, Summary: summary, BodyJSON: translation.BodyJSON}
 	}
-	return content.WriteInput{PageKey: payload.PageKey, PageTemplate: payload.PageTemplate, RoutePath: payload.RoutePath, Indexable: payload.Indexable, Translations: translations}
+	return content.WriteInput{PageKey: payload.PageKey, PageTemplate: payload.PageTemplate, RoutePath: payload.RoutePath, Indexable: *payload.Indexable, Translations: translations}
 }
 
 func canonicalSHA256(payload any) (string, error) {

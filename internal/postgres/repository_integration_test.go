@@ -1424,6 +1424,14 @@ func TestFixedEditorialPageLifecycle(t *testing.T) {
 	if err != nil || changedETag == firstETag || !strings.Contains(string(publishedChange.Content), "Changed Home") {
 		t.Fatalf("changed=%#v etag=%q err=%v", publishedChange, changedETag, err)
 	}
+	changedETags := make(map[string]string, 5)
+	for _, locale := range []string{"zh-Hant", "zh-Hans", "en", "ja", "ko"} {
+		_, etag, err := service.PublicEditorialPage(ctx, "home", locale)
+		if err != nil {
+			t.Fatalf("changed %s: %v", locale, err)
+		}
+		changedETags[locale] = etag
+	}
 	home, err = service.RestoreContent(ctx, content.ModulePages, home.ID, 1, home.Version, "admin")
 	if err != nil {
 		t.Fatal(err)
@@ -1431,8 +1439,15 @@ func TestFixedEditorialPageLifecycle(t *testing.T) {
 	if afterRestore, etag, err := service.PublicEditorialPage(ctx, "home", "ja"); err != nil || etag != changedETag || string(afterRestore.Content) != string(publishedChange.Content) {
 		t.Fatalf("restore changed public=%#v etag=%q err=%v", afterRestore, etag, err)
 	}
-	if _, err := service.PublishContent(ctx, content.ModulePages, home.ID, home.Version, "admin"); err != nil {
+	home, err = service.PublishContent(ctx, content.ModulePages, home.ID, home.Version, "admin")
+	if err != nil {
 		t.Fatal(err)
+	}
+	for _, locale := range []string{"zh-Hant", "zh-Hans", "en", "ja", "ko"} {
+		restored, etag, err := service.PublicEditorialPage(ctx, "home", locale)
+		if err != nil || restored.Version != home.Version || !restored.PublishedAt.Equal(*home.PublishedAt) || etag == changedETags[locale] || !strings.Contains(string(restored.Content), `"heroTitle":"Home"`) {
+			t.Fatalf("restored %s=%#v etag=%q changed=%q err=%v", locale, restored, etag, changedETags[locale], err)
+		}
 	}
 	revisions, err := service.ContentRevisions(ctx, content.ModulePages, home.ID)
 	if err != nil || len(revisions) < 5 {
@@ -1452,6 +1467,32 @@ func TestFixedEditorialPageLifecycle(t *testing.T) {
 	}
 	if _, _, err := service.PublicEditorialPage(ctx, "privacy-policy", "ko"); !errors.Is(err, content.ErrNotFound) {
 		t.Fatalf("legal fallback err=%v", err)
+	}
+	termsInput := pageIntegrationInput(t, "terms-of-use", "Terms")
+	terms, err := repository.CreateContent(ctx, content.ModulePages, termsInput, "content-seed:pages-v1", "page:terms-of-use", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `ALTER TABLE hhc_web.public_projection DROP CONSTRAINT IF EXISTS test_fixed_page_projection_failure`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `ALTER TABLE hhc_web.public_projection ADD CONSTRAINT test_fixed_page_projection_failure CHECK (projection_key <> 'page:ko:terms-of-use')`); err != nil {
+		t.Fatal(err)
+	}
+	defer db.ExecContext(ctx, `ALTER TABLE hhc_web.public_projection DROP CONSTRAINT IF EXISTS test_fixed_page_projection_failure`)
+	if _, err := repository.PublishContent(ctx, content.ModulePages, terms.ID, terms.Version, "admin", now); err == nil {
+		t.Fatal("page publish unexpectedly succeeded with a projection write failure")
+	}
+	rolledBack, err := repository.GetContent(ctx, content.ModulePages, terms.ID)
+	if err != nil || rolledBack.Status != content.StatusDraft || rolledBack.Version != terms.Version {
+		t.Fatalf("rolledBack=%#v err=%v", rolledBack, err)
+	}
+	var projectionCount int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM hhc_web.public_projection WHERE resource_id=$1`, terms.ID).Scan(&projectionCount); err != nil || projectionCount != 0 {
+		t.Fatalf("projectionCount=%d err=%v", projectionCount, err)
+	}
+	if _, err := db.ExecContext(ctx, `ALTER TABLE hhc_web.public_projection DROP CONSTRAINT test_fixed_page_projection_failure`); err != nil {
+		t.Fatal(err)
 	}
 	home, err = service.GetContent(ctx, content.ModulePages, home.ID)
 	if err != nil {

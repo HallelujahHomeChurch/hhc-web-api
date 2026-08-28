@@ -527,7 +527,7 @@ paths:
         - $ref: '#/components/parameters/IfNoneMatch'
       responses:
         '200': { $ref: '#/components/responses/PublicEditorialPage' }
-        '304': { description: Page has not changed }
+        '304': { $ref: '#/components/responses/PublicEditorialPageNotModified' }
         '404': { $ref: '#/components/responses/Error' }
   /site-layout:
     get:
@@ -1066,7 +1066,7 @@ paths:
         '401': { $ref: '#/components/responses/AdminUnauthorized' }
         '403': { $ref: '#/components/responses/AdminForbidden' }
         '201': { $ref: '#/components/responses/ContentItem' }
-        '405': { description: Fixed page records can only be created by the reviewed content importer }
+        '405': { $ref: '#/components/responses/Error' }
         '409': { $ref: '#/components/responses/Error' }
   /admin/content/{module}/{contentId}:
     get:
@@ -1127,7 +1127,7 @@ paths:
         '401': { $ref: '#/components/responses/AdminUnauthorized' }
         '403': { $ref: '#/components/responses/AdminForbidden' }
         '204': { description: Content and its revisions deleted }
-        '405': { description: Fixed page records cannot be deleted }
+        '405': { $ref: '#/components/responses/Error' }
         '409': { $ref: '#/components/responses/Error' }
         '412': { $ref: '#/components/responses/Error' }
   /admin/content/{module}/{contentId}/translation-previews/{targetLocale}:
@@ -1510,6 +1510,11 @@ components:
       content:
         application/json:
           schema: { $ref: '#/components/schemas/PublicEditorialPageEnvelope' }
+    PublicEditorialPageNotModified:
+      description: The fixed editorial page has not changed.
+      headers:
+        ETag: { schema: { type: string } }
+        Cache-Control: { schema: { type: string, const: 'public, max-age=30, must-revalidate' } }
     SiteLayout:
       description: Published Site Layout for the exact requested locale.
       headers:
@@ -2077,6 +2082,32 @@ components:
             aboutCta: { type: string, minLength: 1, maxLength: 200 }
             locationsTitle: { type: string, minLength: 1, maxLength: 200 }
             mapLink: { type: string, minLength: 1, maxLength: 200 }
+    AboutVisionTextSection:
+      type: object
+      additionalProperties: false
+      required: [eyebrow, title, body]
+      properties:
+        eyebrow: { type: string, minLength: 1, maxLength: 200 }
+        title: { type: string, minLength: 1, maxLength: 500 }
+        body: { type: string, minLength: 1, maxLength: 10000 }
+    AboutVisionCardSection:
+      type: object
+      additionalProperties: false
+      required: [eyebrow, title, cards]
+      properties:
+        eyebrow: { type: string, minLength: 1, maxLength: 200 }
+        title: { type: string, minLength: 1, maxLength: 500 }
+        cards:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items:
+            type: object
+            additionalProperties: false
+            required: [title, body]
+            properties:
+              title: { type: string, minLength: 1, maxLength: 500 }
+              body: { type: string, minLength: 1, maxLength: 5000 }
     AboutPageContentV1:
       type: object
       additionalProperties: false
@@ -2103,25 +2134,12 @@ components:
                   type: array
                   minItems: 4
                   maxItems: 4
-                  items:
-                    type: object
-                    additionalProperties: false
-                    required: [eyebrow, title]
-                    properties:
-                      eyebrow: { type: string, minLength: 1, maxLength: 200 }
-                      title: { type: string, minLength: 1, maxLength: 500 }
-                      body: { type: string, minLength: 1, maxLength: 10000 }
-                      cards:
-                        type: array
-                        minItems: 1
-                        maxItems: 20
-                        items:
-                          type: object
-                          additionalProperties: false
-                          required: [title, body]
-                          properties:
-                            title: { type: string, minLength: 1, maxLength: 500 }
-                            body: { type: string, minLength: 1, maxLength: 5000 }
+                  prefixItems:
+                    - { $ref: '#/components/schemas/AboutVisionTextSection' }
+                    - { $ref: '#/components/schemas/AboutVisionTextSection' }
+                    - { $ref: '#/components/schemas/AboutVisionCardSection' }
+                    - { $ref: '#/components/schemas/AboutVisionCardSection' }
+                  items: false
             history:
               type: object
               additionalProperties: false
@@ -2151,7 +2169,7 @@ components:
         data:
           type: object
           additionalProperties: false
-          required: [heroTitle, heroSubtitle, updatedAtLabel, updatedAt, intro, sections]
+          required: [heroTitle, updatedAtLabel, updatedAt, intro, sections]
           properties:
             heroTitle: { type: string, minLength: 1, maxLength: 200 }
             heroSubtitle: { type: string, maxLength: 500 }

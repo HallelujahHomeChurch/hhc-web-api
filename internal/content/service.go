@@ -262,7 +262,7 @@ func valid(module Module, input WriteInput) bool {
 	}
 }
 func publishable(item Item) bool {
-	if !valid(item.Module, WriteInput{AuthorName: item.AuthorName, Slug: item.Slug, DisplayDate: item.DisplayDate, EventDate: item.EventDate, YouTubeVideoID: item.YouTubeVideoID, CoverAssetID: item.CoverAssetID, HomeCoverAssetID: item.HomeCoverAssetID, DetailLayout: item.DetailLayout, LocationKey: item.LocationKey, MapHref: item.MapHref, SortOrder: item.SortOrder, Translations: item.Translations}) {
+	if !valid(item.Module, WriteInput{AuthorName: item.AuthorName, Slug: item.Slug, DisplayDate: item.DisplayDate, EventDate: item.EventDate, YouTubeVideoID: item.YouTubeVideoID, CoverAssetID: item.CoverAssetID, HomeCoverAssetID: item.HomeCoverAssetID, DetailLayout: item.DetailLayout, LocationKey: item.LocationKey, MapHref: item.MapHref, SortOrder: item.SortOrder, PageKey: item.PageKey, PageTemplate: item.PageTemplate, RoutePath: item.RoutePath, Indexable: item.Indexable, Translations: item.Translations}) {
 		return false
 	}
 	for _, value := range item.Translations {

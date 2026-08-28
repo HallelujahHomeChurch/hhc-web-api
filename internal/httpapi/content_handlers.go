@@ -1,8 +1,11 @@
 package httpapi
 
 import (
+	"bytes"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"sort"
 	"strconv"
@@ -194,16 +197,46 @@ func (h *Handler) adminContentUpdate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var input content.WriteInput
-	if !decode(w, r, &input) {
+	var request contentWriteRequest
+	if !decode(w, r, &request) {
 		return
 	}
+	if content.Module(r.PathValue("module")) == content.ModulePages && !request.indexablePresent {
+		writeError(w, http.StatusBadRequest, "invalid_request", "The request body is invalid.")
+		return
+	}
+	input := request.WriteInput
 	value, err := h.content.UpdateContent(r.Context(), content.Module(r.PathValue("module")), r.PathValue("contentID"), expected, input, actor(r))
 	if err != nil {
 		handleContentError(w, err)
 		return
 	}
 	writeContentItem(w, value)
+}
+
+type contentWriteRequest struct {
+	content.WriteInput
+	indexablePresent bool
+}
+
+func (request *contentWriteRequest) UnmarshalJSON(raw []byte) error {
+	type writeInput content.WriteInput
+	var value writeInput
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&value); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return content.ErrInvalid
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return err
+	}
+	request.WriteInput = content.WriteInput(value)
+	_, request.indexablePresent = fields["indexable"]
+	return nil
 }
 func (h *Handler) adminContentPublish(w http.ResponseWriter, r *http.Request) {
 	h.changeContentPublication(w, r, true)

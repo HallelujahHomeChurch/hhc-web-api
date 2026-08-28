@@ -12,6 +12,7 @@ gateway_app="${API_GATEWAY_APP_NAME:-api-gateway}"
 public_url="${PUBLIC_SMOKE_URL:-https://www.alive.org.tw/api/home?locale=zh-Hant}"
 locations_url="${LOCATIONS_SMOKE_URL:-https://www.alive.org.tw/api/locations?locale=zh-Hant}"
 site_layout_url="${SITE_LAYOUT_SMOKE_URL:-https://www.alive.org.tw/api/site-layout?locale=zh-Hant}"
+page_smoke_base_url="${PAGE_SMOKE_BASE_URL:-https://www.alive.org.tw/api/pages}"
 
 output="$(timeout 60s script -q -e -c \
   "az containerapp exec -g \"$resource_group\" -n \"$gateway_app\" --command \"/bin/sh -c \\\"/usr/bin/wget -qO- http://localhost:3500/v1.0/invoke/hhc-web-api/method/health/ready >/dev/null && echo READY_OK; /usr/bin/wget -qO- http://localhost:3500/v1.0/invoke/hhc-web-api/method/api/home?locale=zh-Hant >/dev/null && echo PUBLIC_OK; /usr/bin/wget -S -O- http://localhost:3500/v1.0/invoke/hhc-web-api/method/api/admin/bulletins 2>&1 || true\\\"\"" \
@@ -103,4 +104,49 @@ if [[ "$smoke_mode" == forward ]]; then
       ;;
     *) echo "Site Layout smoke returned HTTP $status" >&2; exit 1 ;;
   esac
+
+  for page_key in home about privacy-policy terms-of-use; do
+    case "$page_key" in
+      home) page_template=home.v1; route_path=/ ;;
+      about) page_template=about.v1; route_path=/about ;;
+      privacy-policy) page_template=legal.v1; route_path=/privacy-policy ;;
+      terms-of-use) page_template=legal.v1; route_path=/terms-of-use ;;
+    esac
+    status="$(curl --silent --show-error --max-time 30 --dump-header "$smoke_dir/page-$page_key-headers" \
+      --output "$smoke_dir/page-$page_key-body" --write-out '%{http_code}' \
+      "${page_smoke_base_url%/}/$page_key?locale=zh-Hant")"
+    content_type="$(awk 'tolower($1) == "content-type:" { sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print }' "$smoke_dir/page-$page_key-headers" | tail -1)"
+    media_type="$(printf '%s\n' "${content_type%%;*}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | tr '[:upper:]' '[:lower:]')"
+    [[ "$media_type" == application/json ]] || { echo "Page $page_key smoke returned Content-Type $content_type" >&2; exit 1; }
+    case "$status" in
+      200)
+        jq -e --arg key "$page_key" --arg template "$page_template" --arg route "$route_path" '
+          (keys == ["data", "error", "meta"])
+          and .error == null
+          and (.meta | type == "object")
+          and (.data | keys == ["availableLocales", "content", "indexable", "pageKey", "publishedAt", "resolvedLocale", "routePath", "template", "version"])
+          and .data.pageKey == $key
+          and .data.template == $template
+          and .data.routePath == $route
+          and (.data.indexable | type == "boolean")
+          and .data.resolvedLocale == "zh-Hant"
+          and (.data.availableLocales | type == "array" and index("zh-Hant") != null)
+          and (.data.version | type == "number" and . >= 1 and floor == .)
+          and (.data.publishedAt | type == "string" and length > 0)
+          and (.data.content | type == "object" and .schemaVersion == 1 and .template == $template and (.data | type == "object"))
+        ' "$smoke_dir/page-$page_key-body" >/dev/null
+        ;;
+      404)
+        jq -e '
+          (keys == ["data", "error", "meta"])
+          and .data == null
+          and (.meta | type == "object")
+          and (.error | keys == ["code", "message"])
+          and .error.code == "not_found"
+          and (.error.message | type == "string" and length > 0)
+        ' "$smoke_dir/page-$page_key-body" >/dev/null
+        ;;
+      *) echo "Page $page_key smoke returned HTTP $status" >&2; exit 1 ;;
+    esac
+  done
 fi

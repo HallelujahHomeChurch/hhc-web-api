@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/HallelujahHomeChurch/hhc-web-api/internal/content"
 	"github.com/getkin/kin-openapi/openapi3"
 	jsonschema "github.com/santhosh-tekuri/jsonschema/v6"
 )
@@ -211,6 +212,7 @@ func TestOpenAPIDocumentsFixedEditorialPageContracts(t *testing.T) {
 		"$ref: '#/components/parameters/ContentLocale'",
 		"$ref: '#/components/parameters/IfNoneMatch'",
 		"$ref: '#/components/responses/PublicEditorialPage'",
+		"$ref: '#/components/responses/PublicEditorialPageNotModified'",
 	} {
 		if !strings.Contains(operation, expected) {
 			t.Errorf("public page operation missing %q:\n%s", expected, operation)
@@ -235,6 +237,47 @@ func TestOpenAPIDocumentsFixedEditorialPageContracts(t *testing.T) {
 	}
 	if !strings.Contains(operationByID(t, document, "deleteContent"), "'405':") {
 		t.Error("deleteContent must document fixed-page 405")
+	}
+	for _, operationID := range []string{"createContent", "deleteContent"} {
+		if !strings.Contains(operationByID(t, document, operationID), "'405': { $ref: '#/components/responses/Error' }") {
+			t.Errorf("%s must use the standard 405 error envelope", operationID)
+		}
+	}
+	notModified := responseBlock(document, "PublicEditorialPageNotModified")
+	for _, expected := range []string{"ETag:", "Cache-Control:", "public, max-age=30, must-revalidate"} {
+		if !strings.Contains(notModified, expected) {
+			t.Errorf("page 304 response missing %q:\n%s", expected, notModified)
+		}
+	}
+}
+
+func TestOpenAPIPagePayloadSchemasMatchRuntimeValidation(t *testing.T) {
+	about := compileOpenAPISchema(t, "AboutPageContentV1")
+	valid := map[string]any{}
+	if err := json.Unmarshal(openAPIValidAboutPagePayload(), &valid); err != nil {
+		t.Fatal(err)
+	}
+	if err := about.Validate(valid); err != nil {
+		t.Fatalf("About schema rejected runtime-valid payload: %v", err)
+	}
+	sections := valid["data"].(map[string]any)["vision"].(map[string]any)["sections"].([]any)
+	sections[0].(map[string]any)["cards"] = []any{map[string]any{"title": "wrong", "body": "shape"}}
+	if err := about.Validate(valid); err == nil {
+		t.Fatal("About schema accepted cards in positional text section")
+	}
+
+	legal := compileOpenAPISchema(t, "LegalPageContentV1")
+	var legalValue map[string]any
+	if err := json.Unmarshal(openAPIValidLegalPagePayload(), &legalValue); err != nil {
+		t.Fatal(err)
+	}
+	delete(legalValue["data"].(map[string]any), "heroSubtitle")
+	encoded, _ := json.Marshal(legalValue)
+	if err := content.ValidatePagePayload("privacy-policy", encoded); err != nil {
+		t.Fatalf("runtime rejected omitted legal heroSubtitle: %v", err)
+	}
+	if err := legal.Validate(legalValue); err != nil {
+		t.Fatalf("OpenAPI rejected runtime-valid omitted legal heroSubtitle: %v", err)
 	}
 }
 
@@ -962,6 +1005,35 @@ func schemaBlock(document, name string) string {
 		return strings.Join(lines[start:end], "\n")
 	}
 	return ""
+}
+
+func responseBlock(document, name string) string {
+	_, responses, ok := strings.Cut(document, "\n  responses:\n")
+	if !ok {
+		return ""
+	}
+	responses, _, _ = strings.Cut(responses, "\n  headers:\n")
+	lines := strings.Split(responses, "\n")
+	marker := "    " + name + ":"
+	for start, line := range lines {
+		if line != marker {
+			continue
+		}
+		end := start + 1
+		for end < len(lines) && (!strings.HasPrefix(lines[end], "    ") || strings.HasPrefix(lines[end], "     ") || lines[end] == "") {
+			end++
+		}
+		return strings.Join(lines[start:end], "\n")
+	}
+	return ""
+}
+
+func openAPIValidAboutPagePayload() []byte {
+	return []byte(`{"schemaVersion":1,"template":"about.v1","data":{"heroTitle":"About","heroSubtitle":"Mission","vision":{"intro":"Intro","imageAlt":"Image","actionsImageAlt":"Actions","sections":[{"eyebrow":"One","title":"Vision","body":"Body"},{"eyebrow":"Two","title":"Goals","body":"Body"},{"eyebrow":"Three","title":"Actions","cards":[{"title":"Share","body":"Body"}]},{"eyebrow":"Four","title":"Convictions","cards":[{"title":"Mission","body":"Body"}]}]},"history":{"scripture":[{"lines":["Verse"],"cite":"Isaiah"}],"imageAlt":"Image","intro":"History","title":"Church History"}}}`)
+}
+
+func openAPIValidLegalPagePayload() []byte {
+	return []byte(`{"schemaVersion":1,"template":"legal.v1","data":{"heroTitle":"Privacy","heroSubtitle":"","updatedAtLabel":"Updated","updatedAt":"August 10, 2026","intro":"Intro","sections":[{"title":"Section","body":["Paragraph"]}]}}`)
 }
 
 func canonicalPath(path string) string {
