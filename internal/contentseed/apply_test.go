@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/HallelujahHomeChurch/hhc-web-api/internal/content"
 )
 
 func TestApplyStopsBeforeWritesOnWarningsOrConflicts(t *testing.T) {
@@ -153,6 +155,7 @@ func TestApplyLocationsInsertsThenSkipsMatchingProvenanceInCumulativeManifest(t 
 	if report.Inserts != 1 || report.Skips != 0 {
 		t.Fatalf("first report = %#v", report)
 	}
+	state.assertLocationSnapshot(t, "taipei")
 
 	report, err = Apply(context.Background(), db, locationSeedTestManifest("locations-v2", taipei, locationSeedTestRecord("zhongli")), strings.Repeat("b", 64), "content-seed:locations-v2")
 	if err != nil {
@@ -163,6 +166,7 @@ func TestApplyLocationsInsertsThenSkipsMatchingProvenanceInCumulativeManifest(t 
 	}
 	state.assertCounts(t, 2, 2, 3)
 	state.assertLocationTargets(t, "taipei", "zhongli")
+	state.assertLocationSnapshot(t, "zhongli")
 	state.assertActors(t, "content-seed:locations-v1", "content-seed:locations-v1", "content-seed:locations-v2", "content-seed:locations-v2")
 	state.assertUnlocked(t)
 }
@@ -444,6 +448,8 @@ type seedTestState struct {
 	domain            []string
 	provenance        []seedTestProvenance
 	targets           map[string]string
+	revisions         map[string]json.RawMessage
+	translations      map[string]int
 	actors            []string
 	failTranslationAt int
 	failures          map[string]error
@@ -452,7 +458,7 @@ type seedTestState struct {
 
 func newSeedTestDB(t *testing.T) (*sql.DB, *seedTestState) {
 	t.Helper()
-	state := &seedTestState{successful: make(map[string]seedTestSuccess), targets: make(map[string]string), failures: make(map[string]error)}
+	state := &seedTestState{successful: make(map[string]seedTestSuccess), targets: make(map[string]string), revisions: make(map[string]json.RawMessage), translations: make(map[string]int), failures: make(map[string]error)}
 	db := sql.OpenDB(seedTestConnector{state: state})
 	db.SetMaxOpenConns(4)
 	t.Cleanup(func() { _ = db.Close() })
@@ -470,6 +476,30 @@ func (state *seedTestState) assertLocationTargets(t *testing.T, keys ...string) 
 		if state.targets[key] == "" {
 			t.Fatalf("location target %q missing", key)
 		}
+	}
+}
+
+func (state *seedTestState) assertLocationSnapshot(t *testing.T, stableKey string) {
+	t.Helper()
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	id := state.targets[stableKey]
+	var snapshot content.Item
+	if err := json.Unmarshal(state.revisions[id], &snapshot); err != nil {
+		t.Fatalf("location %q revision snapshot: %v", stableKey, err)
+	}
+	if snapshot.LocationKey != stableKey || snapshot.MapHref != "https://maps.app.goo.gl/fDus6nVswbuhSEAd8" || snapshot.SortOrder != 10 || state.translations[id] != 5 {
+		t.Fatalf("location %q snapshot=%#v translations=%d", stableKey, snapshot, state.translations[id])
+	}
+	want := []content.Translation{
+		{Locale: "zh-Hant", Title: "名稱", Body: "地址"},
+		{Locale: "zh-Hans", Title: "名称", Body: "地址"},
+		{Locale: "en", Title: "Name", Body: "Address"},
+		{Locale: "ja", Title: "名前", Body: "Address"},
+		{Locale: "ko", Title: "이름", Body: "Address"},
+	}
+	if fmt.Sprint(snapshot.Translations) != fmt.Sprint(want) {
+		t.Fatalf("location %q translations=%#v", stableKey, snapshot.Translations)
 	}
 }
 
@@ -568,7 +598,7 @@ func (conn *seedTestConn) BeginTx(ctx context.Context, _ driver.TxOptions) (driv
 	if conn.tx != nil {
 		return nil, errors.New("transaction already active")
 	}
-	conn.tx = &seedTestTxState{targets: make(map[string]string)}
+	conn.tx = &seedTestTxState{targets: make(map[string]string), revisions: make(map[string]json.RawMessage), translations: make(map[string]int)}
 	return seedTestTx{conn: conn}, nil
 }
 
@@ -640,6 +670,7 @@ func (conn *seedTestConn) ExecContext(ctx context.Context, query string, args []
 		conn.tx.actors = append(conn.tx.actors, args[4].Value.(string))
 	case strings.Contains(query, "INSERT INTO hhc_web.content_translation"):
 		conn.tx.translationCount++
+		conn.tx.translations[args[0].Value.(string)]++
 		if conn.state.failTranslationAt == conn.tx.translationCount {
 			return nil, errors.New("translation failed")
 		}
@@ -647,6 +678,11 @@ func (conn *seedTestConn) ExecContext(ctx context.Context, query string, args []
 		conn.tx.targets[args[1].Value.(string)] = args[0].Value.(string)
 	case strings.Contains(query, "INSERT INTO hhc_web.content_revision"):
 		conn.tx.actors = append(conn.tx.actors, args[2].Value.(string))
+		snapshot, ok := args[1].Value.([]byte)
+		if !ok {
+			return nil, fmt.Errorf("revision snapshot has type %T", args[1].Value)
+		}
+		conn.tx.revisions[args[0].Value.(string)] = append(json.RawMessage(nil), snapshot...)
 	case strings.Contains(query, "INSERT INTO hhc_web.content_seed_source"):
 		conn.tx.provenance = append(conn.tx.provenance, seedTestProvenance{sourceKey: args[3].Value.(string), recordHash: args[5].Value.(string), kind: args[6].Value.(string), targetID: args[7].Value.(string)})
 	case strings.Contains(query, "SET status='succeeded'"):
@@ -711,6 +747,8 @@ type seedTestTxState struct {
 	domain           []string
 	provenance       []seedTestProvenance
 	targets          map[string]string
+	revisions        map[string]json.RawMessage
+	translations     map[string]int
 	actors           []string
 	translationCount int
 	success          *seedTestAttempt
@@ -743,6 +781,12 @@ func (tx seedTestTx) Commit() error {
 	tx.conn.state.provenance = append(tx.conn.state.provenance, tx.conn.tx.provenance...)
 	for key, targetID := range tx.conn.tx.targets {
 		tx.conn.state.targets[key] = targetID
+	}
+	for id, snapshot := range tx.conn.tx.revisions {
+		tx.conn.state.revisions[id] = snapshot
+	}
+	for id, count := range tx.conn.tx.translations {
+		tx.conn.state.translations[id] += count
 	}
 	tx.conn.state.actors = append(tx.conn.state.actors, tx.conn.tx.actors...)
 	if tx.conn.tx.success != nil {

@@ -27,7 +27,7 @@ func NewService(repository Repository, now func() time.Time) *Service {
 }
 
 func (s *Service) CreateContent(ctx context.Context, module Module, input WriteInput, actor, key string) (Item, error) {
-	input = normalize(input)
+	input = normalize(module, input)
 	if module == ModuleNews {
 		input = normalizeNews(input, key)
 	}
@@ -83,7 +83,7 @@ func (s *Service) GetContent(ctx context.Context, module Module, id string) (Ite
 	return s.repository.GetContent(ctx, module, id)
 }
 func (s *Service) UpdateContent(ctx context.Context, module Module, id string, expected int64, input WriteInput, actor string) (Item, error) {
-	input = normalize(input)
+	input = normalize(module, input)
 	if !validModule(module) || expected < 1 {
 		return Item{}, ErrInvalid
 	}
@@ -276,7 +276,7 @@ func validText(value string, min, max int) bool {
 	length := utf8.RuneCountInString(value)
 	return length >= min && length <= max
 }
-func normalize(input WriteInput) WriteInput {
+func normalize(module Module, input WriteInput) WriteInput {
 	input.AuthorName = strings.TrimSpace(input.AuthorName)
 	input.Slug = strings.TrimSpace(input.Slug)
 	input.DisplayDate = strings.TrimSpace(input.DisplayDate)
@@ -285,15 +285,20 @@ func normalize(input WriteInput) WriteInput {
 	input.CoverAssetID = strings.TrimSpace(input.CoverAssetID)
 	input.HomeCoverAssetID = strings.TrimSpace(input.HomeCoverAssetID)
 	input.DetailLayout = strings.TrimSpace(input.DetailLayout)
+	if module != ModuleLocations && input.DetailLayout == "" {
+		input.DetailLayout = "top"
+	}
 	input.LocationKey = strings.TrimSpace(input.LocationKey)
 	input.MapHref = strings.TrimSpace(input.MapHref)
 	for index := range input.Translations {
 		input.Translations[index].Locale = strings.TrimSpace(input.Translations[index].Locale)
 		input.Translations[index].Title = strings.TrimSpace(input.Translations[index].Title)
-		input.Translations[index].Summary = strings.TrimSpace(input.Translations[index].Summary)
 		input.Translations[index].Body = strings.TrimSpace(input.Translations[index].Body)
-		input.Translations[index].DateLabel = strings.TrimSpace(input.Translations[index].DateLabel)
-		input.Translations[index].ImageAlt = strings.TrimSpace(input.Translations[index].ImageAlt)
+		if module != ModuleLocations {
+			input.Translations[index].Summary = strings.TrimSpace(input.Translations[index].Summary)
+			input.Translations[index].DateLabel = strings.TrimSpace(input.Translations[index].DateLabel)
+			input.Translations[index].ImageAlt = strings.TrimSpace(input.Translations[index].ImageAlt)
+		}
 	}
 	for index := range input.DeleteLocales {
 		input.DeleteLocales[index] = strings.TrimSpace(input.DeleteLocales[index])
@@ -349,9 +354,6 @@ func validNewsDetailLayout(value string) bool {
 }
 
 func normalizeNews(input WriteInput, slugSeed string) WriteInput {
-	if input.DetailLayout == "" {
-		input.DetailLayout = "top"
-	}
 	if input.Slug == "" && slugSeed != "" {
 		digest := sha256.Sum256([]byte(slugSeed))
 		input.Slug = "news-" + strings.ReplaceAll(input.DisplayDate, "-", "") + "-" + fmt.Sprintf("%x", digest[:4])
@@ -366,13 +368,13 @@ func normalizeNews(input WriteInput, slugSeed string) WriteInput {
 
 // ValidateLocation is shared by API writes and the content importer.
 func ValidateLocation(input WriteInput) bool {
-	if len(input.Translations) == 0 || len(input.Translations) > 5 || !locationKey.MatchString(input.LocationKey) || input.SortOrder < 0 || !validPublicLocationURL(input.MapHref) ||
+	if len(input.Translations) == 0 || len(input.Translations) > 5 || len(input.LocationKey) > 120 || !locationKey.MatchString(input.LocationKey) || input.SortOrder < 0 || !validPublicLocationURL(input.MapHref) ||
 		input.Slug != "" || input.DisplayDate != "" || input.EventDate != "" || input.YouTubeVideoID != "" ||
 		input.CoverAssetID != "" || input.HomeCoverAssetID != "" || input.DetailLayout != "" || input.Featured || input.HomeEligible {
 		return false
 	}
 	for _, translation := range input.Translations {
-		if strings.TrimSpace(translation.Title) == "" || strings.TrimSpace(translation.Body) == "" {
+		if strings.TrimSpace(translation.Title) == "" || strings.TrimSpace(translation.Body) == "" || translation.Summary != "" || translation.DateLabel != "" || translation.ImageAlt != "" {
 			return false
 		}
 	}
@@ -394,7 +396,7 @@ func validPublicLocationURL(value string) bool {
 		if ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() || ip.IsMulticast() {
 			return false
 		}
-	} else if !strings.Contains(host, ".") || strings.HasSuffix(host, ".svc") {
+	} else if numericIPv4Host(host) || !strings.Contains(host, ".") || strings.HasSuffix(host, ".svc") {
 		return false
 	}
 	canonicalPath := strings.ToLower(path.Clean(parsed.Path))
@@ -405,6 +407,36 @@ func validPublicLocationURL(value string) bool {
 		switch strings.ToLower(key) {
 		case "sig", "sv", "se", "sp", "sr", "st", "skoid", "sktid", "skt", "ske", "sks", "skv":
 			return false
+		}
+	}
+	return true
+}
+
+func numericIPv4Host(host string) bool {
+	parts := strings.Split(host, ".")
+	if len(parts) > 4 {
+		return false
+	}
+	for _, part := range parts {
+		if strings.HasPrefix(part, "0x") {
+			part = part[2:]
+			if part == "" {
+				return false
+			}
+			for _, rune := range part {
+				if !(rune >= '0' && rune <= '9') && !(rune >= 'a' && rune <= 'f') {
+					return false
+				}
+			}
+			continue
+		}
+		if part == "" {
+			return false
+		}
+		for _, rune := range part {
+			if rune < '0' || rune > '9' {
+				return false
+			}
 		}
 	}
 	return true

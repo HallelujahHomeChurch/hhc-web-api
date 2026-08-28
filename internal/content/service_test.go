@@ -126,6 +126,11 @@ func TestLocationsRequireStableKeyHTTPSMapAndTranslations(t *testing.T) {
 	if _, err := service.CreateContent(context.Background(), ModuleLocations, valid, "admin", "location-taipei"); err != nil {
 		t.Fatal(err)
 	}
+	maximumKey := valid
+	maximumKey.LocationKey = strings.Repeat("a", 120)
+	if _, err := service.CreateContent(context.Background(), ModuleLocations, maximumKey, "admin", "location-maximum-key"); err != nil {
+		t.Fatal(err)
+	}
 
 	tests := []struct {
 		name  string
@@ -147,6 +152,9 @@ func TestLocationsRequireStableKeyHTTPSMapAndTranslations(t *testing.T) {
 		{name: "localhost", input: func() WriteInput { value := valid; value.MapHref = "https://localhost/taipei"; return value }()},
 		{name: "private ipv4", input: func() WriteInput { value := valid; value.MapHref = "https://10.0.0.1/taipei"; return value }()},
 		{name: "private ipv6", input: func() WriteInput { value := valid; value.MapHref = "https://[fd00::1]/taipei"; return value }()},
+		{name: "abbreviated loopback ipv4", input: func() WriteInput { value := valid; value.MapHref = "https://127.1/taipei"; return value }()},
+		{name: "octal loopback ipv4", input: func() WriteInput { value := valid; value.MapHref = "https://0177.0.0.1/taipei"; return value }()},
+		{name: "hexadecimal loopback ipv4", input: func() WriteInput { value := valid; value.MapHref = "https://0x7f.0.0.1/taipei"; return value }()},
 		{name: "internal host", input: func() WriteInput { value := valid; value.MapHref = "https://maps.internal/taipei"; return value }()},
 		{name: "bare internal host", input: func() WriteInput { value := valid; value.MapHref = "https://asset-api/taipei"; return value }()},
 		{name: "generic single label host", input: func() WriteInput { value := valid; value.MapHref = "https://postgres/taipei"; return value }()},
@@ -182,7 +190,28 @@ func TestLocationsRequireStableKeyHTTPSMapAndTranslations(t *testing.T) {
 			return value
 		}()},
 		{name: "negative sort", input: func() WriteInput { value := valid; value.SortOrder = -1; return value }()},
+		{name: "oversized stable key", input: func() WriteInput { value := valid; value.LocationKey = strings.Repeat("a", 121); return value }()},
 		{name: "no translations", input: func() WriteInput { value := valid; value.Translations = nil; return value }()},
+		{name: "translation summary", input: func() WriteInput {
+			value := valid
+			value.Translations = []Translation{{Locale: "zh-Hant", Title: "台北", Body: "地址", Summary: "摘要"}}
+			return value
+		}()},
+		{name: "translation whitespace summary", input: func() WriteInput {
+			value := valid
+			value.Translations = []Translation{{Locale: "zh-Hant", Title: "台北", Body: "地址", Summary: " "}}
+			return value
+		}()},
+		{name: "translation date label", input: func() WriteInput {
+			value := valid
+			value.Translations = []Translation{{Locale: "zh-Hant", Title: "台北", Body: "地址", DateLabel: "日期"}}
+			return value
+		}()},
+		{name: "translation image alt", input: func() WriteInput {
+			value := valid
+			value.Translations = []Translation{{Locale: "zh-Hant", Title: "台北", Body: "地址", ImageAlt: "替代文字"}}
+			return value
+		}()},
 		{name: "blank name", input: func() WriteInput {
 			value := valid
 			value.Translations = []Translation{{Locale: "zh-Hant", Body: "地址"}}
@@ -201,6 +230,30 @@ func TestLocationsRequireStableKeyHTTPSMapAndTranslations(t *testing.T) {
 			}
 			if _, err := service.CreateContent(context.Background(), ModuleLocations, test.input, "admin", "location-invalid"); !errors.Is(err, ErrInvalid) {
 				t.Fatalf("err=%v", err)
+			}
+		})
+	}
+}
+
+func TestLegacyModulesKeepDetailLayoutDefaultInRetryInputs(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		module Module
+		input  WriteInput
+	}{
+		{name: "history", module: ModuleHistory, input: historyInput("1988-03")},
+		{name: "video", module: ModuleVideos, input: WriteInput{YouTubeVideoID: "K3ckFWeSQ-k", Translations: translations()}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			repo := &serviceRepository{}
+			service := NewService(repo, time.Now)
+			for attempt := 0; attempt < 2; attempt++ {
+				if _, err := service.CreateContent(context.Background(), test.module, test.input, "admin", "retry-"+test.name); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if len(repo.createInputs) != 2 || repo.createInputs[0].DetailLayout != "top" || repo.createInputs[1].DetailLayout != "top" {
+				t.Fatalf("retry inputs=%#v", repo.createInputs)
 			}
 		})
 	}
@@ -609,6 +662,7 @@ func locationInput() WriteInput {
 
 type serviceRepository struct {
 	item                  Item
+	createInputs          []WriteInput
 	revision              Revision
 	revisionError         error
 	listOptions           ListOptions
@@ -624,6 +678,7 @@ type serviceRepository struct {
 }
 
 func (r *serviceRepository) CreateContent(_ context.Context, module Module, input WriteInput, actor, key string, now time.Time) (Item, error) {
+	r.createInputs = append(r.createInputs, input)
 	r.item = Item{ID: "item-1", Module: module, Status: StatusDraft, Version: 1, AuthorName: input.AuthorName, Slug: input.Slug, DisplayDate: input.DisplayDate, EventDate: input.EventDate, YouTubeVideoID: input.YouTubeVideoID, CoverAssetID: input.CoverAssetID, HomeCoverAssetID: input.HomeCoverAssetID, DetailLayout: input.DetailLayout, Featured: input.Featured, HomeEligible: input.HomeEligible, LocationKey: input.LocationKey, MapHref: input.MapHref, SortOrder: input.SortOrder, Translations: input.Translations}
 	return r.item, nil
 }

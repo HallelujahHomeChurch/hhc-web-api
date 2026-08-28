@@ -1370,6 +1370,50 @@ func TestLocationContentLifecycle(t *testing.T) {
 	}
 }
 
+func TestLegacyContentRetriesPreserveOmittedDetailLayoutFingerprint(t *testing.T) {
+	databaseURL := os.Getenv("HHW_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("HHW_TEST_DATABASE_URL is not configured")
+	}
+	db, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	if err := migrations.Run(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `TRUNCATE hhc_web.public_projection,hhc_web.content_revision,hhc_web.content_translation,hhc_web.content_entry CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+
+	repository := New(db)
+	service := content.NewService(repository, time.Now)
+	for _, test := range []struct {
+		name   string
+		module content.Module
+		input  content.WriteInput
+	}{
+		{name: "history", module: content.ModuleHistory, input: content.WriteInput{EventDate: "1988-03", Translations: []content.Translation{{Locale: "zh-Hant", Title: "沿革", Body: "事件"}}}},
+		{name: "video", module: content.ModuleVideos, input: content.WriteInput{YouTubeVideoID: "K3ckFWeSQ-k", Translations: []content.Translation{{Locale: "zh-Hant", Title: "影片"}}}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			key := "legacy-fingerprint-" + test.name
+			legacy := test.input
+			legacy.DetailLayout = "top"
+			created, err := repository.CreateContent(ctx, test.module, legacy, "admin", key, time.Now().UTC())
+			if err != nil {
+				t.Fatal(err)
+			}
+			retried, err := service.CreateContent(ctx, test.module, test.input, "admin", key)
+			if err != nil || retried.ID != created.ID {
+				t.Fatalf("created=%#v retried=%#v err=%v", created, retried, err)
+			}
+		})
+	}
+}
+
 func locationWriteInput(key, mapHref string, sortOrder int) content.WriteInput {
 	locales := []string{"zh-Hant", "zh-Hans", "en", "ja", "ko"}
 	translations := make([]content.Translation, len(locales))
