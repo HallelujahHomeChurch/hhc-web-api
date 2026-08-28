@@ -27,6 +27,9 @@ func NewService(repository Repository, now func() time.Time) *Service {
 }
 
 func (s *Service) CreateContent(ctx context.Context, module Module, input WriteInput, actor, key string) (Item, error) {
+	if module == ModulePages {
+		return Item{}, ErrMethodNotAllowed
+	}
 	input = normalize(module, input)
 	if module == ModuleNews {
 		input = normalizeNews(input, key)
@@ -100,6 +103,9 @@ func (s *Service) UpdateContent(ctx context.Context, module Module, id string, e
 	if module == ModuleLocations && input.LocationKey != current.LocationKey {
 		return Item{}, ErrInvalid
 	}
+	if module == ModulePages && (input.PageKey != current.PageKey || input.PageTemplate != current.PageTemplate || input.RoutePath != current.RoutePath) {
+		return Item{}, ErrInvalid
+	}
 	if !valid(module, input) || !validDeleteLocales(input.DeleteLocales) {
 		return Item{}, ErrInvalid
 	}
@@ -139,10 +145,13 @@ func (s *Service) RestoreContent(ctx context.Context, module Module, id string, 
 	if err != nil {
 		return Item{}, err
 	}
-	input := WriteInput{AuthorName: value.Snapshot.AuthorName, Slug: value.Snapshot.Slug, DisplayDate: value.Snapshot.DisplayDate, EventDate: value.Snapshot.EventDate, YouTubeVideoID: value.Snapshot.YouTubeVideoID, CoverAssetID: value.Snapshot.CoverAssetID, HomeCoverAssetID: value.Snapshot.HomeCoverAssetID, DetailLayout: value.Snapshot.DetailLayout, Featured: value.Snapshot.Featured, HomeEligible: value.Snapshot.HomeEligible, LocationKey: value.Snapshot.LocationKey, MapHref: value.Snapshot.MapHref, SortOrder: value.Snapshot.SortOrder, Translations: preserveMissingLocales(value.Snapshot.Translations, current.Translations)}
+	input := WriteInput{AuthorName: value.Snapshot.AuthorName, Slug: value.Snapshot.Slug, DisplayDate: value.Snapshot.DisplayDate, EventDate: value.Snapshot.EventDate, YouTubeVideoID: value.Snapshot.YouTubeVideoID, CoverAssetID: value.Snapshot.CoverAssetID, HomeCoverAssetID: value.Snapshot.HomeCoverAssetID, DetailLayout: value.Snapshot.DetailLayout, Featured: value.Snapshot.Featured, HomeEligible: value.Snapshot.HomeEligible, LocationKey: value.Snapshot.LocationKey, MapHref: value.Snapshot.MapHref, SortOrder: value.Snapshot.SortOrder, PageKey: value.Snapshot.PageKey, PageTemplate: value.Snapshot.PageTemplate, RoutePath: value.Snapshot.RoutePath, Indexable: value.Snapshot.Indexable, Translations: preserveMissingLocales(value.Snapshot.Translations, current.Translations)}
 	return s.UpdateContent(ctx, module, id, expected, input, actor)
 }
 func (s *Service) DeleteContent(ctx context.Context, module Module, id string, expected int64, actor string) error {
+	if module == ModulePages {
+		return ErrMethodNotAllowed
+	}
 	if !validModule(module) || strings.TrimSpace(id) == "" || expected < 1 || strings.TrimSpace(actor) == "" {
 		return ErrInvalid
 	}
@@ -177,8 +186,15 @@ func (s *Service) PublicLocations(ctx context.Context, locale string) ([]PublicL
 	return s.repository.PublicLocations(ctx, locale)
 }
 
+func (s *Service) PublicEditorialPage(ctx context.Context, key, locale string) (PublicEditorialPage, string, error) {
+	if _, _, ok := PageDefinition(key); !ok || !validLocale(locale) {
+		return PublicEditorialPage{}, "", ErrNotFound
+	}
+	return s.repository.PublicEditorialPage(ctx, key, locale)
+}
+
 func validModule(module Module) bool {
-	return module == ModuleNews || module == ModuleHistory || module == ModuleVideos || module == ModuleLocations
+	return module == ModuleNews || module == ModuleHistory || module == ModuleVideos || module == ModuleLocations || module == ModulePages
 }
 func validLocale(locale string) bool {
 	switch locale {
@@ -207,6 +223,9 @@ func valid(module Module, input WriteInput) bool {
 	if module != ModuleLocations && (input.LocationKey != "" || input.MapHref != "" || input.SortOrder != 0) {
 		return false
 	}
+	if module != ModulePages && (input.PageKey != "" || input.PageTemplate != "" || input.RoutePath != "" || input.Indexable) {
+		return false
+	}
 	seen := map[string]bool{}
 	for _, value := range input.Translations {
 		if !validLocale(value.Locale) || seen[value.Locale] ||
@@ -215,6 +234,13 @@ func valid(module Module, input WriteInput) bool {
 			!validText(value.Body, 0, 100_000) ||
 			!validText(value.DateLabel, 0, 100) ||
 			!validText(value.ImageAlt, 0, 300) {
+			return false
+		}
+		if module == ModulePages {
+			if value.Body != "" || value.DateLabel != "" || value.ImageAlt != "" || ValidatePagePayload(input.PageKey, value.BodyJSON) != nil {
+				return false
+			}
+		} else if len(value.BodyJSON) != 0 {
 			return false
 		}
 		seen[value.Locale] = true
@@ -228,12 +254,15 @@ func valid(module Module, input WriteInput) bool {
 		return youtubeID.MatchString(input.YouTubeVideoID)
 	case ModuleLocations:
 		return ValidateLocation(input)
+	case ModulePages:
+		return ValidatePageDefinition(input.PageKey, input.PageTemplate, input.RoutePath) == nil &&
+			input.AuthorName == "" && input.Slug == "" && input.DisplayDate == "" && input.EventDate == "" && input.YouTubeVideoID == "" && input.CoverAssetID == "" && input.HomeCoverAssetID == "" && input.DetailLayout == "" && !input.Featured && !input.HomeEligible
 	default:
 		return false
 	}
 }
 func publishable(item Item) bool {
-	if !valid(item.Module, WriteInput{AuthorName: item.AuthorName, Slug: item.Slug, DisplayDate: item.DisplayDate, EventDate: item.EventDate, YouTubeVideoID: item.YouTubeVideoID, CoverAssetID: item.CoverAssetID, HomeCoverAssetID: item.HomeCoverAssetID, DetailLayout: item.DetailLayout, LocationKey: item.LocationKey, MapHref: item.MapHref, SortOrder: item.SortOrder, Translations: item.Translations}) {
+	if !valid(item.Module, WriteInput{AuthorName: item.AuthorName, Slug: item.Slug, DisplayDate: item.DisplayDate, EventDate: item.EventDate, YouTubeVideoID: item.YouTubeVideoID, CoverAssetID: item.CoverAssetID, HomeCoverAssetID: item.HomeCoverAssetID, DetailLayout: item.DetailLayout, LocationKey: item.LocationKey, MapHref: item.MapHref, SortOrder: item.SortOrder, PageKey: item.PageKey, PageTemplate: item.PageTemplate, RoutePath: item.RoutePath, Indexable: item.Indexable, Translations: item.Translations}) {
 		return false
 	}
 	for _, value := range item.Translations {
@@ -248,6 +277,10 @@ func publishable(item Item) bool {
 			}
 		case ModuleLocations:
 			if len(item.Translations) != 5 || value.Body == "" {
+				return false
+			}
+		case ModulePages:
+			if len(item.Translations) != 5 {
 				return false
 			}
 		}
@@ -285,7 +318,7 @@ func normalize(module Module, input WriteInput) WriteInput {
 	input.CoverAssetID = strings.TrimSpace(input.CoverAssetID)
 	input.HomeCoverAssetID = strings.TrimSpace(input.HomeCoverAssetID)
 	input.DetailLayout = strings.TrimSpace(input.DetailLayout)
-	if module != ModuleLocations && input.DetailLayout == "" {
+	if module != ModuleLocations && module != ModulePages && input.DetailLayout == "" {
 		input.DetailLayout = "top"
 	}
 	input.LocationKey = strings.TrimSpace(input.LocationKey)
@@ -298,6 +331,13 @@ func normalize(module Module, input WriteInput) WriteInput {
 			input.Translations[index].Summary = strings.TrimSpace(input.Translations[index].Summary)
 			input.Translations[index].DateLabel = strings.TrimSpace(input.Translations[index].DateLabel)
 			input.Translations[index].ImageAlt = strings.TrimSpace(input.Translations[index].ImageAlt)
+		}
+		if module == ModulePages {
+			title, summary, err := PagePayloadMetadata(input.PageKey, input.Translations[index].BodyJSON)
+			if err == nil {
+				input.Translations[index].Title = title
+				input.Translations[index].Summary = summary
+			}
 		}
 	}
 	for index := range input.DeleteLocales {

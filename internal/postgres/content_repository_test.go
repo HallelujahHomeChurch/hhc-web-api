@@ -372,3 +372,41 @@ func TestPublicLocationsReadsExactLocaleAndSortsNumerically(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestPublicEditorialPageReadsExactLocale(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	payload := []byte(`{"pageKey":"about","template":"about.v1","routePath":"/about","indexable":true,"content":{"schemaVersion":1,"template":"about.v1","data":{}},"resolvedLocale":"ja","availableLocales":["zh-Hant","zh-Hans","en","ja","ko"],"version":4,"publishedAt":"2026-08-28T12:00:00Z"}`)
+	mock.ExpectQuery("SELECT payload_json,etag FROM hhc_web.public_projection").
+		WithArgs("page:ja:about", "ja").
+		WillReturnRows(sqlmock.NewRows([]string{"payload_json", "etag"}).AddRow(payload, "etag-4"))
+
+	page, etag, err := New(db).PublicEditorialPage(context.Background(), "about", "ja")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.PageKey != "about" || page.ResolvedLocale != "ja" || page.Version != 4 || etag != "etag-4" {
+		t.Fatalf("page=%#v etag=%q", page, etag)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPublicEditorialPageDoesNotFallback(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	mock.ExpectQuery("SELECT payload_json,etag FROM hhc_web.public_projection").
+		WithArgs("page:ko:privacy-policy", "ko").
+		WillReturnError(sql.ErrNoRows)
+	_, _, err = New(db).PublicEditorialPage(context.Background(), "privacy-policy", "ko")
+	if !errors.Is(err, content.ErrNotFound) {
+		t.Fatalf("err=%v", err)
+	}
+}

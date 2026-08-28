@@ -1371,6 +1371,167 @@ func TestLocationContentLifecycle(t *testing.T) {
 	}
 }
 
+func TestFixedEditorialPageLifecycle(t *testing.T) {
+	databaseURL := os.Getenv("HHW_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("HHW_TEST_DATABASE_URL is not configured")
+	}
+	db, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	if err := migrations.Run(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `TRUNCATE hhc_web.public_projection,hhc_web.content_revision,hhc_web.content_translation,hhc_web.content_entry CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+	repository := New(db)
+	now := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
+	service := content.NewService(repository, func() time.Time { return now })
+	homeInput := pageIntegrationInput(t, "home", "Home")
+	home, err := repository.CreateContent(ctx, content.ModulePages, homeInput, "content-seed:pages-v1", "page:home", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := service.PublicEditorialPage(ctx, "home", "ja"); !errors.Is(err, content.ErrNotFound) {
+		t.Fatalf("draft public err=%v", err)
+	}
+	home, err = service.PublishContent(ctx, content.ModulePages, home.ID, home.Version, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, firstETag, err := service.PublicEditorialPage(ctx, "home", "ja")
+	if err != nil || first.ResolvedLocale != "ja" || len(first.AvailableLocales) != 5 || first.Version != home.Version {
+		t.Fatalf("first=%#v etag=%q err=%v", first, firstETag, err)
+	}
+	changed := pageIntegrationInput(t, "home", "Changed Home")
+	home, err = service.UpdateContent(ctx, content.ModulePages, home.ID, home.Version, changed, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stillPublic, stillETag, err := service.PublicEditorialPage(ctx, "home", "ja")
+	if err != nil || stillETag != firstETag || string(stillPublic.Content) != string(first.Content) {
+		t.Fatalf("draft changed public=%#v etag=%q err=%v", stillPublic, stillETag, err)
+	}
+	home, err = service.PublishContent(ctx, content.ModulePages, home.ID, home.Version, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	publishedChange, changedETag, err := service.PublicEditorialPage(ctx, "home", "ja")
+	if err != nil || changedETag == firstETag || !strings.Contains(string(publishedChange.Content), "Changed Home") {
+		t.Fatalf("changed=%#v etag=%q err=%v", publishedChange, changedETag, err)
+	}
+	changedETags := make(map[string]string, 5)
+	for _, locale := range []string{"zh-Hant", "zh-Hans", "en", "ja", "ko"} {
+		_, etag, err := service.PublicEditorialPage(ctx, "home", locale)
+		if err != nil {
+			t.Fatalf("changed %s: %v", locale, err)
+		}
+		changedETags[locale] = etag
+	}
+	home, err = service.RestoreContent(ctx, content.ModulePages, home.ID, 1, home.Version, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if afterRestore, etag, err := service.PublicEditorialPage(ctx, "home", "ja"); err != nil || etag != changedETag || string(afterRestore.Content) != string(publishedChange.Content) {
+		t.Fatalf("restore changed public=%#v etag=%q err=%v", afterRestore, etag, err)
+	}
+	home, err = service.PublishContent(ctx, content.ModulePages, home.ID, home.Version, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, locale := range []string{"zh-Hant", "zh-Hans", "en", "ja", "ko"} {
+		restored, etag, err := service.PublicEditorialPage(ctx, "home", locale)
+		var payload struct {
+			Data struct {
+				HeroTitle string `json:"heroTitle"`
+			} `json:"data"`
+		}
+		payloadErr := json.Unmarshal(restored.Content, &payload)
+		if err != nil || payloadErr != nil || restored.Version != home.Version || !restored.PublishedAt.Equal(*home.PublishedAt) || etag == changedETags[locale] || payload.Data.HeroTitle != "Home" {
+			t.Fatalf("restored %s=%#v etag=%q changed=%q heroTitle=%q err=%v payloadErr=%v", locale, restored, etag, changedETags[locale], payload.Data.HeroTitle, err, payloadErr)
+		}
+	}
+	revisions, err := service.ContentRevisions(ctx, content.ModulePages, home.ID)
+	if err != nil || len(revisions) < 5 {
+		t.Fatalf("revisions=%d err=%v", len(revisions), err)
+	}
+	privacyInput := pageIntegrationInput(t, "privacy-policy", "Privacy")
+	privacy, err := repository.CreateContent(ctx, content.ModulePages, privacyInput, "content-seed:pages-v1", "page:privacy-policy", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	privacy, err = service.PublishContent(ctx, content.ModulePages, privacy.ID, privacy.Version, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `DELETE FROM hhc_web.public_projection WHERE projection_key='page:ko:privacy-policy'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := service.PublicEditorialPage(ctx, "privacy-policy", "ko"); !errors.Is(err, content.ErrNotFound) {
+		t.Fatalf("legal fallback err=%v", err)
+	}
+	termsInput := pageIntegrationInput(t, "terms-of-use", "Terms")
+	terms, err := repository.CreateContent(ctx, content.ModulePages, termsInput, "content-seed:pages-v1", "page:terms-of-use", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `ALTER TABLE hhc_web.public_projection DROP CONSTRAINT IF EXISTS test_fixed_page_projection_failure`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `ALTER TABLE hhc_web.public_projection ADD CONSTRAINT test_fixed_page_projection_failure CHECK (projection_key <> 'page:ko:terms-of-use')`); err != nil {
+		t.Fatal(err)
+	}
+	defer db.ExecContext(ctx, `ALTER TABLE hhc_web.public_projection DROP CONSTRAINT IF EXISTS test_fixed_page_projection_failure`)
+	if _, err := repository.PublishContent(ctx, content.ModulePages, terms.ID, terms.Version, "admin", now); err == nil {
+		t.Fatal("page publish unexpectedly succeeded with a projection write failure")
+	}
+	rolledBack, err := repository.GetContent(ctx, content.ModulePages, terms.ID)
+	if err != nil || rolledBack.Status != content.StatusDraft || rolledBack.Version != terms.Version {
+		t.Fatalf("rolledBack=%#v err=%v", rolledBack, err)
+	}
+	var projectionCount int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM hhc_web.public_projection WHERE resource_id=$1`, terms.ID).Scan(&projectionCount); err != nil || projectionCount != 0 {
+		t.Fatalf("projectionCount=%d err=%v", projectionCount, err)
+	}
+	if _, err := db.ExecContext(ctx, `ALTER TABLE hhc_web.public_projection DROP CONSTRAINT test_fixed_page_projection_failure`); err != nil {
+		t.Fatal(err)
+	}
+	home, err = service.GetContent(ctx, content.ModulePages, home.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.UnpublishContent(ctx, content.ModulePages, home.ID, home.Version, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := service.PublicEditorialPage(ctx, "home", "ja"); !errors.Is(err, content.ErrNotFound) {
+		t.Fatalf("unpublished err=%v", err)
+	}
+}
+
+func pageIntegrationInput(t *testing.T, key, title string) content.WriteInput {
+	t.Helper()
+	template, route, _ := content.PageDefinition(key)
+	var payload json.RawMessage
+	if template == "home.v1" {
+		payload = json.RawMessage(fmt.Sprintf(`{"schemaVersion":1,"template":"home.v1","data":{"heroTitle":%q,"heroSubtitle":"Welcome","newsTitle":"News","moreNews":"More","weeklyTitle":"Weekly","downloadWeekly":"Download","videosTitle":"Videos","videosSubtitle":"Music","watchMore":"Watch","aboutTitle":"About","aboutBody":"About us","aboutCta":"Meet us","locationsTitle":"Locations","mapLink":"Map"}}`, title))
+	} else {
+		payload = json.RawMessage(fmt.Sprintf(`{"schemaVersion":1,"template":"legal.v1","data":{"heroTitle":%q,"heroSubtitle":"","updatedAtLabel":"Updated","updatedAt":"August 4, 2026","intro":"Intro","sections":[{"title":"Section","body":["Paragraph"]}]}}`, title))
+	}
+	translations := make([]content.Translation, 0, 5)
+	for _, locale := range []string{"zh-Hant", "zh-Hans", "en", "ja", "ko"} {
+		pageTitle, summary, err := content.PagePayloadMetadata(key, payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		translations = append(translations, content.Translation{Locale: locale, Title: pageTitle, Summary: summary, BodyJSON: payload})
+	}
+	return content.WriteInput{PageKey: key, PageTemplate: template, RoutePath: route, Indexable: true, Translations: translations}
+}
+
 func TestSiteSettingsLifecycle(t *testing.T) {
 	databaseURL := os.Getenv("HHW_TEST_DATABASE_URL")
 	if databaseURL == "" {

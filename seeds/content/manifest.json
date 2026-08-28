@@ -1,54 +1,137 @@
 {
   "schemaVersion": 1,
-  "seedVersion": "2026-08-28-public-content-site-layout-v1",
+  "seedVersion": "2026-08-28-public-content-pages-v1",
   "sourceRepo": "HallelujahHomeChurch/hhc-web",
   "sourceCommit": "5c224f19b0cd57dbbeb46bcc0ab4bea4e016f79c",
-  "locales": ["zh-Hant", "zh-Hans", "en", "ja", "ko"],
+  "locales": [
+    "zh-Hant",
+    "zh-Hans",
+    "en",
+    "ja",
+    "ko"
+  ],
   "sources": [
-    {"path": "src/features/weekly/mock-data.ts", "sha256": "c31a792bf68d612d4ac99b1ae7257fd97cdd734615536c289ab44842b744b43c"},
-    {"path": "src/features/news/mock-data.ts", "sha256": "73adde76ddc1e7a26b63df7c2de36cdb531522952d97c02979e5bcb85522a3aa"},
-    {"path": "src/features/history/mock-data.ts", "sha256": "2398fe2b9359f6814b7f9b33695a5377a84372bf650fd597c8134eb0938e8e93"},
-    {"path": "src/features/videos/mock-data.ts", "sha256": "6f328704ed9c1d515982ef884c5b9c4cbc37b00e2d5d7c1aef67b6aa1c9d0220"},
-    {"path": "src/features/locations/mock-data.ts", "sha256": "7c789c6f67df1b3b23ae9daf97d240bf9d646db6a4db8130039a055f0a8f6ccd"},
-    {"path": "src/lib/site.ts", "sha256": "65bc1f155cc0c9851f6c3e247acb1fe3752fcdb0279fbc54dac06078370a59cb"},
-    {"path": "src/i18n/locales/zh-Hant.json", "sha256": "b14cb3e72afe2ffee52d9351b0ac3911897036e9dd5e78f41a46055853edd2a5"},
-    {"path": "src/i18n/locales/zh-Hans.json", "sha256": "2b3721c7d22f74d44c7d449ebc8de89972f324037ff179306f8d9379e91c0b55"},
-    {"path": "src/i18n/locales/en.json", "sha256": "f4160289b834d406bf17c02630c3ab570d6f7275dba0b8a1ecfcc86f66d53225"},
-    {"path": "src/i18n/locales/ja.json", "sha256": "f1dc6ace4a78a1c14a1f42578cd49d13d6204f3c6f990fc00737b3eb3f066997"},
-    {"path": "src/i18n/locales/ko.json", "sha256": "5a1df95650c9a0d7fb6b6fb61435f47fc7dda1f075367cb9502f660fc700ecc6"}
+    {
+      "path": "src/features/weekly/mock-data.ts",
+      "sha256": "c31a792bf68d612d4ac99b1ae7257fd97cdd734615536c289ab44842b744b43c"
+    },
+    {
+      "path": "src/features/news/mock-data.ts",
+      "sha256": "73adde76ddc1e7a26b63df7c2de36cdb531522952d97c02979e5bcb85522a3aa"
+    },
+    {
+      "path": "src/features/history/mock-data.ts",
+      "sha256": "2398fe2b9359f6814b7f9b33695a5377a84372bf650fd597c8134eb0938e8e93"
+    },
+    {
+      "path": "src/features/videos/mock-data.ts",
+      "sha256": "6f328704ed9c1d515982ef884c5b9c4cbc37b00e2d5d7c1aef67b6aa1c9d0220"
+    },
+    {
+      "path": "src/features/locations/mock-data.ts",
+      "sha256": "7c789c6f67df1b3b23ae9daf97d240bf9d646db6a4db8130039a055f0a8f6ccd"
+    },
+    {
+      "path": "src/lib/site.ts",
+      "sha256": "65bc1f155cc0c9851f6c3e247acb1fe3752fcdb0279fbc54dac06078370a59cb"
+    },
+    {
+      "path": "src/i18n/locales/zh-Hant.json",
+      "sha256": "b14cb3e72afe2ffee52d9351b0ac3911897036e9dd5e78f41a46055853edd2a5"
+    },
+    {
+      "path": "src/i18n/locales/zh-Hans.json",
+      "sha256": "2b3721c7d22f74d44c7d449ebc8de89972f324037ff179306f8d9379e91c0b55"
+    },
+    {
+      "path": "src/i18n/locales/en.json",
+      "sha256": "f4160289b834d406bf17c02630c3ab570d6f7275dba0b8a1ecfcc86f66d53225"
+    },
+    {
+      "path": "src/i18n/locales/ja.json",
+      "sha256": "f1dc6ace4a78a1c14a1f42578cd49d13d6204f3c6f990fc00737b3eb3f066997"
+    },
+    {
+      "path": "src/i18n/locales/ko.json",
+      "sha256": "5a1df95650c9a0d7fb6b6fb61435f47fc7dda1f075367cb9502f660fc700ecc6"
+    }
   ],
   "records": [
     {
       "kind": "location",
-      "sourcePaths": ["src/features/locations/mock-data.ts"],
+      "sourcePaths": [
+        "src/features/locations/mock-data.ts"
+      ],
       "sourceKey": "location:taipei",
       "payload": {
         "stableKey": "taipei",
         "mapHref": "https://maps.app.goo.gl/fDus6nVswbuhSEAd8",
         "sortOrder": 10,
         "translations": [
-          {"locale":"zh-Hant","name":"台北哈利路亞家教會","address":"106臺北市大安區民輝里仁愛路三段29號B1"},
-          {"locale":"zh-Hans","name":"台北哈利路亚家教会","address":"106台北市大安区民辉里仁爱路三段29号B1"},
-          {"locale":"en","name":"Taipei Hallelujah Home Church","address":"B1, No. 29, Sec. 3, Ren'ai Rd., Da'an Dist., Taipei City 106675, Taiwan (R.O.C.)."},
-          {"locale":"ja","name":"台北ハレルヤ・ホームチャーチ","address":"B1, No. 29, Sec. 3, Ren'ai Rd., Da'an Dist., Taipei City 106675, Taiwan (R.O.C.)."},
-          {"locale":"ko","name":"타이베이 할렐루야 가정교회","address":"B1, No. 29, Sec. 3, Ren'ai Rd., Da'an Dist., Taipei City 106675, Taiwan (R.O.C.)."}
+          {
+            "locale": "zh-Hant",
+            "name": "台北哈利路亞家教會",
+            "address": "106臺北市大安區民輝里仁愛路三段29號B1"
+          },
+          {
+            "locale": "zh-Hans",
+            "name": "台北哈利路亚家教会",
+            "address": "106台北市大安区民辉里仁爱路三段29号B1"
+          },
+          {
+            "locale": "en",
+            "name": "Taipei Hallelujah Home Church",
+            "address": "B1, No. 29, Sec. 3, Ren'ai Rd., Da'an Dist., Taipei City 106675, Taiwan (R.O.C.)."
+          },
+          {
+            "locale": "ja",
+            "name": "台北ハレルヤ・ホームチャーチ",
+            "address": "B1, No. 29, Sec. 3, Ren'ai Rd., Da'an Dist., Taipei City 106675, Taiwan (R.O.C.)."
+          },
+          {
+            "locale": "ko",
+            "name": "타이베이 할렐루야 가정교회",
+            "address": "B1, No. 29, Sec. 3, Ren'ai Rd., Da'an Dist., Taipei City 106675, Taiwan (R.O.C.)."
+          }
         ]
       }
     },
     {
       "kind": "location",
-      "sourcePaths": ["src/features/locations/mock-data.ts"],
+      "sourcePaths": [
+        "src/features/locations/mock-data.ts"
+      ],
       "sourceKey": "location:zhongli",
       "payload": {
         "stableKey": "zhongli",
         "mapHref": "https://maps.app.goo.gl/A1SDTSZC2XLHqkST7",
         "sortOrder": 20,
         "translations": [
-          {"locale":"zh-Hant","name":"中壢哈利路亞家教會","address":"320桃園市中壢區正義里福州路25號2樓"},
-          {"locale":"zh-Hans","name":"中坜哈利路亚家教会","address":"320桃园市中坜区正义里福州路25号2楼"},
-          {"locale":"en","name":"Zhongli Hallelujah Home Church","address":"2 F., No. 25, Fuzhou Rd., Zhongli Dist., Taoyuan City 320048, Taiwan (R.O.C.)."},
-          {"locale":"ja","name":"中壢ハレルヤ・ホームチャーチ","address":"2 F., No. 25, Fuzhou Rd., Zhongli Dist., Taoyuan City 320048, Taiwan (R.O.C.)."},
-          {"locale":"ko","name":"중리 할렐루야 가정교회","address":"2 F., No. 25, Fuzhou Rd., Zhongli Dist., Taoyuan City 320048, Taiwan (R.O.C.)."}
+          {
+            "locale": "zh-Hant",
+            "name": "中壢哈利路亞家教會",
+            "address": "320桃園市中壢區正義里福州路25號2樓"
+          },
+          {
+            "locale": "zh-Hans",
+            "name": "中坜哈利路亚家教会",
+            "address": "320桃园市中坜区正义里福州路25号2楼"
+          },
+          {
+            "locale": "en",
+            "name": "Zhongli Hallelujah Home Church",
+            "address": "2 F., No. 25, Fuzhou Rd., Zhongli Dist., Taoyuan City 320048, Taiwan (R.O.C.)."
+          },
+          {
+            "locale": "ja",
+            "name": "中壢ハレルヤ・ホームチャーチ",
+            "address": "2 F., No. 25, Fuzhou Rd., Zhongli Dist., Taoyuan City 320048, Taiwan (R.O.C.)."
+          },
+          {
+            "locale": "ko",
+            "name": "중리 할렐루야 가정교회",
+            "address": "2 F., No. 25, Fuzhou Rd., Zhongli Dist., Taoyuan City 320048, Taiwan (R.O.C.)."
+          }
         ]
       }
     },
@@ -79,13 +162,38 @@
             "seoTitleSuffix": "哈利路亞家教會",
             "seoDescriptionFallback": "在愛中建造家庭，在真理中成長",
             "header": [
-              {"key":"about","label":"關於我們","href":"/{locale}/about","visible":true},
-              {"key":"news","label":"最新消息","href":"/{locale}/news","visible":true},
-              {"key":"literature-ministry","label":"文字事工","href":"/{locale}/literature-ministry","visible":true}
+              {
+                "key": "about",
+                "label": "關於我們",
+                "href": "/{locale}/about",
+                "visible": true
+              },
+              {
+                "key": "news",
+                "label": "最新消息",
+                "href": "/{locale}/news",
+                "visible": true
+              },
+              {
+                "key": "literature-ministry",
+                "label": "文字事工",
+                "href": "/{locale}/literature-ministry",
+                "visible": true
+              }
             ],
             "legal": [
-              {"key":"privacy-policy","label":"隱私權","href":"/{locale}/privacy-policy","visible":true},
-              {"key":"terms-of-use","label":"條款","href":"/{locale}/terms-of-use","visible":true}
+              {
+                "key": "privacy-policy",
+                "label": "隱私權",
+                "href": "/{locale}/privacy-policy",
+                "visible": true
+              },
+              {
+                "key": "terms-of-use",
+                "label": "條款",
+                "href": "/{locale}/terms-of-use",
+                "visible": true
+              }
             ]
           },
           {
@@ -97,13 +205,38 @@
             "seoTitleSuffix": "哈利路亚家教会",
             "seoDescriptionFallback": "在爱中建造家庭，在真理中成长",
             "header": [
-              {"key":"about","label":"关于我们","href":"/{locale}/about","visible":true},
-              {"key":"news","label":"最新消息","href":"/{locale}/news","visible":true},
-              {"key":"literature-ministry","label":"文字事工","href":"/{locale}/literature-ministry","visible":true}
+              {
+                "key": "about",
+                "label": "关于我们",
+                "href": "/{locale}/about",
+                "visible": true
+              },
+              {
+                "key": "news",
+                "label": "最新消息",
+                "href": "/{locale}/news",
+                "visible": true
+              },
+              {
+                "key": "literature-ministry",
+                "label": "文字事工",
+                "href": "/{locale}/literature-ministry",
+                "visible": true
+              }
             ],
             "legal": [
-              {"key":"privacy-policy","label":"隐私权","href":"/{locale}/privacy-policy","visible":true},
-              {"key":"terms-of-use","label":"条款","href":"/{locale}/terms-of-use","visible":true}
+              {
+                "key": "privacy-policy",
+                "label": "隐私权",
+                "href": "/{locale}/privacy-policy",
+                "visible": true
+              },
+              {
+                "key": "terms-of-use",
+                "label": "条款",
+                "href": "/{locale}/terms-of-use",
+                "visible": true
+              }
             ]
           },
           {
@@ -115,13 +248,38 @@
             "seoTitleSuffix": "Hallelujah Home Church",
             "seoDescriptionFallback": "Building families in love and growing in truth",
             "header": [
-              {"key":"about","label":"About","href":"/{locale}/about","visible":true},
-              {"key":"news","label":"Latest News","href":"/{locale}/news","visible":true},
-              {"key":"literature-ministry","label":"Literature Ministry","href":"/{locale}/literature-ministry","visible":true}
+              {
+                "key": "about",
+                "label": "About",
+                "href": "/{locale}/about",
+                "visible": true
+              },
+              {
+                "key": "news",
+                "label": "Latest News",
+                "href": "/{locale}/news",
+                "visible": true
+              },
+              {
+                "key": "literature-ministry",
+                "label": "Literature Ministry",
+                "href": "/{locale}/literature-ministry",
+                "visible": true
+              }
             ],
             "legal": [
-              {"key":"privacy-policy","label":"Privacy","href":"/{locale}/privacy-policy","visible":true},
-              {"key":"terms-of-use","label":"Terms","href":"/{locale}/terms-of-use","visible":true}
+              {
+                "key": "privacy-policy",
+                "label": "Privacy",
+                "href": "/{locale}/privacy-policy",
+                "visible": true
+              },
+              {
+                "key": "terms-of-use",
+                "label": "Terms",
+                "href": "/{locale}/terms-of-use",
+                "visible": true
+              }
             ]
           },
           {
@@ -133,13 +291,38 @@
             "seoTitleSuffix": "ハレルヤ・ホームチャーチ",
             "seoDescriptionFallback": "愛の中で家庭を築き、真理の中で成長する",
             "header": [
-              {"key":"about","label":"私たちについて","href":"/{locale}/about","visible":true},
-              {"key":"news","label":"お知らせ","href":"/{locale}/news","visible":true},
-              {"key":"literature-ministry","label":"文書ミニストリー","href":"/{locale}/literature-ministry","visible":true}
+              {
+                "key": "about",
+                "label": "私たちについて",
+                "href": "/{locale}/about",
+                "visible": true
+              },
+              {
+                "key": "news",
+                "label": "お知らせ",
+                "href": "/{locale}/news",
+                "visible": true
+              },
+              {
+                "key": "literature-ministry",
+                "label": "文書ミニストリー",
+                "href": "/{locale}/literature-ministry",
+                "visible": true
+              }
             ],
             "legal": [
-              {"key":"privacy-policy","label":"プライバシー","href":"/{locale}/privacy-policy","visible":true},
-              {"key":"terms-of-use","label":"利用規約","href":"/{locale}/terms-of-use","visible":true}
+              {
+                "key": "privacy-policy",
+                "label": "プライバシー",
+                "href": "/{locale}/privacy-policy",
+                "visible": true
+              },
+              {
+                "key": "terms-of-use",
+                "label": "利用規約",
+                "href": "/{locale}/terms-of-use",
+                "visible": true
+              }
             ]
           },
           {
@@ -151,14 +334,1476 @@
             "seoTitleSuffix": "할렐루야 가정교회",
             "seoDescriptionFallback": "사랑으로 가정을 세우고 진리 안에서 자라갑니다",
             "header": [
-              {"key":"about","label":"교회 소개","href":"/{locale}/about","visible":true},
-              {"key":"news","label":"새소식","href":"/{locale}/news","visible":true},
-              {"key":"literature-ministry","label":"문서 사역","href":"/{locale}/literature-ministry","visible":true}
+              {
+                "key": "about",
+                "label": "교회 소개",
+                "href": "/{locale}/about",
+                "visible": true
+              },
+              {
+                "key": "news",
+                "label": "새소식",
+                "href": "/{locale}/news",
+                "visible": true
+              },
+              {
+                "key": "literature-ministry",
+                "label": "문서 사역",
+                "href": "/{locale}/literature-ministry",
+                "visible": true
+              }
             ],
             "legal": [
-              {"key":"privacy-policy","label":"개인정보 처리방침","href":"/{locale}/privacy-policy","visible":true},
-              {"key":"terms-of-use","label":"이용약관","href":"/{locale}/terms-of-use","visible":true}
+              {
+                "key": "privacy-policy",
+                "label": "개인정보 처리방침",
+                "href": "/{locale}/privacy-policy",
+                "visible": true
+              },
+              {
+                "key": "terms-of-use",
+                "label": "이용약관",
+                "href": "/{locale}/terms-of-use",
+                "visible": true
+              }
             ]
+          }
+        ]
+      }
+    },
+    {
+      "kind": "page",
+      "sourcePaths": [
+        "src/i18n/locales/zh-Hant.json",
+        "src/i18n/locales/zh-Hans.json",
+        "src/i18n/locales/en.json",
+        "src/i18n/locales/ja.json",
+        "src/i18n/locales/ko.json"
+      ],
+      "sourceKey": "page:home",
+      "payload": {
+        "pageKey": "home",
+        "pageTemplate": "home.v1",
+        "routePath": "/",
+        "indexable": true,
+        "translations": [
+          {
+            "locale": "zh-Hant",
+            "bodyJson": {
+              "schemaVersion": 1,
+              "template": "home.v1",
+              "data": {
+                "heroTitle": "愛從家開始",
+                "heroSubtitle": "在愛中建造家庭，在真理中成長",
+                "newsTitle": "最新消息",
+                "moreNews": "查看更多",
+                "weeklyTitle": "週報",
+                "downloadWeekly": "下載週報",
+                "videosTitle": "神國大樂",
+                "videosSubtitle": "用音樂敬拜神，讓生命被愛點亮",
+                "watchMore": "觀看更多",
+                "aboutTitle": "關於我們",
+                "aboutBody": "哈利路亞家教會是一個重視家庭、敬拜與真理的教會，致力於建立愛的關係、培育成熟的門徒，並將福音帶給更多人。",
+                "aboutCta": "認識我們",
+                "locationsTitle": "服務據點",
+                "mapLink": "查看地圖"
+              }
+            }
+          },
+          {
+            "locale": "zh-Hans",
+            "bodyJson": {
+              "schemaVersion": 1,
+              "template": "home.v1",
+              "data": {
+                "heroTitle": "爱从家开始",
+                "heroSubtitle": "在爱中建造家庭，在真理中成长",
+                "newsTitle": "最新消息",
+                "moreNews": "查看更多",
+                "weeklyTitle": "周报",
+                "downloadWeekly": "下载周报",
+                "videosTitle": "神国大乐",
+                "videosSubtitle": "用音乐敬拜神，让生命被爱点亮",
+                "watchMore": "观看更多",
+                "aboutTitle": "关于我们",
+                "aboutBody": "哈利路亚家教会是一个重视家庭、敬拜与真理的教会，致力于建立爱的关系、培育成熟的门徒，并将福音带给更多人。",
+                "aboutCta": "认识我们",
+                "locationsTitle": "服务据点",
+                "mapLink": "查看地图"
+              }
+            }
+          },
+          {
+            "locale": "en",
+            "bodyJson": {
+              "schemaVersion": 1,
+              "template": "home.v1",
+              "data": {
+                "heroTitle": "Love begins at home",
+                "heroSubtitle": "Building families in love and growing in truth",
+                "newsTitle": "Latest News",
+                "moreNews": "View all",
+                "weeklyTitle": "Weekly Paper",
+                "downloadWeekly": "Download weekly paper",
+                "videosTitle": "Kingdom Joy",
+                "videosSubtitle": "Worship through music and let life be lit by love",
+                "watchMore": "Watch more",
+                "aboutTitle": "About Us",
+                "aboutBody": "Hallelujah Home Church values family, worship, and truth, building relationships of love, forming mature disciples, and sharing the gospel with more people.",
+                "aboutCta": "Meet us",
+                "locationsTitle": "Locations",
+                "mapLink": "View map"
+              }
+            }
+          },
+          {
+            "locale": "ja",
+            "bodyJson": {
+              "schemaVersion": 1,
+              "template": "home.v1",
+              "data": {
+                "heroTitle": "愛は家庭から始まる",
+                "heroSubtitle": "愛の中で家庭を築き、真理の中で成長する",
+                "newsTitle": "お知らせ",
+                "moreNews": "すべて見る",
+                "weeklyTitle": "週報",
+                "downloadWeekly": "週報をダウンロード",
+                "videosTitle": "神の国の喜び",
+                "videosSubtitle": "音楽を通して神を礼拝し、愛の光に照らされて歩む",
+                "watchMore": "もっと見る",
+                "aboutTitle": "私たちについて",
+                "aboutBody": "ハレルヤ・ホームチャーチは、家庭、礼拝、真理を大切にする教会です。愛に根ざした関係を築き、成熟した弟子を育み、より多くの方に福音を届けることを目指しています。",
+                "aboutCta": "教会について知る",
+                "locationsTitle": "礼拝拠点",
+                "mapLink": "地図を見る"
+              }
+            }
+          },
+          {
+            "locale": "ko",
+            "bodyJson": {
+              "schemaVersion": 1,
+              "template": "home.v1",
+              "data": {
+                "heroTitle": "사랑은 가정에서 시작됩니다",
+                "heroSubtitle": "사랑으로 가정을 세우고 진리 안에서 자라갑니다",
+                "newsTitle": "새소식",
+                "moreNews": "전체 보기",
+                "weeklyTitle": "주보",
+                "downloadWeekly": "주보 다운로드",
+                "videosTitle": "하나님 나라의 기쁨",
+                "videosSubtitle": "음악으로 하나님을 예배하고 사랑의 빛으로 삶을 밝힙니다",
+                "watchMore": "더 보기",
+                "aboutTitle": "교회 소개",
+                "aboutBody": "할렐루야 가정교회는 가정과 예배, 진리를 소중히 여기는 교회입니다. 사랑의 관계를 세우고 성숙한 제자를 양육하며 더 많은 이웃에게 복음을 전하고자 합니다.",
+                "aboutCta": "교회 알아보기",
+                "locationsTitle": "예배 장소",
+                "mapLink": "지도 보기"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "kind": "page",
+      "sourcePaths": [
+        "src/i18n/locales/zh-Hant.json",
+        "src/i18n/locales/zh-Hans.json",
+        "src/i18n/locales/en.json",
+        "src/i18n/locales/ja.json",
+        "src/i18n/locales/ko.json"
+      ],
+      "sourceKey": "page:about",
+      "payload": {
+        "pageKey": "about",
+        "pageTemplate": "about.v1",
+        "routePath": "/about",
+        "indexable": true,
+        "translations": [
+          {
+            "locale": "zh-Hant",
+            "bodyJson": {
+              "schemaVersion": 1,
+              "template": "about.v1",
+              "data": {
+                "heroTitle": "關於我們",
+                "heroSubtitle": "合一與宣教",
+                "vision": {
+                  "intro": "從1個人帶出3個人、3個人帶出12個人、12個人帶出70個人、70個人就準備進入神所預備的禾場，然後到馬可樓的120個人就能用福音引爆整個世界，並在生養中帶出一代代生命的傳承，這就是福音，也是個人和教會真正的價值。建立教會不是蓋教堂，乃是走到哪，都能為主作榮耀的見證。",
+                  "imageAlt": "禱告中的會眾",
+                  "actionsImageAlt": "四個行動照片",
+                  "sections": [
+                    {
+                      "eyebrow": "一個異象",
+                      "title": "合一與宣教",
+                      "body": "家教會建造的主旨就是使人與神、與人都在基督裡合一，把神的愛更多的宣揚出去，成為周遭人群的祝福。"
+                    },
+                    {
+                      "eyebrow": "二個目標",
+                      "title": "宣教為中國，中國為宣教",
+                      "body": "「China」指的不是地理上的中國，乃是凡有中國人的地方，也與政治、經濟、地理位置無關，乃與同是炎黃子孫有關。神揀選中華兒女，在末後世代承接福音的最後一棒；全世界華人都要聯結起來，一同還福音的債，為主打那美好的仗。"
+                    },
+                    {
+                      "eyebrow": "三個行動",
+                      "title": "共同生活，愛與成全，恩膏傳承",
+                      "cards": [
+                        {
+                          "title": "共同生活",
+                          "body": "不需戴面具，每個人赤裸敞開，彼此接納、互相扶持，一同建造基督的身體。"
+                        },
+                        {
+                          "title": "愛與成全",
+                          "body": "在愛中建立彼此，並將聖徒放在正確的位置上來服事神。"
+                        },
+                        {
+                          "title": "恩膏傳承",
+                          "body": "每個人上有屬靈的父母，下有屬靈的孩子，一同完成神所託付的使命。"
+                        }
+                      ]
+                    },
+                    {
+                      "eyebrow": "四個行動",
+                      "title": "宣教主導，靈恩神學，團隊事奉，門徒訓練",
+                      "cards": [
+                        {
+                          "title": "宣教主導",
+                          "body": "各樣建造都是為了宣教，裝備每一個人成為屬靈父母，將信仰落實在生活中作光作鹽。"
+                        },
+                        {
+                          "title": "靈恩神學",
+                          "body": "在生活中經歷神話語的實在，天天被聖靈充滿，活出神的性情與樣式。"
+                        },
+                        {
+                          "title": "團隊事奉",
+                          "body": "教會是耶穌基督的身體，恩賜與職份在生命服事與肢體連結中顯明。"
+                        },
+                        {
+                          "title": "門徒訓練",
+                          "body": "門徒效法牧者，牧者效法保羅，如同保羅效法基督，使恩膏與傳承延續。"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "history": {
+                  "scripture": [
+                    {
+                      "lines": [
+                        "眾海島啊，當聽我言！遠方的眾民哪，留心而聽！",
+                        "自我出胎，耶和華就選召我；自出母腹，他就提我的名。",
+                        "他使我的口如快刀，將我藏在他手蔭之下；",
+                        "又使我成為磨亮的箭，將我藏在他箭袋之中；",
+                        "對我說：你是我的僕人以色列；我必因你得榮耀。"
+                      ],
+                      "cite": "《以賽亞書四十九章1-3節》"
+                    },
+                    {
+                      "lines": [
+                        "耶和華從我出胎，造就我作他的僕人，",
+                        "要使雅各歸向他，使以色列到他那裏聚集。",
+                        "原來耶和華看我為尊貴；我的神也成為我的力量。",
+                        "現在他說：你作我的僕人，使雅各眾支派復興，",
+                        "使以色列中得保全的歸回尚為小事，",
+                        "我還要使你作外邦人的光，叫你施行我的救恩，直到地極。"
+                      ],
+                      "cite": "《以賽亞書四十九章5-6節》"
+                    }
+                  ],
+                  "imageAlt": "孩子仰望光的黑白插畫",
+                  "intro": "從家庭祭壇的異象開始，家教會一步一步走進宣教、建造與牧養的旅程。這條時間線保留重要節點，讓沿革成為可閱讀的生命傳承。",
+                  "title": "家教會沿革"
+                }
+              }
+            }
+          },
+          {
+            "locale": "zh-Hans",
+            "bodyJson": {
+              "schemaVersion": 1,
+              "template": "about.v1",
+              "data": {
+                "heroTitle": "关于我们",
+                "heroSubtitle": "合一与宣教",
+                "vision": {
+                  "intro": "从1个人带出3个人、3个人带出12个人、12个人带出70个人、70个人就准备进入神所预备的禾场，然后到马可楼的120个人就能用福音引爆整个世界，并在生养中带出一代代生命的传承，这就是福音，也是个人和教会真正的价值。建立教会不是盖教堂，乃是走到哪，都能为主作荣耀的见证。",
+                  "imageAlt": "祷告中的会众",
+                  "actionsImageAlt": "四个行动照片",
+                  "sections": [
+                    {
+                      "eyebrow": "一个异象",
+                      "title": "合一与宣教",
+                      "body": "家教会建造的主旨就是使人与神、与人都在基督里合一，把神的爱更多地宣扬出去，成为周遭人群的祝福。"
+                    },
+                    {
+                      "eyebrow": "二个目标",
+                      "title": "宣教为中国，中国为宣教",
+                      "body": "「China」指的不是地理上的中国，乃是凡有中国人的地方，也与政治、经济、地理位置无关，乃与同是炎黄子孙有关。神拣选中华儿女，在末后世代承接福音的最后一棒；全世界华人都要联结起来，一同还福音的债，为主打那美好的仗。"
+                    },
+                    {
+                      "eyebrow": "三个行动",
+                      "title": "共同生活，爱与成全，恩膏传承",
+                      "cards": [
+                        {
+                          "title": "共同生活",
+                          "body": "不需戴面具，每个人赤裸敞开，彼此接纳、互相扶持，一同建造基督的身体。"
+                        },
+                        {
+                          "title": "爱与成全",
+                          "body": "在爱中建立彼此，并将圣徒放在正确的位置上来服事神。"
+                        },
+                        {
+                          "title": "恩膏传承",
+                          "body": "每个人上有属灵的父母，下有属灵的孩子，一同完成神所托付的使命。"
+                        }
+                      ]
+                    },
+                    {
+                      "eyebrow": "四个行动",
+                      "title": "宣教主导，灵恩神学，团队事奉，门徒训练",
+                      "cards": [
+                        {
+                          "title": "宣教主导",
+                          "body": "各样建造都是为了宣教，装备每一个人成为属灵父母，将信仰落实在生活中作光作盐。"
+                        },
+                        {
+                          "title": "灵恩神学",
+                          "body": "在生活中经历神话语的实在，天天被圣灵充满，活出神的性情与样式。"
+                        },
+                        {
+                          "title": "团队事奉",
+                          "body": "教会是耶稣基督的身体，恩赐与职份在生命服事与肢体连结中显明。"
+                        },
+                        {
+                          "title": "门徒训练",
+                          "body": "门徒效法牧者，牧者效法保罗，如同保罗效法基督，使恩膏与传承延续。"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "history": {
+                  "scripture": [
+                    {
+                      "lines": [
+                        "众海岛啊，当听我言！远方的众民哪，留心而听！",
+                        "自我出胎，耶和华就选召我；自出母腹，他就提我的名。",
+                        "他使我的口如快刀，将我藏在他手荫之下；",
+                        "又使我成为磨亮的箭，将我藏在他箭袋之中；",
+                        "对我说：你是我的仆人以色列；我必因你得荣耀。"
+                      ],
+                      "cite": "《以赛亚书四十九章1-3节》"
+                    },
+                    {
+                      "lines": [
+                        "耶和华从我出胎，造就我作他的仆人，",
+                        "要使雅各归向他，使以色列到他那里聚集。",
+                        "原来耶和华看我为尊贵；我的神也成为我的力量。",
+                        "现在他说：你作我的仆人，使雅各众支派复兴，",
+                        "使以色列中得保全的归回尚为小事，",
+                        "我还要使你作外邦人的光，叫你施行我的救恩，直到地极。"
+                      ],
+                      "cite": "《以赛亚书四十九章5-6节》"
+                    }
+                  ],
+                  "imageAlt": "孩子仰望光的黑白插画",
+                  "intro": "从家庭祭坛的异象开始，家教会一步一步走进宣教、建造与牧养的旅程。这条时间线保留重要节点，让沿革成为可阅读的生命传承。",
+                  "title": "家教会沿革"
+                }
+              }
+            }
+          },
+          {
+            "locale": "en",
+            "bodyJson": {
+              "schemaVersion": 1,
+              "template": "about.v1",
+              "data": {
+                "heroTitle": "About Us",
+                "heroSubtitle": "Unity and mission",
+                "vision": {
+                  "intro": "The home church vision begins with life multiplying through relationships: one to three, three to twelve, twelve to seventy, and then to the harvest God prepares. Church is not first a building; it is a people who carry witness, formation, and blessing wherever they go.",
+                  "imageAlt": "Congregation in prayer",
+                  "actionsImageAlt": "Four ministry actions",
+                  "sections": [
+                    {
+                      "eyebrow": "One Vision",
+                      "title": "Unity and Mission",
+                      "body": "Home Church is built to bring people into unity with God and one another in Christ, and to carry God's love outward as a blessing to the people around us."
+                    },
+                    {
+                      "eyebrow": "Two Goals",
+                      "title": "Mission for Chinese communities, Chinese communities for mission",
+                      "body": "The vision reaches Chinese-speaking communities wherever they are, not as a political or geographic idea, but as a call to carry the gospel with shared heritage, responsibility, and love."
+                    },
+                    {
+                      "eyebrow": "Three Practices",
+                      "title": "Shared life, love and equipping, anointing passed on",
+                      "cards": [
+                        {
+                          "title": "Shared life",
+                          "body": "A community where people can be honest, received, supported, and built together as the body of Christ."
+                        },
+                        {
+                          "title": "Love and equipping",
+                          "body": "Building one another in love and helping each saint serve from the right place."
+                        },
+                        {
+                          "title": "Anointing passed on",
+                          "body": "Every person is formed by spiritual parents and learns to raise spiritual children for the mission entrusted by God."
+                        }
+                      ]
+                    },
+                    {
+                      "eyebrow": "Four Convictions",
+                      "title": "Mission, Spirit-filled theology, team ministry, discipleship",
+                      "cards": [
+                        {
+                          "title": "Mission-led",
+                          "body": "Formation serves mission, equipping people to live as spiritual parents and as salt and light."
+                        },
+                        {
+                          "title": "Spirit-filled theology",
+                          "body": "God's word is lived and experienced as people are filled by the Spirit day by day."
+                        },
+                        {
+                          "title": "Team ministry",
+                          "body": "The church is the body of Christ, where gifts and callings become visible through service and connection."
+                        },
+                        {
+                          "title": "Discipleship",
+                          "body": "Disciples follow pastors, pastors follow Paul, and Paul follows Christ, so formation can continue across generations."
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "history": {
+                  "scripture": [
+                    {
+                      "lines": [
+                        "Listen to me, you islands; hear this, you distant nations: Before I was born the Lord called me; from my mother’s womb he has spoken my name. He made my mouth like a sharpened sword, in the shadow of his hand he hid me; he made me into a polished arrow and concealed me in his quiver. He said to me, “You are my servant, Israel, in whom I will display my splendor.”"
+                      ],
+                      "cite": "Isaiah 49:1-3 NIV"
+                    },
+                    {
+                      "lines": [
+                        "And now the Lord says— he who formed me in the womb to be his servant to bring Jacob back to him and gather Israel to himself, for I am honored in the eyes of the Lord and my God has been my strength— he says: “It is too small a thing for you to be my servant to restore the tribes of Jacob and bring back those of Israel I have kept. I will also make you a light for the Gentiles, that my salvation may reach to the ends of the earth.”"
+                      ],
+                      "cite": "Isaiah 49:5-6 NIV"
+                    }
+                  ],
+                  "imageAlt": "Black-and-white illustration of a child looking toward light",
+                  "intro": "From the vision of family altars, the home church has walked step by step into mission, formation, and pastoral care. This timeline preserves key moments as a readable story of life passed on.",
+                  "title": "Church History"
+                }
+              }
+            }
+          },
+          {
+            "locale": "ja",
+            "bodyJson": {
+              "schemaVersion": 1,
+              "template": "about.v1",
+              "data": {
+                "heroTitle": "私たちについて",
+                "heroSubtitle": "一致と宣教",
+                "vision": {
+                  "intro": "一人から三人へ、三人から十二人へ、十二人から七十人へ。そして神が備えてくださる収穫の地へと進み、マルコの屋上の間に集まった百二十人のように、福音を世界へ届けていく。命を生み育て、世代から世代へ受け継ぐことが福音であり、一人ひとりと教会の本当の価値です。教会を建てるとは建物を建てることではなく、どこにいても主の栄光を証しすることです。",
+                  "imageAlt": "祈る会衆",
+                  "actionsImageAlt": "四つの働きを表す写真",
+                  "sections": [
+                    {
+                      "eyebrow": "一つのビジョン",
+                      "title": "一致と宣教",
+                      "body": "ホームチャーチを建て上げる目的は、人が神と、また互いにキリストのうちで一つとなり、神の愛をさらに広く伝え、周りの人々の祝福となることです。"
+                    },
+                    {
+                      "eyebrow": "二つの目標",
+                      "title": "中国人共同体への宣教、中国人共同体から世界への宣教",
+                      "body": "ここでいう「China」は地理上の中国ではなく、世界各地に暮らす中国系の人々を指します。政治、経済、地域を越えて、同じルーツを持つ者として福音の使命を共に担い、愛をもって世界へ仕えていくという召しです。"
+                    },
+                    {
+                      "eyebrow": "三つの実践",
+                      "title": "共に生きる、愛し整える、油注ぎを受け継ぐ",
+                      "cards": [
+                        {
+                          "title": "共に生きる",
+                          "body": "飾ることなく心を開き、互いを受け入れ支え合いながら、キリストのからだを共に建て上げます。"
+                        },
+                        {
+                          "title": "愛し整える",
+                          "body": "愛の中で互いを建て上げ、一人ひとりがふさわしい場所で神に仕えられるよう支えます。"
+                        },
+                        {
+                          "title": "油注ぎを受け継ぐ",
+                          "body": "霊の親から育てられ、次の世代を霊の子として育みながら、神から託された使命を共に果たします。"
+                        }
+                      ]
+                    },
+                    {
+                      "eyebrow": "四つの確信",
+                      "title": "宣教を中心に、聖霊に満たされた神学、チーム奉仕、弟子訓練",
+                      "cards": [
+                        {
+                          "title": "宣教を中心に",
+                          "body": "すべての建て上げを宣教へとつなげ、一人ひとりが霊の親となり、日々の暮らしの中で地の塩、世の光として歩めるよう整えます。"
+                        },
+                        {
+                          "title": "聖霊に満たされた神学",
+                          "body": "神のことばを日々の生活で経験し、毎日聖霊に満たされて、神のご性質を映す歩みを目指します。"
+                        },
+                        {
+                          "title": "チーム奉仕",
+                          "body": "教会はイエス・キリストのからだです。命をもって仕え、互いにつながる中で、賜物と召しが現されます。"
+                        },
+                        {
+                          "title": "弟子訓練",
+                          "body": "弟子が牧者にならい、牧者がパウロにならい、パウロがキリストにならったように、油注ぎと信仰を次の世代へ受け継ぎます。"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "history": {
+                  "scripture": [
+                    {
+                      "lines": [
+                        "島々よ、わたしに聞け／遠い国々よ、耳を傾けよ。主は母の胎にあるわたしを呼び／母の腹にあるわたしの名を呼ばれた。",
+                        "わたしの口を鋭い剣として御手の陰に置き／",
+                        "わたしを尖らせた矢として矢筒の中に隠して",
+                        "わたしに言われた／あなたはわたしの僕、イスラエル／",
+                        "あなたによってわたしの輝きは現れる、と。"
+                      ],
+                      "cite": "日本聖書協会『聖書 新共同訳』イザヤ書 49章1–3節"
+                    },
+                    {
+                      "lines": [
+                        "主の御目にわたしは重んじられている。わたしの神こそ、わたしの力。",
+                        "今や、主は言われる。ヤコブを御もとに立ち帰らせ／イスラエルを集めるために／",
+                        "母の胎にあったわたしを／御自分の僕として形づくられた主は",
+                        "こう言われる。わたしはあなたを僕として／ヤコブの諸部族を立ち上がらせ／",
+                        "イスラエルの残りの者を連れ帰らせる。だがそれにもまして／",
+                        "わたしはあなたを国々の光とし／わたしの救いを地の果てまで、もたらす者とする。"
+                      ],
+                      "cite": "日本聖書協会『聖書 新共同訳』イザヤ書 49章5–6節"
+                    }
+                  ],
+                  "imageAlt": "光を見上げる子どものモノクロイラスト",
+                  "intro": "家庭の祭壇というビジョンから始まり、ホームチャーチは宣教、建て上げ、牧会の歩みを一歩ずつ進めてきました。この年表は大切な節目をたどり、受け継がれてきた命の物語を伝えます。",
+                  "title": "教会の歩み"
+                }
+              }
+            }
+          },
+          {
+            "locale": "ko",
+            "bodyJson": {
+              "schemaVersion": 1,
+              "template": "about.v1",
+              "data": {
+                "heroTitle": "교회 소개",
+                "heroSubtitle": "연합과 선교",
+                "vision": {
+                  "intro": "한 사람이 세 사람을, 세 사람이 열두 사람을, 열두 사람이 일흔 사람을 세우며 하나님이 예비하신 추수의 현장으로 나아갑니다. 마가의 다락방에 모인 백이십 명처럼 복음으로 세상을 변화시키고, 생명을 낳고 기르며 다음 세대로 이어 가는 것이 복음이며 개인과 교회의 참된 가치입니다. 교회를 세운다는 것은 건물을 짓는 일이 아니라 어디에 있든 주님의 영광을 드러내는 증인으로 사는 일입니다.",
+                  "imageAlt": "기도하는 성도들",
+                  "actionsImageAlt": "네 가지 사역 실천 사진",
+                  "sections": [
+                    {
+                      "eyebrow": "하나의 비전",
+                      "title": "연합과 선교",
+                      "body": "가정교회를 세우는 목적은 사람들이 하나님과, 또 서로가 그리스도 안에서 하나 되고 하나님의 사랑을 더 널리 전하여 이웃에게 복이 되는 것입니다."
+                    },
+                    {
+                      "eyebrow": "두 가지 목표",
+                      "title": "중화권을 위한 선교, 중화권에서 세계로 향하는 선교",
+                      "body": "여기서 ‘China’는 지리적 중국이 아니라 세계 곳곳의 중화권 공동체를 뜻합니다. 정치와 경제, 지역을 넘어 같은 뿌리를 지닌 이들이 복음의 책임을 함께 감당하고 사랑으로 세상을 섬기라는 부르심입니다."
+                    },
+                    {
+                      "eyebrow": "세 가지 실천",
+                      "title": "공동체의 삶, 사랑과 온전케 함, 기름부음의 계승",
+                      "cards": [
+                        {
+                          "title": "공동체의 삶",
+                          "body": "가면을 벗고 마음을 열어 서로를 받아들이고 돕으며 함께 그리스도의 몸을 세워 갑니다."
+                        },
+                        {
+                          "title": "사랑과 온전케 함",
+                          "body": "사랑 안에서 서로를 세우고 각 성도가 알맞은 자리에서 하나님을 섬기도록 돕습니다."
+                        },
+                        {
+                          "title": "기름부음의 계승",
+                          "body": "영적 부모에게 양육받고 영적 자녀를 세우며 하나님이 맡기신 사명을 함께 이루어 갑니다."
+                        }
+                      ]
+                    },
+                    {
+                      "eyebrow": "네 가지 확신",
+                      "title": "선교 중심, 성령 충만한 신학, 팀 사역, 제자 훈련",
+                      "cards": [
+                        {
+                          "title": "선교 중심",
+                          "body": "모든 세움이 선교로 이어지도록 각 사람을 영적 부모로 준비시키고 삶 속에서 소금과 빛으로 살아가게 합니다."
+                        },
+                        {
+                          "title": "성령 충만한 신학",
+                          "body": "삶에서 하나님의 말씀을 실제로 경험하고 날마다 성령으로 충만하여 하나님의 성품을 드러냅니다."
+                        },
+                        {
+                          "title": "팀 사역",
+                          "body": "교회는 예수 그리스도의 몸입니다. 생명으로 섬기고 서로 연결될 때 은사와 부르심이 드러납니다."
+                        },
+                        {
+                          "title": "제자 훈련",
+                          "body": "제자는 목회자를 본받고, 목회자는 바울을 본받으며, 바울이 그리스도를 본받은 것처럼 기름부음과 믿음을 다음 세대로 이어 갑니다."
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "history": {
+                  "scripture": [
+                    {
+                      "lines": [
+                        "Listen to me, you islands; hear this, you distant nations:",
+                        "Before I was born the Lord called me; from my mother’s womb he has spoken my name.",
+                        "He made my mouth like a sharpened sword, in the shadow of his hand he hid me;",
+                        "he made me into a polished arrow and concealed me in his quiver.",
+                        "He said to me, “You are my servant, Israel, in whom I will display my splendor.”"
+                      ],
+                      "cite": "Isaiah 49:1-3 NIV"
+                    },
+                    {
+                      "lines": [
+                        "And now the Lord says— he who formed me in the womb to be his servant",
+                        "to bring Jacob back to him and gather Israel to himself,",
+                        "for I am honored in the eyes of the Lord and my God has been my strength—",
+                        "he says: “It is too small a thing for you to be my servant to restore the tribes of Jacob",
+                        "and bring back those of Israel I have kept.",
+                        "I will also make you a light for the Gentiles, that my salvation may reach to the ends of the earth.”"
+                      ],
+                      "cite": "Isaiah 49:5-6 NIV"
+                    }
+                  ],
+                  "imageAlt": "빛을 바라보는 아이의 흑백 삽화",
+                  "intro": "가정 제단의 비전에서 시작한 가정교회는 선교와 세움, 목양의 길을 한 걸음씩 걸어왔습니다. 이 연혁은 중요한 순간을 담아 세대에서 세대로 이어지는 생명의 이야기를 전합니다.",
+                  "title": "교회 연혁"
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "kind": "page",
+      "sourcePaths": [
+        "src/i18n/locales/zh-Hant.json",
+        "src/i18n/locales/zh-Hans.json",
+        "src/i18n/locales/en.json",
+        "src/i18n/locales/ja.json",
+        "src/i18n/locales/ko.json"
+      ],
+      "sourceKey": "page:privacy-policy",
+      "payload": {
+        "pageKey": "privacy-policy",
+        "pageTemplate": "legal.v1",
+        "routePath": "/privacy-policy",
+        "indexable": true,
+        "translations": [
+          {
+            "locale": "zh-Hant",
+            "bodyJson": {
+              "schemaVersion": 1,
+              "template": "legal.v1",
+              "data": {
+                "heroTitle": "隱私權保護政策",
+                "heroSubtitle": "",
+                "updatedAtLabel": "最後更新",
+                "updatedAt": "2026年8月10日",
+                "intro": "本政策說明哈利路亞家教會網站與 HHC 帳戶服務如何蒐集、使用、保存及保護個人資料。請在使用本網站或建立帳戶前詳閱下列內容。",
+                "sections": [
+                  {
+                    "title": "適用範圍與蒐集者",
+                    "body": [
+                      "本政策適用於 alive.org.tw 及其子網域所提供的公開網站、HHC 帳戶與相關線上服務，由社團法人中華民國哈利路亞社區關懷協會（以下簡稱本會）提供並維護。",
+                      "若本網站連結至第三方網站、影音平台、社群平台或地圖服務，該第三方服務的資料處理方式由其各自政策規範。"
+                    ]
+                  },
+                  {
+                    "title": "蒐集的資料類別",
+                    "body": [
+                      "當您主動透過表單、電子郵件或活動報名與我們聯絡時，我們可能蒐集姓名、聯絡方式、報名資訊、留言內容，以及處理該需求所需的其他資料。",
+                      "當您建立或使用 HHC 帳戶時，我們會處理電子郵件地址、姓名、頭像、電子郵件驗證狀態、密碼雜湊，以及您設定的多因素驗證與備用碼等安全資料。我們不保存您的明文密碼。",
+                      "為維護登入與帳戶安全，我們會處理裝置識別資訊、瀏覽器、作業系統、IP 位址、登入與活動時間、工作階段及安全事件紀錄。",
+                      "當您瀏覽本網站時，伺服器或第三方服務可能產生必要的技術資料，例如 IP 位址、瀏覽器資訊、裝置類型、存取時間、瀏覽與點選紀錄、錯誤紀錄。",
+                      "我們使用 Sentry 偵測前端錯誤與效能問題，僅傳送去識別化的錯誤、瀏覽器、裝置、頁面路徑、版本與追蹤資料；不主動傳送 Cookie、授權標頭、表單內容或完整網址查詢參數。",
+                      "當您選擇訂閱電子報或瀏覽器通知時，我們會處理您的語言、同意與訂閱狀態，以及提供服務所需的電子郵件地址或加密保存的瀏覽器推播訂閱資訊。"
+                    ]
+                  },
+                  {
+                    "title": "第三方登入",
+                    "body": [
+                      "使用 Google 登入時，我們會取得 Google 帳戶識別碼、已驗證的電子郵件地址、姓名與頭像，用於建立、辨識或連結 HHC 帳戶；我們不會讀取 Gmail、Google Drive 或其他 Google 內容。",
+                      "使用 Microsoft 登入時，我們會取得 Microsoft 帳戶識別碼、姓名，以及 Microsoft 提供的電子郵件地址；使用 LINE 登入時，我們會取得 LINE 帳戶識別碼、顯示名稱與頭像，且不向 LINE 要求電子郵件地址。",
+                      "若第三方服務未提供可供信賴的電子郵件地址，我們會要求您另外完成 HHC 電子郵件驗證。第三方登入識別資料會保存至您解除連結或帳戶刪除為止；第三方平台本身的資料處理仍依其各自政策辦理。"
+                    ]
+                  },
+                  {
+                    "title": "資料使用目的",
+                    "body": [
+                      "我們僅在提供帳戶與教會服務、身分與電子郵件驗證、活動聯繫、回覆詢問、網站維運、安全防護、詐欺與濫用防制及服務改善等必要範圍內使用資料。",
+                      "瀏覽與點選紀錄主要用於網站流量、內容品質與服務體驗的內部分析，不會作為辨識特定個人的廣告追蹤用途。",
+                      "我們不會出售個人資料，也不會將第三方登入資料提供給無關第三方作廣告、資料仲介或行銷用途。除非依法令要求、保護權益或取得您的同意，我們不會作蒐集目的以外的利用。",
+                      "電子報與非必要的瀏覽器通知只會在您主動同意後發送。您可以隨時透過信件中的取消訂閱連結、HHC 帳戶通知偏好或網站通知控制停止接收；帳戶驗證與安全性通知不受電子報取消訂閱影響。"
+                    ]
+                  },
+                  {
+                    "title": "保存期間",
+                    "body": [
+                      "帳戶資料原則上保存至帳戶刪除或服務關係終止；因法令、安全事件調查、爭議處理或稽核所必要的紀錄，得在必要期間內繼續保存。",
+                      "未完成電子郵件驗證的註冊帳戶會在建立 7 天後刪除；裝置活動紀錄會在最後活動 180 天後刪除。其他資料於蒐集目的消失、保存期限屆滿或依法應刪除時刪除或去識別化。"
+                    ]
+                  },
+                  {
+                    "title": "利用地區、對象與委外處理",
+                    "body": [
+                      "資料利用地區包含本會所在地及提供雲端主機、儲存、電子郵件、安全防護與第三方登入服務之供應商所在地，因此可能涉及跨境處理。",
+                      "利用對象限於本會獲授權人員、受託服務廠商、您選擇的登入服務提供者，以及依法有權要求提供資料的機關。受託者僅得在委託目的範圍內處理資料，並應採取適當保密與安全措施。"
+                    ]
+                  },
+                  {
+                    "title": "Cookie 與本機儲存",
+                    "body": [
+                      "本網站使用必要 cookie 或本機儲存維持登入與安全狀態、辨識裝置、防止跨站請求偽造，以及記住語言與外觀偏好。這些資料不作為廣告追蹤用途。",
+                      "您可以透過瀏覽器刪除 cookie 或本機資料，但可能因此登出、產生新的裝置紀錄，或無法保存偏好設定。若未來加入非必要分析或廣告追蹤工具，我們會更新本政策並依適用法令提供選擇或同意機制。"
+                    ]
+                  },
+                  {
+                    "title": "資料安全與事件通知",
+                    "body": [
+                      "我們採取合理的技術與管理措施，包括存取控制、傳輸保護，以及依資料性質使用雜湊或加密，以防止未授權存取、竄改、遺失或洩漏；但任何網路服務均無法保證絕對安全。",
+                      "如發生依法應通知的個人資料事件，我們將依適用法令通知受影響者並採取必要應變措施。請勿透過公開表單提供不必要的敏感資料。"
+                    ]
+                  },
+                  {
+                    "title": "您的權利與聯絡方式",
+                    "body": [
+                      "您可以依法請求查詢、閱覽、製給複製本、補充、更正、停止蒐集、處理或利用，或刪除您的個人資料，也可以申請解除第三方登入連結或刪除 HHC 帳戶。",
+                      "若您不提供必要資料，我們可能無法建立帳戶、驗證身分、回覆詢問、完成活動報名或提供相關服務。",
+                      "如需行使權利、申請帳戶刪除，或詢問本政策與個人資料處理事項，請寄信至 support@alive.org.tw。我們可能在處理請求前採取合理方式確認您的身分。"
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "locale": "zh-Hans",
+            "bodyJson": {
+              "schemaVersion": 1,
+              "template": "legal.v1",
+              "data": {
+                "heroTitle": "隐私权保护政策",
+                "heroSubtitle": "",
+                "updatedAtLabel": "最后更新",
+                "updatedAt": "2026年8月10日",
+                "intro": "本政策说明哈利路亚家教会网站与 HHC 帐户服务如何收集、使用、保存及保护个人资料。请在使用本网站或建立帐户前详阅下列内容。",
+                "sections": [
+                  {
+                    "title": "适用范围与收集者",
+                    "body": [
+                      "本政策适用于 alive.org.tw 及其子域名所提供的公开网站、HHC 帐户与相关在线服务，由社团法人中华民国哈利路亚社区关怀协会（以下简称本会）提供并维护。",
+                      "若本网站链接至第三方网站、影音平台、社群平台或地图服务，该第三方服务的资料处理方式由其各自政策规范。"
+                    ]
+                  },
+                  {
+                    "title": "收集的资料类别",
+                    "body": [
+                      "当您主动通过表单、电子邮件或活动报名与我们联系时，我们可能收集姓名、联系方式、报名信息、留言内容，以及处理该需求所需的其他资料。",
+                      "当您建立或使用 HHC 帐户时，我们会处理电子邮件地址、姓名、头像、电子邮件验证状态、密码哈希，以及您设置的多因素验证与备用码等安全资料。我们不保存您的明文密码。",
+                      "为维护登录与帐户安全，我们会处理设备识别信息、浏览器、操作系统、IP 地址、登录与活动时间、会话及安全事件记录。",
+                      "当您浏览本网站时，服务器或第三方服务可能产生必要的技术资料，例如 IP 地址、浏览器信息、设备类型、访问时间、浏览与点击记录、错误记录。",
+                      "我们使用 Sentry 检测前端错误与性能问题，仅传送去标识化的错误、浏览器、设备、页面路径、版本与追踪资料；不主动传送 Cookie、授权标头、表单内容或完整网址查询参数。",
+                      "当您选择订阅电子报或浏览器通知时，我们会处理您的语言、同意与订阅状态，以及提供服务所需的电子邮件地址或加密保存的浏览器推送订阅信息。"
+                    ]
+                  },
+                  {
+                    "title": "第三方登录",
+                    "body": [
+                      "使用 Google 登录时，我们会取得 Google 帐户标识符、已验证的电子邮件地址、姓名与头像，用于建立、识别或连接 HHC 帐户；我们不会读取 Gmail、Google Drive 或其他 Google 内容。",
+                      "使用 Microsoft 登录时，我们会取得 Microsoft 帐户标识符、姓名，以及 Microsoft 提供的电子邮件地址；使用 LINE 登录时，我们会取得 LINE 帐户标识符、显示名称与头像，且不向 LINE 请求电子邮件地址。",
+                      "若第三方服务未提供可信的电子邮件地址，我们会要求您另外完成 HHC 电子邮件验证。第三方登录标识资料会保存至您解除连接或帐户删除为止；第三方平台本身的资料处理仍依其各自政策办理。"
+                    ]
+                  },
+                  {
+                    "title": "资料使用目的",
+                    "body": [
+                      "我们仅在提供帐户与教会服务、身份与电子邮件验证、活动联系、回复询问、网站运维、安全防护、欺诈与滥用防制及服务改善等必要范围内使用资料。",
+                      "浏览与点击记录主要用于网站流量、内容品质与服务体验的内部分析，不会作为识别特定个人的广告追踪用途。",
+                      "我们不会出售个人资料，也不会将第三方登录资料提供给无关第三方作广告、数据经纪或营销用途。除非依法令要求、保护权益或取得您的同意，我们不会作收集目的以外的利用。",
+                      "电子报与非必要的浏览器通知只会在您主动同意后发送。您可以随时通过邮件中的取消订阅链接、HHC 帐户通知偏好或网站通知控制停止接收；帐户验证与安全通知不受电子报取消订阅影响。"
+                    ]
+                  },
+                  {
+                    "title": "保存期间",
+                    "body": [
+                      "帐户资料原则上保存至帐户删除或服务关系终止；因法令、安全事件调查、争议处理或审计所必要的记录，可在必要期间内继续保存。",
+                      "未完成电子邮件验证的注册帐户会在建立 7 天后删除；设备活动记录会在最后活动 180 天后删除。其他资料于收集目的消失、保存期限届满或依法应删除时删除或去标识化。"
+                    ]
+                  },
+                  {
+                    "title": "利用地区、对象与委外处理",
+                    "body": [
+                      "资料利用地区包含本会所在地及提供云端主机、存储、电子邮件、安全防护与第三方登录服务之供应商所在地，因此可能涉及跨境处理。",
+                      "利用对象限于本会获授权人员、受托服务厂商、您选择的登录服务提供者，以及依法有权要求提供资料的机关。受托者仅得在委托目的范围内处理资料，并应采取适当保密与安全措施。"
+                    ]
+                  },
+                  {
+                    "title": "Cookie 与本地存储",
+                    "body": [
+                      "本网站使用必要 cookie 或本地存储维持登录与安全状态、识别设备、防止跨站请求伪造，以及记住语言与外观偏好。这些资料不作为广告追踪用途。",
+                      "您可以通过浏览器删除 cookie 或本地资料，但可能因此登出、产生新的设备记录，或无法保存偏好设置。若未来加入非必要分析或广告追踪工具，我们会更新本政策并依适用法令提供选择或同意机制。"
+                    ]
+                  },
+                  {
+                    "title": "资料安全与事件通知",
+                    "body": [
+                      "我们采取合理的技术与管理措施，包括访问控制、传输保护，以及依资料性质使用哈希或加密，以防止未经授权访问、篡改、遗失或泄露；但任何网络服务均无法保证绝对安全。",
+                      "如发生依法应通知的个人资料事件，我们将依适用法令通知受影响者并采取必要应变措施。请勿通过公开表单提供不必要的敏感资料。"
+                    ]
+                  },
+                  {
+                    "title": "您的权利与联系方式",
+                    "body": [
+                      "您可以依法请求查询、阅览、制给复制本、补充、更正、停止收集、处理或利用，或删除您的个人资料，也可以申请解除第三方登录连接或删除 HHC 帐户。",
+                      "若您不提供必要资料，我们可能无法建立帐户、验证身份、回复询问、完成活动报名或提供相关服务。",
+                      "如需行使权利、申请帐户删除，或询问本政策与个人资料处理事项，请发送电子邮件至 support@alive.org.tw。我们可能在处理请求前采取合理方式确认您的身份。"
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "locale": "en",
+            "bodyJson": {
+              "schemaVersion": 1,
+              "template": "legal.v1",
+              "data": {
+                "heroTitle": "Privacy Policy",
+                "heroSubtitle": "",
+                "updatedAtLabel": "Last updated",
+                "updatedAt": "August 10, 2026",
+                "intro": "This policy explains how the Hallelujah Home Church website and HHC Account services collect, use, retain, and protect personal information. Please read it before using the website or creating an account.",
+                "sections": [
+                  {
+                    "title": "Scope and data controller",
+                    "body": [
+                      "This policy applies to the public website, HHC Account, and related online services provided through alive.org.tw and its subdomains. They are provided and maintained by Hallelujah Community Care Association, R.O.C. (the Association).",
+                      "If this website links to third-party websites, video platforms, social platforms, or map services, those services are governed by their own privacy policies."
+                    ]
+                  },
+                  {
+                    "title": "Information we collect",
+                    "body": [
+                      "When you contact us through a form, email, or event registration, we may collect your name, contact details, registration details, message content, and other information needed to respond to your request.",
+                      "When you create or use an HHC Account, we process your email address, name, profile image, email-verification status, password hash, and security data such as multi-factor authentication secrets and backup codes. We do not store your plaintext password.",
+                      "To maintain sign-in and account security, we process device identifiers, browser and operating-system details, IP addresses, sign-in and activity times, sessions, and security-event records.",
+                      "When you browse this website, servers or third-party services may generate necessary technical data, such as IP address, browser information, device type, access time, browsing and click records, and error logs.",
+                      "We use Sentry to detect frontend errors and performance problems. We send only de-identified error, browser, device, page-path, release, and trace data, and do not intentionally send cookies, authorization headers, form contents, or complete URL query parameters.",
+                      "When you choose to receive newsletters or browser notifications, we process your language, consent and subscription status, together with the email address or encrypted browser push subscription needed to provide that service."
+                    ]
+                  },
+                  {
+                    "title": "Third-party sign-in",
+                    "body": [
+                      "When you sign in with Google, we receive your Google account identifier, verified email address, name, and profile image to create, identify, or link your HHC Account. We do not access Gmail, Google Drive, or other Google content.",
+                      "When you sign in with Microsoft, we receive your Microsoft account identifier, name, and any email address Microsoft provides. When you sign in with LINE, we receive your LINE account identifier, display name, and profile image, and we do not request your email address from LINE.",
+                      "If a provider does not supply an email address we can rely on, we require separate HHC email verification. We retain third-party sign-in identifiers until you unlink the provider or delete your account. Each provider handles its own data under its own policy."
+                    ]
+                  },
+                  {
+                    "title": "How we use information",
+                    "body": [
+                      "We use information only as needed to provide account and church services, verify identity and email addresses, communicate about events, respond to inquiries, operate and secure the website, prevent fraud and abuse, and improve services.",
+                      "Browsing and click records are mainly used for internal analysis of traffic, content quality, and service experience, not to identify specific individuals for advertising tracking.",
+                      "We do not sell personal information or provide third-party sign-in data to unrelated parties for advertising, data-broker, or marketing purposes. We do not use it outside the stated purposes unless required by law, needed to protect rights, or authorized by your consent.",
+                      "Newsletters and non-essential browser notifications are sent only after you opt in. You can unsubscribe at any time through an email unsubscribe link, HHC Account notification preferences, or the website notification control. Account verification and security messages are not affected by newsletter opt-out."
+                    ]
+                  },
+                  {
+                    "title": "Retention",
+                    "body": [
+                      "We generally retain account information until the account is deleted or the service relationship ends. Records needed for legal obligations, security investigations, dispute handling, or audits may be retained for the necessary period.",
+                      "Registration accounts that do not complete email verification are deleted 7 days after creation. Device activity records are deleted 180 days after their last activity. Other information is deleted or de-identified when its purpose ends, its retention period expires, or deletion is legally required."
+                    ]
+                  },
+                  {
+                    "title": "Processing locations, recipients, and vendors",
+                    "body": [
+                      "Information may be processed where the Association and its cloud hosting, storage, email, security, and third-party sign-in providers operate, which may involve cross-border processing.",
+                      "Recipients are limited to authorized Association personnel, contracted service providers, your selected sign-in provider, and authorities legally entitled to request information. Vendors may process information only for the contracted purpose and must use appropriate confidentiality and security measures."
+                    ]
+                  },
+                  {
+                    "title": "Cookies and local storage",
+                    "body": [
+                      "We use necessary cookies or local storage to maintain sign-in and security state, recognize devices, prevent cross-site request forgery, and remember language and appearance preferences. We do not use this information for advertising tracking.",
+                      "You can delete cookies or local data through your browser. Doing so may sign you out, create a new device record, or prevent preferences from being saved. If we later add non-essential analytics or advertising tracking, we will update this policy and provide any choice or consent required by applicable law."
+                    ]
+                  },
+                  {
+                    "title": "Security and incident notice",
+                    "body": [
+                      "We use reasonable technical and organizational measures, including access controls, transport protection, and hashing or encryption appropriate to the data, to reduce unauthorized access, alteration, loss, or disclosure. No online service can guarantee absolute security.",
+                      "If a personal-data incident requires notice under applicable law, we will notify affected people and take necessary response measures. Please do not submit unnecessary sensitive information through public forms."
+                    ]
+                  },
+                  {
+                    "title": "Your rights and contact",
+                    "body": [
+                      "You may request access, copies, supplementation, correction, deletion, or suspension of collection, processing, or use as permitted by applicable law. You may also request to unlink a third-party sign-in or delete your HHC Account.",
+                      "If you do not provide necessary information, we may be unable to create an account, verify your identity, respond to inquiries, complete event registration, or provide related services.",
+                      "To exercise these rights, request account deletion, or ask about this policy or our data handling, email support@alive.org.tw. We may take reasonable steps to verify your identity before processing a request."
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "locale": "ja",
+            "bodyJson": {
+              "schemaVersion": 1,
+              "template": "legal.v1",
+              "data": {
+                "heroTitle": "プライバシーポリシー",
+                "heroSubtitle": "",
+                "updatedAtLabel": "最終更新日",
+                "updatedAt": "2026年8月10日",
+                "intro": "本ポリシーは、ハレルヤ・ホームチャーチのウェブサイトおよびHHCアカウントサービスにおける個人情報の収集、利用、保存、保護について定めるものです。本ウェブサイトの利用またはアカウントの作成前に、以下の内容をご確認ください。",
+                "sections": [
+                  {
+                    "title": "適用範囲および個人情報取扱事業者",
+                    "body": [
+                      "本ポリシーは、alive.org.twおよびそのサブドメインで提供される公開ウェブサイト、HHCアカウント、関連オンラインサービスに適用されます。これらのサービスは、中華民国ハレルヤ地域ケア協会（以下「当協会」）が提供し、運営します。",
+                      "本ウェブサイトから第三者のウェブサイト、動画プラットフォーム、ソーシャルプラットフォームまたは地図サービスへリンクする場合、当該第三者による情報の取扱いには各事業者のポリシーが適用されます。"
+                    ]
+                  },
+                  {
+                    "title": "収集する情報",
+                    "body": [
+                      "お問い合わせフォーム、電子メールまたはイベント申込みを通じてご連絡いただく場合、氏名、連絡先、申込情報、お問い合わせ内容、および対応に必要なその他の情報を収集することがあります。",
+                      "HHCアカウントを作成または利用する場合、メールアドレス、氏名、プロフィール画像、メール認証状況、パスワードのハッシュ値、多要素認証情報やバックアップコード等のセキュリティ情報を取り扱います。平文のパスワードは保存しません。",
+                      "ログインおよびアカウントの安全性を維持するため、端末識別情報、ブラウザ、オペレーティングシステム、IPアドレス、ログイン時刻および利用時刻、セッション、セキュリティイベントの記録を取り扱います。",
+                      "本ウェブサイトの閲覧時には、サーバーまたは第三者サービスにより、IPアドレス、ブラウザ情報、端末の種類、アクセス日時、閲覧・クリック履歴、エラーログ等の必要な技術情報が生成されることがあります。",
+                      "当協会は、フロントエンドのエラーおよびパフォーマンス上の問題を検知するためSentryを利用します。送信する情報は、匿名化されたエラー、ブラウザ、端末、ページパス、リリース、トレースデータに限定し、Cookie、認証ヘッダー、フォーム内容または完全なURLクエリパラメータを意図的に送信することはありません。",
+                      "ニュースレターまたはブラウザ通知の受信を選択した場合、言語、同意および購読状況、ならびにサービス提供に必要なメールアドレスまたは暗号化して保存するブラウザのプッシュ通知購読情報を取り扱います。"
+                    ]
+                  },
+                  {
+                    "title": "第三者サービスによるログイン",
+                    "body": [
+                      "Googleでログインする場合、HHCアカウントの作成、識別または連携のため、Googleアカウント識別子、確認済みメールアドレス、氏名、プロフィール画像を取得します。Gmail、Googleドライブ、その他のGoogleコンテンツにはアクセスしません。",
+                      "Microsoftでログインする場合、Microsoftアカウント識別子、氏名およびMicrosoftが提供するメールアドレスを取得します。LINEでログインする場合、LINEアカウント識別子、表示名およびプロフィール画像を取得し、LINEにメールアドレスを要求しません。",
+                      "第三者サービスから信頼できるメールアドレスが提供されない場合、別途HHCのメール認証をお願いしています。第三者ログインの識別情報は、連携解除またはアカウント削除まで保存します。第三者プラットフォームにおける情報の取扱いには、各事業者のポリシーが適用されます。"
+                    ]
+                  },
+                  {
+                    "title": "情報の利用目的",
+                    "body": [
+                      "アカウントおよび教会サービスの提供、本人およびメールアドレスの確認、イベントに関する連絡、お問い合わせへの対応、ウェブサイトの運営および安全確保、不正行為や濫用の防止、サービス改善に必要な範囲でのみ情報を利用します。",
+                      "閲覧およびクリックの記録は、主としてアクセス状況、コンテンツ品質、サービス体験の内部分析に利用し、特定の個人を識別する広告追跡には利用しません。",
+                      "個人情報を販売せず、第三者ログイン情報を広告、データ仲介またはマーケティングの目的で無関係な第三者に提供しません。法令に基づく場合、権利保護に必要な場合、またはご本人の同意がある場合を除き、明示した目的以外には利用しません。",
+                      "ニュースレターおよび必須ではないブラウザ通知は、同意をいただいた場合にのみ送信します。メール内の購読解除リンク、HHCアカウントの通知設定、またはウェブサイトの通知設定から、いつでも受信を停止できます。アカウント認証およびセキュリティ通知は、ニュースレターの購読解除による影響を受けません。"
+                    ]
+                  },
+                  {
+                    "title": "保存期間",
+                    "body": [
+                      "アカウント情報は、原則としてアカウントが削除されるか、サービス関係が終了するまで保存します。法令上の義務、セキュリティ事案の調査、紛争対応または監査に必要な記録は、必要な期間にわたり保存することがあります。",
+                      "メール認証が完了していない登録アカウントは、作成から7日後に削除します。端末の利用記録は、最後の利用から180日後に削除します。その他の情報は、利用目的が終了したとき、保存期間が満了したとき、または法令により削除が必要となったときに削除または匿名化します。"
+                    ]
+                  },
+                  {
+                    "title": "取扱地域、提供先および委託先",
+                    "body": [
+                      "情報は、当協会ならびにクラウドホスティング、ストレージ、電子メール、セキュリティおよび第三者ログインの各サービス提供者が事業を行う地域で取り扱われる場合があり、国境を越えた取扱いを伴うことがあります。",
+                      "情報の提供先は、当協会の権限を有する担当者、委託先、ご本人が選択したログインサービス提供者、および法令に基づき情報を要求する権限を有する機関に限定されます。委託先は委託目的の範囲でのみ情報を取り扱い、適切な守秘義務および安全管理措置を講じなければなりません。"
+                    ]
+                  },
+                  {
+                    "title": "Cookieおよびローカルストレージ",
+                    "body": [
+                      "ログインおよびセキュリティ状態の維持、端末の識別、クロスサイトリクエストフォージェリの防止、言語および表示設定の保存のため、必要なCookieまたはローカルストレージを利用します。これらの情報を広告追跡には利用しません。",
+                      "ブラウザからCookieまたはローカルデータを削除できますが、ログアウト、新しい端末記録の作成、または設定を保存できない状態が生じる場合があります。将来、必須ではない分析ツールまたは広告追跡を導入する場合、本ポリシーを更新し、適用法令により必要となる選択または同意の仕組みを提供します。"
+                    ]
+                  },
+                  {
+                    "title": "安全管理および事故発生時の通知",
+                    "body": [
+                      "不正なアクセス、改ざん、紛失または漏えいを防止するため、アクセス制御、通信の保護、情報の性質に応じたハッシュ化または暗号化等、合理的な技術的・組織的措置を講じます。ただし、いかなるオンラインサービスも絶対的な安全性を保証することはできません。",
+                      "個人情報に関する事故について適用法令上の通知が必要な場合、影響を受ける方に通知し、必要な対応措置を講じます。公開フォームには不要な機微情報を送信しないでください。"
+                    ]
+                  },
+                  {
+                    "title": "ご本人の権利およびお問い合わせ",
+                    "body": [
+                      "適用法令に基づき、個人情報の開示、写しの交付、追加、訂正、削除、または収集、処理、利用の停止を請求できます。第三者ログインの連携解除またはHHCアカウントの削除を請求することもできます。",
+                      "必要な情報をご提供いただけない場合、アカウントの作成、本人確認、お問い合わせへの回答、イベント申込みの完了、または関連サービスの提供ができないことがあります。",
+                      "権利の行使、アカウント削除の申請、本ポリシーまたは情報の取扱いに関するお問い合わせは、support@alive.org.twまでメールでご連絡ください。請求を処理する前に、合理的な方法でご本人確認を行うことがあります。"
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "locale": "ko",
+            "bodyJson": {
+              "schemaVersion": 1,
+              "template": "legal.v1",
+              "data": {
+                "heroTitle": "개인정보 처리방침",
+                "heroSubtitle": "",
+                "updatedAtLabel": "최종 업데이트",
+                "updatedAt": "2026년 8월 10일",
+                "intro": "본 방침은 할렐루야 가정교회 웹사이트와 HHC 계정 서비스가 개인정보를 수집, 이용, 보관 및 보호하는 방법을 설명합니다. 웹사이트를 이용하거나 계정을 만들기 전에 아래 내용을 확인해 주시기 바랍니다.",
+                "sections": [
+                  {
+                    "title": "적용 범위 및 개인정보 처리자",
+                    "body": [
+                      "본 방침은 alive.org.tw 및 그 하위 도메인을 통해 제공되는 공개 웹사이트, HHC 계정과 관련 온라인 서비스에 적용됩니다. 해당 서비스는 중화민국 할렐루야 지역사회 돌봄 협회(이하 ‘협회’)가 제공하고 운영합니다.",
+                      "본 웹사이트에서 제3자 웹사이트, 동영상 플랫폼, 소셜 플랫폼 또는 지도 서비스로 연결되는 경우 해당 서비스의 개인정보 처리는 각 사업자의 방침을 따릅니다."
+                    ]
+                  },
+                  {
+                    "title": "수집하는 정보",
+                    "body": [
+                      "문의 양식, 이메일 또는 행사 신청을 통해 연락하는 경우 이름, 연락처, 신청 정보, 문의 내용 및 요청 처리에 필요한 기타 정보를 수집할 수 있습니다.",
+                      "HHC 계정을 만들거나 이용할 때 이메일 주소, 이름, 프로필 이미지, 이메일 인증 상태, 비밀번호 해시와 다단계 인증 정보 및 백업 코드 등의 보안 정보를 처리합니다. 평문 비밀번호는 저장하지 않습니다.",
+                      "로그인과 계정 보안을 유지하기 위해 기기 식별 정보, 브라우저와 운영체제 정보, IP 주소, 로그인 및 활동 시각, 세션과 보안 이벤트 기록을 처리합니다.",
+                      "웹사이트를 이용할 때 서버 또는 제3자 서비스에서 IP 주소, 브라우저 정보, 기기 종류, 접속 시각, 탐색 및 클릭 기록, 오류 로그와 같은 필수 기술 정보가 생성될 수 있습니다.",
+                      "프런트엔드 오류와 성능 문제를 확인하기 위해 Sentry를 사용합니다. 비식별화된 오류, 브라우저, 기기, 페이지 경로, 릴리스 및 추적 정보만 전송하며 쿠키, 인증 헤더, 양식 내용 또는 전체 URL 쿼리 매개변수를 의도적으로 전송하지 않습니다.",
+                      "뉴스레터 또는 브라우저 알림 수신을 선택하면 언어, 동의 및 구독 상태와 서비스 제공에 필요한 이메일 주소 또는 암호화하여 보관하는 브라우저 푸시 구독 정보를 처리합니다."
+                    ]
+                  },
+                  {
+                    "title": "제3자 로그인",
+                    "body": [
+                      "Google로 로그인할 때 HHC 계정을 만들거나 확인 또는 연결하기 위해 Google 계정 식별자, 인증된 이메일 주소, 이름과 프로필 이미지를 받습니다. Gmail, Google Drive 또는 그 밖의 Google 콘텐츠에는 접근하지 않습니다.",
+                      "Microsoft로 로그인할 때 Microsoft 계정 식별자, 이름 및 Microsoft가 제공하는 이메일 주소를 받습니다. LINE으로 로그인할 때 LINE 계정 식별자, 표시 이름과 프로필 이미지를 받으며 LINE에 이메일 주소를 요청하지 않습니다.",
+                      "제3자 서비스에서 신뢰할 수 있는 이메일 주소를 제공하지 않는 경우 HHC 이메일 인증을 별도로 요청합니다. 제3자 로그인 식별 정보는 연결을 해제하거나 계정을 삭제할 때까지 보관합니다. 제3자 플랫폼의 개인정보 처리는 각 사업자의 방침을 따릅니다."
+                    ]
+                  },
+                  {
+                    "title": "정보 이용 목적",
+                    "body": [
+                      "계정 및 교회 서비스 제공, 본인과 이메일 주소 확인, 행사 관련 연락, 문의 응대, 웹사이트 운영 및 보안 유지, 사기와 오용 방지, 서비스 개선에 필요한 범위에서만 정보를 이용합니다.",
+                      "탐색 및 클릭 기록은 주로 방문 현황, 콘텐츠 품질과 서비스 경험을 위한 내부 분석에 사용하며 특정 개인을 식별하는 광고 추적에는 사용하지 않습니다.",
+                      "개인정보를 판매하지 않으며 제3자 로그인 정보를 광고, 데이터 중개 또는 마케팅 목적으로 무관한 제3자에게 제공하지 않습니다. 법령상 요구되거나 권리 보호에 필요하거나 당사자의 동의를 받은 경우를 제외하고 명시된 목적 외로 이용하지 않습니다.",
+                      "뉴스레터와 필수가 아닌 브라우저 알림은 동의한 경우에만 발송합니다. 이메일의 구독 해지 링크, HHC 계정 알림 설정 또는 웹사이트 알림 설정에서 언제든 수신을 중단할 수 있습니다. 계정 인증과 보안 알림은 뉴스레터 구독 해지의 영향을 받지 않습니다."
+                    ]
+                  },
+                  {
+                    "title": "보관 기간",
+                    "body": [
+                      "계정 정보는 원칙적으로 계정이 삭제되거나 서비스 관계가 종료될 때까지 보관합니다. 법적 의무, 보안 사고 조사, 분쟁 처리 또는 감사에 필요한 기록은 필요한 기간 동안 계속 보관할 수 있습니다.",
+                      "이메일 인증을 완료하지 않은 가입 계정은 생성 후 7일이 지나면 삭제합니다. 기기 활동 기록은 마지막 활동 후 180일이 지나면 삭제합니다. 그 밖의 정보는 수집 목적이 종료되거나 보관 기간이 만료되거나 법령상 삭제가 필요한 때 삭제하거나 비식별화합니다."
+                    ]
+                  },
+                  {
+                    "title": "처리 지역, 제공 대상 및 수탁업체",
+                    "body": [
+                      "정보는 협회와 클라우드 호스팅, 저장소, 이메일, 보안 및 제3자 로그인 서비스 제공자가 운영되는 지역에서 처리될 수 있으며 국외 처리가 포함될 수 있습니다.",
+                      "정보 제공 대상은 협회의 권한 있는 담당자, 위탁 서비스 제공자, 사용자가 선택한 로그인 서비스 제공자와 법령에 따라 정보 제공을 요구할 권한이 있는 기관으로 제한됩니다. 수탁업체는 위탁 목적 범위에서만 정보를 처리하고 적절한 비밀 유지 및 보안 조치를 마련해야 합니다."
+                    ]
+                  },
+                  {
+                    "title": "쿠키 및 로컬 저장소",
+                    "body": [
+                      "로그인과 보안 상태 유지, 기기 식별, 사이트 간 요청 위조 방지, 언어와 화면 설정 기억을 위해 필수 쿠키 또는 로컬 저장소를 사용합니다. 이 정보는 광고 추적에 사용하지 않습니다.",
+                      "브라우저에서 쿠키 또는 로컬 데이터를 삭제할 수 있으나 로그아웃되거나 새 기기 기록이 생성되거나 설정이 저장되지 않을 수 있습니다. 향후 필수가 아닌 분석 또는 광고 추적 도구를 도입하면 본 방침을 업데이트하고 적용 법령에서 요구하는 선택 또는 동의 절차를 제공합니다."
+                    ]
+                  },
+                  {
+                    "title": "정보 보안 및 사고 통지",
+                    "body": [
+                      "무단 접근, 변경, 분실 또는 유출을 방지하기 위해 접근 제어, 전송 보호와 정보의 성격에 따른 해시 또는 암호화 등 합리적인 기술적·관리적 조치를 취합니다. 다만 어떠한 온라인 서비스도 절대적인 보안을 보장할 수 없습니다.",
+                      "개인정보 사고가 발생하여 적용 법령에 따른 통지가 필요한 경우 영향을 받은 분들에게 알리고 필요한 대응 조치를 취합니다. 공개 양식에는 불필요한 민감정보를 제출하지 마십시오."
+                    ]
+                  },
+                  {
+                    "title": "정보주체의 권리 및 문의",
+                    "body": [
+                      "적용 법령에 따라 개인정보의 열람, 사본 제공, 추가, 정정, 삭제 또는 수집·처리·이용의 중단을 요청할 수 있습니다. 제3자 로그인 연결 해제 또는 HHC 계정 삭제도 요청할 수 있습니다.",
+                      "필수 정보를 제공하지 않으면 계정 생성, 본인 확인, 문의 응대, 행사 신청 완료 또는 관련 서비스 제공이 어려울 수 있습니다.",
+                      "권리 행사, 계정 삭제 신청 또는 본 방침과 개인정보 처리에 관한 문의는 support@alive.org.tw로 이메일을 보내 주십시오. 요청을 처리하기 전에 합리적인 방법으로 본인 확인을 할 수 있습니다."
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "kind": "page",
+      "sourcePaths": [
+        "src/i18n/locales/zh-Hant.json",
+        "src/i18n/locales/zh-Hans.json",
+        "src/i18n/locales/en.json",
+        "src/i18n/locales/ja.json",
+        "src/i18n/locales/ko.json"
+      ],
+      "sourceKey": "page:terms-of-use",
+      "payload": {
+        "pageKey": "terms-of-use",
+        "pageTemplate": "legal.v1",
+        "routePath": "/terms-of-use",
+        "indexable": true,
+        "translations": [
+          {
+            "locale": "zh-Hant",
+            "bodyJson": {
+              "schemaVersion": 1,
+              "template": "legal.v1",
+              "data": {
+                "heroTitle": "使用條款",
+                "heroSubtitle": "",
+                "updatedAtLabel": "最後更新",
+                "updatedAt": "2026年8月4日",
+                "intro": "使用哈利路亞家教會網站、HHC 帳戶或相關線上服務，即表示您同意遵守以下條款。",
+                "sections": [
+                  {
+                    "title": "HHC 帳戶",
+                    "body": [
+                      "您應提供正確資料並維護電子郵件、密碼、多因素驗證與裝置的安全，不得共用帳戶、冒用他人身分或允許未經授權者使用您的帳戶。若發現異常使用，請立即變更登入方式並聯絡 support@alive.org.tw。",
+                      "第三方登入僅是建立、辨識或連結 HHC 帳戶的登入方式。解除連結或刪除 HHC 帳戶，不會同時刪除您在 Google、Microsoft 或 LINE 的帳戶。未滿所在地法定年齡者，應在法定代理人同意下使用帳戶服務。"
+                    ]
+                  },
+                  {
+                    "title": "網站內容",
+                    "body": [
+                      "本網站內容僅供一般資訊、信仰造就與教會事工使用。我們會盡力維持資訊正確，但活動時間、地點、下載檔案或外部連結可能因實際情況調整。",
+                      "若網站資訊與教會正式公告不一致，請以教會最新公告或聯絡窗口回覆為準。"
+                    ]
+                  },
+                  {
+                    "title": "智慧財產權",
+                    "body": [
+                      "本網站文字、圖片、設計、週報、影音與其他內容，除另有註明外，由社團法人中華民國哈利路亞社區關懷協會或相關權利人所有。",
+                      "您可以為個人、家庭或教會非商業用途閱讀、下載與分享公開內容；未經同意，不得將內容用於商業用途、改作、再授權或移除權利聲明。",
+                      "英文經文引自 Holy Bible, New International Version® (NIV®)。Copyright © 1973, 1978, 1984, 2011 by Biblica, Inc. All rights reserved worldwide. 日文經文引自《聖書 新共同訳》。©1987, 1988 共同訳聖書実行委員会、日本聖書協会。"
+                    ]
+                  },
+                  {
+                    "title": "使用限制與帳戶處置",
+                    "body": [
+                      "您不得以干擾網站運作、嘗試未授權存取、散布惡意程式、冒用他人身分或違反法令的方式使用本網站。",
+                      "若您提供留言、報名資料或其他內容，請確認內容真實、合法，且未侵害他人權利。",
+                      "如有違法、違反本條款、危害其他使用者或系統安全、詐欺或濫用情形，本會得在合理必要範圍內限制或停用帳戶、撤銷工作階段或移除相關內容；法令允許且不影響安全調查時，我們會提供適當通知或申訴管道。"
+                    ]
+                  },
+                  {
+                    "title": "第三方服務與連結",
+                    "body": [
+                      "本網站可能使用或連結 Google、Microsoft、LINE、YouTube、Facebook、地圖或其他第三方服務。第三方服務由其各自條款與政策規範，本會不控制其內容、資料處理或服務可用性。",
+                      "第三方服務的中斷、限制或政策變更可能影響相關登入或網站功能；我們會盡合理努力提供替代方式，但不保證第三方服務持續可用。"
+                    ]
+                  },
+                  {
+                    "title": "免責聲明",
+                    "body": [
+                      "本網站內容不構成法律、醫療、財務或其他專業建議。若您需要專業協助，請尋求合格專業人士意見。",
+                      "因網路中斷、系統維護、第三方服務異常或不可抗力造成的服務中斷或資料延遲，我們將盡合理努力處理，但不保證網站永不中斷。法律不得排除或限制的責任，不受本條款影響。"
+                    ]
+                  },
+                  {
+                    "title": "條款變更、準據法與聯絡方式",
+                    "body": [
+                      "我們可能依網站服務、法令或教會事工需要更新本條款。更新後的條款將公布於本頁，並自公布時生效。",
+                      "若您在條款更新後繼續使用本網站，視為您同意更新後的條款。重大變更將在合理可行範圍內另行通知。",
+                      "本條款以中華民國法律為準據法，爭議管轄依適用法律決定。如有疑問，請寄信至 support@alive.org.tw。"
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "locale": "zh-Hans",
+            "bodyJson": {
+              "schemaVersion": 1,
+              "template": "legal.v1",
+              "data": {
+                "heroTitle": "使用条款",
+                "heroSubtitle": "",
+                "updatedAtLabel": "最后更新",
+                "updatedAt": "2026年8月4日",
+                "intro": "使用哈利路亚家教会网站、HHC 帐户或相关在线服务，即表示您同意遵守以下条款。",
+                "sections": [
+                  {
+                    "title": "HHC 帐户",
+                    "body": [
+                      "您应提供正确资料并维护电子邮件、密码、多因素验证与设备的安全，不得共享帐户、冒用他人身份或允许未经授权者使用您的帐户。若发现异常使用，请立即变更登录方式并联系 support@alive.org.tw。",
+                      "第三方登录仅是建立、识别或连接 HHC 帐户的登录方式。解除连接或删除 HHC 帐户，不会同时删除您在 Google、Microsoft 或 LINE 的帐户。未满所在地法定年龄者，应在法定代理人同意下使用帐户服务。"
+                    ]
+                  },
+                  {
+                    "title": "网站内容",
+                    "body": [
+                      "本网站内容仅供一般信息、信仰造就与教会事工使用。我们会尽力维持信息正确，但活动时间、地点、下载文件或外部链接可能因实际情况调整。",
+                      "若网站信息与教会正式公告不一致，请以教会最新公告或联系窗口回复为准。"
+                    ]
+                  },
+                  {
+                    "title": "知识产权",
+                    "body": [
+                      "本网站文字、图片、设计、周报、影音与其他内容，除另有注明外，由社团法人中华民国哈利路亚社区关怀协会或相关权利人所有。",
+                      "您可以为个人、家庭或教会非商业用途阅读、下载与分享公开内容；未经同意，不得将内容用于商业用途、改作、再授权或移除权利声明。",
+                      "英文经文引自 Holy Bible, New International Version® (NIV®)。Copyright © 1973, 1978, 1984, 2011 by Biblica, Inc. All rights reserved worldwide. 日文经文引自《聖書 新共同訳》。©1987, 1988 共同訳聖書実行委員会、日本聖書協会。"
+                    ]
+                  },
+                  {
+                    "title": "使用限制与帐户处置",
+                    "body": [
+                      "您不得以干扰网站运作、尝试未授权访问、散布恶意程序、冒用他人身份或违反法令的方式使用本网站。",
+                      "若您提供留言、报名资料或其他内容，请确认内容真实、合法，且未侵害他人权利。",
+                      "如有违法、违反本条款、危害其他用户或系统安全、欺诈或滥用情形，本会可在合理必要范围内限制或停用帐户、撤销会话或移除相关内容；法令允许且不影响安全调查时，我们会提供适当通知或申诉渠道。"
+                    ]
+                  },
+                  {
+                    "title": "第三方服务与链接",
+                    "body": [
+                      "本网站可能使用或链接 Google、Microsoft、LINE、YouTube、Facebook、地图或其他第三方服务。第三方服务由其各自条款与政策规范，本会不控制其内容、资料处理或服务可用性。",
+                      "第三方服务的中断、限制或政策变更可能影响相关登录或网站功能；我们会尽合理努力提供替代方式，但不保证第三方服务持续可用。"
+                    ]
+                  },
+                  {
+                    "title": "免责声明",
+                    "body": [
+                      "本网站内容不构成法律、医疗、财务或其他专业建议。若您需要专业协助，请寻求合格专业人士意见。",
+                      "因网络中断、系统维护、第三方服务异常或不可抗力造成的服务中断或资料延迟，我们将尽合理努力处理，但不保证网站永不中断。法律不得排除或限制的责任，不受本条款影响。"
+                    ]
+                  },
+                  {
+                    "title": "条款变更、准据法与联系方式",
+                    "body": [
+                      "我们可能依网站服务、法令或教会事工需要更新本条款。更新后的条款将公布于本页，并自公布时生效。",
+                      "若您在条款更新后继续使用本网站，视为您同意更新后的条款。重大变更将在合理可行范围内另行通知。",
+                      "本条款以中华民国法律为准据法，争议管辖依适用法律决定。如有疑问，请发送电子邮件至 support@alive.org.tw。"
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "locale": "en",
+            "bodyJson": {
+              "schemaVersion": 1,
+              "template": "legal.v1",
+              "data": {
+                "heroTitle": "Terms of Use",
+                "heroSubtitle": "",
+                "updatedAtLabel": "Last updated",
+                "updatedAt": "August 4, 2026",
+                "intro": "By using the Hallelujah Home Church website, HHC Account, or related online services, you agree to these terms.",
+                "sections": [
+                  {
+                    "title": "HHC Account",
+                    "body": [
+                      "You must provide accurate information and protect your email, password, multi-factor authentication, and devices. Do not share your account, impersonate another person, or permit unauthorized use. If you notice unusual activity, change your sign-in method and contact support@alive.org.tw promptly.",
+                      "Third-party sign-in is only a method for creating, identifying, or linking an HHC Account. Unlinking a provider or deleting your HHC Account does not delete your Google, Microsoft, or LINE account. Users below the legal age in their location must use account services with consent from a legal guardian."
+                    ]
+                  },
+                  {
+                    "title": "Website content",
+                    "body": [
+                      "The content on this website is provided for general information, faith formation, and church ministry use. We try to keep information accurate, but event times, locations, downloads, and external links may change.",
+                      "If website information differs from official church announcements, the latest church announcement or response from the church contact window should prevail."
+                    ]
+                  },
+                  {
+                    "title": "Intellectual property",
+                    "body": [
+                      "Unless otherwise stated, text, images, design, weekly papers, media, and other content on this website are owned by Hallelujah Community Care Association, R.O.C. or the relevant rights holders.",
+                      "You may read, download, and share public content for personal, family, or non-commercial church use. Without permission, you may not use content commercially, create derivative works, sublicense it, or remove rights notices.",
+                      "English Scripture quotations are from the Holy Bible, New International Version® (NIV®). Copyright © 1973, 1978, 1984, 2011 by Biblica, Inc. All rights reserved worldwide. Japanese Scripture quotations are from 『聖書 新共同訳』. ©1987, 1988 共同訳聖書実行委員会、日本聖書協会。"
+                    ]
+                  },
+                  {
+                    "title": "Use restrictions and account action",
+                    "body": [
+                      "You may not use this website in a way that interferes with its operation, attempts unauthorized access, distributes malicious code, impersonates others, or violates applicable law.",
+                      "If you submit messages, registration details, or other content, you are responsible for making sure it is accurate, lawful, and does not infringe the rights of others.",
+                      "If conduct is unlawful, violates these terms, harms users or system security, or involves fraud or abuse, the Association may reasonably restrict or disable accounts, revoke sessions, or remove related content. Where legally permitted and consistent with a security investigation, we will provide appropriate notice or a way to raise concerns."
+                    ]
+                  },
+                  {
+                    "title": "Third-party services and links",
+                    "body": [
+                      "This website may use or link to Google, Microsoft, LINE, YouTube, Facebook, maps, or other third-party services. Their own terms and policies govern them, and the Association does not control their content, data handling, or availability.",
+                      "A third-party outage, restriction, or policy change may affect sign-in or website functions. We will make reasonable efforts to provide an alternative where practical, but we do not guarantee continued availability of a third-party service."
+                    ]
+                  },
+                  {
+                    "title": "Disclaimer",
+                    "body": [
+                      "The content on this website is not legal, medical, financial, or other professional advice. If you need professional help, please seek advice from a qualified professional.",
+                      "We will make reasonable efforts to handle service interruptions or delays caused by network issues, maintenance, third-party service failures, or force majeure, but we do not guarantee uninterrupted website availability. Nothing in these terms excludes or limits liability that cannot legally be excluded or limited."
+                    ]
+                  },
+                  {
+                    "title": "Changes, governing law, and contact",
+                    "body": [
+                      "We may update these terms based on website services, legal requirements, or church ministry needs. Updated terms will be posted on this page and take effect when posted.",
+                      "If you continue using this website after the terms are updated, you are deemed to agree to the updated terms. We will provide additional notice of material changes where reasonably practicable.",
+                      "These terms are governed by the laws of the Republic of China (Taiwan), and jurisdiction is determined under applicable law. Questions may be sent to support@alive.org.tw."
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "locale": "ja",
+            "bodyJson": {
+              "schemaVersion": 1,
+              "template": "legal.v1",
+              "data": {
+                "heroTitle": "利用規約",
+                "heroSubtitle": "",
+                "updatedAtLabel": "最終更新日",
+                "updatedAt": "2026年8月4日",
+                "intro": "ハレルヤ・ホームチャーチのウェブサイト、HHCアカウントまたは関連オンラインサービスを利用することにより、本規約に同意したものとみなされます。",
+                "sections": [
+                  {
+                    "title": "HHCアカウント",
+                    "body": [
+                      "正確な情報を提供し、メールアドレス、パスワード、多要素認証および端末の安全を適切に管理してください。アカウントの共有、他者へのなりすまし、または権限のない者による利用を認めてはなりません。不審な利用に気づいた場合は、速やかにログイン方法を変更し、support@alive.org.twまでご連絡ください。",
+                      "第三者ログインは、HHCアカウントを作成、識別または連携するためのログイン方法に限られます。連携解除またはHHCアカウントの削除によって、Google、MicrosoftまたはLINEのアカウントが削除されることはありません。居住地の法定年齢に達していない方は、法定代理人の同意を得たうえでアカウントサービスを利用してください。"
+                    ]
+                  },
+                  {
+                    "title": "ウェブサイトのコンテンツ",
+                    "body": [
+                      "本ウェブサイトのコンテンツは、一般的な情報、信仰の育成および教会活動のために提供されます。情報の正確性の維持に努めますが、イベントの日時、会場、ダウンロードファイルまたは外部リンクは実際の状況により変更されることがあります。",
+                      "本ウェブサイトの情報と教会の正式な案内が異なる場合は、教会の最新の案内またはお問い合わせ窓口からの回答を優先します。"
+                    ]
+                  },
+                  {
+                    "title": "知的財産権",
+                    "body": [
+                      "別段の記載がない限り、本ウェブサイトの文章、画像、デザイン、週報、映像その他のコンテンツは、中華民国ハレルヤ地域ケア協会または各権利者に帰属します。",
+                      "公開コンテンツは、個人、家庭または非営利の教会活動の目的で閲覧、ダウンロードおよび共有できます。許可なく商業目的で利用し、改変し、再許諾し、または権利表示を削除してはなりません。",
+                      "日本語の聖書本文は『聖書 新共同訳』から引用しています。©1987, 1988 共同訳聖書実行委員会、日本聖書協会。英語の聖書本文はHoly Bible, New International Version® (NIV®)から引用しています。Copyright © 1973, 1978, 1984, 2011 by Biblica, Inc. All rights reserved worldwide."
+                    ]
+                  },
+                  {
+                    "title": "利用上の禁止事項およびアカウントへの措置",
+                    "body": [
+                      "本ウェブサイトの運営を妨害し、不正アクセスを試み、悪意あるプログラムを配布し、他者になりすまし、または法令に違反する方法で利用してはなりません。",
+                      "メッセージ、申込情報その他の内容を送信する場合、その内容が正確かつ適法であり、第三者の権利を侵害しないことについて責任を負うものとします。",
+                      "違法行為、本規約への違反、利用者またはシステムの安全への危害、詐欺もしくは濫用が認められる場合、当協会は合理的に必要な範囲でアカウントを制限もしくは停止し、セッションを無効化し、または関連コンテンツを削除することがあります。法令上許容され、かつセキュリティ調査に支障がない場合、適切な通知または異議申立ての方法を提供します。"
+                    ]
+                  },
+                  {
+                    "title": "第三者サービスおよびリンク",
+                    "body": [
+                      "本ウェブサイトは、Google、Microsoft、LINE、YouTube、Facebook、地図その他の第三者サービスを利用し、またはそれらにリンクすることがあります。第三者サービスには各事業者の規約およびポリシーが適用され、当協会はそのコンテンツ、情報の取扱いまたは利用可能性を管理しません。",
+                      "第三者サービスの障害、制限またはポリシー変更により、ログインまたはウェブサイトの機能が影響を受ける場合があります。実行可能な場合は代替手段の提供に合理的な努力を払いますが、第三者サービスが継続して利用できることを保証しません。"
+                    ]
+                  },
+                  {
+                    "title": "免責事項",
+                    "body": [
+                      "本ウェブサイトのコンテンツは、法律、医療、財務その他の専門的助言を構成するものではありません。専門的な支援が必要な場合は、資格を有する専門家にご相談ください。",
+                      "ネットワーク障害、システム保守、第三者サービスの不具合または不可抗力によるサービスの中断もしくは情報の遅延について、合理的な対応に努めますが、ウェブサイトが常に中断なく利用できることを保証しません。法令上排除または制限できない責任は、本規約によって排除または制限されません。"
+                    ]
+                  },
+                  {
+                    "title": "規約の変更、準拠法およびお問い合わせ",
+                    "body": [
+                      "ウェブサイトのサービス、法令または教会活動上の必要に応じて、本規約を更新することがあります。更新後の規約は本ページに掲載し、掲載時から効力を生じます。",
+                      "規約の更新後も本ウェブサイトを継続して利用した場合、更新後の規約に同意したものとみなされます。重要な変更については、合理的に可能な範囲で別途通知します。",
+                      "本規約は中華民国（台湾）の法律に準拠し、管轄は適用法令に従って定められます。ご質問はsupport@alive.org.twまでお送りください。"
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "locale": "ko",
+            "bodyJson": {
+              "schemaVersion": 1,
+              "template": "legal.v1",
+              "data": {
+                "heroTitle": "이용약관",
+                "heroSubtitle": "",
+                "updatedAtLabel": "최종 업데이트",
+                "updatedAt": "2026년 8월 4일",
+                "intro": "할렐루야 가정교회 웹사이트, HHC 계정 또는 관련 온라인 서비스를 이용하면 본 약관에 동의한 것으로 봅니다.",
+                "sections": [
+                  {
+                    "title": "HHC 계정",
+                    "body": [
+                      "정확한 정보를 제공하고 이메일, 비밀번호, 다단계 인증과 기기의 보안을 적절히 관리해야 합니다. 계정을 공유하거나 다른 사람을 사칭하거나 권한 없는 사용을 허용해서는 안 됩니다. 이상 활동을 발견하면 즉시 로그인 방법을 변경하고 support@alive.org.tw로 연락해 주십시오.",
+                      "제3자 로그인은 HHC 계정을 생성, 확인 또는 연결하기 위한 로그인 방법입니다. 연결을 해제하거나 HHC 계정을 삭제해도 Google, Microsoft 또는 LINE 계정은 삭제되지 않습니다. 거주 지역의 법정 연령에 미달하는 이용자는 법정대리인의 동의를 받아 계정 서비스를 이용해야 합니다."
+                    ]
+                  },
+                  {
+                    "title": "웹사이트 콘텐츠",
+                    "body": [
+                      "본 웹사이트의 콘텐츠는 일반 정보, 신앙 양육과 교회 사역을 위해 제공됩니다. 정보의 정확성을 유지하도록 노력하지만 행사 일시, 장소, 다운로드 파일 또는 외부 링크는 실제 상황에 따라 변경될 수 있습니다.",
+                      "웹사이트의 정보와 교회의 공식 공지가 다른 경우 교회의 최신 공지 또는 문의 창구의 답변을 우선합니다."
+                    ]
+                  },
+                  {
+                    "title": "지식재산권",
+                    "body": [
+                      "별도 표시가 없는 한 본 웹사이트의 글, 이미지, 디자인, 주보, 영상과 그 밖의 콘텐츠는 중화민국 할렐루야 지역사회 돌봄 협회 또는 관련 권리자에게 귀속됩니다.",
+                      "공개 콘텐츠는 개인, 가정 또는 비영리 교회 활동을 위해 열람, 다운로드 및 공유할 수 있습니다. 허가 없이 상업적으로 이용하거나 변경하거나 재허락하거나 권리 표시를 삭제해서는 안 됩니다.",
+                      "영어 성경 본문은 Holy Bible, New International Version® (NIV®)에서 인용했습니다. Copyright © 1973, 1978, 1984, 2011 by Biblica, Inc. All rights reserved worldwide. 일본어 성경 본문은 『聖書 新共同訳』에서 인용했습니다. ©1987, 1988 共同訳聖書実行委員会、日本聖書協会。"
+                    ]
+                  },
+                  {
+                    "title": "이용 제한 및 계정 조치",
+                    "body": [
+                      "웹사이트 운영을 방해하거나 무단 접근을 시도하거나 악성 프로그램을 유포하거나 다른 사람을 사칭하거나 법령을 위반하는 방식으로 본 웹사이트를 이용해서는 안 됩니다.",
+                      "메시지, 신청 정보 또는 그 밖의 콘텐츠를 제출하는 경우 해당 내용이 정확하고 적법하며 타인의 권리를 침해하지 않도록 할 책임이 있습니다.",
+                      "위법 행위, 본 약관 위반, 이용자 또는 시스템 보안에 대한 위해, 사기 또는 오용이 있는 경우 협회는 합리적으로 필요한 범위에서 계정을 제한하거나 정지하고 세션을 취소하거나 관련 콘텐츠를 삭제할 수 있습니다. 법령상 허용되고 보안 조사에 지장이 없는 경우 적절한 통지 또는 이의 제기 방법을 제공합니다."
+                    ]
+                  },
+                  {
+                    "title": "제3자 서비스 및 링크",
+                    "body": [
+                      "본 웹사이트는 Google, Microsoft, LINE, YouTube, Facebook, 지도 또는 그 밖의 제3자 서비스를 이용하거나 해당 서비스로 연결할 수 있습니다. 제3자 서비스에는 각 사업자의 약관과 방침이 적용되며 협회는 그 콘텐츠, 정보 처리 또는 이용 가능성을 관리하지 않습니다.",
+                      "제3자 서비스의 장애, 제한 또는 정책 변경으로 로그인이나 웹사이트 기능이 영향을 받을 수 있습니다. 가능한 경우 대체 수단을 제공하도록 합리적으로 노력하지만 제3자 서비스가 계속 이용 가능함을 보장하지 않습니다."
+                    ]
+                  },
+                  {
+                    "title": "면책사항",
+                    "body": [
+                      "본 웹사이트의 콘텐츠는 법률, 의료, 재무 또는 그 밖의 전문적인 조언이 아닙니다. 전문적인 도움이 필요하면 자격을 갖춘 전문가에게 문의해 주십시오.",
+                      "네트워크 장애, 시스템 유지보수, 제3자 서비스 장애 또는 불가항력으로 인한 서비스 중단이나 정보 지연에 합리적으로 대응하도록 노력하지만 웹사이트가 항상 중단 없이 제공됨을 보장하지 않습니다. 법률상 배제하거나 제한할 수 없는 책임은 본 약관의 영향을 받지 않습니다."
+                    ]
+                  },
+                  {
+                    "title": "약관 변경, 준거법 및 문의",
+                    "body": [
+                      "웹사이트 서비스, 법령 또는 교회 사역의 필요에 따라 본 약관을 변경할 수 있습니다. 변경된 약관은 본 페이지에 게시되며 게시 시부터 효력이 발생합니다.",
+                      "약관 변경 후에도 웹사이트를 계속 이용하면 변경된 약관에 동의한 것으로 봅니다. 중요한 변경은 합리적으로 가능한 범위에서 별도로 안내합니다.",
+                      "본 약관은 중화민국(대만) 법률을 준거법으로 하며 관할은 적용 법률에 따라 정합니다. 문의는 support@alive.org.tw로 보내 주십시오."
+                    ]
+                  }
+                ]
+              }
+            }
           }
         ]
       }

@@ -2,6 +2,7 @@ package content
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 )
@@ -13,6 +14,7 @@ var (
 	ErrPrecondition      = errors.New("content precondition failed")
 	ErrLocaleSetMismatch = errors.New("locale set mismatch")
 	ErrNotPublishable    = errors.New("content not publishable")
+	ErrMethodNotAllowed  = errors.New("content method not allowed")
 )
 
 type Module string
@@ -22,6 +24,7 @@ const (
 	ModuleHistory   Module = "history"
 	ModuleVideos    Module = "videos"
 	ModuleLocations Module = "locations"
+	ModulePages     Module = "pages"
 )
 
 const (
@@ -35,12 +38,13 @@ const (
 )
 
 type Translation struct {
-	Locale    string `json:"locale"`
-	Title     string `json:"title"`
-	Summary   string `json:"summary,omitempty"`
-	Body      string `json:"body,omitempty"`
-	DateLabel string `json:"dateLabel,omitempty"`
-	ImageAlt  string `json:"imageAlt,omitempty"`
+	Locale    string          `json:"locale"`
+	Title     string          `json:"title"`
+	Summary   string          `json:"summary,omitempty"`
+	Body      string          `json:"body,omitempty"`
+	DateLabel string          `json:"dateLabel,omitempty"`
+	ImageAlt  string          `json:"imageAlt,omitempty"`
+	BodyJSON  json.RawMessage `json:"bodyJson,omitempty"`
 }
 
 type WriteInput struct {
@@ -57,6 +61,10 @@ type WriteInput struct {
 	LocationKey      string        `json:"locationKey,omitempty"`
 	MapHref          string        `json:"mapHref,omitempty"`
 	SortOrder        int           `json:"sortOrder,omitempty"`
+	PageKey          string        `json:"pageKey,omitempty"`
+	PageTemplate     string        `json:"pageTemplate,omitempty"`
+	RoutePath        string        `json:"routePath,omitempty"`
+	Indexable        bool          `json:"indexable,omitempty"`
 	Translations     []Translation `json:"translations"`
 	DeleteLocales    []string      `json:"deleteLocales,omitempty"`
 }
@@ -87,6 +95,10 @@ type Item struct {
 	LocationKey          string        `json:"locationKey,omitempty"`
 	MapHref              string        `json:"mapHref,omitempty"`
 	SortOrder            int           `json:"sortOrder,omitempty"`
+	PageKey              string        `json:"pageKey,omitempty"`
+	PageTemplate         string        `json:"pageTemplate,omitempty"`
+	RoutePath            string        `json:"routePath,omitempty"`
+	Indexable            bool          `json:"indexable,omitempty"`
 	Translations         []Translation `json:"translations"`
 	CreatedBy            string        `json:"createdBy"`
 	UpdatedBy            string        `json:"updatedBy"`
@@ -150,6 +162,18 @@ type PublicLocation struct {
 	AvailableLocales []string `json:"availableLocales,omitempty"`
 }
 
+type PublicEditorialPage struct {
+	PageKey          string          `json:"pageKey"`
+	Template         string          `json:"template"`
+	RoutePath        string          `json:"routePath"`
+	Indexable        bool            `json:"indexable"`
+	Content          json.RawMessage `json:"content"`
+	ResolvedLocale   string          `json:"resolvedLocale"`
+	AvailableLocales []string        `json:"availableLocales"`
+	Version          int64           `json:"version"`
+	PublishedAt      time.Time       `json:"publishedAt"`
+}
+
 type ListOptions struct {
 	Query     string
 	Status    string
@@ -172,4 +196,5 @@ type Repository interface {
 	PublicContent(context.Context, Module, string, int, int) (PublicPage, error)
 	PublicNews(context.Context, string, string) (PublicItem, string, error)
 	PublicLocations(context.Context, string) ([]PublicLocation, error)
+	PublicEditorialPage(context.Context, string, string) (PublicEditorialPage, string, error)
 }

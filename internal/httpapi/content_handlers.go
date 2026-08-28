@@ -1,8 +1,11 @@
 package httpapi
 
 import (
+	"bytes"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"sort"
 	"strconv"
@@ -19,6 +22,7 @@ func (h *Handler) contentRoutes(public, admin *http.ServeMux) {
 	public.HandleFunc("GET /api/history", h.publicContent(content.ModuleHistory))
 	public.HandleFunc("GET /api/videos", h.publicContent(content.ModuleVideos))
 	public.HandleFunc("GET /api/locations", h.publicLocations)
+	public.HandleFunc("GET /api/pages/{pageKey}", h.publicEditorialPage)
 	public.HandleFunc("GET /api/home", h.publicHome)
 	admin.HandleFunc("GET /api/admin/content/{module}", requireScope("cms:read", h.adminContentList))
 	admin.HandleFunc("POST /api/admin/content/{module}", requireScope("cms:write", h.adminContentCreate))
@@ -33,6 +37,25 @@ func (h *Handler) contentRoutes(public, admin *http.ServeMux) {
 	admin.HandleFunc("POST /api/admin/content/news/{contentID}/assets/{assetID}/complete", requireScopes([]string{"cms:write", "assets:write"}, h.adminNewsCoverComplete))
 	admin.HandleFunc("GET /api/admin/content/news/{contentID}/assets/{assetID}", requireScope("cms:read", h.adminNewsCoverStatus))
 	admin.HandleFunc("POST /api/admin/content/news/{contentID}/assets/{assetID}/scan/retry", requireScopes([]string{"cms:write", "assets:write"}, h.adminNewsCoverRetry))
+}
+
+func (h *Handler) publicEditorialPage(w http.ResponseWriter, r *http.Request) {
+	value, etag, err := h.content.PublicEditorialPage(r.Context(), r.PathValue("pageKey"), locale(r))
+	if err != nil {
+		if errors.Is(err, content.ErrNotFound) {
+			w.Header().Set("Cache-Control", "public, max-age=30, must-revalidate")
+		}
+		handleContentError(w, err)
+		return
+	}
+	etag = `"` + etag + `"`
+	w.Header().Set("Cache-Control", "public, max-age=30, must-revalidate")
+	w.Header().Set("ETag", etag)
+	if etagMatches(r.Header.Get("If-None-Match"), etag) {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+	writeData(w, http.StatusOK, value, nil)
 }
 
 func (h *Handler) publicNews(w http.ResponseWriter, r *http.Request) {
@@ -174,16 +197,50 @@ func (h *Handler) adminContentUpdate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var input content.WriteInput
-	if !decode(w, r, &input) {
+	var request contentWriteRequest
+	if !decode(w, r, &request) {
 		return
 	}
+	if content.Module(r.PathValue("module")) == content.ModulePages && !request.indexablePresent {
+		writeError(w, http.StatusBadRequest, "invalid_request", "The request body is invalid.")
+		return
+	}
+	input := request.WriteInput
 	value, err := h.content.UpdateContent(r.Context(), content.Module(r.PathValue("module")), r.PathValue("contentID"), expected, input, actor(r))
 	if err != nil {
 		handleContentError(w, err)
 		return
 	}
 	writeContentItem(w, value)
+}
+
+type contentWriteRequest struct {
+	content.WriteInput
+	indexablePresent bool
+}
+
+func (request *contentWriteRequest) UnmarshalJSON(raw []byte) error {
+	type writeInput content.WriteInput
+	var value writeInput
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&value); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return content.ErrInvalid
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return err
+	}
+	request.WriteInput = content.WriteInput(value)
+	indexable, present := fields["indexable"]
+	if present && !bytes.Equal(bytes.TrimSpace(indexable), []byte("true")) && !bytes.Equal(bytes.TrimSpace(indexable), []byte("false")) {
+		return content.ErrInvalid
+	}
+	request.indexablePresent = present
+	return nil
 }
 func (h *Handler) adminContentPublish(w http.ResponseWriter, r *http.Request) {
 	h.changeContentPublication(w, r, true)
@@ -464,6 +521,8 @@ func handleContentError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusPreconditionFailed, "precondition_failed", "The content changed. Reload and try again.")
 	case errors.Is(err, content.ErrNotPublishable):
 		writeError(w, http.StatusUnprocessableEntity, "not_publishable", "The content is not ready to publish.")
+	case errors.Is(err, content.ErrMethodNotAllowed):
+		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "This operation is not allowed for fixed pages.")
 	default:
 		writeError(w, http.StatusInternalServerError, "internal_error", "The request could not be completed.")
 	}

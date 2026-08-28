@@ -85,6 +85,7 @@ jobs:
       API_APP_NAME: hhc-web-api
       API_GATEWAY_APP_NAME: api-gateway
       SITE_LAYOUT_SMOKE_URL: https://www.alive.org.tw/api/site-layout?locale=zh-Hant
+      PAGE_SMOKE_BASE_URL: https://www.alive.org.tw/api/pages
       AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
       AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
       AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}

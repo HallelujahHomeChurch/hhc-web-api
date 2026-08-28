@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -143,6 +144,97 @@ func TestPublicNewsDetailUsesProjectionETag(t *testing.T) {
 	if response.Code != http.StatusNotFound || response.Header().Get("Cache-Control") != "public, max-age=30" {
 		t.Fatalf("status=%d cache=%q", response.Code, response.Header().Get("Cache-Control"))
 	}
+}
+
+func TestPublicEditorialPageUsesExactLocaleProjectionAndETag(t *testing.T) {
+	repo := &contentRepository{publicEditorialPage: content.PublicEditorialPage{PageKey: "home", Template: "home.v1", RoutePath: "/", Indexable: true, Content: validHTTPPagePayload(), ResolvedLocale: "ja", AvailableLocales: []string{"zh-Hant", "zh-Hans", "en", "ja", "ko"}, Version: 3, PublishedAt: time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)}, publicEditorialETag: "page-etag"}
+	handler := contentTestHandler(repo)
+	request := httptest.NewRequest(http.MethodGet, "/api/pages/home?locale=ja", nil)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || response.Header().Get("ETag") != `"page-etag"` || response.Header().Get("Cache-Control") != "public, max-age=30, must-revalidate" || repo.publicEditorialLocale != "ja" || repo.publicEditorialKey != "home" {
+		t.Fatalf("status=%d headers=%v key=%q locale=%q body=%s", response.Code, response.Header(), repo.publicEditorialKey, repo.publicEditorialLocale, response.Body.String())
+	}
+	request = httptest.NewRequest(http.MethodGet, "/api/pages/home?locale=ja", nil)
+	request.Header.Set("If-None-Match", `W/"page-etag"`)
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusNotModified || response.Body.Len() != 0 {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestPublicEditorialPageRejectsUnknownKey(t *testing.T) {
+	response := httptest.NewRecorder()
+	contentTestHandler(&contentRepository{}).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/pages/custom?locale=en", nil))
+	if response.Code != http.StatusNotFound || !strings.Contains(response.Body.String(), `"code":"not_found"`) {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestPagesRejectGenericCreateAndDelete(t *testing.T) {
+	handler := contentTestHandler(&contentRepository{})
+	create := httptest.NewRequest(http.MethodPost, "/api/admin/content/pages", bytes.NewBufferString(`{}`))
+	trusted(create, "cms:write")
+	create.Header.Set("Idempotency-Key", "page-custom")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, create)
+	if response.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("create status=%d body=%s", response.Code, response.Body.String())
+	}
+	remove := httptest.NewRequest(http.MethodDelete, "/api/admin/content/pages/page-1", nil)
+	trusted(remove, "cms:write")
+	remove.Header.Set("If-Match", `"1"`)
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, remove)
+	if response.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("delete status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestPageUpdateReturnsValidationEnvelope(t *testing.T) {
+	repo := &contentRepository{item: content.Item{ID: "page-1", Module: content.ModulePages, Version: 2, PageKey: "home", PageTemplate: "home.v1", RoutePath: "/", Indexable: true, Translations: []content.Translation{{Locale: "zh-Hant", BodyJSON: validHTTPPagePayload()}}}}
+	request := httptest.NewRequest(http.MethodPut, "/api/admin/content/pages/page-1", bytes.NewBufferString(`{"pageKey":"home","pageTemplate":"home.v1","routePath":"/","indexable":true,"translations":[{"locale":"zh-Hant","bodyJson":{"schemaVersion":1,"template":"home.v1","data":{"heroTitle":"Only one field"}}}]}`))
+	trusted(request, "cms:write")
+	request.Header.Set("If-Match", `"2"`)
+	response := httptest.NewRecorder()
+	contentTestHandler(repo).ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest || response.Header().Get("Cache-Control") != "private, no-store" || !strings.Contains(response.Body.String(), `"code":"invalid_content"`) {
+		t.Fatalf("status=%d cache=%q body=%s", response.Code, response.Header().Get("Cache-Control"), response.Body.String())
+	}
+}
+
+func TestPageUpdateRequiresBooleanIndexable(t *testing.T) {
+	base := `{"pageKey":"home","pageTemplate":"home.v1","routePath":"/",%s"translations":[{"locale":"zh-Hant","bodyJson":` + string(validHTTPPagePayload()) + `}]}`
+	for _, test := range []struct {
+		name, field string
+		status      int
+		want        bool
+	}{
+		{"omitted", "", http.StatusBadRequest, false},
+		{"null", `"indexable":null,`, http.StatusBadRequest, false},
+		{"string", `"indexable":"false",`, http.StatusBadRequest, false},
+		{"number", `"indexable":0,`, http.StatusBadRequest, false},
+		{"object", `"indexable":{},`, http.StatusBadRequest, false},
+		{"false", `"indexable":false,`, http.StatusOK, false},
+		{"true", `"indexable":true,`, http.StatusOK, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			repo := &contentRepository{item: content.Item{ID: "page-1", Module: content.ModulePages, Version: 2, PageKey: "home", PageTemplate: "home.v1", RoutePath: "/", Indexable: true, Translations: []content.Translation{{Locale: "zh-Hant", BodyJSON: validHTTPPagePayload()}}}}
+			request := httptest.NewRequest(http.MethodPut, "/api/admin/content/pages/page-1", bytes.NewBufferString(fmt.Sprintf(base, test.field)))
+			trusted(request, "cms:write")
+			request.Header.Set("If-Match", `"2"`)
+			response := httptest.NewRecorder()
+			contentTestHandler(repo).ServeHTTP(response, request)
+			if response.Code != test.status || (test.status == http.StatusBadRequest && !strings.Contains(response.Body.String(), `"code":"invalid_request"`)) || (test.status == http.StatusOK && repo.updateInput.Indexable != test.want) {
+				t.Fatalf("status=%d input=%#v body=%s", response.Code, repo.updateInput, response.Body.String())
+			}
+		})
+	}
+}
+
+func validHTTPPagePayload() json.RawMessage {
+	return json.RawMessage(`{"schemaVersion":1,"template":"home.v1","data":{"heroTitle":"Home","heroSubtitle":"Welcome","newsTitle":"News","moreNews":"More","weeklyTitle":"Weekly","downloadWeekly":"Download","videosTitle":"Videos","videosSubtitle":"Music","watchMore":"Watch","aboutTitle":"About","aboutBody":"About us","aboutCta":"Meet us","locationsTitle":"Locations","mapLink":"Map"}}`)
 }
 
 func TestPublicHomeIsCacheableAndSelectsVideosDeterministically(t *testing.T) {
@@ -381,6 +473,11 @@ type contentRepository struct {
 	publicLocations       []content.PublicLocation
 	publicLocationsLocale string
 	publicLocationsErr    error
+	publicEditorialPage   content.PublicEditorialPage
+	publicEditorialETag   string
+	publicEditorialKey    string
+	publicEditorialLocale string
+	updateInput           content.WriteInput
 	deleted               bool
 }
 
@@ -396,6 +493,7 @@ func (r *contentRepository) GetContent(context.Context, content.Module, string) 
 }
 
 func (r *contentRepository) UpdateContent(_ context.Context, _ content.Module, _ string, _ int64, input content.WriteInput, _ string, _ time.Time) (content.Item, error) {
+	r.updateInput = input
 	r.item.CoverAssetID = input.CoverAssetID
 	r.item.HomeCoverAssetID = input.HomeCoverAssetID
 	return r.item, nil
@@ -427,4 +525,8 @@ func (r *contentRepository) PublicNews(context.Context, string, string) (content
 func (r *contentRepository) PublicLocations(_ context.Context, locale string) ([]content.PublicLocation, error) {
 	r.publicLocationsLocale = locale
 	return r.publicLocations, r.publicLocationsErr
+}
+func (r *contentRepository) PublicEditorialPage(_ context.Context, key, locale string) (content.PublicEditorialPage, string, error) {
+	r.publicEditorialKey, r.publicEditorialLocale = key, locale
+	return r.publicEditorialPage, r.publicEditorialETag, nil
 }

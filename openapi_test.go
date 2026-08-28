@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/HallelujahHomeChurch/hhc-web-api/internal/content"
 	"github.com/getkin/kin-openapi/openapi3"
 	jsonschema "github.com/santhosh-tekuri/jsonschema/v6"
 )
@@ -197,6 +198,118 @@ func TestOpenAPIDocumentsSiteSettingsContracts(t *testing.T) {
 		if strings.Contains(block, "canonicalHost") || strings.Contains(block, "apiRoot") || strings.Contains(block, "accountUrl") {
 			t.Errorf("%s exposes runtime configuration:\n%s", schema, block)
 		}
+	}
+}
+
+func TestOpenAPIDocumentsFixedEditorialPageContracts(t *testing.T) {
+	document := readOpenAPI(t)
+	operation := operationByID(t, document, "getPublicPage")
+	for _, expected := range []string{
+		"x-hhc-visibility: public",
+		"x-hhc-callers: [api-gateway]",
+		"security: []",
+		"$ref: '#/components/parameters/PageKey'",
+		"$ref: '#/components/parameters/ContentLocale'",
+		"$ref: '#/components/parameters/IfNoneMatch'",
+		"$ref: '#/components/responses/PublicEditorialPage'",
+		"$ref: '#/components/responses/PublicEditorialPageNotModified'",
+	} {
+		if !strings.Contains(operation, expected) {
+			t.Errorf("public page operation missing %q:\n%s", expected, operation)
+		}
+	}
+	for _, schema := range []string{"HomePageContentV1", "AboutPageContentV1", "LegalPageContentV1", "PageContent", "PublicEditorialPage"} {
+		if schemaBlock(document, schema) == "" {
+			t.Errorf("missing %s schema", schema)
+		}
+	}
+	pageContent := schemaBlock(document, "PageContent")
+	for _, expected := range []string{"oneOf:", "propertyName: template", "home.v1", "about.v1", "legal.v1"} {
+		if !strings.Contains(pageContent, expected) {
+			t.Errorf("PageContent missing %q:\n%s", expected, pageContent)
+		}
+	}
+	if !strings.Contains(schemaBlock(document, "ContentModule"), "enum: [news, history, videos, locations, pages]") {
+		t.Error("ContentModule must include pages")
+	}
+	if strings.Contains(schemaBlock(document, "CreatableContentModule"), "pages") || strings.Contains(schemaBlock(document, "TranslatableContentModule"), "pages") {
+		t.Error("generic create and AI translation modules must exclude pages")
+	}
+	if !strings.Contains(operationByID(t, document, "deleteContent"), "'405':") {
+		t.Error("deleteContent must document fixed-page 405")
+	}
+	for _, operationID := range []string{"createContent", "deleteContent"} {
+		if !strings.Contains(operationByID(t, document, operationID), "'405': { $ref: '#/components/responses/Error' }") {
+			t.Errorf("%s must use the standard 405 error envelope", operationID)
+		}
+	}
+	notModified := responseBlock(document, "PublicEditorialPageNotModified")
+	for _, expected := range []string{"ETag:", "Cache-Control:", "public, max-age=30, must-revalidate"} {
+		if !strings.Contains(notModified, expected) {
+			t.Errorf("page 304 response missing %q:\n%s", expected, notModified)
+		}
+	}
+}
+
+func TestOpenAPIPagePayloadSchemasMatchRuntimeValidation(t *testing.T) {
+	about := compileOpenAPISchema(t, "AboutPageContentV1")
+	valid := map[string]any{}
+	if err := json.Unmarshal(openAPIValidAboutPagePayload(), &valid); err != nil {
+		t.Fatal(err)
+	}
+	if err := about.Validate(valid); err != nil {
+		t.Fatalf("About schema rejected runtime-valid payload: %v", err)
+	}
+	sections := valid["data"].(map[string]any)["vision"].(map[string]any)["sections"].([]any)
+	sections[0].(map[string]any)["cards"] = []any{map[string]any{"title": "wrong", "body": "shape"}}
+	if err := about.Validate(valid); err == nil {
+		t.Fatal("About schema accepted cards in positional text section")
+	}
+
+	legal := compileOpenAPISchema(t, "LegalPageContentV1")
+	var legalValue map[string]any
+	if err := json.Unmarshal(openAPIValidLegalPagePayload(), &legalValue); err != nil {
+		t.Fatal(err)
+	}
+	delete(legalValue["data"].(map[string]any), "heroSubtitle")
+	encoded, _ := json.Marshal(legalValue)
+	if err := content.ValidatePagePayload("privacy-policy", encoded); err != nil {
+		t.Fatalf("runtime rejected omitted legal heroSubtitle: %v", err)
+	}
+	if err := legal.Validate(legalValue); err != nil {
+		t.Fatalf("OpenAPI rejected runtime-valid omitted legal heroSubtitle: %v", err)
+	}
+}
+
+func TestOpenAPIAndRuntimeRejectNullPageProperties(t *testing.T) {
+	for _, test := range []struct {
+		name, key, schema string
+		payload           []byte
+		mutate            func(map[string]any)
+	}{
+		{"home required", "home", "HomePageContentV1", openAPIValidHomePagePayload(), func(data map[string]any) { data["heroTitle"] = nil }},
+		{"about forbidden cards", "about", "AboutPageContentV1", openAPIValidAboutPagePayload(), func(data map[string]any) {
+			data["vision"].(map[string]any)["sections"].([]any)[0].(map[string]any)["cards"] = nil
+		}},
+		{"about forbidden body", "about", "AboutPageContentV1", openAPIValidAboutPagePayload(), func(data map[string]any) {
+			data["vision"].(map[string]any)["sections"].([]any)[2].(map[string]any)["body"] = nil
+		}},
+		{"legal optional subtitle", "privacy-policy", "LegalPageContentV1", openAPIValidLegalPagePayload(), func(data map[string]any) { data["heroSubtitle"] = nil }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var value map[string]any
+			if err := json.Unmarshal(test.payload, &value); err != nil {
+				t.Fatal(err)
+			}
+			test.mutate(value["data"].(map[string]any))
+			encoded, _ := json.Marshal(value)
+			if err := content.ValidatePagePayload(test.key, encoded); err == nil {
+				t.Fatal("runtime accepted JSON null")
+			}
+			if err := compileOpenAPISchema(t, test.schema).Validate(value); err == nil {
+				t.Fatal("OpenAPI accepted JSON null")
+			}
+		})
 	}
 }
 
@@ -429,6 +542,7 @@ func TestOpenAPIContentWriteInputKeepsExistingModulesCompatible(t *testing.T) {
 		{"news", `{"authorName":"Pastor","slug":"announcement","displayDate":"2026-08-28","detailLayout":"top","translations":[{"locale":"zh-Hant","title":"消息","summary":"摘要","body":"內容","imageAlt":"圖片"}]}`},
 		{"history", `{"eventDate":"1988-03","translations":[{"locale":"zh-Hant","title":"開始家庭聚會","body":"內容","dateLabel":"1988年3月"}]}`},
 		{"videos", `{"youtubeVideoId":"K3ckFWeSQ-k","homeEligible":true,"translations":[{"locale":"zh-Hant","title":"影片"}]}`},
+		{"pages", `{"pageKey":"home","pageTemplate":"home.v1","routePath":"/","indexable":true,"translations":[{"locale":"zh-Hant","bodyJson":{"schemaVersion":1,"template":"home.v1","data":{"heroTitle":"Home","heroSubtitle":"Welcome","newsTitle":"News","moreNews":"More","weeklyTitle":"Weekly","downloadWeekly":"Download","videosTitle":"Videos","videosSubtitle":"Music","watchMore":"Watch","aboutTitle":"About","aboutBody":"About us","aboutCta":"Meet us","locationsTitle":"Locations","mapLink":"Map"}}}]}`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			if err := validateOpenAPIContentWriteInput(schema, []byte(test.body)); err != nil {
@@ -925,6 +1039,39 @@ func schemaBlock(document, name string) string {
 	return ""
 }
 
+func responseBlock(document, name string) string {
+	_, responses, ok := strings.Cut(document, "\n  responses:\n")
+	if !ok {
+		return ""
+	}
+	responses, _, _ = strings.Cut(responses, "\n  headers:\n")
+	lines := strings.Split(responses, "\n")
+	marker := "    " + name + ":"
+	for start, line := range lines {
+		if line != marker {
+			continue
+		}
+		end := start + 1
+		for end < len(lines) && (!strings.HasPrefix(lines[end], "    ") || strings.HasPrefix(lines[end], "     ") || lines[end] == "") {
+			end++
+		}
+		return strings.Join(lines[start:end], "\n")
+	}
+	return ""
+}
+
+func openAPIValidAboutPagePayload() []byte {
+	return []byte(`{"schemaVersion":1,"template":"about.v1","data":{"heroTitle":"About","heroSubtitle":"Mission","vision":{"intro":"Intro","imageAlt":"Image","actionsImageAlt":"Actions","sections":[{"eyebrow":"One","title":"Vision","body":"Body"},{"eyebrow":"Two","title":"Goals","body":"Body"},{"eyebrow":"Three","title":"Actions","cards":[{"title":"Share","body":"Body"}]},{"eyebrow":"Four","title":"Convictions","cards":[{"title":"Mission","body":"Body"}]}]},"history":{"scripture":[{"lines":["Verse"],"cite":"Isaiah"}],"imageAlt":"Image","intro":"History","title":"Church History"}}}`)
+}
+
+func openAPIValidHomePagePayload() []byte {
+	return []byte(`{"schemaVersion":1,"template":"home.v1","data":{"heroTitle":"Home","heroSubtitle":"Welcome","newsTitle":"News","moreNews":"More","weeklyTitle":"Weekly","downloadWeekly":"Download","videosTitle":"Videos","videosSubtitle":"Music","watchMore":"Watch","aboutTitle":"About","aboutBody":"About us","aboutCta":"Meet us","locationsTitle":"Locations","mapLink":"Map"}}`)
+}
+
+func openAPIValidLegalPagePayload() []byte {
+	return []byte(`{"schemaVersion":1,"template":"legal.v1","data":{"heroTitle":"Privacy","heroSubtitle":"","updatedAtLabel":"Updated","updatedAt":"August 10, 2026","intro":"Intro","sections":[{"title":"Section","body":["Paragraph"]}]}}`)
+}
+
 func canonicalPath(path string) string {
 	return pathParameter.ReplaceAllString(path, "{}")
 }
@@ -944,6 +1091,7 @@ func expectedCatalogRoutes() []string {
 		GET /history
 		GET /videos
 		GET /locations
+		GET /pages/{}
 		GET /site-layout
 		GET /home
 		GET /admin/site-settings

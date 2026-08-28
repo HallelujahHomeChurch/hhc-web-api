@@ -244,6 +244,62 @@ func TestApplySiteLayoutRollsBackWholeCumulativeManifestOnLocaleFailure(t *testi
 	}
 }
 
+func TestApplyPagesInsertsFourDraftsThenPlansSkips(t *testing.T) {
+	db, state := newSeedTestDB(t)
+	manifest := pageSeedTestManifest("pages-v1", pageSeedTestRecords()...)
+	report, err := Apply(context.Background(), db, manifest, strings.Repeat("d", 64), "content-seed:pages-v1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Inserts != 4 || report.Skips != 0 || report.Conflicts != 0 {
+		t.Fatalf("apply report=%#v", report)
+	}
+	for _, key := range []string{"home", "about", "privacy-policy", "terms-of-use"} {
+		state.assertPageSnapshot(t, key)
+	}
+	state.assertCounts(t, 1, 4, 20)
+	planned, err := Plan(context.Background(), db, pageSeedTestManifest("pages-v2", pageSeedTestRecords()...))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if planned.InsertCount != 0 || planned.SkipCount != 4 || planned.ConflictCount != 0 {
+		t.Fatalf("second plan=%#v", planned)
+	}
+}
+
+func TestPlanPageConflictsWithExistingFixedKey(t *testing.T) {
+	db, state := newSeedTestDB(t)
+	state.targets["home"] = "unowned-page-id"
+	report, err := Plan(context.Background(), db, pageSeedTestManifest("pages-v1", pageSeedTestRecord("home")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.ConflictCount != 1 || report.Records[0].Action != ActionConflict {
+		t.Fatalf("report=%#v", report)
+	}
+}
+
+func TestPlanPageRejectsInvalidPayloadBeforeLookup(t *testing.T) {
+	record := pageSeedTestRecord("home")
+	record.Payload = json.RawMessage(strings.Replace(string(record.Payload), `"heroTitle":"Home"`, `"heroTitle":"<script>"`, 1))
+	if _, err := Plan(context.Background(), nil, pageSeedTestManifest("pages-v1", record)); err == nil || !strings.Contains(err.Error(), "page payload is invalid") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestApplyPagesRollsBackWholeManifestOnTranslationFailure(t *testing.T) {
+	db, state := newSeedTestDB(t)
+	state.failTranslationAt = 6
+	_, err := Apply(context.Background(), db, pageSeedTestManifest("pages-v1", pageSeedTestRecords()...), strings.Repeat("e", 64), "content-seed:pages-v1")
+	if err == nil || !strings.Contains(err.Error(), "translation failed") {
+		t.Fatalf("err=%v", err)
+	}
+	state.assertCounts(t, 1, 0, 0)
+	if len(state.targets) != 0 {
+		t.Fatalf("page targets leaked after rollback: %#v", state.targets)
+	}
+}
+
 func TestPlanLocationRejectsSourceKeyThatDoesNotMatchStableKey(t *testing.T) {
 	db, state := newSeedTestDB(t)
 	record := locationSeedTestRecord("taipei")
@@ -427,20 +483,6 @@ func TestApplyUnlockFailureIsReturnedAndConnectionReleased(t *testing.T) {
 }
 
 func TestApplyTargetKindsFailClosed(t *testing.T) {
-	for _, kind := range []string{"page"} {
-		t.Run(kind, func(t *testing.T) {
-			db, state := newSeedTestDB(t)
-			manifest := testManifest()
-			manifest.Records = []Record{{Kind: kind, SourceKey: "one", SourcePaths: []string{"source.json"}, Payload: json.RawMessage(`{}`)}}
-			_, err := Apply(context.Background(), db, manifest, strings.Repeat("e", 64), "content-seed:v1")
-			want := fmt.Sprintf("target kind %q is not released", kind)
-			if err == nil || err.Error() != want {
-				t.Fatalf("error = %v, want %q", err, want)
-			}
-			state.assertCounts(t, 0, 0, 0)
-			state.assertUnlocked(t)
-		})
-	}
 	_, err := applyRecord(context.Background(), nil, Record{Kind: "other"})
 	if err == nil || err.Error() != `unsupported target kind "other"` {
 		t.Fatalf("unsupported error = %v", err)
@@ -526,6 +568,78 @@ func siteLayoutSeedTestRecord() Record {
 				{"locale":"ko","siteName":"이름","englishName":"English Name","copyrightHolder":"저작권자","allRightsReserved":"All rights reserved.","seoTitleSuffix":"이름","seoDescriptionFallback":"설명","header":[{"key":"about","label":"교회 소개","href":"/{locale}/about","visible":true},{"key":"news","label":"새소식","href":"/{locale}/news","visible":true},{"key":"literature-ministry","label":"문서 사역","href":"/{locale}/literature-ministry","visible":true}],"legal":[{"key":"privacy-policy","label":"개인정보 처리방침","href":"/{locale}/privacy-policy","visible":true},{"key":"terms-of-use","label":"이용약관","href":"/{locale}/terms-of-use","visible":true}]}
 			]
 		}`),
+	}
+}
+
+func pageSeedTestManifest(version string, records ...Record) Manifest {
+	sources := make([]Source, 0, 5)
+	for index, locale := range []string{"zh-Hant", "zh-Hans", "en", "ja", "ko"} {
+		sources = append(sources, Source{Path: "src/i18n/locales/" + locale + ".json", SHA256: strings.Repeat(string(rune('a'+index)), 64)})
+	}
+	return Manifest{SeedVersion: version, SourceRepo: "repo", SourceCommit: strings.Repeat("a", 40), Sources: sources, Records: records}
+}
+
+func pageSeedTestRecords() []Record {
+	return []Record{pageSeedTestRecord("home"), pageSeedTestRecord("about"), pageSeedTestRecord("privacy-policy"), pageSeedTestRecord("terms-of-use")}
+}
+
+func pageSeedTestRecord(key string) Record {
+	template, route, _ := content.PageDefinition(key)
+	body := map[string]any{}
+	switch key {
+	case "home":
+		body = map[string]any{"schemaVersion": 1, "template": template, "data": map[string]any{"heroTitle": "Home", "heroSubtitle": "Welcome", "newsTitle": "News", "moreNews": "More", "weeklyTitle": "Weekly", "downloadWeekly": "Download", "videosTitle": "Videos", "videosSubtitle": "Music", "watchMore": "Watch", "aboutTitle": "About", "aboutBody": "About us", "aboutCta": "Meet us", "locationsTitle": "Locations", "mapLink": "Map"}}
+	case "about":
+		body = map[string]any{
+			"schemaVersion": 1,
+			"template":      template,
+			"data": map[string]any{
+				"heroTitle": "About", "heroSubtitle": "Mission",
+				"vision": map[string]any{
+					"intro": "Intro", "imageAlt": "Image", "actionsImageAlt": "Actions",
+					"sections": []any{
+						map[string]any{"eyebrow": "One", "title": "Vision", "body": "Body"},
+						map[string]any{"eyebrow": "Two", "title": "Goals", "body": "Body"},
+						map[string]any{"eyebrow": "Three", "title": "Actions", "cards": []any{map[string]any{"title": "Share", "body": "Body"}}},
+						map[string]any{"eyebrow": "Four", "title": "Convictions", "cards": []any{map[string]any{"title": "Mission", "body": "Body"}}},
+					},
+				},
+				"history": map[string]any{"scripture": []any{map[string]any{"lines": []string{"Verse"}, "cite": "Isaiah"}}, "imageAlt": "Image", "intro": "History", "title": "Church History"},
+			},
+		}
+	default:
+		body = map[string]any{"schemaVersion": 1, "template": template, "data": map[string]any{"heroTitle": key, "heroSubtitle": "", "updatedAtLabel": "Updated", "updatedAt": "August 4, 2026", "intro": "Intro", "sections": []any{map[string]any{"title": "Section", "body": []string{"Paragraph"}}}}}
+	}
+	bodyJSON, _ := json.Marshal(body)
+	translations := make([]map[string]any, 0, 5)
+	paths := make([]string, 0, 5)
+	for _, locale := range []string{"zh-Hant", "zh-Hans", "en", "ja", "ko"} {
+		translations = append(translations, map[string]any{"locale": locale, "bodyJson": json.RawMessage(bodyJSON)})
+		paths = append(paths, "src/i18n/locales/"+locale+".json")
+	}
+	payload, _ := json.Marshal(map[string]any{"pageKey": key, "pageTemplate": template, "routePath": route, "indexable": true, "translations": translations})
+	return Record{Kind: "page", SourceKey: "page:" + key, SourcePaths: paths, Payload: payload}
+}
+
+func TestPageSeedRequiresIndexablePresenceAndPreservesFalse(t *testing.T) {
+	record := pageSeedTestRecord("home")
+	var payload map[string]any
+	if err := json.Unmarshal(record.Payload, &payload); err != nil {
+		t.Fatal(err)
+	}
+	delete(payload, "indexable")
+	record.Payload, _ = json.Marshal(payload)
+	if _, err := decodePageSeedPayload(record.Payload); err == nil {
+		t.Fatal("page seed accepted omitted indexable")
+	}
+	payload["indexable"] = false
+	record.Payload, _ = json.Marshal(payload)
+	decoded, err := decodePageSeedPayload(record.Payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decoded.(pageSeedPayload).writeInput().Indexable {
+		t.Fatal("page seed lost explicit indexable=false")
 	}
 }
 
@@ -629,6 +743,21 @@ func (state *seedTestState) assertSiteLayoutSnapshot(t *testing.T) {
 	}
 	if snapshot.Links.ChurchYouTube != "https://youtube.com/@hhc33?si=approved" || snapshot.Locales[4].Header[0].Href != "/{locale}/about" {
 		t.Fatalf("site layout snapshot values = %#v", snapshot)
+	}
+}
+
+func (state *seedTestState) assertPageSnapshot(t *testing.T, key string) {
+	t.Helper()
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	id := state.targets[key]
+	var snapshot content.Item
+	if id == "" || json.Unmarshal(state.revisions[id], &snapshot) != nil {
+		t.Fatalf("page %q snapshot missing", key)
+	}
+	template, route, _ := content.PageDefinition(key)
+	if snapshot.Module != content.ModulePages || snapshot.Status != content.StatusDraft || snapshot.PageKey != key || snapshot.PageTemplate != template || snapshot.RoutePath != route || !snapshot.Indexable || len(snapshot.Translations) != 5 || state.translations[id] != 5 {
+		t.Fatalf("page %q snapshot=%#v translations=%d", key, snapshot, state.translations[id])
 	}
 }
 
@@ -760,6 +889,12 @@ func (conn *seedTestConn) QueryContext(ctx context.Context, query string, args [
 			rows.values = [][]driver.Value{{conn.state.siteSettingID}}
 		}
 		return rows, nil
+	case strings.Contains(query, "FROM hhc_web.page_item"):
+		rows := &seedTestRows{columns: []string{"content_id"}}
+		if targetID := conn.state.targets[args[0].Value.(string)]; targetID != "" {
+			rows.values = [][]driver.Value{{targetID}}
+		}
+		return rows, nil
 	case strings.Contains(query, "FROM hhc_web.content_seed_source"):
 		matching := false
 		for _, provenance := range conn.state.provenance {
@@ -810,6 +945,8 @@ func (conn *seedTestConn) ExecContext(ctx context.Context, query string, args []
 			return nil, errors.New("translation failed")
 		}
 	case strings.Contains(query, "INSERT INTO hhc_web.location_item"):
+		conn.tx.targets[args[1].Value.(string)] = args[0].Value.(string)
+	case strings.Contains(query, "INSERT INTO hhc_web.page_item"):
 		conn.tx.targets[args[1].Value.(string)] = args[0].Value.(string)
 	case strings.Contains(query, "INSERT INTO hhc_web.site_setting_set"):
 		conn.tx.siteSettingID = args[0].Value.(string)
@@ -867,6 +1004,8 @@ func seedTestOperation(query string) string {
 		return "translation"
 	case strings.Contains(query, "INSERT INTO hhc_web.location_item"):
 		return "location"
+	case strings.Contains(query, "INSERT INTO hhc_web.page_item"):
+		return "page"
 	case strings.Contains(query, "INSERT INTO hhc_web.site_setting_set"):
 		return "site setting"
 	case strings.Contains(query, "INSERT INTO hhc_web.site_setting_locale"):
