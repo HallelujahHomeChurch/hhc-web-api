@@ -8,6 +8,7 @@ cat >"$tmp/safe.json" <<'JSON'
 {"changes":[
   {"resourceId":"/subscriptions/test/resourceGroups/alive/providers/Microsoft.App/containerApps/hhc-web-api","changeType":"Modify","delta":[{"path":"properties.template.containers","propertyChangeType":"Array","children":[{"path":"image","propertyChangeType":"Modify"}]}]},
   {"resourceId":"/subscriptions/test/resourceGroups/alive/providers/Microsoft.App/jobs/hhc-web-migrate","changeType":"Modify","delta":[]},
+  {"resourceId":"/subscriptions/test/resourceGroups/alive/providers/Microsoft.App/jobs/hhc-web-content-import","changeType":"Create","delta":[]},
   {"resourceId":"/subscriptions/test/resourceGroups/alive/providers/Microsoft.CognitiveServices/accounts/bible-text-embedding-resource/raiPolicies/hhc-cms-translation-v1","changeType":"Create","delta":[]},
   {"resourceId":"/subscriptions/test/resourceGroups/alive/providers/Microsoft.KeyVault/vaults/other","changeType":"Ignore","delta":[]}
 ]}
