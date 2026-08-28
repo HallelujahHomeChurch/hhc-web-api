@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/getkin/kin-openapi/openapi3"
 )
 
 func TestOpenAPIDocumentsPublicBulletinByNumber(t *testing.T) {
@@ -136,7 +138,7 @@ func TestOpenAPIDocumentsPublicLocationsContract(t *testing.T) {
 }
 
 func TestOpenAPIContentWriteInputKeepsExistingModulesCompatible(t *testing.T) {
-	document := readOpenAPI(t)
+	schema := contentWriteInputSchema(t)
 	for _, test := range []struct {
 		name, body string
 	}{
@@ -145,7 +147,7 @@ func TestOpenAPIContentWriteInputKeepsExistingModulesCompatible(t *testing.T) {
 		{"videos", `{"youtubeVideoId":"K3ckFWeSQ-k","homeEligible":true,"translations":[{"locale":"zh-Hant","title":"影片"}]}`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			if err := validateOpenAPIContentWriteInput(document, []byte(test.body)); err != nil {
+			if err := validateOpenAPIContentWriteInput(schema, []byte(test.body)); err != nil {
 				t.Fatal(err)
 			}
 		})
@@ -444,94 +446,26 @@ func readOpenAPI(t *testing.T) string {
 	return string(contents)
 }
 
-func validateOpenAPIContentWriteInput(document string, body []byte) error {
-	var value map[string]json.RawMessage
+func contentWriteInputSchema(t *testing.T) *openapi3.Schema {
+	t.Helper()
+	loader := openapi3.NewLoader()
+	document, err := loader.LoadFromFile("openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema := document.Components.Schemas["ContentWriteInput"]
+	if schema == nil || schema.Value == nil {
+		t.Fatal("missing ContentWriteInput schema")
+	}
+	return schema.Value
+}
+
+func validateOpenAPIContentWriteInput(schema *openapi3.Schema, body []byte) error {
+	var value any
 	if err := json.Unmarshal(body, &value); err != nil {
 		return err
 	}
-	return validateOpenAPIObject(document, "ContentWriteInput", value)
-}
-
-func validateOpenAPIObject(document, schema string, value map[string]json.RawMessage) error {
-	block := schemaBlock(document, schema)
-	if block == "" {
-		return fmt.Errorf("missing schema %s", schema)
-	}
-	for _, field := range openAPIRequiredFields(block) {
-		if _, ok := value[field]; !ok {
-			return fmt.Errorf("%s missing required field %q", schema, field)
-		}
-	}
-	for _, line := range strings.Split(block, "\n") {
-		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "- $ref: '#/components/schemas/") {
-			continue
-		}
-		name := strings.TrimSuffix(strings.TrimPrefix(line, "- $ref: '#/components/schemas/"), "'")
-		if err := validateOpenAPIObject(document, name, value); err != nil {
-			return err
-		}
-	}
-	properties := openAPIPropertyNames(block)
-	if len(properties) > 0 {
-		for field := range value {
-			if !properties[field] {
-				return fmt.Errorf("%s does not allow field %q", schema, field)
-			}
-		}
-	}
-	if translations, ok := value["translations"]; ok {
-		var items []map[string]json.RawMessage
-		if err := json.Unmarshal(translations, &items); err != nil {
-			return fmt.Errorf("translations: %w", err)
-		}
-		for _, item := range items {
-			if err := validateOpenAPIObject(document, "ContentTranslation", item); err != nil {
-				return fmt.Errorf("translations: %w", err)
-			}
-		}
-	}
-	return nil
-}
-
-func openAPIRequiredFields(block string) []string {
-	for _, line := range strings.Split(block, "\n") {
-		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "required: [") || !strings.HasSuffix(line, "]") {
-			continue
-		}
-		fields := strings.Split(strings.TrimSuffix(strings.TrimPrefix(line, "required: ["), "]"), ",")
-		for index := range fields {
-			fields[index] = strings.TrimSpace(fields[index])
-		}
-		return fields
-	}
-	return nil
-}
-
-func openAPIPropertyNames(block string) map[string]bool {
-	properties := map[string]bool{}
-	inProperties := false
-	for _, line := range strings.Split(block, "\n") {
-		if line == "      properties:" {
-			inProperties = true
-			continue
-		}
-		if !inProperties {
-			continue
-		}
-		if strings.HasPrefix(line, "      ") && !strings.HasPrefix(line, "       ") {
-			break
-		}
-		if !strings.HasPrefix(line, "        ") || strings.HasPrefix(line, "         ") {
-			continue
-		}
-		field, _, ok := strings.Cut(strings.TrimSpace(line), ":")
-		if ok {
-			properties[field] = true
-		}
-	}
-	return properties
+	return schema.VisitJSON(value, openapi3.EnableJSONSchema2020())
 }
 
 func validateCatalogContract(document string) error {
