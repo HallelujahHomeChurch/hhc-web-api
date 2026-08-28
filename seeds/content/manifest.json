@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "seedVersion": "2026-08-28-public-content-foundation-v1",
+  "sourceRepo": "HallelujahHomeChurch/hhc-web",
+  "sourceCommit": "5c224f19b0cd57dbbeb46bcc0ab4bea4e016f79c",
+  "locales": ["zh-Hant", "zh-Hans", "en", "ja", "ko"],
+  "sources": [
+    {"path": "src/features/weekly/mock-data.ts", "sha256": "c31a792bf68d612d4ac99b1ae7257fd97cdd734615536c289ab44842b744b43c"},
+    {"path": "src/features/news/mock-data.ts", "sha256": "73adde76ddc1e7a26b63df7c2de36cdb531522952d97c02979e5bcb85522a3aa"},
+    {"path": "src/features/history/mock-data.ts", "sha256": "2398fe2b9359f6814b7f9b33695a5377a84372bf650fd597c8134eb0938e8e93"},
+    {"path": "src/features/videos/mock-data.ts", "sha256": "6f328704ed9c1d515982ef884c5b9c4cbc37b00e2d5d7c1aef67b6aa1c9d0220"},
+    {"path": "src/features/locations/mock-data.ts", "sha256": "7c789c6f67df1b3b23ae9daf97d240bf9d646db6a4db8130039a055f0a8f6ccd"},
+    {"path": "src/lib/site.ts", "sha256": "65bc1f155cc0c9851f6c3e247acb1fe3752fcdb0279fbc54dac06078370a59cb"},
+    {"path": "src/i18n/locales/zh-Hant.json", "sha256": "b14cb3e72afe2ffee52d9351b0ac3911897036e9dd5e78f41a46055853edd2a5"},
+    {"path": "src/i18n/locales/zh-Hans.json", "sha256": "2b3721c7d22f74d44c7d449ebc8de89972f324037ff179306f8d9379e91c0b55"},
+    {"path": "src/i18n/locales/en.json", "sha256": "f4160289b834d406bf17c02630c3ab570d6f7275dba0b8a1ecfcc86f66d53225"},
+    {"path": "src/i18n/locales/ja.json", "sha256": "f1dc6ace4a78a1c14a1f42578cd49d13d6204f3c6f990fc00737b3eb3f066997"},
+    {"path": "src/i18n/locales/ko.json", "sha256": "5a1df95650c9a0d7fb6b6fb61435f47fc7dda1f075367cb9502f660fc700ecc6"}
+  ],
+  "records": []
+}
