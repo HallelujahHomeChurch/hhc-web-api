@@ -499,6 +499,19 @@ paths:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PageSize'
       responses: { '200': { $ref: '#/components/responses/PublicContentList' } }
+  /locations:
+    get:
+      operationId: listPublicLocations
+      summary: List published locations for one locale
+      description: Reads only the requested published locale; no locale fallback is applied.
+      tags: [Public]
+      x-hhc-visibility: public
+      x-hhc-callers: [api-gateway]
+      security: []
+      parameters: [{ $ref: '#/components/parameters/ContentLocale' }]
+      responses:
+        '200': { $ref: '#/components/responses/PublicLocationList' }
+        '400': { $ref: '#/components/responses/Error' }
   /home:
     get:
       operationId: getPublicHome
@@ -1332,6 +1345,11 @@ components:
       content:
         application/json:
           schema: { $ref: '#/components/schemas/PublicContentItemEnvelope' }
+    PublicLocationList:
+      description: Published locations for the exact requested locale.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/PublicLocationListEnvelope' }
     ContentTranslationPreview:
       description: Review-only generated translation preview; no CMS state is changed.
       content:
@@ -1641,7 +1659,7 @@ components:
       enum: [draft, publishing, published, unpublishing, unpublish_failed, unpublished]
     ContentModule:
       type: string
-      enum: [news, history, videos]
+      enum: [news, history, videos, locations]
     ContentStatus:
       type: string
       enum: [draft, publishing, published, publish_failed, unpublishing, unpublish_failed, unpublished]
@@ -1928,6 +1946,7 @@ components:
     ContentWriteFields:
       type: object
       required: [translations]
+      description: Location fields are optional wire fields for backward compatibility; locations requires them and other content modules reject them.
       properties:
         authorName: { type: string, maxLength: 200 }
         slug: { type: string, minLength: 1, maxLength: 120, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$' }
@@ -1939,6 +1958,9 @@ components:
         detailLayout: { type: string, enum: [top, left, right], default: top }
         featured: { type: boolean }
         homeEligible: { type: boolean }
+        locationKey: { type: string, minLength: 1, maxLength: 120, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$' }
+        mapHref: { type: string, format: uri, pattern: '^https://' }
+        sortOrder: { type: integer, minimum: 0 }
         translations:
           type: array
           minItems: 1
@@ -2003,6 +2025,19 @@ components:
         authorName: { type: string, maxLength: 200 }
         firstPublishedAt: { type: string, format: date-time }
         lastPublishedAt: { type: string, format: date-time }
+    PublicLocation:
+      type: object
+      required: [id, name, address, mapHref, sortOrder, resolvedLocale, availableLocales]
+      properties:
+        id: { type: string, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$' }
+        name: { type: string }
+        address: { type: string }
+        mapHref: { type: string, format: uri, pattern: '^https://' }
+        sortOrder: { type: integer, minimum: 0 }
+        resolvedLocale: { $ref: '#/components/schemas/ContentLocale' }
+        availableLocales:
+          type: array
+          items: { $ref: '#/components/schemas/ContentLocale' }
     BulletinIssueEnvelope:
       type: object
       required: [data, meta]
@@ -2113,6 +2148,13 @@ components:
       required: [data, meta]
       properties:
         data: { $ref: '#/components/schemas/PublicContentItem' }
+        meta: { type: object, additionalProperties: true }
+        error: { type: ['null'] }
+    PublicLocationListEnvelope:
+      type: object
+      required: [data, meta]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/PublicLocation' } }
         meta: { type: object, additionalProperties: true }
         error: { type: ['null'] }
     HomeEnvelope:

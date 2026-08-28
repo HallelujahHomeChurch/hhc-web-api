@@ -103,6 +103,49 @@ func TestOpenAPIDocumentsPublicContentLocaleResolution(t *testing.T) {
 	}
 }
 
+func TestOpenAPIDocumentsPublicLocationsContract(t *testing.T) {
+	document := readOpenAPI(t)
+	operation := operationByID(t, document, "listPublicLocations")
+	for _, expected := range []string{
+		"x-hhc-visibility: public",
+		"x-hhc-callers: [api-gateway]",
+		"security: []",
+		"$ref: '#/components/parameters/ContentLocale'",
+		"$ref: '#/components/responses/PublicLocationList'",
+		"no locale fallback is applied",
+	} {
+		if !strings.Contains(operation, expected) {
+			t.Errorf("locations operation missing %q:\n%s", expected, operation)
+		}
+	}
+	for _, expected := range []string{
+		"enum: [news, history, videos, locations]",
+		"locationKey: { type: string, minLength: 1, maxLength: 120, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$' }",
+		"mapHref: { type: string, format: uri, pattern: '^https://' }",
+		"sortOrder: { type: integer, minimum: 0 }",
+		"required: [id, name, address, mapHref, sortOrder, resolvedLocale, availableLocales]",
+	} {
+		if !strings.Contains(document, expected) {
+			t.Errorf("OpenAPI document missing %q", expected)
+		}
+	}
+	if schemaBlock(document, "PublicLocation") == "" || schemaBlock(document, "PublicLocationListEnvelope") == "" {
+		t.Fatal("missing public locations schemas")
+	}
+}
+
+func TestOpenAPIContentWriteInputKeepsExistingModulesCompatible(t *testing.T) {
+	fields := schemaBlock(readOpenAPI(t), "ContentWriteFields")
+	if !strings.Contains(fields, "required: [translations]") {
+		t.Fatalf("ContentWriteFields changed existing required fields:\n%s", fields)
+	}
+	for _, field := range []string{"locationKey", "mapHref", "sortOrder"} {
+		if strings.Contains(fields, "required: ["+field) {
+			t.Fatalf("ContentWriteFields requires location-only field %q:\n%s", field, fields)
+		}
+	}
+}
+
 func TestOpenAPIDocumentsNewsSEOFields(t *testing.T) {
 	contents, err := os.ReadFile("openapi.yaml")
 	if err != nil {
@@ -586,6 +629,7 @@ func expectedCatalogRoutes() []string {
 		GET /news/{}
 		GET /history
 		GET /videos
+		GET /locations
 		GET /home
 		GET /admin/bulletins
 		POST /admin/bulletins
