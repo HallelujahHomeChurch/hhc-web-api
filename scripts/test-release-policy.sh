@@ -2,6 +2,7 @@
 set -eu
 
 workflow=.github/workflows/release.yml
+import_workflow=.github/workflows/content-migration.yml
 
 test ! -e azure-pipelines.yml
 grep -q 'workflow_dispatch:' "$workflow"
@@ -90,6 +91,139 @@ grep -Fq 'test-migration-policy.sh internal/migrations/sql/*.sql' .github/workfl
 grep -Fq 'test-migration-policy.sh internal/migrations/sql/*.sql' "$workflow"
 grep -Fq 'npx --yes @redocly/cli@2.47.0 lint openapi.yaml' .github/workflows/ci.yml
 grep -Fq './scripts/test-release-policy.sh' .github/workflows/ci.yml
+
+test -f "$import_workflow" || {
+  echo 'missing manual content migration workflow' >&2
+  exit 1
+}
+
+content_import_job="$(sed -n '/^resource contentImport /,/^}/p' infra/main.bicep)"
+printf '%s\n' "$content_import_job" | grep -Fq "resource contentImport 'Microsoft.App/jobs@2024-03-01'"
+printf '%s\n' "$content_import_job" | grep -Fq "name: 'hhc-web-content-import'"
+printf '%s\n' "$content_import_job" | grep -Fq "'\${apiIdentity.id}': {}"
+printf '%s\n' "$content_import_job" | grep -Fq 'environmentId: environment.id'
+printf '%s\n' "$content_import_job" | grep -Fq "triggerType: 'Manual'"
+printf '%s\n' "$content_import_job" | grep -Fq 'replicaTimeout: 900'
+printf '%s\n' "$content_import_job" | grep -Fq 'replicaRetryLimit: 0'
+printf '%s\n' "$content_import_job" | grep -Fq 'parallelism: 1'
+printf '%s\n' "$content_import_job" | grep -Fq 'replicaCompletionCount: 1'
+printf '%s\n' "$content_import_job" | grep -Fq 'identity: apiIdentity.id'
+printf '%s\n' "$content_import_job" | grep -Fq "keyVaultUrl: '\${runtimeVault.properties.vaultUri}secrets/database-url'"
+printf '%s\n' "$content_import_job" | grep -Fq "name: 'content-import'"
+printf '%s\n' "$content_import_job" | grep -Fq 'image: runtimeImage'
+printf '%s\n' "$content_import_job" | grep -Fq "command: ['/hhc-web-content-import']"
+printf '%s\n' "$content_import_job" | grep -Fq "args: ['--mode=inventory']"
+printf '%s\n' "$content_import_job" | grep -Fq "{ name: 'DATABASE_URL', secretRef: 'database-url' }"
+if printf '%s\n' "$content_import_job" | grep -Eq 'migrateIdentity|migrationVault'; then
+  echo 'content import job must use only the runtime identity and vault' >&2
+  exit 1
+fi
+
+test "$(grep -Fc 'az containerapp job start' "$workflow")" -eq 1
+grep -Fq 'az containerapp job start -g "$RESOURCE_GROUP" -n "$MIGRATION_JOB_NAME"' "$workflow"
+grep -Fq 'Verify content import job image' "$workflow"
+grep -Fq 'CONTENT_IMPORT_JOB_NAME: hhc-web-content-import' "$workflow"
+grep -Fq 'az containerapp job show' "$workflow"
+grep -Fq '[[ "$content_import_image" == "$IMAGE_REF" ]]' "$workflow"
+
+grep -Fq 'mode:' "$import_workflow"
+for mode in inventory plan apply; do
+  grep -Fq -- "- $mode" "$import_workflow"
+done
+grep -Fq 'seed_version:' "$import_workflow"
+grep -Fq 'manifest_sha:' "$import_workflow"
+grep -Fq 'preflight:' "$import_workflow"
+grep -Fq 'approved_apply:' "$import_workflow"
+preflight_job="$(sed -n '/^  preflight:/,/^  approved_apply:/p' "$import_workflow")"
+apply_job="$(sed -n '/^  approved_apply:/,$p' "$import_workflow")"
+if printf '%s\n' "$preflight_job" | grep -q 'environment: production'; then
+  echo 'read-only content migration preflight must not require production approval' >&2
+  exit 1
+fi
+printf '%s\n' "$preflight_job" | grep -Fq 'MODE=plan'
+printf '%s\n' "$preflight_job" | grep -Fq 'inputs.seed_version'
+printf '%s\n' "$preflight_job" | grep -Fq 'inputs.manifest_sha'
+printf '%s\n' "$apply_job" | grep -Fq 'needs: preflight'
+printf '%s\n' "$apply_job" | grep -Fq "if: \${{ inputs.mode == 'apply' }}"
+printf '%s\n' "$apply_job" | grep -Fq 'environment: production'
+test "$(grep -Fc 'environment: production' "$import_workflow")" -eq 1
+printf '%s\n' "$apply_job" | grep -Fq 'needs.preflight.outputs.image_ref'
+printf '%s\n' "$apply_job" | grep -Fq -- '--confirmation=${CONFIRMATION}'
+printf '%s\n' "$apply_job" | grep -Fq -- '--expected-manifest-sha=${MANIFEST_SHA}'
+test "$(grep -Fc 'uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' "$import_workflow")" -eq 2
+test "$(grep -Fc 'uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43' "$import_workflow")" -eq 2
+test "$(grep -Fc 'az containerapp job start' "$import_workflow")" -eq 2
+test "$(grep -Fc -- '--job-execution-name "$execution_name"' "$import_workflow")" -eq 2
+test "$(grep -Fc -- '--execution "$execution_name"' "$import_workflow")" -eq 2
+test "$(grep -Fc -- '--container content-import' "$import_workflow")" -eq 2
+test "$(grep -Fc -- '--format text --tail 300' "$import_workflow")" -eq 2
+
+apply_verify_line="$(printf '%s\n' "$apply_job" | grep -nF '[[ "$current_image" == "$REVIEWED_IMAGE_REF" ]]' | cut -d: -f1)"
+apply_start_line="$(printf '%s\n' "$apply_job" | grep -nF 'az containerapp job start' | cut -d: -f1)"
+test "$apply_verify_line" -lt "$apply_start_line"
+for job in "$preflight_job" "$apply_job"; do
+  start_line="$(printf '%s\n' "$job" | grep -nF 'az containerapp job start' | cut -d: -f1)"
+  status_line="$(printf '%s\n' "$job" | grep -nF 'az containerapp job execution show' | cut -d: -f1)"
+  logs_line="$(printf '%s\n' "$job" | grep -nF 'az containerapp job logs show' | cut -d: -f1)"
+  report_line="$(printf '%s\n' "$job" | grep -nF 'report="$(validate_report' | cut -d: -f1)"
+  test "$start_line" -lt "$status_line"
+  test "$status_line" -lt "$logs_line"
+  test "$logs_line" -lt "$report_line"
+done
+
+validation_function="$(awk '
+  /^          validate_report\(\) \{/ { capture = 1 }
+  capture {
+    line = $0
+    sub(/^          /, "")
+    print
+    if (line ~ /^          }$/) exit
+  }
+' "$import_workflow")"
+test -n "$validation_function"
+
+run_report_validation_case() {
+  logs="$1"
+  mode="$2"
+  seed_version="$3"
+  manifest_sha="$4"
+  expected="$5"
+  if output="$(LOGS="$logs" MODE="$mode" SEED_VERSION="$seed_version" MANIFEST_SHA="$manifest_sha" VALIDATION_FUNCTION="$validation_function" bash -euo pipefail -c '
+    eval "$VALIDATION_FUNCTION"
+    validate_report "$LOGS" "$MODE" "$SEED_VERSION" "$MANIFEST_SHA"
+  ' 2>&1)"; then
+    status=0
+  else
+    status=$?
+  fi
+  case "$expected" in
+    pass)
+      test "$status" -eq 0
+      printf '%s\n' "$output" | jq -e --arg mode "$mode" --arg seed "$seed_version" --arg sha "$manifest_sha" \
+        '.mode == $mode and .seedVersion == $seed and .manifestSHA256 == $sha' >/dev/null
+      ;;
+    fail) test "$status" -ne 0 ;;
+  esac
+}
+
+report_sha=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+valid_report="{\"mode\":\"plan\",\"seedVersion\":\"reviewed-v1\",\"manifestSHA256\":\"$report_sha\",\"inserts\":0,\"skips\":0,\"updates\":0,\"deletes\":0,\"warnings\":0,\"conflicts\":0}"
+run_report_validation_case "$valid_report" plan reviewed-v1 "$report_sha" pass
+duplicate_reports="$(printf '%s\n%s\n' "$valid_report" "$valid_report")"
+run_report_validation_case "$duplicate_reports" plan reviewed-v1 "$report_sha" fail
+run_report_validation_case 'no importer report' plan reviewed-v1 "$report_sha" fail
+run_report_validation_case '{"mode":"plan"' plan reviewed-v1 "$report_sha" fail
+valid_and_malformed="$(printf '%s\n%s\n' "$valid_report" '{"mode":"plan"')"
+run_report_validation_case "$valid_and_malformed" plan reviewed-v1 "$report_sha" fail
+unsafe_seed_report="$(printf '%s\n' "$valid_report" | jq -c '.seedVersion = "unsafe\\noutput"')"
+run_report_validation_case "$unsafe_seed_report" plan '' "$report_sha" fail
+run_report_validation_case "$valid_report" apply reviewed-v1 "$report_sha" fail
+run_report_validation_case "$valid_report" plan other-v1 "$report_sha" fail
+run_report_validation_case "$valid_report" plan reviewed-v1 ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff fail
+for field in updates deletes warnings conflicts; do
+  nonzero_report="$(printf '%s\n' "$valid_report" | jq -c --arg field "$field" '.[$field] = 1')"
+  run_report_validation_case "$nonzero_report" plan reviewed-v1 "$report_sha" fail
+done
 
 grep -q 'fail_openapi_before_pointer:' "$workflow"
 grep -q '^  publish_openapi:' "$workflow"

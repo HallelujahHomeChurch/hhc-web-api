@@ -81,6 +81,7 @@ jobs:
       IMAGE_REPOSITORY: alive/hhc-web-api
       RESOURCE_GROUP: alive
       MIGRATION_JOB_NAME: hhc-web-migrate
+      CONTENT_IMPORT_JOB_NAME: hhc-web-content-import
       API_APP_NAME: hhc-web-api
       API_GATEWAY_APP_NAME: api-gateway
       AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
@@ -213,7 +214,7 @@ jobs:
             --only-show-errors \
             --output json > what-if.json
           ./scripts/check-what-if.sh what-if.json
-      - name: Update migration job
+      - name: Update release jobs
         id: update_migration
         run: |
           az deployment group create \
@@ -251,6 +252,14 @@ jobs:
             --template-file infra/main.bicep \
             --parameters migrationImage="$IMAGE_REF" runtimeImage="$IMAGE_REF" runtimeCpu="$RUNTIME_CPU" runtimeMemory="$RUNTIME_MEMORY" release="$GITHUB_SHA" deployRuntime=true provisionPermissions=false retainLegacyRuntimeSecret=false cmsTranslationEnabled="$CMS_TRANSLATION_ENABLED" azureOpenAIEndpoint="$AZURE_OPENAI_ENDPOINT" azureOpenAIDeployment="$AZURE_OPENAI_DEPLOYMENT" \
             --only-show-errors --output none
+      - name: Verify content import job image
+        run: |
+          content_import_image="$(az containerapp job show \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$CONTENT_IMPORT_JOB_NAME" \
+            --query properties.template.containers[0].image \
+            --output tsv --only-show-errors)"
+          [[ "$content_import_image" == "$IMAGE_REF" ]]
       - name: Wait for API revision
         run: |
           for attempt in {1..60}; do

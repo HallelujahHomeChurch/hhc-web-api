@@ -333,5 +333,63 @@ resource migrate 'Microsoft.App/jobs@2024-03-01' = if (deployMigrationJob) {
   ]
 }
 
+resource contentImport 'Microsoft.App/jobs@2024-03-01' = {
+  name: 'hhc-web-content-import'
+  location: location
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${apiIdentity.id}': {}
+    }
+  }
+  properties: {
+    environmentId: environment.id
+    workloadProfileName: 'Consumption'
+    configuration: {
+      triggerType: 'Manual'
+      replicaTimeout: 900
+      replicaRetryLimit: 0
+      manualTriggerConfig: {
+        parallelism: 1
+        replicaCompletionCount: 1
+      }
+      registries: [
+        {
+          server: registry.properties.loginServer
+          identity: apiIdentity.id
+        }
+      ]
+      secrets: [
+        {
+          name: 'database-url'
+          keyVaultUrl: '${runtimeVault.properties.vaultUri}secrets/database-url'
+          identity: apiIdentity.id
+        }
+      ]
+    }
+    template: {
+      containers: [
+        {
+          name: 'content-import'
+          image: runtimeImage
+          command: ['/hhc-web-content-import']
+          args: ['--mode=inventory']
+          env: [
+            { name: 'DATABASE_URL', secretRef: 'database-url' }
+          ]
+          resources: {
+            cpu: json('0.25')
+            memory: '0.5Gi'
+          }
+        }
+      ]
+    }
+  }
+  dependsOn: [
+    apiAcrPull
+    runtimeSecretAccess
+  ]
+}
+
 output apiName string = 'hhc-web-api'
 output migrationJobName string = 'hhc-web-migrate'
