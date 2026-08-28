@@ -23,9 +23,10 @@ type PlannedRecord struct {
 	SourceKey    string `json:"sourceKey"`
 	RecordSHA256 string `json:"recordSHA256"`
 	Action       Action `json:"action"`
+	targetID     string
 }
 
-type Report struct {
+type PlanReport struct {
 	Records       []PlannedRecord `json:"records"`
 	InsertCount   int             `json:"insertCount"`
 	SkipCount     int             `json:"skipCount"`
@@ -46,33 +47,37 @@ type InventoryReport struct {
 
 type plannerKind struct {
 	decode       func(json.RawMessage) (any, error)
-	lookupTarget func(context.Context, *sql.DB, string) (string, bool, error)
+	lookupTarget func(context.Context, seedQuerier, string) (string, bool, error)
 }
 
 var plannerKinds = map[string]plannerKind{}
 
-func Plan(ctx context.Context, db *sql.DB, manifest Manifest) (Report, error) {
+type seedQuerier interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
+func Plan(ctx context.Context, db *sql.DB, manifest Manifest) (PlanReport, error) {
 	return plan(ctx, db, manifest, plannerKinds)
 }
 
-func plan(ctx context.Context, db *sql.DB, manifest Manifest, kinds map[string]plannerKind) (Report, error) {
-	report := Report{Records: make([]PlannedRecord, 0, len(manifest.Records))}
+func plan(ctx context.Context, db seedQuerier, manifest Manifest, kinds map[string]plannerKind) (PlanReport, error) {
+	report := PlanReport{Records: make([]PlannedRecord, 0, len(manifest.Records))}
 	for _, record := range manifest.Records {
 		kind, ok := kinds[record.Kind]
 		if !ok {
-			return Report{}, fmt.Errorf("planning for record kind %q is not released", record.Kind)
+			return PlanReport{}, fmt.Errorf("planning for record kind %q is not released", record.Kind)
 		}
 		payload, err := kind.decode(record.Payload)
 		if err != nil {
-			return Report{}, fmt.Errorf("validate %s/%s payload: %w", record.Kind, record.SourceKey, err)
+			return PlanReport{}, fmt.Errorf("validate %s/%s payload: %w", record.Kind, record.SourceKey, err)
 		}
 		recordHash, err := canonicalSHA256(payload)
 		if err != nil {
-			return Report{}, fmt.Errorf("canonicalize %s/%s payload: %w", record.Kind, record.SourceKey, err)
+			return PlanReport{}, fmt.Errorf("canonicalize %s/%s payload: %w", record.Kind, record.SourceKey, err)
 		}
 		targetID, targetExists, err := kind.lookupTarget(ctx, db, record.SourceKey)
 		if err != nil {
-			return Report{}, fmt.Errorf("look up %s/%s target: %w", record.Kind, record.SourceKey, err)
+			return PlanReport{}, fmt.Errorf("look up %s/%s target: %w", record.Kind, record.SourceKey, err)
 		}
 		action := ActionInsert
 		if targetExists {
@@ -88,7 +93,7 @@ func plan(ctx context.Context, db *sql.DB, manifest Manifest, kinds map[string]p
 				  AND source.target_id=$4
 			)`, record.Kind, record.SourceKey, recordHash, targetID).Scan(&matchingProvenance)
 			if err != nil {
-				return Report{}, fmt.Errorf("look up %s/%s provenance: %w", record.Kind, record.SourceKey, err)
+				return PlanReport{}, fmt.Errorf("look up %s/%s provenance: %w", record.Kind, record.SourceKey, err)
 			}
 			if matchingProvenance {
 				action = ActionSkip
@@ -96,7 +101,7 @@ func plan(ctx context.Context, db *sql.DB, manifest Manifest, kinds map[string]p
 				action = ActionConflict
 			}
 		}
-		report.Records = append(report.Records, PlannedRecord{Kind: record.Kind, SourceKey: record.SourceKey, RecordSHA256: recordHash, Action: action})
+		report.Records = append(report.Records, PlannedRecord{Kind: record.Kind, SourceKey: record.SourceKey, RecordSHA256: recordHash, Action: action, targetID: targetID})
 		switch action {
 		case ActionInsert:
 			report.InsertCount++

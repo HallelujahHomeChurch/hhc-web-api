@@ -148,7 +148,7 @@ func plannerTestKinds() map[string]plannerKind {
 				}
 				return value, nil
 			},
-			lookupTarget: func(ctx context.Context, db *sql.DB, sourceKey string) (string, bool, error) {
+			lookupTarget: func(ctx context.Context, db seedQuerier, sourceKey string) (string, bool, error) {
 				var targetID string
 				if err := db.QueryRowContext(ctx, "SELECT target_id FROM test_target WHERE source_key=$1", sourceKey).Scan(&targetID); errors.Is(err, sql.ErrNoRows) {
 					return "", false, nil
