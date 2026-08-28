@@ -11,6 +11,7 @@ resource_group="${RESOURCE_GROUP:-alive}"
 gateway_app="${API_GATEWAY_APP_NAME:-api-gateway}"
 public_url="${PUBLIC_SMOKE_URL:-https://www.alive.org.tw/api/home?locale=zh-Hant}"
 locations_url="${LOCATIONS_SMOKE_URL:-https://www.alive.org.tw/api/locations?locale=zh-Hant}"
+site_layout_url="${SITE_LAYOUT_SMOKE_URL:-https://www.alive.org.tw/api/site-layout?locale=zh-Hant}"
 
 output="$(timeout 60s script -q -e -c \
   "az containerapp exec -g \"$resource_group\" -n \"$gateway_app\" --command \"/bin/sh -c \\\"/usr/bin/wget -qO- http://localhost:3500/v1.0/invoke/hhc-web-api/method/health/ready >/dev/null && echo READY_OK; /usr/bin/wget -qO- http://localhost:3500/v1.0/invoke/hhc-web-api/method/api/home?locale=zh-Hant >/dev/null && echo PUBLIC_OK; /usr/bin/wget -S -O- http://localhost:3500/v1.0/invoke/hhc-web-api/method/api/admin/bulletins 2>&1 || true\\\"\"" \
@@ -44,4 +45,46 @@ if [[ "$smoke_mode" == forward ]]; then
       and (.resolvedLocale | type == "string")
       and (.availableLocales | type == "array"))
   ' "$smoke_dir/body" >/dev/null
+
+  status="$(curl --silent --show-error --max-time 30 --dump-header "$smoke_dir/site-layout-headers" \
+    --output "$smoke_dir/site-layout-body" --write-out '%{http_code}' "$site_layout_url")"
+  content_type="$(awk 'tolower($1) == "content-type:" { sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print }' "$smoke_dir/site-layout-headers" | tail -1)"
+  media_type="$(printf '%s\n' "${content_type%%;*}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | tr '[:upper:]' '[:lower:]')"
+  [[ "$media_type" == application/json ]] || { echo "Site Layout smoke returned Content-Type $content_type" >&2; exit 1; }
+  case "$status" in
+    200)
+      jq -e '
+        (keys == ["data", "error", "meta"])
+        and .error == null
+        and (.meta | type == "object")
+        and (.data | keys == ["allRightsReserved", "copyrightHolder", "englishName", "header", "legal", "links", "locale", "publishedAt", "seoDescriptionFallback", "seoTitleSuffix", "siteName", "version"])
+        and .data.locale == "zh-Hant"
+        and ([.data.siteName, .data.englishName, .data.copyrightHolder, .data.allRightsReserved, .data.seoTitleSuffix, .data.seoDescriptionFallback, .data.publishedAt] | all(type == "string" and length > 0))
+        and (.data.version | type == "number" and . >= 1 and floor == .)
+        and (.data.header | type == "array" and length == 3)
+        and (.data.legal | type == "array" and length == 2)
+        and all(.data.header[], .data.legal[];
+          keys == ["href", "key", "label", "visible"]
+          and (.key | type == "string")
+          and (.label | type == "string" and length > 0)
+          and (.href | type == "string")
+          and (.visible | type == "boolean"))
+        and ([.data.header[] | [.key, .href]] == [["about", "/zh-Hant/about"], ["news", "/zh-Hant/news"], ["literature-ministry", "/zh-Hant/literature-ministry"]])
+        and ([.data.legal[] | [.key, .href]] == [["privacy-policy", "/zh-Hant/privacy-policy"], ["terms-of-use", "/zh-Hant/terms-of-use"]])
+        and (.data.links | keys == ["churchFacebook", "churchYoutube", "musicYoutube"])
+        and ([.data.links.churchFacebook, .data.links.churchYoutube, .data.links.musicYoutube] | all(type == "string" and startswith("https://")))
+      ' "$smoke_dir/site-layout-body" >/dev/null
+      ;;
+    404)
+      jq -e '
+        (keys == ["data", "error", "meta"])
+        and .data == null
+        and (.meta | type == "object")
+        and (.error | keys == ["code", "message"])
+        and .error.code == "not_found"
+        and (.error.message | type == "string" and length > 0)
+      ' "$smoke_dir/site-layout-body" >/dev/null
+      ;;
+    *) echo "Site Layout smoke returned HTTP $status" >&2; exit 1 ;;
+  esac
 fi
