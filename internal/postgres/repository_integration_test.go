@@ -1429,18 +1429,29 @@ func TestSiteSettingsLifecycle(t *testing.T) {
 	if err := db.QueryRowContext(ctx, `SELECT payload_json FROM hhc_web.public_projection WHERE projection_key='site_layout:ja'`).Scan(&stillPublished); err != nil || string(stillPublished) != string(publishedPayload) {
 		t.Fatalf("draft changed public projection=%s err=%v", stillPublished, err)
 	}
-	restored, err := service.Restore(ctx, saved.Version, draft.Version, "admin")
-	if err != nil || restored.Status != sitesettings.StatusDraft || restored.Locales[3].SiteName == "changed-ja" {
-		t.Fatalf("restored=%#v err=%v", restored, err)
+	unpublishedAfterSave, err := service.Unpublish(ctx, draft.Version, "admin")
+	if err != nil || unpublishedAfterSave.Status != sitesettings.StatusUnpublished {
+		t.Fatalf("unpublish after save=%#v err=%v", unpublishedAfterSave, err)
 	}
-	if err := db.QueryRowContext(ctx, `SELECT payload_json FROM hhc_web.public_projection WHERE projection_key='site_layout:ja'`).Scan(&stillPublished); err != nil || string(stillPublished) != string(publishedPayload) {
-		t.Fatalf("restore changed public projection=%s err=%v", stillPublished, err)
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM hhc_web.public_projection WHERE resource_type='site_layout'`).Scan(&projectionCount); err != nil || projectionCount != 0 {
+		t.Fatalf("projection count after draft unpublish=%d err=%v", projectionCount, err)
 	}
-	republished, err := service.Publish(ctx, restored.Version, "admin")
+	republishedDraft, err := service.Publish(ctx, unpublishedAfterSave.Version, "admin")
 	if err != nil {
 		t.Fatal(err)
 	}
-	unpublished, err := service.Unpublish(ctx, republished.Version, "admin")
+	var changedPublished []byte
+	if err := db.QueryRowContext(ctx, `SELECT payload_json FROM hhc_web.public_projection WHERE projection_key='site_layout:ja'`).Scan(&changedPublished); err != nil || !strings.Contains(string(changedPublished), "changed-ja") {
+		t.Fatalf("changed projection=%s err=%v", changedPublished, err)
+	}
+	restored, err := service.Restore(ctx, saved.Version, republishedDraft.Version, "admin")
+	if err != nil || restored.Status != sitesettings.StatusDraft || restored.Locales[3].SiteName == "changed-ja" {
+		t.Fatalf("restored=%#v err=%v", restored, err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT payload_json FROM hhc_web.public_projection WHERE projection_key='site_layout:ja'`).Scan(&stillPublished); err != nil || string(stillPublished) != string(changedPublished) {
+		t.Fatalf("restore changed public projection=%s err=%v", stillPublished, err)
+	}
+	unpublished, err := service.Unpublish(ctx, restored.Version, "admin")
 	if err != nil || unpublished.Status != sitesettings.StatusUnpublished {
 		t.Fatalf("unpublished=%#v err=%v", unpublished, err)
 	}

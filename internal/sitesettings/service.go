@@ -79,13 +79,13 @@ func NormalizeWriteInput(input WriteInput) (WriteInput, bool) {
 		var ok bool
 		locale.Header, ok = normalizeNav(locale.Header, map[string]string{
 			"about": "/{locale}/about", "news": "/{locale}/news", "literature-ministry": "/{locale}/literature-ministry",
-		}, 3)
+		})
 		if !ok {
 			return WriteInput{}, false
 		}
 		locale.Legal, ok = normalizeNav(locale.Legal, map[string]string{
 			"privacy-policy": "/{locale}/privacy-policy", "terms-of-use": "/{locale}/terms-of-use",
-		}, 2)
+		})
 		if !ok {
 			return WriteInput{}, false
 		}
@@ -105,8 +105,8 @@ func completeLocale(value LocaleSettings) bool {
 	return true
 }
 
-func normalizeNav(items []NavItem, routes map[string]string, limit int) ([]NavItem, bool) {
-	if len(items) > limit {
+func normalizeNav(items []NavItem, routes map[string]string) ([]NavItem, bool) {
+	if len(items) != len(routes) {
 		return nil, false
 	}
 	seen := make(map[string]bool, len(items))
@@ -136,6 +136,10 @@ func validExternalURL(value string) bool {
 	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.Fragment != "" {
 		return false
 	}
+	query, err := url.ParseQuery(parsed.RawQuery)
+	if err != nil || hasSASParameter(query) {
+		return false
+	}
 	host := strings.ToLower(strings.TrimSuffix(parsed.Hostname(), "."))
 	if host == "" || host == "localhost" || hasBlockedSuffix(host) {
 		return false
@@ -144,6 +148,16 @@ func validExternalURL(value string) bool {
 		return address.IsGlobalUnicast() && !address.IsPrivate()
 	}
 	return true
+}
+
+func hasSASParameter(query url.Values) bool {
+	for key := range query {
+		switch strings.ToLower(key) {
+		case "sig", "sv", "se", "sp", "sr", "st", "spr", "sip", "ss", "srt", "skoid", "sktid", "skt", "ske", "sks", "skv":
+			return true
+		}
+	}
+	return false
 }
 
 func hasBlockedSuffix(host string) bool {

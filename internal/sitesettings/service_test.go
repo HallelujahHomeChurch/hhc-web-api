@@ -15,12 +15,14 @@ func TestSaveValidatesAndCanonicalizesSettings(t *testing.T) {
 		{"missing locale", func(input *WriteInput) { input.Locales = input.Locales[:4] }},
 		{"incomplete locale", func(input *WriteInput) { input.Locales[0].SiteName = "" }},
 		{"duplicate header key", func(input *WriteInput) { input.Locales[0].Header[1].Key = "about" }},
+		{"missing header key", func(input *WriteInput) { input.Locales[0].Header = input.Locales[0].Header[:2] }},
 		{"unknown header key", func(input *WriteInput) { input.Locales[0].Header[0].Key = "contact" }},
 		{"more than three header items", func(input *WriteInput) {
 			input.Locales[0].Header = append(input.Locales[0].Header, input.Locales[0].Header[0])
 		}},
 		{"incomplete visible label", func(input *WriteInput) { input.Locales[0].Header[0].Label = "" }},
 		{"unknown legal key", func(input *WriteInput) { input.Locales[0].Legal[0].Key = "cookies" }},
+		{"missing legal key", func(input *WriteInput) { input.Locales[0].Legal = input.Locales[0].Legal[:1] }},
 		{"changed fixed route", func(input *WriteInput) { input.Locales[0].Header[0].Href = "/admin" }},
 	}
 	for _, test := range tests {
@@ -57,6 +59,7 @@ func TestSaveRejectsUnsafeExternalLinks(t *testing.T) {
 		"https://service.internal/channel",
 		"https://account.blob.core.windows.net/container",
 		"https://service.azurecontainerapps.io/channel",
+		"https://youtube.com/channel?sv=2024-11-04&se=2026-08-29&sig=secret",
 	}
 	for _, value := range tests {
 		t.Run(value, func(t *testing.T) {

@@ -102,11 +102,11 @@ func (r *SiteSettingsRepository) Unpublish(ctx context.Context, expected int64, 
 	if err := lockSiteSettings(ctx, tx, expected); err != nil {
 		return sitesettings.Settings{}, err
 	}
-	current, err := loadSiteSettings(ctx, tx)
-	if err != nil {
+	var hasPublicProjection bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM hhc_web.public_projection WHERE resource_type='site_layout' OR projection_key LIKE 'site_layout:%')`).Scan(&hasPublicProjection); err != nil {
 		return sitesettings.Settings{}, err
 	}
-	if current.Status != sitesettings.StatusPublished {
+	if !hasPublicProjection {
 		return sitesettings.Settings{}, sitesettings.ErrNotPublishable
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.site_setting_set SET status='unpublished',version=version+1,updated_by=$2,updated_at=$3 WHERE id=$1`, sitesettings.SingletonID, actor, now); err != nil {
