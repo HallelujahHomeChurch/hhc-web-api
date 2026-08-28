@@ -178,6 +178,13 @@ func TestOpenAPISiteSettingsSchemasAcceptValidWireShapes(t *testing.T) {
 	if err := document.Components.Schemas["SiteSettings"].Value.VisitJSON(validAdminSiteSettings(), openapi3.EnableJSONSchema2020()); err != nil {
 		t.Fatalf("SiteSettings rejected valid payload: %v", err)
 	}
+	for _, safeURL := range []string{"https://[::ffff:8.8.8.8]/channel", "https://example.com/channel?%66oo=bar"} {
+		value := validAdminSiteSettingsInput()
+		externalLinks(value)["churchYoutube"] = safeURL
+		if err := document.Components.Schemas["SiteSettingsWriteInput"].Value.VisitJSON(value, openapi3.EnableJSONSchema2020()); err != nil {
+			t.Fatalf("SiteSettingsWriteInput rejected runtime-valid URL %q: %v", safeURL, err)
+		}
+	}
 }
 
 func TestOpenAPISiteSettingsRejectsRuntimeInvalidWireShapes(t *testing.T) {
@@ -197,12 +204,21 @@ func TestOpenAPISiteSettingsRejectsRuntimeInvalidWireShapes(t *testing.T) {
 		}},
 		{"private IP URL", func(value map[string]any) { externalLinks(value)["churchYoutube"] = "https://10.0.0.1/channel" }},
 		{"loopback URL", func(value map[string]any) { externalLinks(value)["churchYoutube"] = "https://127.0.0.1/channel" }},
+		{"IPv4-mapped private IPv6 URL", func(value map[string]any) {
+			externalLinks(value)["churchYoutube"] = "https://[::ffff:10.0.0.1]/channel"
+		}},
+		{"IPv4-mapped loopback IPv6 URL", func(value map[string]any) {
+			externalLinks(value)["churchYoutube"] = "https://[::ffff:127.0.0.1]/channel"
+		}},
 		{"internal URL", func(value map[string]any) { externalLinks(value)["churchYoutube"] = "https://service.internal/channel" }},
 		{"storage URL", func(value map[string]any) {
 			externalLinks(value)["churchYoutube"] = "https://account.blob.core.windows.net/container"
 		}},
 		{"SAS URL", func(value map[string]any) {
 			externalLinks(value)["churchYoutube"] = "https://example.com/channel?sv=2024-11-04&sig=secret"
+		}},
+		{"percent-encoded SAS key URL", func(value map[string]any) {
+			externalLinks(value)["churchYoutube"] = "https://example.com/channel?%73v=2024-11-04&%73ig=secret"
 		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
