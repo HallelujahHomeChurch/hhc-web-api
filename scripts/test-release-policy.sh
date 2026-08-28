@@ -92,6 +92,82 @@ grep -Fq 'test-migration-policy.sh internal/migrations/sql/*.sql' "$workflow"
 grep -Fq 'npx --yes @redocly/cli@2.47.0 lint openapi.yaml' .github/workflows/ci.yml
 grep -Fq './scripts/test-release-policy.sh' .github/workflows/ci.yml
 
+run_smoke_case() {
+  mode="$1"
+  location_status="$2"
+  location_content_type="$3"
+  location_body="$4"
+  expected="$5"
+  expected_location_request="$6"
+  case_dir="$(mktemp -d)"
+  mkdir "$case_dir/bin"
+  cat >"$case_dir/bin/timeout" <<'SH'
+#!/bin/sh
+shift
+exec "$@"
+SH
+  cat >"$case_dir/bin/script" <<'SH'
+#!/bin/sh
+printf '%s\n' READY_OK PUBLIC_OK 'HTTP/1.1 401'
+SH
+  cat >"$case_dir/bin/curl" <<'SH'
+#!/bin/sh
+headers=''
+body=''
+url=''
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --dump-header|--output|--write-out|--max-time)
+      case "$1" in
+        --dump-header) headers="$2" ;;
+        --output) body="$2" ;;
+      esac
+      shift 2
+      ;;
+    http*) url="$1"; shift ;;
+    *) shift ;;
+  esac
+done
+printf '%s\n' "$url" >>"$SMOKE_EVENTS"
+case "$url" in
+  */api/locations*)
+    printf 'HTTP/1.1 %s\nContent-Type: %s\n\n' "$SMOKE_LOCATION_STATUS" "$SMOKE_LOCATION_CONTENT_TYPE" >"$headers"
+    printf '%s\n' "$SMOKE_LOCATION_BODY" >"$body"
+    printf '%s' "$SMOKE_LOCATION_STATUS"
+    ;;
+esac
+SH
+  chmod +x "$case_dir/bin/timeout" "$case_dir/bin/script" "$case_dir/bin/curl"
+  set +e
+  PATH="$case_dir/bin:$PATH" SMOKE_MODE="$mode" SMOKE_EVENTS="$case_dir/events" \
+    SMOKE_LOCATION_STATUS="$location_status" SMOKE_LOCATION_CONTENT_TYPE="$location_content_type" \
+    SMOKE_LOCATION_BODY="$location_body" ./scripts/smoke-release.sh >/dev/null 2>&1
+  status=$?
+  set -e
+  case "$expected" in
+    pass) test "$status" -eq 0 ;;
+    fail) test "$status" -ne 0 ;;
+  esac
+  case "$expected_location_request" in
+    requested) grep -Eq '/api/locations([?]|$)' "$case_dir/events" ;;
+    skipped) ! grep -Eq '/api/locations([?]|$)' "$case_dir/events" 2>/dev/null ;;
+  esac
+  rm -rf "$case_dir"
+}
+
+run_smoke_case invalid 200 application/json '{"data":[],"meta":{},"error":null}' fail skipped
+run_smoke_case '' 200 application/json '{"data":[],"meta":{},"error":null}' fail skipped
+run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' pass requested
+run_smoke_case forward 200 'application/json; charset=utf-8' '{"data":[{"id":"taipei","name":"台北","address":"台北地址","mapHref":"https://maps.example.com/taipei","sortOrder":10,"resolvedLocale":"zh-Hant","availableLocales":["zh-Hant","en"]}],"meta":{},"error":null}' pass requested
+run_smoke_case forward 200 application/json '{"data":[{"id":"taipei","name":"台北","address":"台北地址","mapHref":"https://maps.example.com/taipei","sortOrder":10,"resolvedLocale":"zh-Hant"}],"meta":{},"error":null}' fail requested
+run_smoke_case forward 404 application/json '{"data":null,"meta":{},"error":{"code":"not_found"}}' fail requested
+run_smoke_case forward 200 text/html '{"data":[],"meta":{},"error":null}' fail requested
+run_smoke_case forward 200 application/jsonp '{"data":[],"meta":{},"error":null}' fail requested
+run_smoke_case forward 200 application/json-seq '{"data":[],"meta":{},"error":null}' fail requested
+run_smoke_case forward 200 ' Application/JSON ; charset=utf-8 ' '{"data":[],"meta":{},"error":null}' pass requested
+run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":{"code":"unexpected"}}' fail requested
+run_smoke_case rollback 404 application/json '{"data":null,"meta":{},"error":{"code":"not_found"}}' pass skipped
+
 test -f "$import_workflow" || {
   echo 'missing manual content migration workflow' >&2
   exit 1
@@ -547,7 +623,8 @@ printf '%s\n' "$publish_job" | grep -Fq 'Invalid existing API docs pointer: expe
 printf '%s\n' "$publish_job" | grep -Fq 'exit 0'
 deploy_line="$(grep -n '^  deploy:' "$workflow" | cut -d: -f1)"
 publish_line="$(grep -n '^  publish_openapi:' "$workflow" | cut -d: -f1)"
-smoke_line="$(grep -n 'run: ./scripts/smoke-release.sh' "$workflow" | head -1 | cut -d: -f1)"
+smoke_line="$(grep -n 'run: SMOKE_MODE=forward ./scripts/smoke-release.sh' "$workflow" | cut -d: -f1)"
+rollback_smoke_line="$(grep -n 'run: SMOKE_MODE=rollback ./scripts/smoke-release.sh' "$workflow" | cut -d: -f1)"
 outputs_line="$(grep -n 'id: release_outputs' "$workflow" | cut -d: -f1)"
 rollback_line="$(grep -n 'name: Roll back failed runtime' "$workflow" | cut -d: -f1)"
 guard_line="$(grep -nF 'pointer_exists="$(az storage blob exists' "$workflow" | cut -d: -f1)"
@@ -555,7 +632,9 @@ guard_exit_line="$(awk '/skipping stale or rerun publication/ { getline; if ($0 
 pointer_upload_line="$(awk '/az storage blob upload/ { upload = 1 } upload && /--file current.json/ { print NR; exit }' "$workflow")"
 test "$smoke_line" -lt "$outputs_line"
 test "$outputs_line" -lt "$rollback_line"
+test "$rollback_line" -lt "$rollback_smoke_line"
 test "$deploy_line" -lt "$publish_line"
+test "$smoke_line" -lt "$pointer_upload_line"
 test "$guard_line" -lt "$guard_exit_line"
 test "$guard_exit_line" -lt "$pointer_upload_line"
 

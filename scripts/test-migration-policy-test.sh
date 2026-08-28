@@ -51,3 +51,19 @@ if ./scripts/test-migration-policy.sh "$locale_migration" 2>/dev/null; then
   echo 'five-locale constraint replacement was not immutable' >&2
   exit 1
 fi
+
+location_migration='internal/migrations/sql/027_locations_and_content_modules.sql'
+restore_locale_migration
+./scripts/test-migration-policy.sh "$location_migration"
+
+location_backup="$tmp/027_locations_and_content_modules.sql"
+cp "$location_migration" "$location_backup"
+restore_location_migration() {
+  cp "$location_backup" "$location_migration"
+}
+trap 'restore_locale_migration; restore_location_migration; rm -rf "$tmp"' EXIT
+printf '%s\n' '-- test mutation' >>"$location_migration"
+if ./scripts/test-migration-policy.sh "$location_migration" 2>/dev/null; then
+  echo 'locations constraint replacement was not immutable' >&2
+  exit 1
+fi

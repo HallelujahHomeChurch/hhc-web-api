@@ -17,8 +17,8 @@ const cliTestManifest = `{"schemaVersion":1,"seedVersion":"v1","sourceRepo":"rep
 
 func TestRunCLIRejectsApplyConfirmationBeforeDatabaseUse(t *testing.T) {
 	for _, args := range [][]string{
-		{"--mode=apply", "--confirmation=wrong", "--expected-manifest-sha=20988cc4f36618f6751e1013949be5c729240828ffa6d3a66ea406c1b61a1c8b"},
-		{"--mode=apply", "--confirmation=2026-08-28-public-content-foundation-v1", "--expected-manifest-sha=wrong"},
+		{"--mode=apply", "--confirmation=wrong", "--expected-manifest-sha=c8148b54cf7c811bdcd6abcc6398cd02a70a7634f7932b190503c6990c9f59f4"},
+		{"--mode=apply", "--confirmation=2026-08-28-public-content-locations-v1", "--expected-manifest-sha=wrong"},
 	} {
 		var stdout, stderr bytes.Buffer
 		opened := false
@@ -55,11 +55,13 @@ func TestRunCLIDatabaseFailureDoesNotPrintReport(t *testing.T) {
 }
 
 func TestRunCLIPrintsExactlyOnePlanJSONLine(t *testing.T) {
-	db, _, err := sqlmock.New()
+	db, mock, err := sqlmock.New()
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer db.Close()
+	mock.ExpectQuery("SELECT content_id::text FROM hhc_web.location_item").WithArgs("taipei").WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery("SELECT content_id::text FROM hhc_web.location_item").WithArgs("zhongli").WillReturnError(sql.ErrNoRows)
 	deps := defaultDependencies()
 	deps.getenv = func(string) string { return "postgres://test" }
 	deps.openDB = func(string, string) (*sql.DB, error) { return db, nil }
@@ -68,9 +70,12 @@ func TestRunCLIPrintsExactlyOnePlanJSONLine(t *testing.T) {
 	if code := runCLI(context.Background(), []string{"--mode=plan"}, &stdout, &stderr, deps); code != 0 {
 		t.Fatalf("exit code=%d stderr=%q", code, stderr.String())
 	}
-	const want = "{\"mode\":\"plan\",\"seedVersion\":\"2026-08-28-public-content-foundation-v1\",\"manifestSHA256\":\"20988cc4f36618f6751e1013949be5c729240828ffa6d3a66ea406c1b61a1c8b\",\"inserts\":0,\"skips\":0,\"updates\":0,\"deletes\":0,\"warnings\":0,\"conflicts\":0}\n"
+	const want = "{\"mode\":\"plan\",\"seedVersion\":\"2026-08-28-public-content-locations-v1\",\"manifestSHA256\":\"c8148b54cf7c811bdcd6abcc6398cd02a70a7634f7932b190503c6990c9f59f4\",\"inserts\":2,\"skips\":0,\"updates\":0,\"deletes\":0,\"warnings\":0,\"conflicts\":0}\n"
 	if stdout.String() != want || stderr.Len() != 0 || strings.Count(stdout.String(), "\n") != 1 {
 		t.Fatalf("stdout=%q stderr=%q", stdout.String(), stderr.String())
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }
 

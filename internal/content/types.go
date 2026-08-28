@@ -18,9 +18,10 @@ var (
 type Module string
 
 const (
-	ModuleNews    Module = "news"
-	ModuleHistory Module = "history"
-	ModuleVideos  Module = "videos"
+	ModuleNews      Module = "news"
+	ModuleHistory   Module = "history"
+	ModuleVideos    Module = "videos"
+	ModuleLocations Module = "locations"
 )
 
 const (
@@ -53,6 +54,9 @@ type WriteInput struct {
 	DetailLayout     string        `json:"detailLayout,omitempty"`
 	Featured         bool          `json:"featured,omitempty"`
 	HomeEligible     bool          `json:"homeEligible,omitempty"`
+	LocationKey      string        `json:"locationKey,omitempty"`
+	MapHref          string        `json:"mapHref,omitempty"`
+	SortOrder        int           `json:"sortOrder,omitempty"`
 	Translations     []Translation `json:"translations"`
 	DeleteLocales    []string      `json:"deleteLocales,omitempty"`
 }
@@ -80,6 +84,9 @@ type Item struct {
 	AuthorName           string        `json:"authorName,omitempty"`
 	Featured             bool          `json:"featured,omitempty"`
 	HomeEligible         bool          `json:"homeEligible,omitempty"`
+	LocationKey          string        `json:"locationKey,omitempty"`
+	MapHref              string        `json:"mapHref,omitempty"`
+	SortOrder            int           `json:"sortOrder,omitempty"`
 	Translations         []Translation `json:"translations"`
 	CreatedBy            string        `json:"createdBy"`
 	UpdatedBy            string        `json:"updatedBy"`
@@ -133,6 +140,16 @@ type PublicPage struct {
 	Total    int64
 }
 
+type PublicLocation struct {
+	ID               string   `json:"id"`
+	Name             string   `json:"name"`
+	Address          string   `json:"address"`
+	MapHref          string   `json:"mapHref"`
+	SortOrder        int      `json:"sortOrder"`
+	ResolvedLocale   string   `json:"resolvedLocale,omitempty"`
+	AvailableLocales []string `json:"availableLocales,omitempty"`
+}
+
 type ListOptions struct {
 	Query     string
 	Status    string
@@ -154,4 +171,5 @@ type Repository interface {
 	DeleteContent(context.Context, Module, string, int64, string, time.Time) error
 	PublicContent(context.Context, Module, string, int, int) (PublicPage, error)
 	PublicNews(context.Context, string, string) (PublicItem, string, error)
+	PublicLocations(context.Context, string) ([]PublicLocation, error)
 }

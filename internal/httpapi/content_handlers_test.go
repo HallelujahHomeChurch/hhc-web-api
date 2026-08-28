@@ -3,6 +3,7 @@ package httpapi
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -64,6 +65,45 @@ func TestPublicContentReadsProjectionWithoutAuthentication(t *testing.T) {
 	}
 	if !strings.Contains(response.Body.String(), `"meta":{"page":2,"pageSize":5,"total":6}`) {
 		t.Fatalf("body=%s", response.Body.String())
+	}
+}
+
+func TestPublicLocationsReadsExactLocaleProjectionWithoutDraftFields(t *testing.T) {
+	repo := &contentRepository{publicLocations: []content.PublicLocation{{
+		ID: "taipei", Name: "台北哈利路亞家教會", Address: "仁愛路三段29號B1", MapHref: "https://maps.app.goo.gl/fDus6nVswbuhSEAd8", SortOrder: 10,
+		ResolvedLocale: "ja", AvailableLocales: []string{"zh-Hant", "ja"},
+	}}}
+	response := httptest.NewRecorder()
+
+	contentTestHandler(repo).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/locations?locale=ja", nil))
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	if repo.publicLocationsLocale != "ja" {
+		t.Fatalf("locale=%q", repo.publicLocationsLocale)
+	}
+	var envelope struct {
+		Data []struct {
+			ID               string   `json:"id"`
+			Name             string   `json:"name"`
+			Address          string   `json:"address"`
+			MapHref          string   `json:"mapHref"`
+			SortOrder        int      `json:"sortOrder"`
+			ResolvedLocale   string   `json:"resolvedLocale"`
+			AvailableLocales []string `json:"availableLocales"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if len(envelope.Data) != 1 || envelope.Data[0].ID != "taipei" || envelope.Data[0].Name != "台北哈利路亞家教會" || envelope.Data[0].Address != "仁愛路三段29號B1" || envelope.Data[0].MapHref != "https://maps.app.goo.gl/fDus6nVswbuhSEAd8" || envelope.Data[0].SortOrder != 10 || envelope.Data[0].ResolvedLocale != "ja" || !reflect.DeepEqual(envelope.Data[0].AvailableLocales, []string{"zh-Hant", "ja"}) {
+		t.Fatalf("data=%#v", envelope.Data)
+	}
+	for _, draftField := range []string{"contentID", "status", "version", "createdBy", "updatedBy"} {
+		if strings.Contains(response.Body.String(), `"`+draftField+`"`) {
+			t.Fatalf("draft field %q exposed: %s", draftField, response.Body.String())
+		}
 	}
 }
 
@@ -332,13 +372,16 @@ func contentTestHandlerWithAssets(repo content.Repository, uploads assetUploads)
 }
 
 type contentRepository struct {
-	item          content.Item
-	public        []content.PublicItem
-	publicTotal   int64
-	publicNews    content.PublicItem
-	publicETag    string
-	publicNewsErr error
-	deleted       bool
+	item                  content.Item
+	public                []content.PublicItem
+	publicTotal           int64
+	publicNews            content.PublicItem
+	publicETag            string
+	publicNewsErr         error
+	publicLocations       []content.PublicLocation
+	publicLocationsLocale string
+	publicLocationsErr    error
+	deleted               bool
 }
 
 func (r *contentRepository) CreateContent(_ context.Context, module content.Module, input content.WriteInput, actor, key string, now time.Time) (content.Item, error) {
@@ -380,4 +423,8 @@ func (r *contentRepository) PublicContent(_ context.Context, _ content.Module, _
 }
 func (r *contentRepository) PublicNews(context.Context, string, string) (content.PublicItem, string, error) {
 	return r.publicNews, r.publicETag, r.publicNewsErr
+}
+func (r *contentRepository) PublicLocations(_ context.Context, locale string) ([]content.PublicLocation, error) {
+	r.publicLocationsLocale = locale
+	return r.publicLocations, r.publicLocationsErr
 }

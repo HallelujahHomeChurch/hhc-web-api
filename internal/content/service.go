@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"net"
 	"net/url"
+	"path"
 	"regexp"
 	"strings"
 	"time"
@@ -13,6 +15,7 @@ import (
 
 var youtubeID = regexp.MustCompile(`^[A-Za-z0-9_-]{11}$`)
 var contentSlug = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
+var locationKey = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 
 type Service struct {
 	repository Repository
@@ -24,7 +27,7 @@ func NewService(repository Repository, now func() time.Time) *Service {
 }
 
 func (s *Service) CreateContent(ctx context.Context, module Module, input WriteInput, actor, key string) (Item, error) {
-	input = normalize(input)
+	input = normalize(module, input)
 	if module == ModuleNews {
 		input = normalizeNews(input, key)
 	}
@@ -80,7 +83,7 @@ func (s *Service) GetContent(ctx context.Context, module Module, id string) (Ite
 	return s.repository.GetContent(ctx, module, id)
 }
 func (s *Service) UpdateContent(ctx context.Context, module Module, id string, expected int64, input WriteInput, actor string) (Item, error) {
-	input = normalize(input)
+	input = normalize(module, input)
 	if !validModule(module) || expected < 1 {
 		return Item{}, ErrInvalid
 	}
@@ -93,6 +96,9 @@ func (s *Service) UpdateContent(ctx context.Context, module Module, id string, e
 			input.Slug = current.Slug
 		}
 		input = normalizeNews(input, "")
+	}
+	if module == ModuleLocations && input.LocationKey != current.LocationKey {
+		return Item{}, ErrInvalid
 	}
 	if !valid(module, input) || !validDeleteLocales(input.DeleteLocales) {
 		return Item{}, ErrInvalid
@@ -133,7 +139,7 @@ func (s *Service) RestoreContent(ctx context.Context, module Module, id string, 
 	if err != nil {
 		return Item{}, err
 	}
-	input := WriteInput{AuthorName: value.Snapshot.AuthorName, Slug: value.Snapshot.Slug, DisplayDate: value.Snapshot.DisplayDate, EventDate: value.Snapshot.EventDate, YouTubeVideoID: value.Snapshot.YouTubeVideoID, CoverAssetID: value.Snapshot.CoverAssetID, HomeCoverAssetID: value.Snapshot.HomeCoverAssetID, DetailLayout: value.Snapshot.DetailLayout, Featured: value.Snapshot.Featured, HomeEligible: value.Snapshot.HomeEligible, Translations: preserveMissingLocales(value.Snapshot.Translations, current.Translations)}
+	input := WriteInput{AuthorName: value.Snapshot.AuthorName, Slug: value.Snapshot.Slug, DisplayDate: value.Snapshot.DisplayDate, EventDate: value.Snapshot.EventDate, YouTubeVideoID: value.Snapshot.YouTubeVideoID, CoverAssetID: value.Snapshot.CoverAssetID, HomeCoverAssetID: value.Snapshot.HomeCoverAssetID, DetailLayout: value.Snapshot.DetailLayout, Featured: value.Snapshot.Featured, HomeEligible: value.Snapshot.HomeEligible, LocationKey: value.Snapshot.LocationKey, MapHref: value.Snapshot.MapHref, SortOrder: value.Snapshot.SortOrder, Translations: preserveMissingLocales(value.Snapshot.Translations, current.Translations)}
 	return s.UpdateContent(ctx, module, id, expected, input, actor)
 }
 func (s *Service) DeleteContent(ctx context.Context, module Module, id string, expected int64, actor string) error {
@@ -164,8 +170,15 @@ func (s *Service) PublicNews(ctx context.Context, locale, slug string) (PublicIt
 	return s.repository.PublicNews(ctx, locale, slug)
 }
 
+func (s *Service) PublicLocations(ctx context.Context, locale string) ([]PublicLocation, error) {
+	if !validLocale(locale) {
+		return nil, ErrInvalid
+	}
+	return s.repository.PublicLocations(ctx, locale)
+}
+
 func validModule(module Module) bool {
-	return module == ModuleNews || module == ModuleHistory || module == ModuleVideos
+	return module == ModuleNews || module == ModuleHistory || module == ModuleVideos || module == ModuleLocations
 }
 func validLocale(locale string) bool {
 	switch locale {
@@ -191,6 +204,9 @@ func valid(module Module, input WriteInput) bool {
 	if module != ModuleNews && input.AuthorName != "" {
 		return false
 	}
+	if module != ModuleLocations && (input.LocationKey != "" || input.MapHref != "" || input.SortOrder != 0) {
+		return false
+	}
 	seen := map[string]bool{}
 	for _, value := range input.Translations {
 		if !validLocale(value.Locale) || seen[value.Locale] ||
@@ -210,12 +226,14 @@ func valid(module Module, input WriteInput) bool {
 		return validHistoryDate(input.EventDate)
 	case ModuleVideos:
 		return youtubeID.MatchString(input.YouTubeVideoID)
+	case ModuleLocations:
+		return ValidateLocation(input)
 	default:
 		return false
 	}
 }
 func publishable(item Item) bool {
-	if !valid(item.Module, WriteInput{AuthorName: item.AuthorName, Slug: item.Slug, DisplayDate: item.DisplayDate, EventDate: item.EventDate, YouTubeVideoID: item.YouTubeVideoID, CoverAssetID: item.CoverAssetID, HomeCoverAssetID: item.HomeCoverAssetID, DetailLayout: item.DetailLayout, Translations: item.Translations}) {
+	if !valid(item.Module, WriteInput{AuthorName: item.AuthorName, Slug: item.Slug, DisplayDate: item.DisplayDate, EventDate: item.EventDate, YouTubeVideoID: item.YouTubeVideoID, CoverAssetID: item.CoverAssetID, HomeCoverAssetID: item.HomeCoverAssetID, DetailLayout: item.DetailLayout, LocationKey: item.LocationKey, MapHref: item.MapHref, SortOrder: item.SortOrder, Translations: item.Translations}) {
 		return false
 	}
 	for _, value := range item.Translations {
@@ -226,6 +244,10 @@ func publishable(item Item) bool {
 			}
 		case ModuleHistory:
 			if value.Body == "" {
+				return false
+			}
+		case ModuleLocations:
+			if len(item.Translations) != 5 || value.Body == "" {
 				return false
 			}
 		}
@@ -254,7 +276,7 @@ func validText(value string, min, max int) bool {
 	length := utf8.RuneCountInString(value)
 	return length >= min && length <= max
 }
-func normalize(input WriteInput) WriteInput {
+func normalize(module Module, input WriteInput) WriteInput {
 	input.AuthorName = strings.TrimSpace(input.AuthorName)
 	input.Slug = strings.TrimSpace(input.Slug)
 	input.DisplayDate = strings.TrimSpace(input.DisplayDate)
@@ -263,16 +285,20 @@ func normalize(input WriteInput) WriteInput {
 	input.CoverAssetID = strings.TrimSpace(input.CoverAssetID)
 	input.HomeCoverAssetID = strings.TrimSpace(input.HomeCoverAssetID)
 	input.DetailLayout = strings.TrimSpace(input.DetailLayout)
-	if input.DetailLayout == "" {
+	if module != ModuleLocations && input.DetailLayout == "" {
 		input.DetailLayout = "top"
 	}
+	input.LocationKey = strings.TrimSpace(input.LocationKey)
+	input.MapHref = strings.TrimSpace(input.MapHref)
 	for index := range input.Translations {
 		input.Translations[index].Locale = strings.TrimSpace(input.Translations[index].Locale)
 		input.Translations[index].Title = strings.TrimSpace(input.Translations[index].Title)
-		input.Translations[index].Summary = strings.TrimSpace(input.Translations[index].Summary)
 		input.Translations[index].Body = strings.TrimSpace(input.Translations[index].Body)
-		input.Translations[index].DateLabel = strings.TrimSpace(input.Translations[index].DateLabel)
-		input.Translations[index].ImageAlt = strings.TrimSpace(input.Translations[index].ImageAlt)
+		if module != ModuleLocations {
+			input.Translations[index].Summary = strings.TrimSpace(input.Translations[index].Summary)
+			input.Translations[index].DateLabel = strings.TrimSpace(input.Translations[index].DateLabel)
+			input.Translations[index].ImageAlt = strings.TrimSpace(input.Translations[index].ImageAlt)
+		}
 	}
 	for index := range input.DeleteLocales {
 		input.DeleteLocales[index] = strings.TrimSpace(input.DeleteLocales[index])
@@ -338,6 +364,82 @@ func normalizeNews(input WriteInput, slugSeed string) WriteInput {
 		}
 	}
 	return input
+}
+
+// ValidateLocation is shared by API writes and the content importer.
+func ValidateLocation(input WriteInput) bool {
+	if len(input.Translations) == 0 || len(input.Translations) > 5 || len(input.LocationKey) > 120 || !locationKey.MatchString(input.LocationKey) || input.SortOrder < 0 || !validPublicLocationURL(input.MapHref) ||
+		input.Slug != "" || input.DisplayDate != "" || input.EventDate != "" || input.YouTubeVideoID != "" ||
+		input.CoverAssetID != "" || input.HomeCoverAssetID != "" || input.DetailLayout != "" || input.Featured || input.HomeEligible {
+		return false
+	}
+	for _, translation := range input.Translations {
+		if strings.TrimSpace(translation.Title) == "" || strings.TrimSpace(translation.Body) == "" || translation.Summary != "" || translation.DateLabel != "" || translation.ImageAlt != "" {
+			return false
+		}
+	}
+	return true
+}
+
+func validPublicLocationURL(value string) bool {
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.Fragment != "" {
+		return false
+	}
+	host := strings.TrimSuffix(strings.ToLower(parsed.Hostname()), ".")
+	if host == "localhost" || host == "api-gateway" || host == "account-api" || host == "asset-api" || host == "engagement-api" || host == "hhc-web-api" || host == "notification-api" ||
+		strings.HasSuffix(host, ".localhost") || strings.HasSuffix(host, ".local") || strings.HasSuffix(host, ".internal") ||
+		strings.HasSuffix(host, ".blob.core.windows.net") || strings.HasSuffix(host, ".dfs.core.windows.net") {
+		return false
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		if ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() || ip.IsMulticast() {
+			return false
+		}
+	} else if numericIPv4Host(host) || !strings.Contains(host, ".") || strings.HasSuffix(host, ".svc") {
+		return false
+	}
+	canonicalPath := strings.ToLower(path.Clean(parsed.Path))
+	if canonicalPath == "/api" || strings.HasPrefix(canonicalPath, "/api/") || canonicalPath == "/priv" || strings.HasPrefix(canonicalPath, "/priv/") {
+		return false
+	}
+	for key := range parsed.Query() {
+		switch strings.ToLower(key) {
+		case "sig", "sv", "se", "sp", "sr", "st", "skoid", "sktid", "skt", "ske", "sks", "skv":
+			return false
+		}
+	}
+	return true
+}
+
+func numericIPv4Host(host string) bool {
+	parts := strings.Split(host, ".")
+	if len(parts) > 4 {
+		return false
+	}
+	for _, part := range parts {
+		if strings.HasPrefix(part, "0x") {
+			part = part[2:]
+			if part == "" {
+				return false
+			}
+			for _, rune := range part {
+				if !(rune >= '0' && rune <= '9') && !(rune >= 'a' && rune <= 'f') {
+					return false
+				}
+			}
+			continue
+		}
+		if part == "" {
+			return false
+		}
+		for _, rune := range part {
+			if rune < '0' || rune > '9' {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func excerpt(value string, limit int) string {

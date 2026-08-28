@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -14,6 +15,13 @@ import (
 type plannerTestPayload struct {
 	Name    string `json:"name"`
 	Enabled bool   `json:"enabled"`
+}
+
+func TestDecodeLocationSeedPayloadRejectsOversizedStableKey(t *testing.T) {
+	record := locationSeedTestRecord(strings.Repeat("a", 121))
+	if _, err := decodeLocationSeedPayload(record.Payload); err == nil {
+		t.Fatal("expected oversized stable key error")
+	}
 }
 
 func TestPlanClassifiesInsertSkipConflictAndCounts(t *testing.T) {

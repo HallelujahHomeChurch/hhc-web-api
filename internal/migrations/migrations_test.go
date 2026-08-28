@@ -239,3 +239,28 @@ func TestContentSeedProvenanceMigrationAddsRunAndSourceTables(t *testing.T) {
 		}
 	}
 }
+
+func TestLocationsMigrationAddsFinalizedModulesAndDetailTable(t *testing.T) {
+	contents, err := files.ReadFile("sql/027_locations_and_content_modules.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := string(contents)
+	for _, expected := range []string{
+		"DROP CONSTRAINT content_entry_module_check",
+		"'news','history','videos','locations','pages'",
+		"CHECK (module IN",
+		"NOT VALID",
+		"VALIDATE CONSTRAINT content_entry_module_check",
+		"CREATE TABLE hhc_web.location_item",
+		"stable_key text NOT NULL",
+		"map_href text NOT NULL",
+		"sort_order integer NOT NULL DEFAULT 0 CHECK (sort_order >= 0)",
+		"location_item_stable_key_uq",
+		"location_item_sort_idx",
+	} {
+		if !strings.Contains(sql, expected) {
+			t.Fatalf("migration missing %q", expected)
+		}
+	}
+}

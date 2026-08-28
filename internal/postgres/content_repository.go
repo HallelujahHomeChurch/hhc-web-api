@@ -78,7 +78,8 @@ func (r *Repository) ListContent(ctx context.Context, module content.Module, opt
 		where += fmt.Sprintf(` AND (
 			EXISTS(SELECT 1 FROM hhc_web.content_translation search WHERE search.entry_id=e.id AND strpos(lower(search.title || ' ' || search.summary || ' ' || search.body),lower($%d))>0)
 			OR EXISTS(SELECT 1 FROM hhc_web.video_item search_video WHERE search_video.entry_id=e.id AND strpos(lower(search_video.youtube_video_id),lower($%d))>0)
-		)`, len(args), len(args))
+			OR EXISTS(SELECT 1 FROM hhc_web.location_item search_location WHERE search_location.content_id=e.id AND strpos(lower(search_location.stable_key || ' ' || search_location.map_href),lower($%d))>0)
+		)`, len(args), len(args), len(args))
 	}
 	var total int64
 	if err := r.db.QueryRowContext(ctx, `SELECT count(*) FROM hhc_web.content_entry e`+where, args...).Scan(&total); err != nil {
@@ -96,15 +97,17 @@ func (r *Repository) ListContent(ctx context.Context, module content.Module, opt
 			LIMIT $%d OFFSET $%d
 		)
 		SELECT e.id::text,e.module,e.status,e.version,e.created_by,e.updated_by,e.first_published_at,e.published_at,e.created_at,e.updated_at,
-			COALESCE(n.slug,''),COALESCE(n.display_date::text,''),COALESCE(n.cover_asset_id,''),COALESCE(n.home_cover_asset_id,''),COALESCE(n.detail_layout,'top'),COALESCE(n.featured,false),COALESCE(n.author_name,''),
-			COALESCE(n.public_grant_id,''),COALESCE(n.home_public_grant_id,''),COALESCE(n.published_cover_asset_id,''),COALESCE(n.published_home_cover_asset_id,''),
-			COALESCE(h.event_date,''),COALESCE(v.youtube_video_id,''),COALESCE(v.home_eligible,false),
-			p.published_version,t.locale,t.title,t.summary,'' AS body,t.date_label,t.image_alt
+				COALESCE(n.slug,''),COALESCE(n.display_date::text,''),COALESCE(n.cover_asset_id,''),COALESCE(n.home_cover_asset_id,''),COALESCE(n.detail_layout,''),COALESCE(n.featured,false),COALESCE(n.author_name,''),
+				COALESCE(n.public_grant_id,''),COALESCE(n.home_public_grant_id,''),COALESCE(n.published_cover_asset_id,''),COALESCE(n.published_home_cover_asset_id,''),
+				COALESCE(h.event_date,''),COALESCE(v.youtube_video_id,''),COALESCE(v.home_eligible,false),
+				COALESCE(l.stable_key,''),COALESCE(l.map_href,''),COALESCE(l.sort_order,0),
+				p.published_version,t.locale,t.title,t.summary,CASE WHEN e.module='locations' THEN t.body ELSE '' END AS body,t.date_label,t.image_alt
 		FROM selected s
 		JOIN hhc_web.content_entry e ON e.id=s.id
 		LEFT JOIN hhc_web.news_item n ON n.entry_id=e.id
 		LEFT JOIN hhc_web.history_event h ON h.entry_id=e.id
-		LEFT JOIN hhc_web.video_item v ON v.entry_id=e.id
+			LEFT JOIN hhc_web.video_item v ON v.entry_id=e.id
+			LEFT JOIN hhc_web.location_item l ON l.content_id=e.id
 		LEFT JOIN LATERAL (
 			SELECT COALESCE(MAX(version),0) AS published_version
 			FROM hhc_web.public_projection
@@ -125,7 +128,7 @@ func (r *Repository) ListContent(ctx context.Context, module content.Module, opt
 		if err := rows.Scan(
 			&item.ID, &item.Module, &item.Status, &item.Version, &item.CreatedBy, &item.UpdatedBy, &item.FirstPublishedAt, &item.PublishedAt, &item.CreatedAt, &item.UpdatedAt,
 			&item.Slug, &item.DisplayDate, &item.CoverAssetID, &item.HomeCoverAssetID, &item.DetailLayout, &item.Featured, &item.AuthorName, &item.PublicGrantID, &item.HomePublicGrantID, &item.PublishedCoverID, &item.PublishedHomeCoverID,
-			&item.EventDate, &item.YouTubeVideoID, &item.HomeEligible, &item.PublishedVersion,
+			&item.EventDate, &item.YouTubeVideoID, &item.HomeEligible, &item.LocationKey, &item.MapHref, &item.SortOrder, &item.PublishedVersion,
 			&translation.Locale, &translation.Title, &translation.Summary, &translation.Body, &translation.DateLabel, &translation.ImageAlt,
 		); err != nil {
 			return content.Page{}, err
@@ -199,10 +202,16 @@ func (r *Repository) PublishContent(ctx context.Context, module content.Module, 
 	}
 	for _, translation := range item.Translations {
 		public := publicContent(item, translation)
-		payload, _ := json.Marshal(public)
+		var projection any = public
+		routePath := public.Href
+		if module == content.ModuleLocations {
+			projection = publicLocation(item, translation)
+			routePath = "/locations"
+		}
+		payload, _ := json.Marshal(projection)
 		etag := fmt.Sprintf(`%x`, sha256.Sum256(payload))
 		key := fmt.Sprintf("%s:%s:%s", module, translation.Locale, id)
-		if _, err := tx.ExecContext(ctx, `INSERT INTO hhc_web.public_projection(projection_key,resource_type,resource_id,locale,route_path,version,etag,payload_json,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(projection_key) DO UPDATE SET route_path=EXCLUDED.route_path,version=EXCLUDED.version,etag=EXCLUDED.etag,payload_json=EXCLUDED.payload_json,updated_at=EXCLUDED.updated_at`, key, module, id, translation.Locale, public.Href, item.Version, etag, payload, now); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO hhc_web.public_projection(projection_key,resource_type,resource_id,locale,route_path,version,etag,payload_json,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(projection_key) DO UPDATE SET route_path=EXCLUDED.route_path,version=EXCLUDED.version,etag=EXCLUDED.etag,payload_json=EXCLUDED.payload_json,updated_at=EXCLUDED.updated_at`, key, module, id, translation.Locale, routePath, item.Version, etag, payload, now); err != nil {
 			return content.Item{}, err
 		}
 	}
@@ -706,6 +715,41 @@ func (r *Repository) PublicNews(ctx context.Context, locale, slug string) (conte
 	return item, publicResponseETag(etag, locale, item), nil
 }
 
+func (r *Repository) PublicLocations(ctx context.Context, locale string) ([]content.PublicLocation, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT projection.payload_json,availability.locales
+		FROM hhc_web.public_projection projection
+		JOIN LATERAL (
+			SELECT jsonb_agg(sibling.locale ORDER BY sibling.locale) AS locales
+			FROM hhc_web.public_projection sibling
+			WHERE sibling.resource_type='locations' AND sibling.resource_id=projection.resource_id
+		) availability ON true
+		WHERE projection.resource_type='locations' AND projection.locale=$1
+		ORDER BY (projection.payload_json->>'sortOrder')::integer ASC,projection.payload_json->>'id' ASC`, locale)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	values := []content.PublicLocation{}
+	for rows.Next() {
+		var value content.PublicLocation
+		var payload, availableLocales []byte
+		if err := rows.Scan(&payload, &availableLocales); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(payload, &value); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(availableLocales, &value.AvailableLocales); err != nil {
+			return nil, err
+		}
+		sortPublicLocales(value.AvailableLocales)
+		value.ResolvedLocale = locale
+		values = append(values, value)
+	}
+	return values, rows.Err()
+}
+
 func enrichPublicItem(value *content.PublicItem, id, requestedLocale, resolvedLocale string, availableLocales []byte) error {
 	if err := json.Unmarshal(availableLocales, &value.AvailableLocales); err != nil {
 		return err
@@ -810,6 +854,8 @@ func loadContent(ctx context.Context, query contentQueryer, module content.Modul
 		err = query.QueryRowContext(ctx, `SELECT COALESCE(event_date,'') FROM hhc_web.history_event WHERE entry_id=$1`, id).Scan(&item.EventDate)
 	case content.ModuleVideos:
 		err = query.QueryRowContext(ctx, `SELECT youtube_video_id,home_eligible FROM hhc_web.video_item WHERE entry_id=$1`, id).Scan(&item.YouTubeVideoID, &item.HomeEligible)
+	case content.ModuleLocations:
+		err = query.QueryRowContext(ctx, `SELECT stable_key,map_href,sort_order FROM hhc_web.location_item WHERE content_id=$1`, id).Scan(&item.LocationKey, &item.MapHref, &item.SortOrder)
 	}
 	if err != nil {
 		return content.Item{}, err
@@ -903,6 +949,19 @@ func writeTypedContent(ctx context.Context, tx *sql.Tx, module content.Module, i
 		}
 		_, err := tx.ExecContext(ctx, `UPDATE hhc_web.video_item SET youtube_video_id=$2,home_eligible=$3 WHERE entry_id=$1`, id, input.YouTubeVideoID, input.HomeEligible)
 		return err
+	case content.ModuleLocations:
+		if verb == "INSERT" {
+			_, err := tx.ExecContext(ctx, `INSERT INTO hhc_web.location_item(content_id,stable_key,map_href,sort_order) VALUES($1,$2,$3,$4)`, id, input.LocationKey, input.MapHref, input.SortOrder)
+			return err
+		}
+		result, err := tx.ExecContext(ctx, `UPDATE hhc_web.location_item SET map_href=$3,sort_order=$4 WHERE content_id=$1 AND stable_key=$2`, id, input.LocationKey, input.MapHref, input.SortOrder)
+		if err != nil {
+			return err
+		}
+		if rows, _ := result.RowsAffected(); rows != 1 {
+			return content.ErrInvalid
+		}
+		return nil
 	}
 	return content.ErrInvalid
 }
@@ -965,4 +1024,8 @@ func publicContent(item content.Item, translation content.Translation) content.P
 		value.Href = "https://www.youtube.com/watch?v=" + item.YouTubeVideoID
 	}
 	return value
+}
+
+func publicLocation(item content.Item, translation content.Translation) content.PublicLocation {
+	return content.PublicLocation{ID: item.LocationKey, Name: translation.Title, Address: translation.Body, MapHref: item.MapHref, SortOrder: item.SortOrder}
 }

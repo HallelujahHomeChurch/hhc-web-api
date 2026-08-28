@@ -8,8 +8,13 @@ import (
 	"database/sql/driver"
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
+
+	"github.com/HallelujahHomeChurch/hhc-web-api/internal/content"
+	"github.com/HallelujahHomeChurch/hhc-web-api/internal/platform"
 )
 
 type Report struct {
@@ -33,7 +38,9 @@ type applyPlanner func(context.Context, seedQuerier, Manifest) (applyPlan, error
 type recordApplier func(context.Context, *sql.Tx, Record) (string, error)
 
 func Apply(ctx context.Context, db *sql.DB, manifest Manifest, manifestSHA, actor string) (Report, error) {
-	return apply(ctx, db, manifest, manifestSHA, actor, defaultApplyPlan, applyRecord)
+	return apply(ctx, db, manifest, manifestSHA, actor, defaultApplyPlan, func(ctx context.Context, tx *sql.Tx, record Record) (string, error) {
+		return applySeedRecord(ctx, tx, record, actor)
+	})
 }
 
 func apply(ctx context.Context, db *sql.DB, manifest Manifest, manifestSHA, actor string, planner applyPlanner, applyOne recordApplier) (report Report, err error) {
@@ -153,9 +160,53 @@ func applyRecord(_ context.Context, _ *sql.Tx, record Record) (string, error) {
 	return "", unreleasedTargetError(record.Kind)
 }
 
+func applySeedRecord(ctx context.Context, tx *sql.Tx, record Record, actor string) (string, error) {
+	if record.Kind != "location" {
+		return "", unreleasedTargetError(record.Kind)
+	}
+	decoded, err := decodeLocationSeedPayload(record.Payload)
+	if err != nil {
+		return "", err
+	}
+	payload := decoded.(locationSeedPayload)
+	input := payload.writeInput()
+	fingerprint, err := canonicalSHA256(payload)
+	if err != nil {
+		return "", err
+	}
+	id := platform.NewID()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	if _, err := tx.ExecContext(ctx, `INSERT INTO hhc_web.content_entry(
+		id,module,status,version,idempotency_key,idempotency_fingerprint,created_by,updated_by,created_at,updated_at
+	) VALUES($1,$2,'draft',1,$3,$4,$5,$5,$6,$6)`, id, content.ModuleLocations, record.SourceKey, fingerprint, actor, now); err != nil {
+		return "", fmt.Errorf("insert content entry: %w", err)
+	}
+	for _, translation := range input.Translations {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO hhc_web.content_translation(entry_id,locale,title,summary,body,date_label,image_alt)
+			VALUES($1,$2,$3,'',$4,'','')`, id, translation.Locale, translation.Title, translation.Body); err != nil {
+			return "", fmt.Errorf("insert %s translation: %w", translation.Locale, err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO hhc_web.location_item(content_id,stable_key,map_href,sort_order) VALUES($1,$2,$3,$4)`, id, input.LocationKey, input.MapHref, input.SortOrder); err != nil {
+		return "", fmt.Errorf("insert location item: %w", err)
+	}
+	snapshot, err := json.Marshal(content.Item{
+		ID: id, Module: content.ModuleLocations, Status: content.StatusDraft, Version: 1,
+		LocationKey: input.LocationKey, MapHref: input.MapHref, SortOrder: input.SortOrder, Translations: input.Translations,
+		CreatedBy: actor, UpdatedBy: actor, CreatedAt: now, UpdatedAt: now,
+	})
+	if err != nil {
+		return "", err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO hhc_web.content_revision(entry_id,version,snapshot_json,created_by,created_at) VALUES($1,1,$2,$3,$4)`, id, snapshot, actor, now); err != nil {
+		return "", fmt.Errorf("insert seeded revision: %w", err)
+	}
+	return id, nil
+}
+
 func unreleasedTargetError(kind string) error {
 	switch kind {
-	case "location", "site_layout", "page":
+	case "site_layout", "page":
 		return fmt.Errorf("target kind %q is not released", kind)
 	default:
 		return fmt.Errorf("unsupported target kind %q", kind)

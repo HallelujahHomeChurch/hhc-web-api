@@ -1260,6 +1260,169 @@ func TestHistoryUsesCanonicalEventDateOrderingAndIndex(t *testing.T) {
 	}
 }
 
+func TestLocationContentLifecycle(t *testing.T) {
+	databaseURL := os.Getenv("HHW_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("HHW_TEST_DATABASE_URL is not configured")
+	}
+	db, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	if err := migrations.Run(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `TRUNCATE hhc_web.public_projection,hhc_web.content_revision,hhc_web.content_translation,hhc_web.content_entry CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+
+	repository := New(db)
+	now := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
+	service := content.NewService(repository, func() time.Time { return now })
+	taipeiInput := locationWriteInput("taipei", "https://maps.example.com/taipei", 10)
+	taipei, err := service.CreateContent(ctx, content.ModuleLocations, taipeiInput, "admin", "location-taipei")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if public, err := service.PublicLocations(ctx, "ja"); err != nil || len(public) != 0 {
+		t.Fatalf("draft public=%#v err=%v", public, err)
+	}
+	admin, err := service.ListContent(ctx, content.ModuleLocations, content.ListOptions{})
+	if err != nil || len(admin.Items) != 1 || admin.Items[0].LocationKey != "taipei" || admin.Items[0].MapHref != taipeiInput.MapHref || admin.Items[0].Translations[0].Body == "" {
+		t.Fatalf("admin=%#v err=%v", admin, err)
+	}
+
+	zhongli, err := service.CreateContent(ctx, content.ModuleLocations, locationWriteInput("zhongli", "https://maps.example.com/zhongli", 2), "admin", "location-zhongli")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range []content.Item{taipei, zhongli} {
+		if _, err := service.PublishContent(ctx, content.ModuleLocations, item.ID, item.Version, "admin"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var projectionCount int
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM hhc_web.public_projection WHERE resource_type='locations' AND resource_id=$1`, taipei.ID).Scan(&projectionCount); err != nil || projectionCount != 5 {
+		t.Fatalf("projectionCount=%d err=%v", projectionCount, err)
+	}
+	public, err := service.PublicLocations(ctx, "ja")
+	if err != nil || len(public) != 2 || public[0].ID != "zhongli" || public[1].ID != "taipei" || public[0].Name != "ja-zhongli" {
+		t.Fatalf("public=%#v err=%v", public, err)
+	}
+	if _, err := db.ExecContext(ctx, `DELETE FROM hhc_web.public_projection WHERE resource_type='locations' AND resource_id=$1 AND locale='ja'`, zhongli.ID); err != nil {
+		t.Fatal(err)
+	}
+	public, err = service.PublicLocations(ctx, "ja")
+	if err != nil || len(public) != 1 || public[0].ID != "taipei" {
+		t.Fatalf("exact locale public=%#v err=%v", public, err)
+	}
+
+	taipei, err = service.GetContent(ctx, content.ModuleLocations, taipei.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := locationWriteInput("taipei", "https://maps.example.com/taipei-new", 30)
+	for index := range changed.Translations {
+		changed.Translations[index].Body += "-changed"
+	}
+	if taipei, err = service.UpdateContent(ctx, content.ModuleLocations, taipei.ID, taipei.Version, changed, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	if taipei, err = service.PublishContent(ctx, content.ModuleLocations, taipei.ID, taipei.Version, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	beforeRestore, err := service.PublicLocations(ctx, "en")
+	if err != nil || beforeRestore[1].Address != "en-taipei-address-changed" || beforeRestore[1].MapHref != changed.MapHref {
+		t.Fatalf("published change=%#v err=%v", beforeRestore, err)
+	}
+	if taipei, err = service.RestoreContent(ctx, content.ModuleLocations, taipei.ID, 1, taipei.Version, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	stillPublic, err := service.PublicLocations(ctx, "en")
+	if err != nil || stillPublic[1].Address != "en-taipei-address-changed" || stillPublic[1].MapHref != changed.MapHref {
+		t.Fatalf("restore changed projection=%#v err=%v", stillPublic, err)
+	}
+	if taipei, err = service.PublishContent(ctx, content.ModuleLocations, taipei.ID, taipei.Version, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	for _, locale := range []string{"zh-Hant", "zh-Hans", "en", "ja", "ko"} {
+		items, err := service.PublicLocations(ctx, locale)
+		if err != nil || len(items) == 0 {
+			t.Fatalf("locale=%s items=%#v err=%v", locale, items, err)
+		}
+		taipei := items[len(items)-1]
+		if taipei.ID != "taipei" || taipei.Name != locale+"-taipei" || taipei.Address != locale+"-taipei-address" || taipei.MapHref != taipeiInput.MapHref {
+			t.Fatalf("locale=%s items=%#v", locale, items)
+		}
+	}
+	zhongli, err = service.GetContent(ctx, content.ModuleLocations, zhongli.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.UnpublishContent(ctx, content.ModuleLocations, zhongli.ID, zhongli.Version, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	public, err = service.PublicLocations(ctx, "zh-Hant")
+	if err != nil || len(public) != 1 || public[0].ID != "taipei" {
+		t.Fatalf("unpublished public=%#v err=%v", public, err)
+	}
+}
+
+func TestLegacyContentRetriesPreserveOmittedDetailLayoutFingerprint(t *testing.T) {
+	databaseURL := os.Getenv("HHW_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("HHW_TEST_DATABASE_URL is not configured")
+	}
+	db, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	if err := migrations.Run(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `TRUNCATE hhc_web.public_projection,hhc_web.content_revision,hhc_web.content_translation,hhc_web.content_entry CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+
+	repository := New(db)
+	service := content.NewService(repository, time.Now)
+	for _, test := range []struct {
+		name   string
+		module content.Module
+		input  content.WriteInput
+	}{
+		{name: "history", module: content.ModuleHistory, input: content.WriteInput{EventDate: "1988-03", Translations: []content.Translation{{Locale: "zh-Hant", Title: "沿革", Body: "事件"}}}},
+		{name: "video", module: content.ModuleVideos, input: content.WriteInput{YouTubeVideoID: "K3ckFWeSQ-k", Translations: []content.Translation{{Locale: "zh-Hant", Title: "影片"}}}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			key := "legacy-fingerprint-" + test.name
+			legacy := test.input
+			legacy.DetailLayout = "top"
+			created, err := repository.CreateContent(ctx, test.module, legacy, "admin", key, time.Now().UTC())
+			if err != nil {
+				t.Fatal(err)
+			}
+			retried, err := service.CreateContent(ctx, test.module, test.input, "admin", key)
+			if err != nil || retried.ID != created.ID {
+				t.Fatalf("created=%#v retried=%#v err=%v", created, retried, err)
+			}
+		})
+	}
+}
+
+func locationWriteInput(key, mapHref string, sortOrder int) content.WriteInput {
+	locales := []string{"zh-Hant", "zh-Hans", "en", "ja", "ko"}
+	translations := make([]content.Translation, len(locales))
+	for index, locale := range locales {
+		translations[index] = content.Translation{Locale: locale, Title: locale + "-" + key, Body: locale + "-" + key + "-address"}
+	}
+	return content.WriteInput{LocationKey: key, MapHref: mapHref, SortOrder: sortOrder, Translations: translations}
+}
+
 func historyDates(items []content.Item) []string {
 	values := make([]string, len(items))
 	for index := range items {

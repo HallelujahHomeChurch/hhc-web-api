@@ -1,6 +1,7 @@
 package hhcwebapi
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"reflect"
@@ -8,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/getkin/kin-openapi/openapi3"
 )
 
 func TestOpenAPIDocumentsPublicBulletinByNumber(t *testing.T) {
@@ -100,6 +103,54 @@ func TestOpenAPIDocumentsPublicContentLocaleResolution(t *testing.T) {
 		if !strings.Contains(schema, expected) {
 			t.Fatalf("PublicContentItem missing %q:\n%s", expected, schema)
 		}
+	}
+}
+
+func TestOpenAPIDocumentsPublicLocationsContract(t *testing.T) {
+	document := readOpenAPI(t)
+	operation := operationByID(t, document, "listPublicLocations")
+	for _, expected := range []string{
+		"x-hhc-visibility: public",
+		"x-hhc-callers: [api-gateway]",
+		"security: []",
+		"$ref: '#/components/parameters/ContentLocale'",
+		"$ref: '#/components/responses/PublicLocationList'",
+		"no locale fallback is applied",
+	} {
+		if !strings.Contains(operation, expected) {
+			t.Errorf("locations operation missing %q:\n%s", expected, operation)
+		}
+	}
+	for _, expected := range []string{
+		"enum: [news, history, videos, locations]",
+		"locationKey: { type: string, minLength: 1, maxLength: 120, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$' }",
+		"mapHref: { type: string, format: uri, pattern: '^https://' }",
+		"sortOrder: { type: integer, minimum: 0 }",
+		"required: [id, name, address, mapHref, sortOrder, resolvedLocale, availableLocales]",
+	} {
+		if !strings.Contains(document, expected) {
+			t.Errorf("OpenAPI document missing %q", expected)
+		}
+	}
+	if schemaBlock(document, "PublicLocation") == "" || schemaBlock(document, "PublicLocationListEnvelope") == "" {
+		t.Fatal("missing public locations schemas")
+	}
+}
+
+func TestOpenAPIContentWriteInputKeepsExistingModulesCompatible(t *testing.T) {
+	schema := contentWriteInputSchema(t)
+	for _, test := range []struct {
+		name, body string
+	}{
+		{"news", `{"authorName":"Pastor","slug":"announcement","displayDate":"2026-08-28","detailLayout":"top","translations":[{"locale":"zh-Hant","title":"消息","summary":"摘要","body":"內容","imageAlt":"圖片"}]}`},
+		{"history", `{"eventDate":"1988-03","translations":[{"locale":"zh-Hant","title":"開始家庭聚會","body":"內容","dateLabel":"1988年3月"}]}`},
+		{"videos", `{"youtubeVideoId":"K3ckFWeSQ-k","homeEligible":true,"translations":[{"locale":"zh-Hant","title":"影片"}]}`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if err := validateOpenAPIContentWriteInput(schema, []byte(test.body)); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
 
@@ -395,6 +446,28 @@ func readOpenAPI(t *testing.T) string {
 	return string(contents)
 }
 
+func contentWriteInputSchema(t *testing.T) *openapi3.Schema {
+	t.Helper()
+	loader := openapi3.NewLoader()
+	document, err := loader.LoadFromFile("openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema := document.Components.Schemas["ContentWriteInput"]
+	if schema == nil || schema.Value == nil {
+		t.Fatal("missing ContentWriteInput schema")
+	}
+	return schema.Value
+}
+
+func validateOpenAPIContentWriteInput(schema *openapi3.Schema, body []byte) error {
+	var value any
+	if err := json.Unmarshal(body, &value); err != nil {
+		return err
+	}
+	return schema.VisitJSON(value, openapi3.EnableJSONSchema2020())
+}
+
 func validateCatalogContract(document string) error {
 	if !strings.HasPrefix(document, "openapi: 3.1.") {
 		return fmt.Errorf("document must use OpenAPI 3.1")
@@ -586,6 +659,7 @@ func expectedCatalogRoutes() []string {
 		GET /news/{}
 		GET /history
 		GET /videos
+		GET /locations
 		GET /home
 		GET /admin/bulletins
 		POST /admin/bulletins

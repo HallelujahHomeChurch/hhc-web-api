@@ -18,6 +18,7 @@ func (h *Handler) contentRoutes(public, admin *http.ServeMux) {
 	public.HandleFunc("GET /api/news/{slug}", h.publicNews)
 	public.HandleFunc("GET /api/history", h.publicContent(content.ModuleHistory))
 	public.HandleFunc("GET /api/videos", h.publicContent(content.ModuleVideos))
+	public.HandleFunc("GET /api/locations", h.publicLocations)
 	public.HandleFunc("GET /api/home", h.publicHome)
 	admin.HandleFunc("GET /api/admin/content/{module}", requireScope("cms:read", h.adminContentList))
 	admin.HandleFunc("POST /api/admin/content/{module}", requireScope("cms:write", h.adminContentCreate))
@@ -64,6 +65,16 @@ func (h *Handler) publicContent(module content.Module) http.HandlerFunc {
 		w.Header().Set("Cache-Control", "public, max-age=30, must-revalidate")
 		writeData(w, http.StatusOK, values.Items, map[string]any{"page": values.Page, "pageSize": values.PageSize, "total": values.Total})
 	}
+}
+
+func (h *Handler) publicLocations(w http.ResponseWriter, r *http.Request) {
+	values, err := h.content.PublicLocations(r.Context(), locale(r))
+	if err != nil {
+		handleContentError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "public, max-age=30, must-revalidate")
+	writeData(w, http.StatusOK, values, nil)
 }
 
 func (h *Handler) publicHome(w http.ResponseWriter, r *http.Request) {
