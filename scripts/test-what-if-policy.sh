@@ -33,6 +33,14 @@ if ! ./scripts/check-what-if.sh "$tmp/revision-suffix-recovery.json"; then
   exit 1
 fi
 
+cat >"$tmp/mixed-case-revision-suffix-recovery.json" <<'JSON'
+{"changes":[{"resourceId":"/SUBSCRIPTIONS/test/RESOURCEGROUPS/alive/PROVIDERS/microsoft.app/CONTAINERAPPS/hhc-web-api","changeType":"Modify","delta":[{"path":"properties.template.revisionSuffix","propertyChangeType":"Delete"}]}]}
+JSON
+if ! ./scripts/check-what-if.sh "$tmp/mixed-case-revision-suffix-recovery.json"; then
+  echo "mixed-case hhc-web-api revision suffix recovery was rejected" >&2
+  exit 1
+fi
+
 cat >"$tmp/other-resource-revision-suffix-delete.json" <<'JSON'
 {"changes":[{"resourceId":"/subscriptions/test/resourceGroups/alive/providers/Microsoft.App/jobs/hhc-web-migrate","changeType":"Modify","delta":[{"path":"properties.template.revisionSuffix","propertyChangeType":"Delete"}]}]}
 JSON
