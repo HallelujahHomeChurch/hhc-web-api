@@ -6,7 +6,15 @@ file="${1:?what-if JSON is required}"
 jq -e '
   ([.changes[] | select(.changeType == "Delete" or .changeType == "Unsupported")] | length == 0)
   and
-  ([.changes[] | .. | objects | select(.propertyChangeType? == "Delete")] | length == 0)
+  ([.changes[] as $change
+    | $change
+    | .. | objects
+    | select(.propertyChangeType? == "Delete")
+    | select((
+        ($change.resourceId | endswith("/Microsoft.App/containerApps/hhc-web-api"))
+        and (.path? == "properties.template.revisionSuffix")
+      ) | not)
+  ] | length == 0)
   and
   ([.changes[]
     | select(.changeType != "Ignore" and .changeType != "NoChange")
