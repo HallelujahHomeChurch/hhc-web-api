@@ -26,6 +26,22 @@ func (r *SiteSettingsRepository) Get(ctx context.Context) (sitesettings.Settings
 	return loadSiteSettings(ctx, r.db)
 }
 
+func (r *SiteSettingsRepository) Public(ctx context.Context, locale string) (sitesettings.PublicLayout, error) {
+	var payload []byte
+	err := r.db.QueryRowContext(ctx, `SELECT payload_json FROM hhc_web.public_projection WHERE projection_key=$1 AND resource_type='site_layout' AND locale=$2`, "site_layout:"+locale, locale).Scan(&payload)
+	if errors.Is(err, sql.ErrNoRows) {
+		return sitesettings.PublicLayout{}, sitesettings.ErrNotFound
+	}
+	if err != nil {
+		return sitesettings.PublicLayout{}, err
+	}
+	var value sitesettings.PublicLayout
+	if err := json.Unmarshal(payload, &value); err != nil {
+		return sitesettings.PublicLayout{}, err
+	}
+	return value, nil
+}
+
 func (r *SiteSettingsRepository) Save(ctx context.Context, input sitesettings.WriteInput, expected int64, actor string, now time.Time) (sitesettings.Settings, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {

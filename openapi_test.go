@@ -137,6 +137,85 @@ func TestOpenAPIDocumentsPublicLocationsContract(t *testing.T) {
 	}
 }
 
+func TestOpenAPIDocumentsSiteSettingsContracts(t *testing.T) {
+	document := readOpenAPI(t)
+	public := operationByID(t, document, "getPublicSiteLayout")
+	for _, expected := range []string{"x-hhc-visibility: public", "x-hhc-callers: [api-gateway]", "security: []", "$ref: '#/components/parameters/ContentLocale'", "$ref: '#/components/responses/SiteLayout'"} {
+		if !strings.Contains(public, expected) {
+			t.Errorf("public Site Layout operation missing %q:\n%s", expected, public)
+		}
+	}
+	for operationID, scope := range map[string]string{
+		"getSiteSettings": "cms:read", "saveSiteSettings": "cms:write", "publishSiteSettings": "cms:publish",
+		"unpublishSiteSettings": "cms:publish", "listSiteSettingsRevisions": "cms:read", "restoreSiteSettingsRevision": "cms:write",
+	} {
+		operation := operationByID(t, document, operationID)
+		for _, expected := range []string{"x-hhc-visibility: admin", "x-hhc-callers: [api-gateway]", "servers: [{ url: https://admin.alive.org.tw/api }]", "x-required-scopes: ['" + scope + "']", "daprApiToken", "daprCallerAppId", "trustedUserId", "trustedAuthProvider", "trustedScopes"} {
+			if !strings.Contains(operation, expected) {
+				t.Errorf("%s missing %q:\n%s", operationID, expected, operation)
+			}
+		}
+	}
+	for _, schema := range []string{"SiteLayout", "SiteSettings", "SiteSettingsWriteInput", "SiteSettingsRevision"} {
+		block := schemaBlock(document, schema)
+		if block == "" {
+			t.Errorf("missing %s schema", schema)
+		}
+		if strings.Contains(block, "canonicalHost") || strings.Contains(block, "apiRoot") || strings.Contains(block, "accountUrl") {
+			t.Errorf("%s exposes runtime configuration:\n%s", schema, block)
+		}
+	}
+}
+
+func TestOpenAPISiteSettingsSchemasAcceptValidWireShapes(t *testing.T) {
+	loader := openapi3.NewLoader()
+	document, err := loader.LoadFromFile("openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	locale := map[string]any{
+		"locale": "ja", "siteName": "教会", "englishName": "HHC", "copyrightHolder": "HHC", "allRightsReserved": "All rights reserved",
+		"seoTitleSuffix": "HHC", "seoDescriptionFallback": "description",
+		"header": []any{
+			map[string]any{"key": "about", "label": "概要", "href": "/ja/about", "visible": true},
+			map[string]any{"key": "news", "label": "ニュース", "href": "/ja/news", "visible": true},
+			map[string]any{"key": "literature-ministry", "label": "文書", "href": "/ja/literature-ministry", "visible": true},
+		},
+		"legal": []any{
+			map[string]any{"key": "privacy-policy", "label": "Privacy", "href": "/ja/privacy-policy", "visible": true},
+			map[string]any{"key": "terms-of-use", "label": "Terms", "href": "/ja/terms-of-use", "visible": true},
+		},
+	}
+	links := map[string]any{"churchYoutube": "https://youtube.com/@hhc33", "churchFacebook": "https://facebook.com/hhc", "musicYoutube": "https://youtube.com/@music"}
+	layout := cloneMap(locale)
+	layout["links"], layout["version"], layout["publishedAt"] = links, float64(4), "2026-08-29T00:00:00Z"
+	if err := document.Components.Schemas["SiteLayout"].Value.VisitJSON(layout, openapi3.EnableJSONSchema2020()); err != nil {
+		t.Fatalf("SiteLayout rejected valid payload: %v", err)
+	}
+
+	locales := make([]any, 0, 5)
+	for _, name := range []string{"zh-Hant", "zh-Hans", "en", "ja", "ko"} {
+		value := cloneMap(locale)
+		value["locale"] = name
+		locales = append(locales, value)
+	}
+	settings := map[string]any{
+		"id": "default", "status": "draft", "version": float64(3), "locales": locales, "links": links,
+		"createdBy": "admin", "updatedBy": "admin", "createdAt": "2026-08-29T00:00:00Z", "updatedAt": "2026-08-29T00:00:00Z",
+	}
+	if err := document.Components.Schemas["SiteSettings"].Value.VisitJSON(settings, openapi3.EnableJSONSchema2020()); err != nil {
+		t.Fatalf("SiteSettings rejected valid payload: %v", err)
+	}
+}
+
+func cloneMap(value map[string]any) map[string]any {
+	result := make(map[string]any, len(value))
+	for key, item := range value {
+		result[key] = item
+	}
+	return result
+}
+
 func TestOpenAPIContentWriteInputKeepsExistingModulesCompatible(t *testing.T) {
 	schema := contentWriteInputSchema(t)
 	for _, test := range []struct {
@@ -660,7 +739,14 @@ func expectedCatalogRoutes() []string {
 		GET /history
 		GET /videos
 		GET /locations
+		GET /site-layout
 		GET /home
+		GET /admin/site-settings
+		PUT /admin/site-settings
+		POST /admin/site-settings/publish
+		POST /admin/site-settings/unpublish
+		GET /admin/site-settings/revisions
+		POST /admin/site-settings/revisions/{}/restore
 		GET /admin/bulletins
 		POST /admin/bulletins
 		GET /admin/bulletins/{}

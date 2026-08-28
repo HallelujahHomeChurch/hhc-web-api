@@ -142,6 +142,9 @@ type serviceRepository struct {
 }
 
 func (r *serviceRepository) Get(context.Context) (Settings, error) { return r.settings, nil }
+func (r *serviceRepository) Public(context.Context, string) (PublicLayout, error) {
+	return PublicLayout{}, ErrNotFound
+}
 func (r *serviceRepository) Save(_ context.Context, input WriteInput, expected int64, _ string, _ time.Time) (Settings, error) {
 	if r.settings.Version != expected {
 		return Settings{}, ErrPrecondition

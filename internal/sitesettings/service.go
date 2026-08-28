@@ -21,6 +21,20 @@ func (s *Service) Get(ctx context.Context) (Settings, error) {
 	return s.repository.Get(ctx)
 }
 
+func (s *Service) Public(ctx context.Context, locale string) (PublicLayout, error) {
+	if !supportedLocale(locale) {
+		return PublicLayout{}, ErrInvalid
+	}
+	value, err := s.repository.Public(ctx, locale)
+	if err != nil {
+		return PublicLayout{}, err
+	}
+	if value.Locale != locale {
+		return PublicLayout{}, ErrNotFound
+	}
+	return value, nil
+}
+
 func (s *Service) Save(ctx context.Context, input WriteInput, expected int64, actor string) (Settings, error) {
 	input, ok := NormalizeWriteInput(input)
 	if !ok || expected < 1 || strings.TrimSpace(actor) == "" {

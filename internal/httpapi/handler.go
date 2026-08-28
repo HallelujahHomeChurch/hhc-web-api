@@ -16,6 +16,7 @@ import (
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/assetclient"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/bulletins"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/content"
+	"github.com/HallelujahHomeChurch/hhc-web-api/internal/sitesettings"
 )
 
 const maxAdminProxyBody = 1 << 20
@@ -37,6 +38,7 @@ type engagementProxy interface {
 type Handler struct {
 	service        *bulletins.Service
 	content        *content.Service
+	siteSettings   *sitesettings.Service
 	db             *sql.DB
 	uploads        assetUploads
 	engagement     engagementProxy
@@ -57,6 +59,10 @@ func NewWithContent(service *bulletins.Service, contentService *content.Service,
 		handler.engagement = engagement[0]
 	}
 	return handler
+}
+func (h *Handler) WithSiteSettings(service *sitesettings.Service) *Handler {
+	h.siteSettings = service
+	return h
 }
 func NewWithTranslation(service *bulletins.Service, contentService *content.Service, db *sql.DB, uploads assetUploads, trustedCaller, daprAPIToken string, allowDevCaller bool, previewer TranslationPreviewer, writeDeadline time.Duration, now func() time.Time, engagement ...engagementProxy) *Handler {
 	handler := NewWithContent(service, contentService, db, uploads, trustedCaller, daprAPIToken, allowDevCaller, engagement...)
@@ -101,6 +107,9 @@ func (h *Handler) Routes() http.Handler {
 	if h.content != nil {
 		h.contentRoutes(mux, admin)
 	}
+	if h.siteSettings != nil {
+		h.siteSettingsRoutes(mux, admin)
+	}
 	if h.engagement != nil {
 		campaignRead := []string{"campaigns:read", "cms:read"}
 		campaignWrite := []string{"campaigns:write", "cms:write"}
@@ -119,7 +128,7 @@ func (h *Handler) Routes() http.Handler {
 		admin.HandleFunc("PUT /api/admin/campaign-schedules/{scheduleID}", requireCampaignScheduleUpdate(h.forwardEngagement))
 		admin.HandleFunc("DELETE /api/admin/campaign-schedules/{scheduleID}", requireAnyScope(campaignWrite, h.forwardEngagement))
 	}
-	mux.Handle("/api/admin/", requireTrusted(h.trustedCaller, h.daprAPIToken, h.allowDevCaller, admin))
+	mux.Handle("/api/admin/", privateNoStore(requireTrusted(h.trustedCaller, h.daprAPIToken, h.allowDevCaller, admin)))
 	return requestID(accessLog(mux))
 }
 

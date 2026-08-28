@@ -19,6 +19,7 @@ import (
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/httpapi"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/postgres"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/publication"
+	"github.com/HallelujahHomeChurch/hhc-web-api/internal/sitesettings"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/translation"
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
@@ -55,6 +56,7 @@ func run() error {
 	repository := postgres.New(db, cfg.EnableFiveLocaleBulletinNotificationsAfterFluentReview)
 	service := bulletins.NewService(repository, time.Now)
 	contentService := content.NewService(repository, time.Now)
+	siteSettingsService := sitesettings.NewService(postgres.NewSiteSettingsRepository(db), time.Now)
 	assetClient := assetclient.New(cfg.AssetAPIBaseURL, cfg.InternalCallerAppID, cfg.PublicBaseURL)
 	engagementClient := engagementclient.New(cfg.EngagementAPIBaseURL, cfg.InternalCallerAppID)
 	var previewer httpapi.TranslationPreviewer
@@ -66,7 +68,7 @@ func run() error {
 			ActorDailyLimit: cfg.Translation.ActorDailyLimit, DeploymentDailyLimit: cfg.Translation.DeploymentDailyLimit, Cooldown: cfg.Translation.Cooldown, Now: time.Now,
 		}, engagementClient)
 	}
-	handler := httpapi.NewWithTranslation(service, contentService, db, assetClient, cfg.AdminAllowedCaller, cfg.DaprAPIToken, cfg.AllowDevCaller, previewer, cfg.Translation.WriteDeadline, time.Now, engagementClient)
+	handler := httpapi.NewWithTranslation(service, contentService, db, assetClient, cfg.AdminAllowedCaller, cfg.DaprAPIToken, cfg.AllowDevCaller, previewer, cfg.Translation.WriteDeadline, time.Now, engagementClient).WithSiteSettings(siteSettingsService)
 	assets := publication.NewAssetAdapter(assetClient)
 	worker := publication.NewWorker(repository, assets, cfg.OutboxMaxAttempts, engagementClient)
 	go func() {

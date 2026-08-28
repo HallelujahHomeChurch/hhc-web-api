@@ -109,3 +109,38 @@ func TestSiteSettingsGetReturnsNotFound(t *testing.T) {
 		t.Fatalf("err=%v", err)
 	}
 }
+
+func TestSiteSettingsPublicReadsExactLocaleProjection(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT payload_json FROM hhc_web.public_projection WHERE projection_key=$1 AND resource_type='site_layout' AND locale=$2")).
+		WithArgs("site_layout:ja", "ja").
+		WillReturnRows(sqlmock.NewRows([]string{"payload_json"}).AddRow([]byte(`{"locale":"ja","siteName":"教会","version":4}`)))
+
+	value, err := NewSiteSettingsRepository(db).Public(context.Background(), "ja")
+	if err != nil || value.Locale != "ja" || value.SiteName != "教会" || value.Version != 4 {
+		t.Fatalf("value=%#v err=%v", value, err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSiteSettingsPublicMapsMissingProjection(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	mock.ExpectQuery("SELECT payload_json FROM hhc_web.public_projection").
+		WithArgs("site_layout:ko", "ko").
+		WillReturnError(sql.ErrNoRows)
+
+	_, err = NewSiteSettingsRepository(db).Public(context.Background(), "ko")
+	if !errors.Is(err, sitesettings.ErrNotFound) {
+		t.Fatalf("err=%v", err)
+	}
+}

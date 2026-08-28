@@ -47,6 +47,21 @@ type ExternalLinks struct {
 	MusicYouTube   string `json:"musicYoutube"`
 }
 
+type PublicLayout struct {
+	Locale                 string        `json:"locale"`
+	SiteName               string        `json:"siteName"`
+	EnglishName            string        `json:"englishName"`
+	CopyrightHolder        string        `json:"copyrightHolder"`
+	AllRightsReserved      string        `json:"allRightsReserved"`
+	SEOTitleSuffix         string        `json:"seoTitleSuffix"`
+	SEODescriptionFallback string        `json:"seoDescriptionFallback"`
+	Header                 []NavItem     `json:"header"`
+	Legal                  []NavItem     `json:"legal"`
+	Links                  ExternalLinks `json:"links"`
+	Version                int64         `json:"version"`
+	PublishedAt            *time.Time    `json:"publishedAt"`
+}
+
 type WriteInput struct {
 	Locales []LocaleSettings `json:"locales"`
 	Links   ExternalLinks    `json:"links"`
@@ -76,6 +91,7 @@ type Revision struct {
 
 type Repository interface {
 	Get(context.Context) (Settings, error)
+	Public(context.Context, string) (PublicLayout, error)
 	Save(context.Context, WriteInput, int64, string, time.Time) (Settings, error)
 	Publish(context.Context, int64, string, time.Time) (Settings, error)
 	Unpublish(context.Context, int64, string, time.Time) (Settings, error)
