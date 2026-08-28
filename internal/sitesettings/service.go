@@ -2,7 +2,6 @@ package sitesettings
 
 import (
 	"context"
-	"net"
 	"net/url"
 	"strings"
 	"time"
@@ -155,10 +154,10 @@ func validExternalURL(value string) bool {
 		return false
 	}
 	host := strings.ToLower(parsed.Hostname())
-	if host == "" || strings.HasSuffix(host, ".") || host == "localhost" || hasBlockedSuffix(host) {
-		return false
-	}
-	if strings.Trim(host, "0123456789.") == "" || net.ParseIP(host) != nil {
+	lastDot := strings.LastIndexByte(host, '.')
+	if host == "" || strings.HasSuffix(host, ".") || lastDot < 1 ||
+		!strings.ContainsAny(host[lastDot+1:], "abcdefghijklmnopqrstuvwxyz") ||
+		host == "localhost" || hasBlockedSuffix(host) {
 		return false
 	}
 	return true

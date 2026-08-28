@@ -59,6 +59,8 @@ func TestSaveRejectsUnsafeExternalLinks(t *testing.T) {
 		"https://8.8.8.8./channel",
 		"https://2130706433/channel",
 		"https://127.1/channel",
+		"https://0x7f000001/channel",
+		"https://0x7f.0.0.1/channel",
 		"https://[::1]/channel",
 		"https://[2606:4700:4700::1111]/channel",
 		"https://[2606:4700:4700:0000:0000:0000:0000:1111]/channel",
@@ -75,6 +77,19 @@ func TestSaveRejectsUnsafeExternalLinks(t *testing.T) {
 			input := validWriteInput()
 			input.Links.ChurchYouTube = value
 			if _, err := NewService(repo, time.Now).Save(context.Background(), input, 1, "admin"); !errors.Is(err, ErrInvalid) {
+				t.Fatalf("err=%v", err)
+			}
+		})
+	}
+}
+
+func TestSaveAcceptsDNSExternalLinks(t *testing.T) {
+	for _, value := range []string{"https://media.example.com/channel", "https://example.xn--fiqs8s/channel"} {
+		t.Run(value, func(t *testing.T) {
+			repo := &serviceRepository{settings: Settings{ID: SingletonID, Version: 1}}
+			input := validWriteInput()
+			input.Links.ChurchYouTube = value
+			if _, err := NewService(repo, time.Now).Save(context.Background(), input, 1, "admin"); err != nil {
 				t.Fatalf("err=%v", err)
 			}
 		})

@@ -178,7 +178,7 @@ func TestOpenAPISiteSettingsSchemasAcceptValidWireShapes(t *testing.T) {
 	if err := document.Components.Schemas["SiteSettings"].Value.VisitJSON(validAdminSiteSettings(), openapi3.EnableJSONSchema2020()); err != nil {
 		t.Fatalf("SiteSettings rejected valid payload: %v", err)
 	}
-	for _, safeURL := range []string{"https://example.com/channel", "https://example.com/channel?%66oo=bar"} {
+	for _, safeURL := range []string{"https://media.example.com/channel", "https://example.xn--fiqs8s/channel", "https://example.com/channel?%66oo=bar"} {
 		value := validAdminSiteSettingsInput()
 		externalLinks(value)["churchYoutube"] = safeURL
 		if err := document.Components.Schemas["SiteSettingsWriteInput"].Value.VisitJSON(value, openapi3.EnableJSONSchema2020()); err != nil {
@@ -208,6 +208,8 @@ func TestOpenAPISiteSettingsRejectsRuntimeInvalidWireShapes(t *testing.T) {
 		{"trailing-dot IPv4 URL", func(value map[string]any) { externalLinks(value)["churchYoutube"] = "https://8.8.8.8./channel" }},
 		{"integer numeric host URL", func(value map[string]any) { externalLinks(value)["churchYoutube"] = "https://2130706433/channel" }},
 		{"short numeric host URL", func(value map[string]any) { externalLinks(value)["churchYoutube"] = "https://127.1/channel" }},
+		{"hex numeric host URL", func(value map[string]any) { externalLinks(value)["churchYoutube"] = "https://0x7f000001/channel" }},
+		{"mixed hex numeric host URL", func(value map[string]any) { externalLinks(value)["churchYoutube"] = "https://0x7f.0.0.1/channel" }},
 		{"canonical public IPv6 URL", func(value map[string]any) {
 			externalLinks(value)["churchYoutube"] = "https://[2606:4700:4700::1111]/channel"
 		}},
