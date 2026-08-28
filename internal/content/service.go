@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"net"
 	"net/url"
 	"regexp"
 	"strings"
@@ -13,6 +14,7 @@ import (
 
 var youtubeID = regexp.MustCompile(`^[A-Za-z0-9_-]{11}$`)
 var contentSlug = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
+var locationKey = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 
 type Service struct {
 	repository Repository
@@ -94,6 +96,9 @@ func (s *Service) UpdateContent(ctx context.Context, module Module, id string, e
 		}
 		input = normalizeNews(input, "")
 	}
+	if module == ModuleLocations && input.LocationKey != current.LocationKey {
+		return Item{}, ErrInvalid
+	}
 	if !valid(module, input) || !validDeleteLocales(input.DeleteLocales) {
 		return Item{}, ErrInvalid
 	}
@@ -133,7 +138,7 @@ func (s *Service) RestoreContent(ctx context.Context, module Module, id string, 
 	if err != nil {
 		return Item{}, err
 	}
-	input := WriteInput{AuthorName: value.Snapshot.AuthorName, Slug: value.Snapshot.Slug, DisplayDate: value.Snapshot.DisplayDate, EventDate: value.Snapshot.EventDate, YouTubeVideoID: value.Snapshot.YouTubeVideoID, CoverAssetID: value.Snapshot.CoverAssetID, HomeCoverAssetID: value.Snapshot.HomeCoverAssetID, DetailLayout: value.Snapshot.DetailLayout, Featured: value.Snapshot.Featured, HomeEligible: value.Snapshot.HomeEligible, Translations: preserveMissingLocales(value.Snapshot.Translations, current.Translations)}
+	input := WriteInput{AuthorName: value.Snapshot.AuthorName, Slug: value.Snapshot.Slug, DisplayDate: value.Snapshot.DisplayDate, EventDate: value.Snapshot.EventDate, YouTubeVideoID: value.Snapshot.YouTubeVideoID, CoverAssetID: value.Snapshot.CoverAssetID, HomeCoverAssetID: value.Snapshot.HomeCoverAssetID, DetailLayout: value.Snapshot.DetailLayout, Featured: value.Snapshot.Featured, HomeEligible: value.Snapshot.HomeEligible, LocationKey: value.Snapshot.LocationKey, MapHref: value.Snapshot.MapHref, SortOrder: value.Snapshot.SortOrder, Translations: preserveMissingLocales(value.Snapshot.Translations, current.Translations)}
 	return s.UpdateContent(ctx, module, id, expected, input, actor)
 }
 func (s *Service) DeleteContent(ctx context.Context, module Module, id string, expected int64, actor string) error {
@@ -164,8 +169,19 @@ func (s *Service) PublicNews(ctx context.Context, locale, slug string) (PublicIt
 	return s.repository.PublicNews(ctx, locale, slug)
 }
 
+func (s *Service) PublicLocations(ctx context.Context, locale string) ([]PublicLocation, error) {
+	if !validLocale(locale) {
+		return nil, ErrInvalid
+	}
+	repository, ok := s.repository.(LocationRepository)
+	if !ok {
+		return nil, ErrInvalid
+	}
+	return repository.PublicLocations(ctx, locale)
+}
+
 func validModule(module Module) bool {
-	return module == ModuleNews || module == ModuleHistory || module == ModuleVideos
+	return module == ModuleNews || module == ModuleHistory || module == ModuleVideos || module == ModuleLocations
 }
 func validLocale(locale string) bool {
 	switch locale {
@@ -191,6 +207,9 @@ func valid(module Module, input WriteInput) bool {
 	if module != ModuleNews && input.AuthorName != "" {
 		return false
 	}
+	if module != ModuleLocations && (input.LocationKey != "" || input.MapHref != "" || input.SortOrder != 0) {
+		return false
+	}
 	seen := map[string]bool{}
 	for _, value := range input.Translations {
 		if !validLocale(value.Locale) || seen[value.Locale] ||
@@ -210,12 +229,14 @@ func valid(module Module, input WriteInput) bool {
 		return validHistoryDate(input.EventDate)
 	case ModuleVideos:
 		return youtubeID.MatchString(input.YouTubeVideoID)
+	case ModuleLocations:
+		return ValidateLocation(input)
 	default:
 		return false
 	}
 }
 func publishable(item Item) bool {
-	if !valid(item.Module, WriteInput{AuthorName: item.AuthorName, Slug: item.Slug, DisplayDate: item.DisplayDate, EventDate: item.EventDate, YouTubeVideoID: item.YouTubeVideoID, CoverAssetID: item.CoverAssetID, HomeCoverAssetID: item.HomeCoverAssetID, DetailLayout: item.DetailLayout, Translations: item.Translations}) {
+	if !valid(item.Module, WriteInput{AuthorName: item.AuthorName, Slug: item.Slug, DisplayDate: item.DisplayDate, EventDate: item.EventDate, YouTubeVideoID: item.YouTubeVideoID, CoverAssetID: item.CoverAssetID, HomeCoverAssetID: item.HomeCoverAssetID, DetailLayout: item.DetailLayout, LocationKey: item.LocationKey, MapHref: item.MapHref, SortOrder: item.SortOrder, Translations: item.Translations}) {
 		return false
 	}
 	for _, value := range item.Translations {
@@ -226,6 +247,10 @@ func publishable(item Item) bool {
 			}
 		case ModuleHistory:
 			if value.Body == "" {
+				return false
+			}
+		case ModuleLocations:
+			if len(item.Translations) != 5 || value.Body == "" {
 				return false
 			}
 		}
@@ -263,9 +288,8 @@ func normalize(input WriteInput) WriteInput {
 	input.CoverAssetID = strings.TrimSpace(input.CoverAssetID)
 	input.HomeCoverAssetID = strings.TrimSpace(input.HomeCoverAssetID)
 	input.DetailLayout = strings.TrimSpace(input.DetailLayout)
-	if input.DetailLayout == "" {
-		input.DetailLayout = "top"
-	}
+	input.LocationKey = strings.TrimSpace(input.LocationKey)
+	input.MapHref = strings.TrimSpace(input.MapHref)
 	for index := range input.Translations {
 		input.Translations[index].Locale = strings.TrimSpace(input.Translations[index].Locale)
 		input.Translations[index].Title = strings.TrimSpace(input.Translations[index].Title)
@@ -328,6 +352,9 @@ func validNewsDetailLayout(value string) bool {
 }
 
 func normalizeNews(input WriteInput, slugSeed string) WriteInput {
+	if input.DetailLayout == "" {
+		input.DetailLayout = "top"
+	}
 	if input.Slug == "" && slugSeed != "" {
 		digest := sha256.Sum256([]byte(slugSeed))
 		input.Slug = "news-" + strings.ReplaceAll(input.DisplayDate, "-", "") + "-" + fmt.Sprintf("%x", digest[:4])
@@ -338,6 +365,48 @@ func normalizeNews(input WriteInput, slugSeed string) WriteInput {
 		}
 	}
 	return input
+}
+
+// ValidateLocation is shared by API writes and the content importer.
+func ValidateLocation(input WriteInput) bool {
+	if len(input.Translations) == 0 || len(input.Translations) > 5 || !locationKey.MatchString(input.LocationKey) || input.SortOrder < 0 || !validPublicLocationURL(input.MapHref) ||
+		input.Slug != "" || input.DisplayDate != "" || input.EventDate != "" || input.YouTubeVideoID != "" ||
+		input.CoverAssetID != "" || input.HomeCoverAssetID != "" || input.DetailLayout != "" || input.Featured || input.HomeEligible {
+		return false
+	}
+	for _, translation := range input.Translations {
+		if strings.TrimSpace(translation.Title) == "" || strings.TrimSpace(translation.Body) == "" {
+			return false
+		}
+	}
+	return true
+}
+
+func validPublicLocationURL(value string) bool {
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.Fragment != "" {
+		return false
+	}
+	host := strings.TrimSuffix(strings.ToLower(parsed.Hostname()), ".")
+	if host == "localhost" || host == "api-gateway" || host == "account-api" || host == "asset-api" || host == "engagement-api" || host == "hhc-web-api" || host == "notification-api" ||
+		strings.HasSuffix(host, ".localhost") || strings.HasSuffix(host, ".local") || strings.HasSuffix(host, ".internal") ||
+		strings.HasSuffix(host, ".blob.core.windows.net") || strings.HasSuffix(host, ".dfs.core.windows.net") {
+		return false
+	}
+	if ip := net.ParseIP(host); ip != nil && (ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() || ip.IsMulticast()) {
+		return false
+	}
+	path := strings.ToLower(parsed.Path)
+	if path == "/api" || strings.HasPrefix(path, "/api/") || path == "/priv" || strings.HasPrefix(path, "/priv/") {
+		return false
+	}
+	for key := range parsed.Query() {
+		switch strings.ToLower(key) {
+		case "sig", "sv", "se", "sp", "sr", "st", "skoid", "sktid", "skt", "ske", "sks", "skv":
+			return false
+		}
+	}
+	return true
 }
 
 func excerpt(value string, limit int) string {

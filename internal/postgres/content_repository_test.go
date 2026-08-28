@@ -338,3 +338,37 @@ func TestPublicVideoUsesWidelyAvailableYouTubeThumbnail(t *testing.T) {
 		t.Fatalf("image URL = %q", got.ImageURL)
 	}
 }
+
+func TestPublicLocationUsesStableKeyInsteadOfContentID(t *testing.T) {
+	got := publicLocation(content.Item{
+		ID: "10000000-0000-4000-8000-000000000001", Module: content.ModuleLocations,
+		LocationKey: "taipei", MapHref: "https://maps.app.goo.gl/fDus6nVswbuhSEAd8", SortOrder: 10,
+	}, content.Translation{Locale: "zh-Hant", Title: "台北哈利路亞家教會", Body: "台北地址"})
+	if got.ID != "taipei" || got.Name != "台北哈利路亞家教會" || got.Address != "台北地址" || got.SortOrder != 10 || got.MapHref == "" {
+		t.Fatalf("location=%#v", got)
+	}
+}
+
+func TestPublicLocationsReadsExactLocaleAndSortsNumerically(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	mock.ExpectQuery("SELECT projection.payload_json,availability.locales").
+		WithArgs("ja").
+		WillReturnRows(sqlmock.NewRows([]string{"payload_json", "available_locales"}).
+			AddRow([]byte(`{"id":"taipei","name":"台北","address":"Taipei","mapHref":"https://maps.example.com/taipei","sortOrder":2}`), []byte(`["en","ja","zh-Hant"]`)).
+			AddRow([]byte(`{"id":"zhongli","name":"中壢","address":"Zhongli","mapHref":"https://maps.example.com/zhongli","sortOrder":10}`), []byte(`["ja","zh-Hant"]`)))
+
+	items, err := New(db).PublicLocations(context.Background(), "ja")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 2 || items[0].ID != "taipei" || items[1].ID != "zhongli" || items[0].ResolvedLocale != "ja" || !reflect.DeepEqual(items[0].AvailableLocales, []string{"zh-Hant", "en", "ja"}) {
+		t.Fatalf("items=%#v", items)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
