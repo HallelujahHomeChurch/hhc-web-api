@@ -2212,10 +2212,22 @@ components:
         availableLocales: { type: array, minItems: 1, maxItems: 5, uniqueItems: true, items: { $ref: '#/components/schemas/ContentLocale' } }
         version: { type: integer, format: int64, minimum: 1 }
         publishedAt: { type: string, format: date-time }
-    ContentTranslation:
+    ContentWriteTranslation:
       type: object
       additionalProperties: false
       required: [locale]
+      properties:
+        locale: { $ref: '#/components/schemas/ContentLocale' }
+        title: { type: string, minLength: 1, maxLength: 200 }
+        summary: { type: string, maxLength: 500 }
+        body: { type: string, maxLength: 100000 }
+        dateLabel: { type: string, maxLength: 100 }
+        imageAlt: { type: string, maxLength: 300 }
+        bodyJson: { $ref: '#/components/schemas/PageContent' }
+    ContentTranslation:
+      type: object
+      additionalProperties: false
+      required: [locale, title]
       properties:
         locale: { $ref: '#/components/schemas/ContentLocale' }
         title: { type: string, minLength: 1, maxLength: 200 }
@@ -2330,7 +2342,7 @@ components:
           type: array
           minItems: 1
           maxItems: 5
-          items: { $ref: '#/components/schemas/ContentTranslation' }
+          items: { $ref: '#/components/schemas/ContentWriteTranslation' }
         deleteLocales:
           type: array
           uniqueItems: true
@@ -2340,12 +2352,17 @@ components:
       allOf:
         - $ref: '#/components/schemas/ContentWriteFields'
         - type: object
-          required: [id, module, status, version, isPublished, createdBy, updatedBy, createdAt, updatedAt]
+          required: [id, module, status, version, translations, isPublished, createdBy, updatedBy, createdAt, updatedAt]
           properties:
             id: { type: string, format: uuid }
             module: { $ref: '#/components/schemas/ContentModule' }
             status: { $ref: '#/components/schemas/ContentStatus' }
             version: { type: integer, format: int64 }
+            translations:
+              type: array
+              minItems: 1
+              maxItems: 5
+              items: { $ref: '#/components/schemas/ContentTranslation' }
             coverUrl: { type: string }
             homeCoverUrl: { type: string }
             isPublished: { type: boolean }

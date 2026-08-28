@@ -6,6 +6,7 @@ import (
 	"os"
 	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -552,6 +553,56 @@ func TestOpenAPIContentWriteInputKeepsExistingModulesCompatible(t *testing.T) {
 	}
 }
 
+func TestOpenAPIContentTranslationKeepsResponseTitleRequired(t *testing.T) {
+	loader := openapi3.NewLoader()
+	document, err := loader.LoadFromFile("openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	writeTranslation := document.Components.Schemas["ContentWriteTranslation"]
+	responseTranslation := document.Components.Schemas["ContentTranslation"]
+	if writeTranslation == nil || writeTranslation.Value == nil {
+		t.Fatal("missing ContentWriteTranslation schema")
+	}
+	if responseTranslation == nil || responseTranslation.Value == nil {
+		t.Fatal("missing ContentTranslation schema")
+	}
+	if slices.Contains(writeTranslation.Value.Required, "title") {
+		t.Fatal("page writes must be able to omit their derived title")
+	}
+	if !slices.Contains(responseTranslation.Value.Required, "title") {
+		t.Fatal("ContentItem translations must keep title required")
+	}
+
+	writeItems := document.Components.Schemas["ContentWriteFields"].Value.Properties["translations"].Value.Items
+	if writeItems.Ref != "#/components/schemas/ContentWriteTranslation" {
+		t.Fatalf("ContentWriteFields translations ref = %q", writeItems.Ref)
+	}
+	item := document.Components.Schemas["ContentItem"].Value
+	if len(item.AllOf) < 2 || item.AllOf[1].Value == nil {
+		t.Fatal("ContentItem response fields missing")
+	}
+	responseItems := item.AllOf[1].Value.Properties["translations"].Value.Items
+	if responseItems.Ref != "#/components/schemas/ContentTranslation" {
+		t.Fatalf("ContentItem translations ref = %q", responseItems.Ref)
+	}
+
+	response := map[string]any{
+		"id": "00000000-0000-0000-0000-000000000001", "module": "news", "status": "draft", "version": 1,
+		"translations": []any{map[string]any{"locale": "zh-Hant", "title": "消息"}},
+		"isPublished":  false, "createdBy": "actor", "updatedBy": "actor",
+		"createdAt": "2026-08-29T00:00:00Z", "updatedAt": "2026-08-29T00:00:00Z",
+	}
+	if err := item.VisitJSON(response, openapi3.EnableJSONSchema2020()); err != nil {
+		t.Fatalf("valid ContentItem response: %v", err)
+	}
+	delete(response["translations"].([]any)[0].(map[string]any), "title")
+	if err := item.VisitJSON(response, openapi3.EnableJSONSchema2020()); err == nil {
+		t.Fatal("ContentItem response without translation title passed validation")
+	}
+}
+
 func TestOpenAPIDocumentsNewsSEOFields(t *testing.T) {
 	contents, err := os.ReadFile("openapi.yaml")
 	if err != nil {
@@ -734,7 +785,7 @@ func TestOpenAPIComposedSchemasRemainSatisfiable(t *testing.T) {
 		contains []string
 	}{
 		{"ContentWriteInput", []string{"allOf:", "$ref: '#/components/schemas/ContentWriteFields'", "unevaluatedProperties: false"}},
-		{"ContentItem", []string{"$ref: '#/components/schemas/ContentWriteFields'", "required: [id, module, status, version, isPublished, createdBy, updatedBy, createdAt, updatedAt]", "unevaluatedProperties: false"}},
+		{"ContentItem", []string{"$ref: '#/components/schemas/ContentWriteFields'", "required: [id, module, status, version, translations, isPublished, createdBy, updatedBy, createdAt, updatedAt]", "$ref: '#/components/schemas/ContentTranslation'", "unevaluatedProperties: false"}},
 		{"CreateCampaignSchedule", []string{"$ref: '#/components/schemas/CampaignScheduleFields'", "unevaluatedProperties: false"}},
 		{"UpdateCampaignSchedule", []string{"$ref: '#/components/schemas/CampaignScheduleFields'", "required: [enabled]", "enabled: { type: boolean }", "unevaluatedProperties: false"}},
 	}
