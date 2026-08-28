@@ -210,3 +210,32 @@ func TestNewsSEOMetadataMigrationBackfillsSourceAndPublicProjections(t *testing.
 		}
 	}
 }
+
+func TestContentSeedProvenanceMigrationAddsRunAndSourceTables(t *testing.T) {
+	contents, err := files.ReadFile("sql/026_content_seed_runs.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := string(contents)
+	for _, expected := range []string{
+		"CREATE TABLE hhc_web.content_seed_run",
+		"CREATE TABLE hhc_web.content_seed_source",
+		"CREATE UNIQUE INDEX uq_content_seed_run_succeeded_version",
+		"ON hhc_web.content_seed_run(seed_version)",
+		"WHERE status = 'succeeded'",
+		"UNIQUE(seed_run_id, source_path, source_key)",
+		"REFERENCES hhc_web.content_seed_run(id)",
+		"status text NOT NULL CHECK (status IN ('started','succeeded','failed'))",
+		"status text NOT NULL CHECK (status IN ('inserted','skipped'))",
+		"mode text NOT NULL CHECK (mode IN ('apply'))",
+		"target_kind text NOT NULL CHECK (target_kind IN ('location','site_layout','page'))",
+		"source_commit text NOT NULL CHECK (source_commit ~ '^[0-9a-f]{40}$')",
+		"manifest_sha256 text NOT NULL CHECK (manifest_sha256 ~ '^[0-9a-f]{64}$')",
+		"source_sha256 text NOT NULL CHECK (source_sha256 ~ '^[0-9a-f]{64}$')",
+		"record_sha256 text NOT NULL CHECK (record_sha256 ~ '^[0-9a-f]{64}$')",
+	} {
+		if !strings.Contains(sql, expected) {
+			t.Fatalf("migration missing %q", expected)
+		}
+	}
+}
