@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "seedVersion": "2026-08-28-public-content-foundation-v1",
+  "seedVersion": "2026-08-28-public-content-locations-v1",
   "sourceRepo": "HallelujahHomeChurch/hhc-web",
   "sourceCommit": "5c224f19b0cd57dbbeb46bcc0ab4bea4e016f79c",
   "locales": ["zh-Hant", "zh-Hans", "en", "ja", "ko"],
@@ -17,5 +17,40 @@
     {"path": "src/i18n/locales/ja.json", "sha256": "f1dc6ace4a78a1c14a1f42578cd49d13d6204f3c6f990fc00737b3eb3f066997"},
     {"path": "src/i18n/locales/ko.json", "sha256": "5a1df95650c9a0d7fb6b6fb61435f47fc7dda1f075367cb9502f660fc700ecc6"}
   ],
-  "records": []
+  "records": [
+    {
+      "kind": "location",
+      "sourcePaths": ["src/features/locations/mock-data.ts"],
+      "sourceKey": "location:taipei",
+      "payload": {
+        "stableKey": "taipei",
+        "mapHref": "https://maps.app.goo.gl/fDus6nVswbuhSEAd8",
+        "sortOrder": 10,
+        "translations": [
+          {"locale":"zh-Hant","name":"台北哈利路亞家教會","address":"106臺北市大安區民輝里仁愛路三段29號B1"},
+          {"locale":"zh-Hans","name":"台北哈利路亚家教会","address":"106台北市大安区民辉里仁爱路三段29号B1"},
+          {"locale":"en","name":"Taipei Hallelujah Home Church","address":"B1, No. 29, Sec. 3, Ren'ai Rd., Da'an Dist., Taipei City 106675, Taiwan (R.O.C.)."},
+          {"locale":"ja","name":"台北ハレルヤ・ホームチャーチ","address":"B1, No. 29, Sec. 3, Ren'ai Rd., Da'an Dist., Taipei City 106675, Taiwan (R.O.C.)."},
+          {"locale":"ko","name":"타이베이 할렐루야 가정교회","address":"B1, No. 29, Sec. 3, Ren'ai Rd., Da'an Dist., Taipei City 106675, Taiwan (R.O.C.)."}
+        ]
+      }
+    },
+    {
+      "kind": "location",
+      "sourcePaths": ["src/features/locations/mock-data.ts"],
+      "sourceKey": "location:zhongli",
+      "payload": {
+        "stableKey": "zhongli",
+        "mapHref": "https://maps.app.goo.gl/A1SDTSZC2XLHqkST7",
+        "sortOrder": 20,
+        "translations": [
+          {"locale":"zh-Hant","name":"中壢哈利路亞家教會","address":"320桃園市中壢區正義里福州路25號2樓"},
+          {"locale":"zh-Hans","name":"中坜哈利路亚家教会","address":"320桃园市中坜区正义里福州路25号2楼"},
+          {"locale":"en","name":"Zhongli Hallelujah Home Church","address":"2 F., No. 25, Fuzhou Rd., Zhongli Dist., Taoyuan City 320048, Taiwan (R.O.C.)."},
+          {"locale":"ja","name":"中壢ハレルヤ・ホームチャーチ","address":"2 F., No. 25, Fuzhou Rd., Zhongli Dist., Taoyuan City 320048, Taiwan (R.O.C.)."},
+          {"locale":"ko","name":"중리 할렐루야 가정교회","address":"2 F., No. 25, Fuzhou Rd., Zhongli Dist., Taoyuan City 320048, Taiwan (R.O.C.)."}
+        ]
+      }
+    }
+  ]
 }

@@ -83,12 +83,17 @@ func TestLoadRejectsUnknownNestedFields(t *testing.T) {
 	}
 }
 
-func TestEmbeddedManifestLoadsWithoutUnreleasedRecords(t *testing.T) {
+func TestEmbeddedManifestLoadsLocationRecords(t *testing.T) {
 	manifest, hash, err := Load(contentmanifest.Manifest)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if hash == "" || len(manifest.Records) != 0 {
-		t.Fatalf("embedded manifest hash=%q records=%d", hash, len(manifest.Records))
+	if hash == "" || manifest.SeedVersion != "2026-08-28-public-content-locations-v1" || len(manifest.Records) != 2 {
+		t.Fatalf("embedded manifest hash=%q version=%q records=%d", hash, manifest.SeedVersion, len(manifest.Records))
+	}
+	for i, sourceKey := range []string{"location:taipei", "location:zhongli"} {
+		if manifest.Records[i].Kind != "location" || manifest.Records[i].SourceKey != sourceKey {
+			t.Fatalf("record %d = %#v", i, manifest.Records[i])
+		}
 	}
 }

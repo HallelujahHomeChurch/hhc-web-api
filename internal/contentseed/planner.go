@@ -1,13 +1,19 @@
 package contentseed
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"sort"
+	"strings"
+
+	"github.com/HallelujahHomeChurch/hhc-web-api/internal/content"
 )
 
 type Action string
@@ -47,10 +53,37 @@ type InventoryReport struct {
 
 type plannerKind struct {
 	decode       func(json.RawMessage) (any, error)
+	sourceKey    func(any) string
 	lookupTarget func(context.Context, seedQuerier, string) (string, bool, error)
 }
 
-var plannerKinds = map[string]plannerKind{}
+type locationSeedTranslation struct {
+	Locale  string `json:"locale"`
+	Name    string `json:"name"`
+	Address string `json:"address"`
+}
+
+type locationSeedPayload struct {
+	StableKey    string                    `json:"stableKey"`
+	MapHref      string                    `json:"mapHref"`
+	SortOrder    int                       `json:"sortOrder"`
+	Translations []locationSeedTranslation `json:"translations"`
+}
+
+var plannerKinds = map[string]plannerKind{
+	"location": {
+		decode:    decodeLocationSeedPayload,
+		sourceKey: func(value any) string { return "location:" + value.(locationSeedPayload).StableKey },
+		lookupTarget: func(ctx context.Context, db seedQuerier, sourceKey string) (string, bool, error) {
+			var targetID string
+			err := db.QueryRowContext(ctx, `SELECT content_id::text FROM hhc_web.location_item WHERE stable_key=$1`, strings.TrimPrefix(sourceKey, "location:")).Scan(&targetID)
+			if errors.Is(err, sql.ErrNoRows) {
+				return "", false, nil
+			}
+			return targetID, err == nil, err
+		},
+	},
+}
 
 type seedQuerier interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
@@ -70,6 +103,9 @@ func plan(ctx context.Context, db seedQuerier, manifest Manifest, kinds map[stri
 		payload, err := kind.decode(record.Payload)
 		if err != nil {
 			return PlanReport{}, fmt.Errorf("validate %s/%s payload: %w", record.Kind, record.SourceKey, err)
+		}
+		if kind.sourceKey != nil && record.SourceKey != kind.sourceKey(payload) {
+			return PlanReport{}, fmt.Errorf("validate %s/%s payload: sourceKey must equal %q", record.Kind, record.SourceKey, kind.sourceKey(payload))
 		}
 		recordHash, err := canonicalSHA256(payload)
 		if err != nil {
@@ -112,6 +148,40 @@ func plan(ctx context.Context, db seedQuerier, manifest Manifest, kinds map[stri
 		}
 	}
 	return report, nil
+}
+
+func decodeLocationSeedPayload(raw json.RawMessage) (any, error) {
+	var payload locationSeedPayload
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&payload); err != nil {
+		return nil, err
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			err = errors.New("payload contains multiple JSON values")
+		}
+		return nil, err
+	}
+	input := payload.writeInput()
+	locales := [...]string{"zh-Hant", "zh-Hans", "en", "ja", "ko"}
+	if len(payload.Translations) != len(locales) || !content.ValidateLocation(input) {
+		return nil, errors.New("location payload is invalid")
+	}
+	for i, locale := range locales {
+		if payload.Translations[i].Locale != locale {
+			return nil, errors.New("location translations must contain zh-Hant, zh-Hans, en, ja, and ko in order")
+		}
+	}
+	return payload, nil
+}
+
+func (payload locationSeedPayload) writeInput() content.WriteInput {
+	translations := make([]content.Translation, len(payload.Translations))
+	for i, translation := range payload.Translations {
+		translations[i] = content.Translation{Locale: translation.Locale, Title: translation.Name, Body: translation.Address}
+	}
+	return content.WriteInput{LocationKey: payload.StableKey, MapHref: payload.MapHref, SortOrder: payload.SortOrder, Translations: translations}
 }
 
 func canonicalSHA256(payload any) (string, error) {
