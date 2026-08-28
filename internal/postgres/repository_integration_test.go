@@ -1445,8 +1445,14 @@ func TestFixedEditorialPageLifecycle(t *testing.T) {
 	}
 	for _, locale := range []string{"zh-Hant", "zh-Hans", "en", "ja", "ko"} {
 		restored, etag, err := service.PublicEditorialPage(ctx, "home", locale)
-		if err != nil || restored.Version != home.Version || !restored.PublishedAt.Equal(*home.PublishedAt) || etag == changedETags[locale] || !strings.Contains(string(restored.Content), `"heroTitle":"Home"`) {
-			t.Fatalf("restored %s=%#v etag=%q changed=%q err=%v", locale, restored, etag, changedETags[locale], err)
+		var payload struct {
+			Data struct {
+				HeroTitle string `json:"heroTitle"`
+			} `json:"data"`
+		}
+		payloadErr := json.Unmarshal(restored.Content, &payload)
+		if err != nil || payloadErr != nil || restored.Version != home.Version || !restored.PublishedAt.Equal(*home.PublishedAt) || etag == changedETags[locale] || payload.Data.HeroTitle != "Home" {
+			t.Fatalf("restored %s=%#v etag=%q changed=%q heroTitle=%q err=%v payloadErr=%v", locale, restored, etag, changedETags[locale], payload.Data.HeroTitle, err, payloadErr)
 		}
 	}
 	revisions, err := service.ContentRevisions(ctx, content.ModulePages, home.ID)
