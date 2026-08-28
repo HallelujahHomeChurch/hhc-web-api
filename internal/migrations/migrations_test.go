@@ -264,3 +264,26 @@ func TestLocationsMigrationAddsFinalizedModulesAndDetailTable(t *testing.T) {
 		}
 	}
 }
+
+func TestSiteSettingsMigrationAddsSingletonLocalesAndRevisions(t *testing.T) {
+	contents, err := files.ReadFile("sql/028_site_settings.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := string(contents)
+	for _, expected := range []string{
+		"CREATE TABLE hhc_web.site_setting_set",
+		"id text PRIMARY KEY CHECK (id = 'default')",
+		"CREATE TABLE hhc_web.site_setting_locale",
+		"'zh-Hant','zh-Hans','en','ja','ko'",
+		"header_items_json jsonb NOT NULL",
+		"legal_items_json jsonb NOT NULL",
+		"CREATE TABLE hhc_web.site_setting_revision",
+		"'draft_saved','published','unpublished','seeded','restored_to_draft'",
+		"UNIQUE(setting_set_id, revision)",
+	} {
+		if !strings.Contains(sql, expected) {
+			t.Fatalf("migration missing %q", expected)
+		}
+	}
+}

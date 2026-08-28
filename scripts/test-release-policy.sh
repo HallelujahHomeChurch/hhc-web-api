@@ -91,6 +91,7 @@ grep -Fq 'test-migration-policy.sh internal/migrations/sql/*.sql' .github/workfl
 grep -Fq 'test-migration-policy.sh internal/migrations/sql/*.sql' "$workflow"
 grep -Fq 'npx --yes @redocly/cli@2.47.0 lint openapi.yaml' .github/workflows/ci.yml
 grep -Fq './scripts/test-release-policy.sh' .github/workflows/ci.yml
+grep -Fq 'SITE_LAYOUT_SMOKE_URL: https://www.alive.org.tw/api/site-layout?locale=zh-Hant' "$workflow"
 
 run_smoke_case() {
   mode="$1"
@@ -99,6 +100,11 @@ run_smoke_case() {
   location_body="$4"
   expected="$5"
   expected_location_request="$6"
+  site_layout_status="${7:-404}"
+  site_layout_content_type="${8:-application/json}"
+  site_layout_body='{"data":null,"meta":{},"error":{"code":"not_found","message":"The site settings were not found."}}'
+  [ "$#" -lt 9 ] || site_layout_body="$9"
+  expected_site_layout_request="${10:-unchecked}"
   case_dir="$(mktemp -d)"
   mkdir "$case_dir/bin"
   cat >"$case_dir/bin/timeout" <<'SH'
@@ -135,13 +141,20 @@ case "$url" in
     printf '%s\n' "$SMOKE_LOCATION_BODY" >"$body"
     printf '%s' "$SMOKE_LOCATION_STATUS"
     ;;
+  */api/site-layout*)
+    printf 'HTTP/1.1 %s\nContent-Type: %s\n\n' "$SMOKE_SITE_LAYOUT_STATUS" "$SMOKE_SITE_LAYOUT_CONTENT_TYPE" >"$headers"
+    printf '%s\n' "$SMOKE_SITE_LAYOUT_BODY" >"$body"
+    printf '%s' "$SMOKE_SITE_LAYOUT_STATUS"
+    ;;
 esac
 SH
   chmod +x "$case_dir/bin/timeout" "$case_dir/bin/script" "$case_dir/bin/curl"
   set +e
   PATH="$case_dir/bin:$PATH" SMOKE_MODE="$mode" SMOKE_EVENTS="$case_dir/events" \
     SMOKE_LOCATION_STATUS="$location_status" SMOKE_LOCATION_CONTENT_TYPE="$location_content_type" \
-    SMOKE_LOCATION_BODY="$location_body" ./scripts/smoke-release.sh >/dev/null 2>&1
+    SMOKE_LOCATION_BODY="$location_body" SMOKE_SITE_LAYOUT_STATUS="$site_layout_status" \
+    SMOKE_SITE_LAYOUT_CONTENT_TYPE="$site_layout_content_type" SMOKE_SITE_LAYOUT_BODY="$site_layout_body" \
+    ./scripts/smoke-release.sh >/dev/null 2>&1
   status=$?
   set -e
   case "$expected" in
@@ -151,6 +164,10 @@ SH
   case "$expected_location_request" in
     requested) grep -Eq '/api/locations([?]|$)' "$case_dir/events" ;;
     skipped) ! grep -Eq '/api/locations([?]|$)' "$case_dir/events" 2>/dev/null ;;
+  esac
+  case "$expected_site_layout_request" in
+    requested) grep -Eq '/api/site-layout([?]|$)' "$case_dir/events" ;;
+    skipped) ! grep -Eq '/api/site-layout([?]|$)' "$case_dir/events" 2>/dev/null ;;
   esac
   rm -rf "$case_dir"
 }
@@ -167,6 +184,32 @@ run_smoke_case forward 200 application/json-seq '{"data":[],"meta":{},"error":nu
 run_smoke_case forward 200 ' Application/JSON ; charset=utf-8 ' '{"data":[],"meta":{},"error":null}' pass requested
 run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":{"code":"unexpected"}}' fail requested
 run_smoke_case rollback 404 application/json '{"data":null,"meta":{},"error":{"code":"not_found"}}' pass skipped
+
+valid_site_layout='{"data":{"locale":"zh-Hant","siteName":"哈利路亞家教會","englishName":"Hallelujah Home Church","copyrightHolder":"Hallelujah Home Church","allRightsReserved":"版權所有","seoTitleSuffix":"HHC","seoDescriptionFallback":"教會網站","header":[{"key":"about","label":"關於我們","href":"/zh-Hant/about","visible":true},{"key":"news","label":"最新消息","href":"/zh-Hant/news","visible":true},{"key":"literature-ministry","label":"文字事工","href":"/zh-Hant/literature-ministry","visible":true}],"legal":[{"key":"privacy-policy","label":"隱私權政策","href":"/zh-Hant/privacy-policy","visible":true},{"key":"terms-of-use","label":"使用條款","href":"/zh-Hant/terms-of-use","visible":true}],"links":{"churchYoutube":"https://youtube.com/@hhc33","churchFacebook":"https://facebook.com/hhc","musicYoutube":"https://youtube.com/@music"},"version":1,"publishedAt":"2026-08-29T00:00:00Z"},"meta":{},"error":null}'
+backend_site_layout_not_found='{"data":null,"meta":{},"error":{"code":"not_found","message":"The site settings were not found."}}'
+hidden_site_layout="$(printf '%s\n' "$valid_site_layout" | jq -c '.data.header[0].visible = false | .data.header[0].label = "" | .data.legal[0].visible = false | .data.legal[0].label = ""')"
+reordered_site_layout="$(printf '%s\n' "$valid_site_layout" | jq -c '.data.header |= reverse | .data.legal |= reverse')"
+missing_site_layout="$(printf '%s\n' "$valid_site_layout" | jq -c 'del(.data.legal[1])')"
+duplicate_site_layout="$(printf '%s\n' "$valid_site_layout" | jq -c '.data.header[2] = .data.header[0]')"
+visible_empty_site_layout="$(printf '%s\n' "$valid_site_layout" | jq -c '.data.legal[0].label = ""')"
+run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' pass requested 200 application/json "$valid_site_layout" requested
+run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' pass requested 200 application/json "$hidden_site_layout" requested
+run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' pass requested 200 application/json "$reordered_site_layout" requested
+run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' pass requested 404 application/json "$backend_site_layout_not_found" requested
+run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' fail requested 404 application/json '{"error":"Not Found","message":"The requested resource was not found.","service":"api-gateway"}' requested
+run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' fail requested 404 text/plain '' requested
+run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' fail requested 200 application/json '{"data":{},"meta":{},"error":null}' requested
+run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' fail requested 200 application/json "$missing_site_layout" requested
+run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' fail requested 200 application/json "$duplicate_site_layout" requested
+run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' fail requested 200 application/json "$visible_empty_site_layout" requested
+run_smoke_case rollback 404 application/json '{"data":null,"meta":{},"error":{"code":"not_found"}}' pass skipped 404 application/json "$backend_site_layout_not_found" skipped
+
+forward_smoke_line="$(grep -nF 'SMOKE_MODE=forward ./scripts/smoke-release.sh' "$workflow" | cut -d: -f1)"
+pointer_upload_line="$(grep -nF -- '--name current.json' "$workflow" | tail -1 | cut -d: -f1)"
+test -n "$forward_smoke_line"
+test -n "$pointer_upload_line"
+test "$forward_smoke_line" -lt "$pointer_upload_line"
+grep -A2 '^  publish_openapi:' "$workflow" | grep -Fq 'needs: deploy'
 
 test -f "$import_workflow" || {
   echo 'missing manual content migration workflow' >&2

@@ -15,6 +15,7 @@ import (
 
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/content"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/platform"
+	"github.com/HallelujahHomeChurch/hhc-web-api/internal/sitesettings"
 )
 
 type Report struct {
@@ -161,6 +162,9 @@ func applyRecord(_ context.Context, _ *sql.Tx, record Record) (string, error) {
 }
 
 func applySeedRecord(ctx context.Context, tx *sql.Tx, record Record, actor string) (string, error) {
+	if record.Kind == "site_layout" {
+		return applySiteLayoutSeedRecord(ctx, tx, record, actor)
+	}
 	if record.Kind != "location" {
 		return "", unreleasedTargetError(record.Kind)
 	}
@@ -202,6 +206,52 @@ func applySeedRecord(ctx context.Context, tx *sql.Tx, record Record, actor strin
 		return "", fmt.Errorf("insert seeded revision: %w", err)
 	}
 	return id, nil
+}
+
+func applySiteLayoutSeedRecord(ctx context.Context, tx *sql.Tx, record Record, actor string) (string, error) {
+	decoded, err := decodeSiteLayoutSeedPayload(record.Payload)
+	if err != nil {
+		return "", err
+	}
+	payload := decoded.(siteLayoutSeedPayload)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	links, err := json.Marshal(payload.Links)
+	if err != nil {
+		return "", err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO hhc_web.site_setting_set(
+		id,status,version,external_links_json,created_by,updated_by,created_at,updated_at
+	) VALUES($1,'draft',1,$2,$3,$3,$4,$4)`, sitesettings.SingletonID, links, actor, now); err != nil {
+		return "", fmt.Errorf("insert site setting: %w", err)
+	}
+	for _, locale := range payload.Locales {
+		header, err := json.Marshal(locale.Header)
+		if err != nil {
+			return "", err
+		}
+		legal, err := json.Marshal(locale.Legal)
+		if err != nil {
+			return "", err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO hhc_web.site_setting_locale(
+			setting_set_id,locale,site_name,english_name,copyright_holder,all_rights_reserved,seo_title_suffix,seo_description_fallback,header_items_json,legal_items_json
+		) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, sitesettings.SingletonID, locale.Locale, locale.SiteName, locale.EnglishName, locale.CopyrightHolder, locale.AllRightsReserved, locale.SEOTitleSuffix, locale.SEODescriptionFallback, header, legal); err != nil {
+			return "", fmt.Errorf("insert %s site locale: %w", locale.Locale, err)
+		}
+	}
+	snapshot, err := json.Marshal(sitesettings.Settings{
+		ID: sitesettings.SingletonID, Status: sitesettings.StatusDraft, Version: 1, Locales: payload.Locales, Links: payload.Links,
+		CreatedBy: actor, UpdatedBy: actor, CreatedAt: now, UpdatedAt: now,
+	})
+	if err != nil {
+		return "", err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO hhc_web.site_setting_revision(
+		id,setting_set_id,revision,revision_type,snapshot_json,created_by,created_at
+	) VALUES($1,$2,1,'seeded',$3,$4,$5)`, platform.NewID(), sitesettings.SingletonID, snapshot, actor, now); err != nil {
+		return "", fmt.Errorf("insert seeded site setting revision: %w", err)
+	}
+	return sitesettings.SingletonID, nil
 }
 
 func unreleasedTargetError(kind string) error {

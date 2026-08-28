@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "seedVersion": "2026-08-28-public-content-locations-v1",
+  "seedVersion": "2026-08-28-public-content-site-layout-v1",
   "sourceRepo": "HallelujahHomeChurch/hhc-web",
   "sourceCommit": "5c224f19b0cd57dbbeb46bcc0ab4bea4e016f79c",
   "locales": ["zh-Hant", "zh-Hans", "en", "ja", "ko"],
@@ -49,6 +49,117 @@
           {"locale":"en","name":"Zhongli Hallelujah Home Church","address":"2 F., No. 25, Fuzhou Rd., Zhongli Dist., Taoyuan City 320048, Taiwan (R.O.C.)."},
           {"locale":"ja","name":"中壢ハレルヤ・ホームチャーチ","address":"2 F., No. 25, Fuzhou Rd., Zhongli Dist., Taoyuan City 320048, Taiwan (R.O.C.)."},
           {"locale":"ko","name":"중리 할렐루야 가정교회","address":"2 F., No. 25, Fuzhou Rd., Zhongli Dist., Taoyuan City 320048, Taiwan (R.O.C.)."}
+        ]
+      }
+    },
+    {
+      "kind": "site_layout",
+      "sourcePaths": [
+        "src/lib/site.ts",
+        "src/i18n/locales/zh-Hant.json",
+        "src/i18n/locales/zh-Hans.json",
+        "src/i18n/locales/en.json",
+        "src/i18n/locales/ja.json",
+        "src/i18n/locales/ko.json"
+      ],
+      "sourceKey": "site-layout:default",
+      "payload": {
+        "links": {
+          "churchYoutube": "https://youtube.com/@hhc33?si=SR2rSIVOTFX2dCmw",
+          "churchFacebook": "https://www.facebook.com/www.alive.org.tw/?locale=zh_TW",
+          "musicYoutube": "https://youtube.com/@gkpmusic777?si=JqJyfjM8FCmWD5MY"
+        },
+        "locales": [
+          {
+            "locale": "zh-Hant",
+            "siteName": "哈利路亞家教會",
+            "englishName": "Hallelujah Home Church",
+            "copyrightHolder": "社團法人中華民國哈利路亞社區關懷協會",
+            "allRightsReserved": "All rights reserved.",
+            "seoTitleSuffix": "哈利路亞家教會",
+            "seoDescriptionFallback": "在愛中建造家庭，在真理中成長",
+            "header": [
+              {"key":"about","label":"關於我們","href":"/{locale}/about","visible":true},
+              {"key":"news","label":"最新消息","href":"/{locale}/news","visible":true},
+              {"key":"literature-ministry","label":"文字事工","href":"/{locale}/literature-ministry","visible":true}
+            ],
+            "legal": [
+              {"key":"privacy-policy","label":"隱私權","href":"/{locale}/privacy-policy","visible":true},
+              {"key":"terms-of-use","label":"條款","href":"/{locale}/terms-of-use","visible":true}
+            ]
+          },
+          {
+            "locale": "zh-Hans",
+            "siteName": "哈利路亚家教会",
+            "englishName": "Hallelujah Home Church",
+            "copyrightHolder": "社团法人中华民国哈利路亚社区关怀协会",
+            "allRightsReserved": "All rights reserved.",
+            "seoTitleSuffix": "哈利路亚家教会",
+            "seoDescriptionFallback": "在爱中建造家庭，在真理中成长",
+            "header": [
+              {"key":"about","label":"关于我们","href":"/{locale}/about","visible":true},
+              {"key":"news","label":"最新消息","href":"/{locale}/news","visible":true},
+              {"key":"literature-ministry","label":"文字事工","href":"/{locale}/literature-ministry","visible":true}
+            ],
+            "legal": [
+              {"key":"privacy-policy","label":"隐私权","href":"/{locale}/privacy-policy","visible":true},
+              {"key":"terms-of-use","label":"条款","href":"/{locale}/terms-of-use","visible":true}
+            ]
+          },
+          {
+            "locale": "en",
+            "siteName": "Hallelujah Home Church",
+            "englishName": "Hallelujah Home Church",
+            "copyrightHolder": "Hallelujah Community Care Association, R.O.C.",
+            "allRightsReserved": "All rights reserved.",
+            "seoTitleSuffix": "Hallelujah Home Church",
+            "seoDescriptionFallback": "Building families in love and growing in truth",
+            "header": [
+              {"key":"about","label":"About","href":"/{locale}/about","visible":true},
+              {"key":"news","label":"Latest News","href":"/{locale}/news","visible":true},
+              {"key":"literature-ministry","label":"Literature Ministry","href":"/{locale}/literature-ministry","visible":true}
+            ],
+            "legal": [
+              {"key":"privacy-policy","label":"Privacy","href":"/{locale}/privacy-policy","visible":true},
+              {"key":"terms-of-use","label":"Terms","href":"/{locale}/terms-of-use","visible":true}
+            ]
+          },
+          {
+            "locale": "ja",
+            "siteName": "ハレルヤ・ホームチャーチ",
+            "englishName": "Hallelujah Home Church",
+            "copyrightHolder": "中華民国ハレルヤ地域ケア協会",
+            "allRightsReserved": "All rights reserved.",
+            "seoTitleSuffix": "ハレルヤ・ホームチャーチ",
+            "seoDescriptionFallback": "愛の中で家庭を築き、真理の中で成長する",
+            "header": [
+              {"key":"about","label":"私たちについて","href":"/{locale}/about","visible":true},
+              {"key":"news","label":"お知らせ","href":"/{locale}/news","visible":true},
+              {"key":"literature-ministry","label":"文書ミニストリー","href":"/{locale}/literature-ministry","visible":true}
+            ],
+            "legal": [
+              {"key":"privacy-policy","label":"プライバシー","href":"/{locale}/privacy-policy","visible":true},
+              {"key":"terms-of-use","label":"利用規約","href":"/{locale}/terms-of-use","visible":true}
+            ]
+          },
+          {
+            "locale": "ko",
+            "siteName": "할렐루야 가정교회",
+            "englishName": "Hallelujah Home Church",
+            "copyrightHolder": "중화민국 할렐루야 지역사회 돌봄 협회",
+            "allRightsReserved": "All rights reserved.",
+            "seoTitleSuffix": "할렐루야 가정교회",
+            "seoDescriptionFallback": "사랑으로 가정을 세우고 진리 안에서 자라갑니다",
+            "header": [
+              {"key":"about","label":"교회 소개","href":"/{locale}/about","visible":true},
+              {"key":"news","label":"새소식","href":"/{locale}/news","visible":true},
+              {"key":"literature-ministry","label":"문서 사역","href":"/{locale}/literature-ministry","visible":true}
+            ],
+            "legal": [
+              {"key":"privacy-policy","label":"개인정보 처리방침","href":"/{locale}/privacy-policy","visible":true},
+              {"key":"terms-of-use","label":"이용약관","href":"/{locale}/terms-of-use","visible":true}
+            ]
+          }
         ]
       }
     }

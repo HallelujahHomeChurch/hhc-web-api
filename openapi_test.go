@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/getkin/kin-openapi/openapi3"
+	jsonschema "github.com/santhosh-tekuri/jsonschema/v6"
 )
 
 func TestOpenAPIDocumentsPublicBulletinByNumber(t *testing.T) {
@@ -135,6 +136,257 @@ func TestOpenAPIDocumentsPublicLocationsContract(t *testing.T) {
 	if schemaBlock(document, "PublicLocation") == "" || schemaBlock(document, "PublicLocationListEnvelope") == "" {
 		t.Fatal("missing public locations schemas")
 	}
+}
+
+func TestOpenAPIDocumentsSiteSettingsContracts(t *testing.T) {
+	document := readOpenAPI(t)
+	public := operationByID(t, document, "getPublicSiteLayout")
+	for _, expected := range []string{"x-hhc-visibility: public", "x-hhc-callers: [api-gateway]", "security: []", "$ref: '#/components/parameters/ContentLocale'", "$ref: '#/components/responses/SiteLayout'"} {
+		if !strings.Contains(public, expected) {
+			t.Errorf("public Site Layout operation missing %q:\n%s", expected, public)
+		}
+	}
+	for operationID, scope := range map[string]string{
+		"getSiteSettings": "cms:read", "saveSiteSettings": "cms:write", "publishSiteSettings": "cms:publish",
+		"unpublishSiteSettings": "cms:publish", "listSiteSettingsRevisions": "cms:read", "restoreSiteSettingsRevision": "cms:write",
+	} {
+		operation := operationByID(t, document, operationID)
+		for _, expected := range []string{"x-hhc-visibility: admin", "x-hhc-callers: [api-gateway]", "servers: [{ url: https://admin.alive.org.tw/api }]", "x-required-scopes: ['" + scope + "']", "daprApiToken", "daprCallerAppId", "trustedUserId", "trustedAuthProvider", "trustedScopes"} {
+			if !strings.Contains(operation, expected) {
+				t.Errorf("%s missing %q:\n%s", operationID, expected, operation)
+			}
+		}
+	}
+	for _, schema := range []string{"SiteLayout", "SiteSettings", "SiteSettingsWriteInput", "SiteSettingsRevision"} {
+		block := schemaBlock(document, schema)
+		if block == "" {
+			t.Errorf("missing %s schema", schema)
+		}
+		if strings.Contains(block, "canonicalHost") || strings.Contains(block, "apiRoot") || strings.Contains(block, "accountUrl") {
+			t.Errorf("%s exposes runtime configuration:\n%s", schema, block)
+		}
+	}
+}
+
+func TestOpenAPISiteSettingsSchemasAcceptValidWireShapes(t *testing.T) {
+	if err := compileOpenAPISchema(t, "SiteLayout").Validate(validPublicSiteLayout()); err != nil {
+		t.Fatalf("SiteLayout rejected valid payload: %v", err)
+	}
+	adminSchema := compileOpenAPISchema(t, "SiteSettingsWriteInput")
+	if err := adminSchema.Validate(validAdminSiteSettingsInput()); err != nil {
+		t.Fatalf("SiteSettingsWriteInput rejected valid payload: %v", err)
+	}
+	if err := compileOpenAPISchema(t, "SiteSettings").Validate(validAdminSiteSettings()); err != nil {
+		t.Fatalf("SiteSettings rejected valid payload: %v", err)
+	}
+	for _, safeURL := range []string{"https://media.example.com/channel", "https://example.xn--fiqs8s/channel", "https://example.com/channel?%66oo=bar"} {
+		value := validAdminSiteSettingsInput()
+		externalLinks(value)["churchYoutube"] = safeURL
+		if err := adminSchema.Validate(value); err != nil {
+			t.Fatalf("SiteSettingsWriteInput rejected runtime-valid URL %q: %v", safeURL, err)
+		}
+	}
+}
+
+func TestOpenAPISiteSettingsRejectsRuntimeInvalidWireShapes(t *testing.T) {
+	adminSchema := compileOpenAPISchema(t, "SiteSettingsWriteInput")
+	publicSchema := compileOpenAPISchema(t, "SiteLayout")
+
+	for _, test := range []struct {
+		name   string
+		mutate func(map[string]any)
+	}{
+		{"admin concrete href", func(value map[string]any) { firstHeader(value)["href"] = "/zh-Hant/about" }},
+		{"admin cross-key href", func(value map[string]any) { firstHeader(value)["href"] = "/{locale}/news" }},
+		{"missing locale", func(value map[string]any) { value["locales"] = value["locales"].([]any)[:4] }},
+		{"duplicate locale key", func(value map[string]any) {
+			locales := value["locales"].([]any)
+			locales[1].(map[string]any)["locale"] = locales[0].(map[string]any)["locale"]
+		}},
+		{"missing header key", func(value map[string]any) {
+			locale := value["locales"].([]any)[0].(map[string]any)
+			locale["header"] = locale["header"].([]any)[:2]
+		}},
+		{"duplicate header key", func(value map[string]any) {
+			header := value["locales"].([]any)[0].(map[string]any)["header"].([]any)
+			header[1] = map[string]any{"key": "about", "label": "Other", "href": "/{locale}/about", "visible": true}
+		}},
+		{"missing legal key", func(value map[string]any) {
+			locale := value["locales"].([]any)[0].(map[string]any)
+			locale["legal"] = locale["legal"].([]any)[:1]
+		}},
+		{"duplicate legal key", func(value map[string]any) {
+			legal := value["locales"].([]any)[0].(map[string]any)["legal"].([]any)
+			legal[1] = map[string]any{"key": "privacy-policy", "label": "Other", "href": "/{locale}/privacy-policy", "visible": true}
+		}},
+		{"empty visible label", func(value map[string]any) { firstHeader(value)["label"] = "" }},
+		{"whitespace visible label", func(value map[string]any) { firstHeader(value)["label"] = " \t" }},
+		{"userinfo URL", func(value map[string]any) { externalLinks(value)["churchYoutube"] = "https://user@example.com/channel" }},
+		{"fragment URL", func(value map[string]any) {
+			externalLinks(value)["churchYoutube"] = "https://example.com/channel#private"
+		}},
+		{"private IP URL", func(value map[string]any) { externalLinks(value)["churchYoutube"] = "https://10.0.0.1/channel" }},
+		{"loopback URL", func(value map[string]any) { externalLinks(value)["churchYoutube"] = "https://127.0.0.1/channel" }},
+		{"public IPv4 URL", func(value map[string]any) { externalLinks(value)["churchYoutube"] = "https://8.8.8.8/channel" }},
+		{"trailing-dot IPv4 URL", func(value map[string]any) { externalLinks(value)["churchYoutube"] = "https://8.8.8.8./channel" }},
+		{"integer numeric host URL", func(value map[string]any) { externalLinks(value)["churchYoutube"] = "https://2130706433/channel" }},
+		{"short numeric host URL", func(value map[string]any) { externalLinks(value)["churchYoutube"] = "https://127.1/channel" }},
+		{"hex numeric host URL", func(value map[string]any) { externalLinks(value)["churchYoutube"] = "https://0x7f000001/channel" }},
+		{"mixed hex numeric host URL", func(value map[string]any) { externalLinks(value)["churchYoutube"] = "https://0x7f.0.0.1/channel" }},
+		{"canonical public IPv6 URL", func(value map[string]any) {
+			externalLinks(value)["churchYoutube"] = "https://[2606:4700:4700::1111]/channel"
+		}},
+		{"expanded public IPv6 URL", func(value map[string]any) {
+			externalLinks(value)["churchYoutube"] = "https://[2606:4700:4700:0000:0000:0000:0000:1111]/channel"
+		}},
+		{"hex-mapped public IPv6 URL", func(value map[string]any) {
+			externalLinks(value)["churchYoutube"] = "https://[::ffff:808:808]/channel"
+		}},
+		{"IPv4-mapped private IPv6 URL", func(value map[string]any) {
+			externalLinks(value)["churchYoutube"] = "https://[::ffff:10.0.0.1]/channel"
+		}},
+		{"IPv4-mapped loopback IPv6 URL", func(value map[string]any) {
+			externalLinks(value)["churchYoutube"] = "https://[::ffff:127.0.0.1]/channel"
+		}},
+		{"internal URL", func(value map[string]any) { externalLinks(value)["churchYoutube"] = "https://service.internal/channel" }},
+		{"trailing-dot internal URL", func(value map[string]any) {
+			externalLinks(value)["churchYoutube"] = "https://service.internal./channel"
+		}},
+		{"storage URL", func(value map[string]any) {
+			externalLinks(value)["churchYoutube"] = "https://account.blob.core.windows.net/container"
+		}},
+		{"SAS URL", func(value map[string]any) {
+			externalLinks(value)["churchYoutube"] = "https://example.com/channel?sv=2024-11-04&sig=secret"
+		}},
+		{"percent-encoded SAS key URL", func(value map[string]any) {
+			externalLinks(value)["churchYoutube"] = "https://example.com/channel?%73v=2024-11-04&%73ig=secret"
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			value := validAdminSiteSettingsInput()
+			test.mutate(value)
+			if err := adminSchema.Validate(value); err == nil {
+				t.Fatalf("SiteSettingsWriteInput accepted invalid payload: %#v", value)
+			}
+		})
+	}
+
+	for _, field := range []string{"siteName", "englishName", "copyrightHolder", "allRightsReserved", "seoTitleSuffix", "seoDescriptionFallback"} {
+		t.Run("whitespace-only "+field, func(t *testing.T) {
+			value := validAdminSiteSettingsInput()
+			value["locales"].([]any)[0].(map[string]any)[field] = " \t"
+			if err := adminSchema.Validate(value); err == nil {
+				t.Fatalf("SiteSettingsWriteInput accepted whitespace-only %s", field)
+			}
+		})
+	}
+
+	for _, test := range []struct {
+		name string
+		href string
+	}{
+		{"public template href", "/{locale}/about"},
+		{"public cross-key href", "/ja/news"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			value := validPublicSiteLayout()
+			firstHeader(value)["href"] = test.href
+			if err := publicSchema.Validate(value); err == nil {
+				t.Fatalf("SiteLayout accepted invalid href %q", test.href)
+			}
+		})
+	}
+}
+
+func loadOpenAPI(t *testing.T) *openapi3.T {
+	t.Helper()
+	document, err := openapi3.NewLoader().LoadFromFile("openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return document
+}
+
+func compileOpenAPISchema(t *testing.T, name string) *jsonschema.Schema {
+	t.Helper()
+	document := loadOpenAPI(t)
+	encoded, err := json.Marshal(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var resource any
+	if err := json.Unmarshal(encoded, &resource); err != nil {
+		t.Fatal(err)
+	}
+	compiler := jsonschema.NewCompiler()
+	compiler.DefaultDraft(jsonschema.Draft2020)
+	if err := compiler.AddResource("openapi.json", resource); err != nil {
+		t.Fatal(err)
+	}
+	schema, err := compiler.Compile("openapi.json#/components/schemas/" + name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return schema
+}
+
+func validPublicSiteLayout() map[string]any {
+	value := validSiteLocale("ja", "/ja")
+	value["links"] = validExternalLinks()
+	value["version"], value["publishedAt"] = float64(4), "2026-08-29T00:00:00Z"
+	return value
+}
+
+func validAdminSiteSettingsInput() map[string]any {
+	locales := make([]any, 0, 5)
+	for _, locale := range []string{"zh-Hant", "zh-Hans", "en", "ja", "ko"} {
+		locales = append(locales, validSiteLocale(locale, "/{locale}"))
+	}
+	return map[string]any{"locales": locales, "links": validExternalLinks()}
+}
+
+func validAdminSiteSettings() map[string]any {
+	value := validAdminSiteSettingsInput()
+	value["id"], value["status"], value["version"] = "default", "draft", float64(3)
+	value["createdBy"], value["updatedBy"] = "admin", "admin"
+	value["createdAt"], value["updatedAt"] = "2026-08-29T00:00:00Z", "2026-08-29T00:00:00Z"
+	return value
+}
+
+func validSiteLocale(locale, prefix string) map[string]any {
+	return map[string]any{
+		"locale": locale, "siteName": "教会", "englishName": "HHC", "copyrightHolder": "HHC", "allRightsReserved": "All rights reserved",
+		"seoTitleSuffix": "HHC", "seoDescriptionFallback": "description",
+		"header": []any{
+			map[string]any{"key": "about", "label": "概要", "href": prefix + "/about", "visible": true},
+			map[string]any{"key": "news", "label": "ニュース", "href": prefix + "/news", "visible": true},
+			map[string]any{"key": "literature-ministry", "label": "文書", "href": prefix + "/literature-ministry", "visible": true},
+		},
+		"legal": []any{
+			map[string]any{"key": "privacy-policy", "label": "Privacy", "href": prefix + "/privacy-policy", "visible": true},
+			map[string]any{"key": "terms-of-use", "label": "Terms", "href": prefix + "/terms-of-use", "visible": true},
+		},
+	}
+}
+
+func validExternalLinks() map[string]any {
+	return map[string]any{
+		"churchYoutube":  "https://youtube.com/@hhc33?si=public",
+		"churchFacebook": "https://facebook.com/hhc?locale=zh_TW",
+		"musicYoutube":   "https://youtube.com/@music?si=public",
+	}
+}
+
+func firstHeader(value map[string]any) map[string]any {
+	locales, ok := value["locales"].([]any)
+	if ok {
+		value = locales[0].(map[string]any)
+	}
+	return value["header"].([]any)[0].(map[string]any)
+}
+
+func externalLinks(value map[string]any) map[string]any {
+	return value["links"].(map[string]any)
 }
 
 func TestOpenAPIContentWriteInputKeepsExistingModulesCompatible(t *testing.T) {
@@ -660,7 +912,14 @@ func expectedCatalogRoutes() []string {
 		GET /history
 		GET /videos
 		GET /locations
+		GET /site-layout
 		GET /home
+		GET /admin/site-settings
+		PUT /admin/site-settings
+		POST /admin/site-settings/publish
+		POST /admin/site-settings/unpublish
+		GET /admin/site-settings/revisions
+		POST /admin/site-settings/revisions/{}/restore
 		GET /admin/bulletins
 		POST /admin/bulletins
 		GET /admin/bulletins/{}

@@ -512,6 +512,19 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/PublicLocationList' }
         '400': { $ref: '#/components/responses/Error' }
+  /site-layout:
+    get:
+      operationId: getPublicSiteLayout
+      summary: Get the published site layout for one exact locale
+      tags: [Public]
+      x-hhc-visibility: public
+      x-hhc-callers: [api-gateway]
+      security: []
+      parameters: [{ $ref: '#/components/parameters/ContentLocale' }]
+      responses:
+        '200': { $ref: '#/components/responses/SiteLayout' }
+        '404': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
   /home:
     get:
       operationId: getPublicHome
@@ -527,6 +540,115 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/HomeEnvelope' }
+  /admin/site-settings:
+    get:
+      operationId: getSiteSettings
+      summary: Get the Site Settings draft aggregate
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
+      x-required-scopes: ['cms:read']
+      responses:
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
+        '404': { $ref: '#/components/responses/Error' }
+        '200': { $ref: '#/components/responses/SiteSettings' }
+    put:
+      operationId: saveSiteSettings
+      summary: Save the Site Settings aggregate as a draft
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
+      x-required-scopes: ['cms:write']
+      parameters: [{ $ref: '#/components/parameters/IfMatch' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SiteSettingsWriteInput' }
+      responses:
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
+        '200': { $ref: '#/components/responses/SiteSettings' }
+        '400': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+        '428': { $ref: '#/components/responses/Error' }
+  /admin/site-settings/publish:
+    post:
+      operationId: publishSiteSettings
+      summary: Publish all five Site Layout projections atomically
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
+      x-required-scopes: ['cms:publish']
+      parameters: [{ $ref: '#/components/parameters/IfMatch' }]
+      responses:
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
+        '200': { $ref: '#/components/responses/SiteSettings' }
+        '409': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+        '428': { $ref: '#/components/responses/Error' }
+  /admin/site-settings/unpublish:
+    post:
+      operationId: unpublishSiteSettings
+      summary: Unpublish all Site Layout projections atomically
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
+      x-required-scopes: ['cms:publish']
+      parameters: [{ $ref: '#/components/parameters/IfMatch' }]
+      responses:
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
+        '200': { $ref: '#/components/responses/SiteSettings' }
+        '409': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+        '428': { $ref: '#/components/responses/Error' }
+  /admin/site-settings/revisions:
+    get:
+      operationId: listSiteSettingsRevisions
+      summary: List Site Settings revisions
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
+      x-required-scopes: ['cms:read']
+      responses:
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
+        '200': { $ref: '#/components/responses/SiteSettingsRevisionList' }
+  /admin/site-settings/revisions/{revision}/restore:
+    post:
+      operationId: restoreSiteSettingsRevision
+      summary: Restore a Site Settings revision to a draft
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
+      x-required-scopes: ['cms:write']
+      parameters:
+        - $ref: '#/components/parameters/Revision'
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
+        '200': { $ref: '#/components/responses/SiteSettings' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+        '428': { $ref: '#/components/responses/Error' }
   /admin/bulletins:
     get:
       operationId: listAdminBulletins
@@ -1350,6 +1472,24 @@ components:
       content:
         application/json:
           schema: { $ref: '#/components/schemas/PublicLocationListEnvelope' }
+    SiteLayout:
+      description: Published Site Layout for the exact requested locale.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/SiteLayoutEnvelope' }
+    SiteSettings:
+      description: Site Settings aggregate.
+      headers:
+        ETag: { schema: { type: string } }
+        Cache-Control: { schema: { type: string, const: 'private, no-store' } }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/SiteSettingsEnvelope' }
+    SiteSettingsRevisionList:
+      description: Site Settings revision list.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/SiteSettingsRevisionListEnvelope' }
     ContentTranslationPreview:
       description: Review-only generated translation preview; no CMS state is changed.
       content:
@@ -2038,6 +2178,182 @@ components:
         availableLocales:
           type: array
           items: { $ref: '#/components/schemas/ContentLocale' }
+    AdminSiteHeaderNavigationItem:
+      type: object
+      additionalProperties: false
+      required: [key, label, href, visible]
+      properties:
+        key: { type: string, enum: [about, news, literature-ministry] }
+        label: { type: string }
+        href: { type: string }
+        visible: { type: boolean }
+      oneOf:
+        - properties: { key: { const: about }, href: { const: '/{locale}/about' } }
+        - properties: { key: { const: news }, href: { const: '/{locale}/news' } }
+        - properties: { key: { const: literature-ministry }, href: { const: '/{locale}/literature-ministry' } }
+      allOf:
+        - if: { properties: { visible: { const: true } }, required: [visible] }
+          then: { properties: { label: { pattern: '\S' } } }
+    AdminSiteLegalNavigationItem:
+      type: object
+      additionalProperties: false
+      required: [key, label, href, visible]
+      properties:
+        key: { type: string, enum: [privacy-policy, terms-of-use] }
+        label: { type: string }
+        href: { type: string }
+        visible: { type: boolean }
+      oneOf:
+        - properties: { key: { const: privacy-policy }, href: { const: '/{locale}/privacy-policy' } }
+        - properties: { key: { const: terms-of-use }, href: { const: '/{locale}/terms-of-use' } }
+      allOf:
+        - if: { properties: { visible: { const: true } }, required: [visible] }
+          then: { properties: { label: { pattern: '\S' } } }
+    PublicSiteHeaderNavigationItem:
+      type: object
+      additionalProperties: false
+      required: [key, label, href, visible]
+      properties:
+        key: { type: string, enum: [about, news, literature-ministry] }
+        label: { type: string }
+        href: { type: string }
+        visible: { type: boolean }
+      oneOf:
+        - properties: { key: { const: about }, href: { pattern: '^/(?:zh-Hant|zh-Hans|en|ja|ko)/about$' } }
+        - properties: { key: { const: news }, href: { pattern: '^/(?:zh-Hant|zh-Hans|en|ja|ko)/news$' } }
+        - properties: { key: { const: literature-ministry }, href: { pattern: '^/(?:zh-Hant|zh-Hans|en|ja|ko)/literature-ministry$' } }
+    PublicSiteLegalNavigationItem:
+      type: object
+      additionalProperties: false
+      required: [key, label, href, visible]
+      properties:
+        key: { type: string, enum: [privacy-policy, terms-of-use] }
+        label: { type: string }
+        href: { type: string }
+        visible: { type: boolean }
+      oneOf:
+        - properties: { key: { const: privacy-policy }, href: { pattern: '^/(?:zh-Hant|zh-Hans|en|ja|ko)/privacy-policy$' } }
+        - properties: { key: { const: terms-of-use }, href: { pattern: '^/(?:zh-Hant|zh-Hans|en|ja|ko)/terms-of-use$' } }
+    SiteExternalURL:
+      type: string
+      format: uri
+      pattern: '^https://'
+      allOf:
+        - not: { pattern: '^https://[^/?#]*@' }
+        - not: { pattern: '#' }
+        - pattern: '^https://[^/?#@:]+\.[^./?#@:]*[A-Za-z][^./?#@:]*(?::[0-9]+)?(?:[/?#]|$)'
+        - not: { pattern: '(?i)^https://(?:localhost|[^/?#@]+\.(?:localhost|local|internal|test|cluster\.local|azurecontainerapps\.io|azurewebsites\.net|blob\.core\.windows\.net|dfs\.core\.windows\.net|file\.core\.windows\.net|queue\.core\.windows\.net|table\.core\.windows\.net|web\.core\.windows\.net))(?::[0-9]+)?(?:[/?#]|$)' }
+        - not:
+            pattern: '(?i)[?&](?:s|%(?:53|73))(?:(?:i|%(?:49|69))(?:g|%(?:47|67))|(?:v|%(?:56|76))|(?:e|%(?:45|65))|(?:p|%(?:50|70))|(?:r|%(?:52|72))|(?:t|%(?:54|74))|(?:p|%(?:50|70))(?:r|%(?:52|72))|(?:i|%(?:49|69))(?:p|%(?:50|70))|(?:s|%(?:53|73))|(?:r|%(?:52|72))(?:t|%(?:54|74))|(?:k|%(?:4b|6b))(?:o|%(?:4f|6f))(?:i|%(?:49|69))(?:d|%(?:44|64))|(?:k|%(?:4b|6b))(?:t|%(?:54|74))(?:i|%(?:49|69))(?:d|%(?:44|64))|(?:k|%(?:4b|6b))(?:t|%(?:54|74))|(?:k|%(?:4b|6b))(?:e|%(?:45|65))|(?:k|%(?:4b|6b))(?:s|%(?:53|73))|(?:k|%(?:4b|6b))(?:v|%(?:56|76)))(?:=|&|#|$)'
+    SiteExternalLinks:
+      type: object
+      additionalProperties: false
+      required: [churchYoutube, churchFacebook, musicYoutube]
+      properties:
+        churchYoutube: { $ref: '#/components/schemas/SiteExternalURL' }
+        churchFacebook: { $ref: '#/components/schemas/SiteExternalURL' }
+        musicYoutube: { $ref: '#/components/schemas/SiteExternalURL' }
+    SiteDisplayFields:
+      type: object
+      required: [locale, siteName, englishName, copyrightHolder, allRightsReserved, seoTitleSuffix, seoDescriptionFallback]
+      properties:
+        locale: { $ref: '#/components/schemas/ContentLocale' }
+        siteName: { type: string, pattern: '\S' }
+        englishName: { type: string, pattern: '\S' }
+        copyrightHolder: { type: string, pattern: '\S' }
+        allRightsReserved: { type: string, pattern: '\S' }
+        seoTitleSuffix: { type: string, pattern: '\S' }
+        seoDescriptionFallback: { type: string, pattern: '\S' }
+    SiteLocaleSettings:
+      allOf:
+        - $ref: '#/components/schemas/SiteDisplayFields'
+        - type: object
+          required: [header, legal]
+          properties:
+            header:
+              type: array
+              minItems: 3
+              maxItems: 3
+              items: { $ref: '#/components/schemas/AdminSiteHeaderNavigationItem' }
+              allOf:
+                - { contains: { properties: { key: { const: about } }, required: [key] }, minContains: 1, maxContains: 1 }
+                - { contains: { properties: { key: { const: news } }, required: [key] }, minContains: 1, maxContains: 1 }
+                - { contains: { properties: { key: { const: literature-ministry } }, required: [key] }, minContains: 1, maxContains: 1 }
+            legal:
+              type: array
+              minItems: 2
+              maxItems: 2
+              items: { $ref: '#/components/schemas/AdminSiteLegalNavigationItem' }
+              allOf:
+                - { contains: { properties: { key: { const: privacy-policy } }, required: [key] }, minContains: 1, maxContains: 1 }
+                - { contains: { properties: { key: { const: terms-of-use } }, required: [key] }, minContains: 1, maxContains: 1 }
+      unevaluatedProperties: false
+    SiteLayout:
+      allOf:
+        - $ref: '#/components/schemas/SiteDisplayFields'
+        - type: object
+          required: [header, legal, links, version, publishedAt]
+          properties:
+            header:
+              type: array
+              minItems: 3
+              maxItems: 3
+              items: { $ref: '#/components/schemas/PublicSiteHeaderNavigationItem' }
+            legal:
+              type: array
+              minItems: 2
+              maxItems: 2
+              items: { $ref: '#/components/schemas/PublicSiteLegalNavigationItem' }
+            links: { $ref: '#/components/schemas/SiteExternalLinks' }
+            version: { type: integer, format: int64, minimum: 1 }
+            publishedAt: { type: string, format: date-time }
+      unevaluatedProperties: false
+    SiteSettingsWriteFields:
+      type: object
+      required: [locales, links]
+      properties:
+        locales:
+          type: array
+          minItems: 5
+          maxItems: 5
+          items: { $ref: '#/components/schemas/SiteLocaleSettings' }
+          allOf:
+            - { contains: { properties: { locale: { const: zh-Hant } }, required: [locale] }, minContains: 1, maxContains: 1 }
+            - { contains: { properties: { locale: { const: zh-Hans } }, required: [locale] }, minContains: 1, maxContains: 1 }
+            - { contains: { properties: { locale: { const: en } }, required: [locale] }, minContains: 1, maxContains: 1 }
+            - { contains: { properties: { locale: { const: ja } }, required: [locale] }, minContains: 1, maxContains: 1 }
+            - { contains: { properties: { locale: { const: ko } }, required: [locale] }, minContains: 1, maxContains: 1 }
+        links: { $ref: '#/components/schemas/SiteExternalLinks' }
+    SiteSettingsWriteInput:
+      allOf:
+        - $ref: '#/components/schemas/SiteSettingsWriteFields'
+      unevaluatedProperties: false
+    SiteSettings:
+      allOf:
+        - $ref: '#/components/schemas/SiteSettingsWriteFields'
+        - type: object
+          required: [id, status, version, createdBy, updatedBy, createdAt, updatedAt]
+          properties:
+            id: { type: string, const: default }
+            status: { type: string, enum: [draft, published, unpublished] }
+            version: { type: integer, format: int64, minimum: 1 }
+            createdBy: { type: string }
+            updatedBy: { type: string }
+            publishedBy: { type: string }
+            publishedAt: { type: string, format: date-time }
+            createdAt: { type: string, format: date-time }
+            updatedAt: { type: string, format: date-time }
+      unevaluatedProperties: false
+    SiteSettingsRevision:
+      type: object
+      additionalProperties: false
+      required: [revision, revisionType, snapshot, createdBy, createdAt]
+      properties:
+        revision: { type: integer, format: int64, minimum: 1 }
+        revisionType: { type: string, enum: [draft_saved, published, unpublished, seeded, restored_to_draft] }
+        snapshot: { $ref: '#/components/schemas/SiteSettings' }
+        createdBy: { type: string }
+        createdAt: { type: string, format: date-time }
     BulletinIssueEnvelope:
       type: object
       required: [data, meta]
@@ -2155,6 +2471,27 @@ components:
       required: [data, meta]
       properties:
         data: { type: array, items: { $ref: '#/components/schemas/PublicLocation' } }
+        meta: { type: object, additionalProperties: true }
+        error: { type: ['null'] }
+    SiteLayoutEnvelope:
+      type: object
+      required: [data, meta, error]
+      properties:
+        data: { $ref: '#/components/schemas/SiteLayout' }
+        meta: { type: object, additionalProperties: true }
+        error: { type: ['null'] }
+    SiteSettingsEnvelope:
+      type: object
+      required: [data, meta, error]
+      properties:
+        data: { $ref: '#/components/schemas/SiteSettings' }
+        meta: { type: object, additionalProperties: true }
+        error: { type: ['null'] }
+    SiteSettingsRevisionListEnvelope:
+      type: object
+      required: [data, meta, error]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/SiteSettingsRevision' } }
         meta: { type: object, additionalProperties: true }
         error: { type: ['null'] }
     HomeEnvelope:

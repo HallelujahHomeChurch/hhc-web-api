@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/content"
+	"github.com/HallelujahHomeChurch/hhc-web-api/internal/sitesettings"
 )
 
 func TestApplyStopsBeforeWritesOnWarningsOrConflicts(t *testing.T) {
@@ -169,6 +170,78 @@ func TestApplyLocationsInsertsThenSkipsMatchingProvenanceInCumulativeManifest(t 
 	state.assertLocationSnapshot(t, "zhongli")
 	state.assertActors(t, "content-seed:locations-v1", "content-seed:locations-v1", "content-seed:locations-v2", "content-seed:locations-v2")
 	state.assertUnlocked(t)
+}
+
+func TestApplySiteLayoutInsertsThenPlansCumulativeManifestAsSkips(t *testing.T) {
+	db, state := newSeedTestDB(t)
+	location := locationSeedTestRecord("taipei")
+
+	if _, err := Apply(context.Background(), db, locationSeedTestManifest("locations-v1", location), strings.Repeat("a", 64), "content-seed:locations-v1"); err != nil {
+		t.Fatal(err)
+	}
+	manifest := siteLayoutSeedTestManifest("site-layout-v1", location, siteLayoutSeedTestRecord())
+	report, err := Apply(context.Background(), db, manifest, strings.Repeat("b", 64), "content-seed:site-layout-v1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Inserts != 1 || report.Skips != 1 || report.Conflicts != 0 {
+		t.Fatalf("apply report = %#v", report)
+	}
+	state.assertSiteLayoutSnapshot(t)
+
+	planned, err := Plan(context.Background(), db, manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if planned.InsertCount != 0 || planned.SkipCount != 2 || planned.ConflictCount != 0 {
+		t.Fatalf("second plan = %#v", planned)
+	}
+	state.assertActors(t,
+		"content-seed:locations-v1", "content-seed:locations-v1",
+		"content-seed:site-layout-v1", "content-seed:site-layout-v1",
+	)
+}
+
+func TestPlanSiteLayoutConflictsWithExistingSingleton(t *testing.T) {
+	db, state := newSeedTestDB(t)
+	state.siteSettingID = sitesettings.SingletonID
+
+	report, err := Plan(context.Background(), db, siteLayoutSeedTestManifest("site-layout-v1", siteLayoutSeedTestRecord()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.InsertCount != 0 || report.SkipCount != 0 || report.ConflictCount != 1 || report.Records[0].Action != ActionConflict {
+		t.Fatalf("report = %#v", report)
+	}
+}
+
+func TestPlanSiteLayoutRejectsInvalidExternalURL(t *testing.T) {
+	record := siteLayoutSeedTestRecord()
+	record.Payload = json.RawMessage(strings.Replace(string(record.Payload), "https://youtube.com/@hhc33?si=approved", "http://localhost/admin", 1))
+
+	_, err := Plan(context.Background(), nil, siteLayoutSeedTestManifest("site-layout-v1", record))
+	if err == nil || !strings.Contains(err.Error(), "site layout payload is invalid") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestApplySiteLayoutRollsBackWholeCumulativeManifestOnLocaleFailure(t *testing.T) {
+	db, state := newSeedTestDB(t)
+	state.failSiteLocaleAt = 1
+	manifest := siteLayoutSeedTestManifest("site-layout-v1", locationSeedTestRecord("taipei"), siteLayoutSeedTestRecord())
+
+	_, err := Apply(context.Background(), db, manifest, strings.Repeat("c", 64), "content-seed:site-layout-v1")
+	if err == nil || !strings.Contains(err.Error(), "site locale failed") {
+		t.Fatalf("error = %v", err)
+	}
+	state.assertCounts(t, 1, 0, 0)
+	state.assertLocationTargets(t)
+	if state.siteSettingID != "" || state.siteLocaleCount != 0 || state.siteRevision != nil {
+		t.Fatalf("site setting leaked after rollback: id=%q locales=%d revision=%s", state.siteSettingID, state.siteLocaleCount, state.siteRevision)
+	}
+	if state.attemptStatus(0) != "failed" {
+		t.Fatalf("attempt status = %q", state.attemptStatus(0))
+	}
 }
 
 func TestPlanLocationRejectsSourceKeyThatDoesNotMatchStableKey(t *testing.T) {
@@ -354,7 +427,7 @@ func TestApplyUnlockFailureIsReturnedAndConnectionReleased(t *testing.T) {
 }
 
 func TestApplyTargetKindsFailClosed(t *testing.T) {
-	for _, kind := range []string{"site_layout", "page"} {
+	for _, kind := range []string{"page"} {
 		t.Run(kind, func(t *testing.T) {
 			db, state := newSeedTestDB(t)
 			manifest := testManifest()
@@ -420,6 +493,42 @@ func locationSeedTestRecord(stableKey string) Record {
 	}
 }
 
+func siteLayoutSeedTestManifest(version string, records ...Record) Manifest {
+	return Manifest{
+		SeedVersion:  version,
+		SourceRepo:   "repo",
+		SourceCommit: strings.Repeat("a", 40),
+		Sources: []Source{
+			{Path: "src/features/locations/mock-data.ts", SHA256: strings.Repeat("b", 64)},
+			{Path: "src/lib/site.ts", SHA256: strings.Repeat("c", 64)},
+			{Path: "src/i18n/locales.json", SHA256: strings.Repeat("d", 64)},
+		},
+		Records: records,
+	}
+}
+
+func siteLayoutSeedTestRecord() Record {
+	return Record{
+		Kind:        "site_layout",
+		SourceKey:   "site-layout:default",
+		SourcePaths: []string{"src/lib/site.ts", "src/i18n/locales.json"},
+		Payload: json.RawMessage(`{
+			"links":{
+				"churchYoutube":"https://youtube.com/@hhc33?si=approved",
+				"churchFacebook":"https://www.facebook.com/www.alive.org.tw/?locale=zh_TW",
+				"musicYoutube":"https://youtube.com/@gkpmusic777?si=approved"
+			},
+			"locales":[
+				{"locale":"zh-Hant","siteName":"名稱","englishName":"English Name","copyrightHolder":"著作權人","allRightsReserved":"All rights reserved.","seoTitleSuffix":"名稱","seoDescriptionFallback":"描述","header":[{"key":"about","label":"關於","href":"/{locale}/about","visible":true},{"key":"news","label":"消息","href":"/{locale}/news","visible":true},{"key":"literature-ministry","label":"文字事工","href":"/{locale}/literature-ministry","visible":true}],"legal":[{"key":"privacy-policy","label":"隱私權","href":"/{locale}/privacy-policy","visible":true},{"key":"terms-of-use","label":"條款","href":"/{locale}/terms-of-use","visible":true}]},
+				{"locale":"zh-Hans","siteName":"名称","englishName":"English Name","copyrightHolder":"著作权人","allRightsReserved":"All rights reserved.","seoTitleSuffix":"名称","seoDescriptionFallback":"描述","header":[{"key":"about","label":"关于","href":"/{locale}/about","visible":true},{"key":"news","label":"消息","href":"/{locale}/news","visible":true},{"key":"literature-ministry","label":"文字事工","href":"/{locale}/literature-ministry","visible":true}],"legal":[{"key":"privacy-policy","label":"隐私权","href":"/{locale}/privacy-policy","visible":true},{"key":"terms-of-use","label":"条款","href":"/{locale}/terms-of-use","visible":true}]},
+				{"locale":"en","siteName":"Name","englishName":"English Name","copyrightHolder":"Holder","allRightsReserved":"All rights reserved.","seoTitleSuffix":"Name","seoDescriptionFallback":"Description","header":[{"key":"about","label":"About","href":"/{locale}/about","visible":true},{"key":"news","label":"News","href":"/{locale}/news","visible":true},{"key":"literature-ministry","label":"Literature Ministry","href":"/{locale}/literature-ministry","visible":true}],"legal":[{"key":"privacy-policy","label":"Privacy","href":"/{locale}/privacy-policy","visible":true},{"key":"terms-of-use","label":"Terms","href":"/{locale}/terms-of-use","visible":true}]},
+				{"locale":"ja","siteName":"名前","englishName":"English Name","copyrightHolder":"著作権者","allRightsReserved":"All rights reserved.","seoTitleSuffix":"名前","seoDescriptionFallback":"説明","header":[{"key":"about","label":"私たちについて","href":"/{locale}/about","visible":true},{"key":"news","label":"お知らせ","href":"/{locale}/news","visible":true},{"key":"literature-ministry","label":"文書ミニストリー","href":"/{locale}/literature-ministry","visible":true}],"legal":[{"key":"privacy-policy","label":"プライバシー","href":"/{locale}/privacy-policy","visible":true},{"key":"terms-of-use","label":"利用規約","href":"/{locale}/terms-of-use","visible":true}]},
+				{"locale":"ko","siteName":"이름","englishName":"English Name","copyrightHolder":"저작권자","allRightsReserved":"All rights reserved.","seoTitleSuffix":"이름","seoDescriptionFallback":"설명","header":[{"key":"about","label":"교회 소개","href":"/{locale}/about","visible":true},{"key":"news","label":"새소식","href":"/{locale}/news","visible":true},{"key":"literature-ministry","label":"문서 사역","href":"/{locale}/literature-ministry","visible":true}],"legal":[{"key":"privacy-policy","label":"개인정보 처리방침","href":"/{locale}/privacy-policy","visible":true},{"key":"terms-of-use","label":"이용약관","href":"/{locale}/terms-of-use","visible":true}]}
+			]
+		}`),
+	}
+}
+
 type seedTestSuccess struct {
 	manifestSHA string
 	inserts     int
@@ -452,6 +561,10 @@ type seedTestState struct {
 	translations      map[string]int
 	actors            []string
 	failTranslationAt int
+	failSiteLocaleAt  int
+	siteSettingID     string
+	siteLocaleCount   int
+	siteRevision      json.RawMessage
 	failures          map[string]error
 	cancelAfterLock   context.CancelFunc
 }
@@ -500,6 +613,22 @@ func (state *seedTestState) assertLocationSnapshot(t *testing.T, stableKey strin
 	}
 	if fmt.Sprint(snapshot.Translations) != fmt.Sprint(want) {
 		t.Fatalf("location %q translations=%#v", stableKey, snapshot.Translations)
+	}
+}
+
+func (state *seedTestState) assertSiteLayoutSnapshot(t *testing.T) {
+	t.Helper()
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	var snapshot sitesettings.Settings
+	if err := json.Unmarshal(state.siteRevision, &snapshot); err != nil {
+		t.Fatalf("site layout revision snapshot: %v", err)
+	}
+	if state.siteSettingID != sitesettings.SingletonID || state.siteLocaleCount != 5 || snapshot.ID != sitesettings.SingletonID || snapshot.Status != sitesettings.StatusDraft || snapshot.Version != 1 || len(snapshot.Locales) != 5 {
+		t.Fatalf("site layout state id=%q locales=%d snapshot=%#v", state.siteSettingID, state.siteLocaleCount, snapshot)
+	}
+	if snapshot.Links.ChurchYouTube != "https://youtube.com/@hhc33?si=approved" || snapshot.Locales[4].Header[0].Href != "/{locale}/about" {
+		t.Fatalf("site layout snapshot values = %#v", snapshot)
 	}
 }
 
@@ -625,6 +754,12 @@ func (conn *seedTestConn) QueryContext(ctx context.Context, query string, args [
 			rows.values = [][]driver.Value{{targetID}}
 		}
 		return rows, nil
+	case strings.Contains(query, "FROM hhc_web.site_setting_set"):
+		rows := &seedTestRows{columns: []string{"id"}}
+		if conn.state.siteSettingID != "" {
+			rows.values = [][]driver.Value{{conn.state.siteSettingID}}
+		}
+		return rows, nil
 	case strings.Contains(query, "FROM hhc_web.content_seed_source"):
 		matching := false
 		for _, provenance := range conn.state.provenance {
@@ -676,6 +811,21 @@ func (conn *seedTestConn) ExecContext(ctx context.Context, query string, args []
 		}
 	case strings.Contains(query, "INSERT INTO hhc_web.location_item"):
 		conn.tx.targets[args[1].Value.(string)] = args[0].Value.(string)
+	case strings.Contains(query, "INSERT INTO hhc_web.site_setting_set"):
+		conn.tx.siteSettingID = args[0].Value.(string)
+		conn.tx.actors = append(conn.tx.actors, args[2].Value.(string))
+	case strings.Contains(query, "INSERT INTO hhc_web.site_setting_locale"):
+		conn.tx.siteLocaleCount++
+		if conn.state.failSiteLocaleAt == conn.tx.siteLocaleCount {
+			return nil, errors.New("site locale failed")
+		}
+	case strings.Contains(query, "INSERT INTO hhc_web.site_setting_revision"):
+		conn.tx.actors = append(conn.tx.actors, args[3].Value.(string))
+		snapshot, ok := args[2].Value.([]byte)
+		if !ok {
+			return nil, fmt.Errorf("site revision snapshot has type %T", args[2].Value)
+		}
+		conn.tx.siteRevision = append(json.RawMessage(nil), snapshot...)
 	case strings.Contains(query, "INSERT INTO hhc_web.content_revision"):
 		conn.tx.actors = append(conn.tx.actors, args[2].Value.(string))
 		snapshot, ok := args[1].Value.([]byte)
@@ -717,6 +867,12 @@ func seedTestOperation(query string) string {
 		return "translation"
 	case strings.Contains(query, "INSERT INTO hhc_web.location_item"):
 		return "location"
+	case strings.Contains(query, "INSERT INTO hhc_web.site_setting_set"):
+		return "site setting"
+	case strings.Contains(query, "INSERT INTO hhc_web.site_setting_locale"):
+		return "site locale"
+	case strings.Contains(query, "INSERT INTO hhc_web.site_setting_revision"):
+		return "site revision"
 	case strings.Contains(query, "INSERT INTO hhc_web.content_revision"):
 		return "revision"
 	default:
@@ -751,6 +907,9 @@ type seedTestTxState struct {
 	translations     map[string]int
 	actors           []string
 	translationCount int
+	siteSettingID    string
+	siteLocaleCount  int
+	siteRevision     json.RawMessage
 	success          *seedTestAttempt
 }
 
@@ -789,6 +948,11 @@ func (tx seedTestTx) Commit() error {
 		tx.conn.state.translations[id] += count
 	}
 	tx.conn.state.actors = append(tx.conn.state.actors, tx.conn.tx.actors...)
+	if tx.conn.tx.siteSettingID != "" {
+		tx.conn.state.siteSettingID = tx.conn.tx.siteSettingID
+		tx.conn.state.siteLocaleCount = tx.conn.tx.siteLocaleCount
+		tx.conn.state.siteRevision = append(json.RawMessage(nil), tx.conn.tx.siteRevision...)
+	}
 	if tx.conn.tx.success != nil {
 		tx.conn.setAttemptStatus(tx.conn.tx.success.id, "succeeded", tx.conn.tx.success)
 	}

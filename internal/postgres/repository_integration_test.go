@@ -18,6 +18,7 @@ import (
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/content"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/migrations"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/publication"
+	"github.com/HallelujahHomeChurch/hhc-web-api/internal/sitesettings"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/translation"
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
@@ -1368,6 +1369,135 @@ func TestLocationContentLifecycle(t *testing.T) {
 	if err != nil || len(public) != 1 || public[0].ID != "taipei" {
 		t.Fatalf("unpublished public=%#v err=%v", public, err)
 	}
+}
+
+func TestSiteSettingsLifecycle(t *testing.T) {
+	databaseURL := os.Getenv("HHW_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("HHW_TEST_DATABASE_URL is not configured")
+	}
+	db, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	if err := migrations.Run(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `TRUNCATE hhc_web.site_setting_revision,hhc_web.site_setting_locale,hhc_web.site_setting_set CASCADE; DELETE FROM hhc_web.public_projection WHERE resource_type='site_layout'`); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
+	input := siteSettingsWriteInput()
+	if _, err := db.ExecContext(ctx, `INSERT INTO hhc_web.site_setting_set(id,status,version,external_links_json,created_by,updated_by,created_at,updated_at) VALUES('default','draft',1,$1,'seed','seed',$2,$2)`, mustJSON(input.Links), now); err != nil {
+		t.Fatal(err)
+	}
+	if err := replaceSiteSettingsRows(ctx, db, input); err != nil {
+		t.Fatal(err)
+	}
+
+	repository := NewSiteSettingsRepository(db)
+	service := sitesettings.NewService(repository, func() time.Time { return now })
+	saved, err := service.Save(ctx, input, 1, "admin")
+	if err != nil || saved.Version != 2 || saved.Status != sitesettings.StatusDraft {
+		t.Fatalf("saved=%#v err=%v", saved, err)
+	}
+	if _, err := service.Save(ctx, input, 1, "admin"); !errors.Is(err, sitesettings.ErrPrecondition) {
+		t.Fatalf("stale save err=%v", err)
+	}
+	published, err := service.Publish(ctx, saved.Version, "admin")
+	if err != nil || published.Version != 3 || published.Status != sitesettings.StatusPublished {
+		t.Fatalf("published=%#v err=%v", published, err)
+	}
+	var projectionCount int
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM hhc_web.public_projection WHERE resource_type='site_layout'`).Scan(&projectionCount); err != nil || projectionCount != 5 {
+		t.Fatalf("projection count=%d err=%v", projectionCount, err)
+	}
+	var publishedPayload []byte
+	if err := db.QueryRowContext(ctx, `SELECT payload_json FROM hhc_web.public_projection WHERE projection_key='site_layout:ja'`).Scan(&publishedPayload); err != nil || !strings.Contains(string(publishedPayload), `"href": "/ja/about"`) && !strings.Contains(string(publishedPayload), `"href":"/ja/about"`) {
+		t.Fatalf("ja projection=%s err=%v", publishedPayload, err)
+	}
+
+	changed := siteSettingsWriteInput()
+	changed.Locales[3].SiteName = "changed-ja"
+	draft, err := service.Save(ctx, changed, published.Version, "admin")
+	if err != nil || draft.Status != sitesettings.StatusDraft {
+		t.Fatalf("draft=%#v err=%v", draft, err)
+	}
+	var stillPublished []byte
+	if err := db.QueryRowContext(ctx, `SELECT payload_json FROM hhc_web.public_projection WHERE projection_key='site_layout:ja'`).Scan(&stillPublished); err != nil || string(stillPublished) != string(publishedPayload) {
+		t.Fatalf("draft changed public projection=%s err=%v", stillPublished, err)
+	}
+	unpublishedAfterSave, err := service.Unpublish(ctx, draft.Version, "admin")
+	if err != nil || unpublishedAfterSave.Status != sitesettings.StatusUnpublished {
+		t.Fatalf("unpublish after save=%#v err=%v", unpublishedAfterSave, err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM hhc_web.public_projection WHERE resource_type='site_layout'`).Scan(&projectionCount); err != nil || projectionCount != 0 {
+		t.Fatalf("projection count after draft unpublish=%d err=%v", projectionCount, err)
+	}
+	republishedDraft, err := service.Publish(ctx, unpublishedAfterSave.Version, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var changedPublished []byte
+	if err := db.QueryRowContext(ctx, `SELECT payload_json FROM hhc_web.public_projection WHERE projection_key='site_layout:ja'`).Scan(&changedPublished); err != nil || !strings.Contains(string(changedPublished), "changed-ja") {
+		t.Fatalf("changed projection=%s err=%v", changedPublished, err)
+	}
+	restored, err := service.Restore(ctx, saved.Version, republishedDraft.Version, "admin")
+	if err != nil || restored.Status != sitesettings.StatusDraft || restored.Locales[3].SiteName == "changed-ja" {
+		t.Fatalf("restored=%#v err=%v", restored, err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT payload_json FROM hhc_web.public_projection WHERE projection_key='site_layout:ja'`).Scan(&stillPublished); err != nil || string(stillPublished) != string(changedPublished) {
+		t.Fatalf("restore changed public projection=%s err=%v", stillPublished, err)
+	}
+	unpublished, err := service.Unpublish(ctx, restored.Version, "admin")
+	if err != nil || unpublished.Status != sitesettings.StatusUnpublished {
+		t.Fatalf("unpublished=%#v err=%v", unpublished, err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM hhc_web.public_projection WHERE resource_type='site_layout'`).Scan(&projectionCount); err != nil || projectionCount != 0 {
+		t.Fatalf("projection count=%d err=%v", projectionCount, err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE hhc_web.site_setting_locale SET site_name='' WHERE setting_set_id='default' AND locale='ko'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.Publish(ctx, unpublished.Version, "admin", now); !errors.Is(err, sitesettings.ErrNotPublishable) {
+		t.Fatalf("incomplete republish err=%v", err)
+	}
+}
+
+func replaceSiteSettingsRows(ctx context.Context, db *sql.DB, input sitesettings.WriteInput) error {
+	for _, locale := range input.Locales {
+		if _, err := db.ExecContext(ctx, `INSERT INTO hhc_web.site_setting_locale(setting_set_id,locale,site_name,english_name,copyright_holder,all_rights_reserved,seo_title_suffix,seo_description_fallback,header_items_json,legal_items_json) VALUES('default',$1,$2,$3,$4,$5,$6,$7,$8,$9)`, locale.Locale, locale.SiteName, locale.EnglishName, locale.CopyrightHolder, locale.AllRightsReserved, locale.SEOTitleSuffix, locale.SEODescriptionFallback, mustJSON(locale.Header), mustJSON(locale.Legal)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func siteSettingsWriteInput() sitesettings.WriteInput {
+	locales := make([]sitesettings.LocaleSettings, 0, len(sitesettings.SupportedLocales))
+	for _, locale := range sitesettings.SupportedLocales {
+		locales = append(locales, sitesettings.LocaleSettings{
+			Locale: locale, SiteName: locale + " site", EnglishName: "Hallelujah Home Church",
+			CopyrightHolder: locale + " holder", AllRightsReserved: locale + " rights",
+			SEOTitleSuffix: locale + " title", SEODescriptionFallback: locale + " description",
+			Header: []sitesettings.NavItem{
+				{Key: "about", Label: locale + " about", Href: "/{locale}/about", Visible: true},
+				{Key: "news", Label: locale + " news", Href: "/{locale}/news", Visible: true},
+				{Key: "literature-ministry", Label: locale + " literature", Href: "/{locale}/literature-ministry", Visible: true},
+			},
+			Legal: []sitesettings.NavItem{
+				{Key: "privacy-policy", Label: locale + " privacy", Href: "/{locale}/privacy-policy", Visible: true},
+				{Key: "terms-of-use", Label: locale + " terms", Href: "/{locale}/terms-of-use", Visible: true},
+			},
+		})
+	}
+	return sitesettings.WriteInput{Locales: locales, Links: sitesettings.ExternalLinks{
+		ChurchYouTube:  "https://youtube.com/@hhc33?si=public",
+		ChurchFacebook: "https://www.facebook.com/www.alive.org.tw/",
+		MusicYouTube:   "https://youtube.com/@gkpmusic777",
+	}}
 }
 
 func TestLegacyContentRetriesPreserveOmittedDetailLayoutFingerprint(t *testing.T) {
