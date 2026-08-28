@@ -168,52 +168,135 @@ func TestOpenAPIDocumentsSiteSettingsContracts(t *testing.T) {
 }
 
 func TestOpenAPISiteSettingsSchemasAcceptValidWireShapes(t *testing.T) {
-	loader := openapi3.NewLoader()
-	document, err := loader.LoadFromFile("openapi.yaml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	locale := map[string]any{
-		"locale": "ja", "siteName": "教会", "englishName": "HHC", "copyrightHolder": "HHC", "allRightsReserved": "All rights reserved",
-		"seoTitleSuffix": "HHC", "seoDescriptionFallback": "description",
-		"header": []any{
-			map[string]any{"key": "about", "label": "概要", "href": "/ja/about", "visible": true},
-			map[string]any{"key": "news", "label": "ニュース", "href": "/ja/news", "visible": true},
-			map[string]any{"key": "literature-ministry", "label": "文書", "href": "/ja/literature-ministry", "visible": true},
-		},
-		"legal": []any{
-			map[string]any{"key": "privacy-policy", "label": "Privacy", "href": "/ja/privacy-policy", "visible": true},
-			map[string]any{"key": "terms-of-use", "label": "Terms", "href": "/ja/terms-of-use", "visible": true},
-		},
-	}
-	links := map[string]any{"churchYoutube": "https://youtube.com/@hhc33", "churchFacebook": "https://facebook.com/hhc", "musicYoutube": "https://youtube.com/@music"}
-	layout := cloneMap(locale)
-	layout["links"], layout["version"], layout["publishedAt"] = links, float64(4), "2026-08-29T00:00:00Z"
-	if err := document.Components.Schemas["SiteLayout"].Value.VisitJSON(layout, openapi3.EnableJSONSchema2020()); err != nil {
+	document := loadOpenAPI(t)
+	if err := document.Components.Schemas["SiteLayout"].Value.VisitJSON(validPublicSiteLayout(), openapi3.EnableJSONSchema2020()); err != nil {
 		t.Fatalf("SiteLayout rejected valid payload: %v", err)
 	}
-
-	locales := make([]any, 0, 5)
-	for _, name := range []string{"zh-Hant", "zh-Hans", "en", "ja", "ko"} {
-		value := cloneMap(locale)
-		value["locale"] = name
-		locales = append(locales, value)
+	if err := document.Components.Schemas["SiteSettingsWriteInput"].Value.VisitJSON(validAdminSiteSettingsInput(), openapi3.EnableJSONSchema2020()); err != nil {
+		t.Fatalf("SiteSettingsWriteInput rejected valid payload: %v", err)
 	}
-	settings := map[string]any{
-		"id": "default", "status": "draft", "version": float64(3), "locales": locales, "links": links,
-		"createdBy": "admin", "updatedBy": "admin", "createdAt": "2026-08-29T00:00:00Z", "updatedAt": "2026-08-29T00:00:00Z",
-	}
-	if err := document.Components.Schemas["SiteSettings"].Value.VisitJSON(settings, openapi3.EnableJSONSchema2020()); err != nil {
+	if err := document.Components.Schemas["SiteSettings"].Value.VisitJSON(validAdminSiteSettings(), openapi3.EnableJSONSchema2020()); err != nil {
 		t.Fatalf("SiteSettings rejected valid payload: %v", err)
 	}
 }
 
-func cloneMap(value map[string]any) map[string]any {
-	result := make(map[string]any, len(value))
-	for key, item := range value {
-		result[key] = item
+func TestOpenAPISiteSettingsRejectsRuntimeInvalidWireShapes(t *testing.T) {
+	document := loadOpenAPI(t)
+	adminSchema := document.Components.Schemas["SiteSettingsWriteInput"].Value
+	publicSchema := document.Components.Schemas["SiteLayout"].Value
+
+	for _, test := range []struct {
+		name   string
+		mutate func(map[string]any)
+	}{
+		{"admin concrete href", func(value map[string]any) { firstHeader(value)["href"] = "/zh-Hant/about" }},
+		{"admin cross-key href", func(value map[string]any) { firstHeader(value)["href"] = "/{locale}/news" }},
+		{"userinfo URL", func(value map[string]any) { externalLinks(value)["churchYoutube"] = "https://user@example.com/channel" }},
+		{"fragment URL", func(value map[string]any) {
+			externalLinks(value)["churchYoutube"] = "https://example.com/channel#private"
+		}},
+		{"private IP URL", func(value map[string]any) { externalLinks(value)["churchYoutube"] = "https://10.0.0.1/channel" }},
+		{"loopback URL", func(value map[string]any) { externalLinks(value)["churchYoutube"] = "https://127.0.0.1/channel" }},
+		{"internal URL", func(value map[string]any) { externalLinks(value)["churchYoutube"] = "https://service.internal/channel" }},
+		{"storage URL", func(value map[string]any) {
+			externalLinks(value)["churchYoutube"] = "https://account.blob.core.windows.net/container"
+		}},
+		{"SAS URL", func(value map[string]any) {
+			externalLinks(value)["churchYoutube"] = "https://example.com/channel?sv=2024-11-04&sig=secret"
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			value := validAdminSiteSettingsInput()
+			test.mutate(value)
+			if err := adminSchema.VisitJSON(value, openapi3.EnableJSONSchema2020()); err == nil {
+				t.Fatalf("SiteSettingsWriteInput accepted invalid payload: %#v", value)
+			}
+		})
 	}
-	return result
+
+	for _, test := range []struct {
+		name string
+		href string
+	}{
+		{"public template href", "/{locale}/about"},
+		{"public cross-key href", "/ja/news"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			value := validPublicSiteLayout()
+			firstHeader(value)["href"] = test.href
+			if err := publicSchema.VisitJSON(value, openapi3.EnableJSONSchema2020()); err == nil {
+				t.Fatalf("SiteLayout accepted invalid href %q", test.href)
+			}
+		})
+	}
+}
+
+func loadOpenAPI(t *testing.T) *openapi3.T {
+	t.Helper()
+	document, err := openapi3.NewLoader().LoadFromFile("openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return document
+}
+
+func validPublicSiteLayout() map[string]any {
+	value := validSiteLocale("ja", "/ja")
+	value["links"] = validExternalLinks()
+	value["version"], value["publishedAt"] = float64(4), "2026-08-29T00:00:00Z"
+	return value
+}
+
+func validAdminSiteSettingsInput() map[string]any {
+	locales := make([]any, 0, 5)
+	for _, locale := range []string{"zh-Hant", "zh-Hans", "en", "ja", "ko"} {
+		locales = append(locales, validSiteLocale(locale, "/{locale}"))
+	}
+	return map[string]any{"locales": locales, "links": validExternalLinks()}
+}
+
+func validAdminSiteSettings() map[string]any {
+	value := validAdminSiteSettingsInput()
+	value["id"], value["status"], value["version"] = "default", "draft", float64(3)
+	value["createdBy"], value["updatedBy"] = "admin", "admin"
+	value["createdAt"], value["updatedAt"] = "2026-08-29T00:00:00Z", "2026-08-29T00:00:00Z"
+	return value
+}
+
+func validSiteLocale(locale, prefix string) map[string]any {
+	return map[string]any{
+		"locale": locale, "siteName": "教会", "englishName": "HHC", "copyrightHolder": "HHC", "allRightsReserved": "All rights reserved",
+		"seoTitleSuffix": "HHC", "seoDescriptionFallback": "description",
+		"header": []any{
+			map[string]any{"key": "about", "label": "概要", "href": prefix + "/about", "visible": true},
+			map[string]any{"key": "news", "label": "ニュース", "href": prefix + "/news", "visible": true},
+			map[string]any{"key": "literature-ministry", "label": "文書", "href": prefix + "/literature-ministry", "visible": true},
+		},
+		"legal": []any{
+			map[string]any{"key": "privacy-policy", "label": "Privacy", "href": prefix + "/privacy-policy", "visible": true},
+			map[string]any{"key": "terms-of-use", "label": "Terms", "href": prefix + "/terms-of-use", "visible": true},
+		},
+	}
+}
+
+func validExternalLinks() map[string]any {
+	return map[string]any{
+		"churchYoutube":  "https://youtube.com/@hhc33?si=public",
+		"churchFacebook": "https://facebook.com/hhc?locale=zh_TW",
+		"musicYoutube":   "https://youtube.com/@music?si=public",
+	}
+}
+
+func firstHeader(value map[string]any) map[string]any {
+	locales, ok := value["locales"].([]any)
+	if ok {
+		value = locales[0].(map[string]any)
+	}
+	return value["header"].([]any)[0].(map[string]any)
+}
+
+func externalLinks(value map[string]any) map[string]any {
+	return value["links"].(map[string]any)
 }
 
 func TestOpenAPIContentWriteInputKeepsExistingModulesCompatible(t *testing.T) {

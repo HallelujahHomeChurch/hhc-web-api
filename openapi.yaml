@@ -2178,41 +2178,78 @@ components:
         availableLocales:
           type: array
           items: { $ref: '#/components/schemas/ContentLocale' }
-    SiteNavigationItemFields:
+    AdminSiteHeaderNavigationItem:
       type: object
-      required: [label, href, visible]
+      additionalProperties: false
+      required: [key, label, href, visible]
       properties:
+        key: { type: string, enum: [about, news, literature-ministry] }
         label: { type: string }
+        href: { type: string }
         visible: { type: boolean }
-    SiteHeaderNavigationItem:
+      oneOf:
+        - properties: { key: { const: about }, href: { const: '/{locale}/about' } }
+        - properties: { key: { const: news }, href: { const: '/{locale}/news' } }
+        - properties: { key: { const: literature-ministry }, href: { const: '/{locale}/literature-ministry' } }
+    AdminSiteLegalNavigationItem:
+      type: object
+      additionalProperties: false
+      required: [key, label, href, visible]
+      properties:
+        key: { type: string, enum: [privacy-policy, terms-of-use] }
+        label: { type: string }
+        href: { type: string }
+        visible: { type: boolean }
+      oneOf:
+        - properties: { key: { const: privacy-policy }, href: { const: '/{locale}/privacy-policy' } }
+        - properties: { key: { const: terms-of-use }, href: { const: '/{locale}/terms-of-use' } }
+    PublicSiteHeaderNavigationItem:
+      type: object
+      additionalProperties: false
+      required: [key, label, href, visible]
+      properties:
+        key: { type: string, enum: [about, news, literature-ministry] }
+        label: { type: string }
+        href: { type: string }
+        visible: { type: boolean }
+      oneOf:
+        - properties: { key: { const: about }, href: { pattern: '^/(?:zh-Hant|zh-Hans|en|ja|ko)/about$' } }
+        - properties: { key: { const: news }, href: { pattern: '^/(?:zh-Hant|zh-Hans|en|ja|ko)/news$' } }
+        - properties: { key: { const: literature-ministry }, href: { pattern: '^/(?:zh-Hant|zh-Hans|en|ja|ko)/literature-ministry$' } }
+    PublicSiteLegalNavigationItem:
+      type: object
+      additionalProperties: false
+      required: [key, label, href, visible]
+      properties:
+        key: { type: string, enum: [privacy-policy, terms-of-use] }
+        label: { type: string }
+        href: { type: string }
+        visible: { type: boolean }
+      oneOf:
+        - properties: { key: { const: privacy-policy }, href: { pattern: '^/(?:zh-Hant|zh-Hans|en|ja|ko)/privacy-policy$' } }
+        - properties: { key: { const: terms-of-use }, href: { pattern: '^/(?:zh-Hant|zh-Hans|en|ja|ko)/terms-of-use$' } }
+    SiteExternalURL:
+      type: string
+      format: uri
+      pattern: '^https://'
       allOf:
-        - $ref: '#/components/schemas/SiteNavigationItemFields'
-        - type: object
-          required: [key]
-          properties:
-            key: { type: string, enum: [about, news, literature-ministry] }
-            href: { type: string, pattern: '^/(?:\{locale\}|zh-Hant|zh-Hans|en|ja|ko)/(?:about|news|literature-ministry)$' }
-      unevaluatedProperties: false
-    SiteLegalNavigationItem:
-      allOf:
-        - $ref: '#/components/schemas/SiteNavigationItemFields'
-        - type: object
-          required: [key]
-          properties:
-            key: { type: string, enum: [privacy-policy, terms-of-use] }
-            href: { type: string, pattern: '^/(?:\{locale\}|zh-Hant|zh-Hans|en|ja|ko)/(?:privacy-policy|terms-of-use)$' }
-      unevaluatedProperties: false
+        - not: { pattern: '^https://[^/?#]*@' }
+        - not: { pattern: '#' }
+        - not: { pattern: '(?i)^https://(?:localhost|[^/?#@]+\.(?:localhost|local|internal|test|cluster\.local|azurecontainerapps\.io|azurewebsites\.net|blob\.core\.windows\.net|dfs\.core\.windows\.net|file\.core\.windows\.net|queue\.core\.windows\.net|table\.core\.windows\.net|web\.core\.windows\.net))(?::[0-9]+)?(?:[/?#]|$)' }
+        - not: { pattern: '^https://(?:(?:0|10|127)\.|169\.254\.|172\.(?:1[6-9]|2[0-9]|3[01])\.|192\.168\.|(?:22[4-9]|23[0-9]|24[0-9]|25[0-5])\.)' }
+        - not: { pattern: '(?i)^https://\[(?:::|::1|f[cd][0-9a-f:]*|fe[89ab][0-9a-f:]*|ff[0-9a-f:]*)\]' }
+        - not: { pattern: '(?i)[?&](?:sig|sv|se|sp|sr|st|spr|sip|ss|srt|skoid|sktid|skt|ske|sks|skv)(?:=|&|#|$)' }
     SiteExternalLinks:
       type: object
       additionalProperties: false
       required: [churchYoutube, churchFacebook, musicYoutube]
       properties:
-        churchYoutube: { type: string, format: uri, pattern: '^https://' }
-        churchFacebook: { type: string, format: uri, pattern: '^https://' }
-        musicYoutube: { type: string, format: uri, pattern: '^https://' }
-    SiteLocaleSettingsFields:
+        churchYoutube: { $ref: '#/components/schemas/SiteExternalURL' }
+        churchFacebook: { $ref: '#/components/schemas/SiteExternalURL' }
+        musicYoutube: { $ref: '#/components/schemas/SiteExternalURL' }
+    SiteDisplayFields:
       type: object
-      required: [locale, siteName, englishName, copyrightHolder, allRightsReserved, seoTitleSuffix, seoDescriptionFallback, header, legal]
+      required: [locale, siteName, englishName, copyrightHolder, allRightsReserved, seoTitleSuffix, seoDescriptionFallback]
       properties:
         locale: { $ref: '#/components/schemas/ContentLocale' }
         siteName: { type: string, minLength: 1 }
@@ -2221,26 +2258,39 @@ components:
         allRightsReserved: { type: string, minLength: 1 }
         seoTitleSuffix: { type: string, minLength: 1 }
         seoDescriptionFallback: { type: string, minLength: 1 }
-        header:
-          type: array
-          minItems: 3
-          maxItems: 3
-          items: { $ref: '#/components/schemas/SiteHeaderNavigationItem' }
-        legal:
-          type: array
-          minItems: 2
-          maxItems: 2
-          items: { $ref: '#/components/schemas/SiteLegalNavigationItem' }
     SiteLocaleSettings:
       allOf:
-        - $ref: '#/components/schemas/SiteLocaleSettingsFields'
+        - $ref: '#/components/schemas/SiteDisplayFields'
+        - type: object
+          required: [header, legal]
+          properties:
+            header:
+              type: array
+              minItems: 3
+              maxItems: 3
+              items: { $ref: '#/components/schemas/AdminSiteHeaderNavigationItem' }
+            legal:
+              type: array
+              minItems: 2
+              maxItems: 2
+              items: { $ref: '#/components/schemas/AdminSiteLegalNavigationItem' }
       unevaluatedProperties: false
     SiteLayout:
       allOf:
-        - $ref: '#/components/schemas/SiteLocaleSettingsFields'
+        - $ref: '#/components/schemas/SiteDisplayFields'
         - type: object
-          required: [links, version, publishedAt]
+          required: [header, legal, links, version, publishedAt]
           properties:
+            header:
+              type: array
+              minItems: 3
+              maxItems: 3
+              items: { $ref: '#/components/schemas/PublicSiteHeaderNavigationItem' }
+            legal:
+              type: array
+              minItems: 2
+              maxItems: 2
+              items: { $ref: '#/components/schemas/PublicSiteLegalNavigationItem' }
             links: { $ref: '#/components/schemas/SiteExternalLinks' }
             version: { type: integer, format: int64, minimum: 1 }
             publishedAt: { type: string, format: date-time }
