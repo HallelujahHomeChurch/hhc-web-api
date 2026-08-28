@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/binary"
 	"encoding/hex"
 	"errors"
@@ -49,6 +50,7 @@ func apply(ctx context.Context, db *sql.DB, manifest Manifest, manifestSHA, acto
 	defer func() {
 		if _, unlockErr := conn.ExecContext(context.WithoutCancel(ctx), `SELECT pg_advisory_unlock($1)`, lockID); unlockErr != nil {
 			err = errors.Join(err, fmt.Errorf("release content seed lock: %w", unlockErr))
+			_ = conn.Raw(func(any) error { return driver.ErrBadConn })
 		}
 	}()
 
@@ -148,11 +150,15 @@ func defaultApplyPlan(ctx context.Context, db seedQuerier, manifest Manifest) (a
 }
 
 func applyRecord(_ context.Context, _ *sql.Tx, record Record) (string, error) {
-	switch record.Kind {
+	return "", unreleasedTargetError(record.Kind)
+}
+
+func unreleasedTargetError(kind string) error {
+	switch kind {
 	case "location", "site_layout", "page":
-		return "", fmt.Errorf("target kind %q is not released", record.Kind)
+		return fmt.Errorf("target kind %q is not released", kind)
 	default:
-		return "", fmt.Errorf("unsupported target kind %q", record.Kind)
+		return fmt.Errorf("unsupported target kind %q", kind)
 	}
 }
 

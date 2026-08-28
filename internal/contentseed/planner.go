@@ -65,7 +65,7 @@ func plan(ctx context.Context, db seedQuerier, manifest Manifest, kinds map[stri
 	for _, record := range manifest.Records {
 		kind, ok := kinds[record.Kind]
 		if !ok {
-			return PlanReport{}, fmt.Errorf("planning for record kind %q is not released", record.Kind)
+			return PlanReport{}, unreleasedTargetError(record.Kind)
 		}
 		payload, err := kind.decode(record.Payload)
 		if err != nil {

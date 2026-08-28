@@ -142,14 +142,158 @@ func TestApplyRollsBackAllRecordsAndCanRetryFailedVersion(t *testing.T) {
 	}
 }
 
+func TestApplyConcurrentDifferentSHAsAllowOneSuccessfulVersion(t *testing.T) {
+	db, state := newSeedTestDB(t)
+	manifest := testManifest()
+	manifest.Records = []Record{{Kind: "location", SourceKey: "one", SourcePaths: []string{"source.json"}, Payload: json.RawMessage(`{}`)}}
+	planner := func(context.Context, seedQuerier, Manifest) (applyPlan, error) {
+		return applyPlan{
+			Report:  Report{Inserts: 1},
+			Records: []PlannedRecord{{Kind: "location", SourceKey: "one", RecordSHA256: strings.Repeat("1", 64), Action: ActionInsert}},
+		}, nil
+	}
+	ready := make(chan struct{}, 2)
+	release := make(chan struct{})
+	applier := func(ctx context.Context, tx *sql.Tx, record Record) (string, error) {
+		ready <- struct{}{}
+		<-release
+		return successfulTestRecord(ctx, tx, record)
+	}
+	type result struct {
+		report Report
+		err    error
+	}
+	results := make(chan result, 2)
+	for _, manifestSHA := range []string{strings.Repeat("a", 64), strings.Repeat("b", 64)} {
+		go func() {
+			report, err := apply(context.Background(), db, manifest, manifestSHA, "content-seed:v1", planner, applier)
+			results <- result{report: report, err: err}
+		}()
+	}
+	<-ready
+	<-ready
+	close(release)
+	first, second := <-results, <-results
+	succeeded, failed := 0, 0
+	for _, result := range []result{first, second} {
+		if result.err == nil {
+			succeeded++
+			if result.report.Inserts != 1 {
+				t.Fatalf("successful report = %#v", result.report)
+			}
+			continue
+		}
+		failed++
+		if !strings.Contains(result.err.Error(), "commit content seed run") || !strings.Contains(result.err.Error(), "duplicate successful seed version") {
+			t.Fatalf("failed error = %v", result.err)
+		}
+	}
+	if succeeded != 1 || failed != 1 {
+		t.Fatalf("succeeded/failed = %d/%d", succeeded, failed)
+	}
+	state.assertCounts(t, 2, 1, 1)
+	if succeededAttempts, failedAttempts := state.statusCounts(); succeededAttempts != 1 || failedAttempts != 1 {
+		t.Fatalf("attempt statuses succeeded/failed = %d/%d", succeededAttempts, failedAttempts)
+	}
+	state.assertUnlocked(t)
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if len(state.lockIDs) != 2 || state.lockIDs[0] == state.lockIDs[1] {
+		t.Fatalf("lock IDs = %v", state.lockIDs)
+	}
+}
+
+func TestApplyCancellationAfterLockStillUnlocks(t *testing.T) {
+	db, state := newSeedTestDB(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	state.cancelAfterLock = cancel
+
+	_, err := Apply(ctx, db, testManifest(), strings.Repeat("f", 64), "content-seed:v1")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v", err)
+	}
+	state.assertCounts(t, 0, 0, 0)
+	state.assertUnlocked(t)
+}
+
+func TestApplySQLFailureRollsBackAndMarksAttemptFailed(t *testing.T) {
+	for _, operation := range []string{"provenance", "success"} {
+		t.Run(operation, func(t *testing.T) {
+			db, state := newSeedTestDB(t)
+			injected := fmt.Errorf("%s failed", operation)
+			state.failures[operation] = injected
+			manifest := testManifest()
+			manifest.Records = []Record{{Kind: "location", SourceKey: "one", SourcePaths: []string{"source.json"}, Payload: json.RawMessage(`{}`)}}
+			planner := func(context.Context, seedQuerier, Manifest) (applyPlan, error) {
+				return applyPlan{
+					Report:  Report{Inserts: 1},
+					Records: []PlannedRecord{{Kind: "location", SourceKey: "one", RecordSHA256: strings.Repeat("1", 64), Action: ActionInsert}},
+				}, nil
+			}
+
+			report, err := apply(context.Background(), db, manifest, strings.Repeat("1", 64), "content-seed:v1", planner, successfulTestRecord)
+			if !errors.Is(err, injected) {
+				t.Fatalf("error = %v", err)
+			}
+			if report.Inserts != 1 || report.Updates != 0 || report.Deletes != 0 {
+				t.Fatalf("report = %#v", report)
+			}
+			state.assertCounts(t, 1, 0, 0)
+			if state.attemptStatus(0) != "failed" {
+				t.Fatalf("attempt status = %q", state.attemptStatus(0))
+			}
+			state.assertUnlocked(t)
+		})
+	}
+}
+
+func TestApplyUnlockFailureIsReturnedAndConnectionReleased(t *testing.T) {
+	t.Run("successful apply", func(t *testing.T) {
+		db, state := newSeedTestDB(t)
+		unlockErr := errors.New("unlock failed")
+		state.failures["unlock"] = unlockErr
+
+		report, err := Apply(context.Background(), db, testManifest(), strings.Repeat("2", 64), "content-seed:v1")
+		if !errors.Is(err, unlockErr) || report.Mode != "apply" {
+			t.Fatalf("report=%#v error=%v", report, err)
+		}
+		state.assertCounts(t, 1, 0, 0)
+		if state.attemptStatus(0) != "succeeded" {
+			t.Fatalf("attempt status = %q", state.attemptStatus(0))
+		}
+		state.assertUnlocked(t)
+	})
+
+	t.Run("joined with primary error", func(t *testing.T) {
+		db, state := newSeedTestDB(t)
+		primaryErr := errors.New("plan failed")
+		unlockErr := errors.New("unlock failed")
+		state.failures["unlock"] = unlockErr
+
+		_, err := apply(context.Background(), db, testManifest(), strings.Repeat("3", 64), "content-seed:v1", func(context.Context, seedQuerier, Manifest) (applyPlan, error) {
+			return applyPlan{}, primaryErr
+		}, successfulTestRecord)
+		if !errors.Is(err, primaryErr) || !errors.Is(err, unlockErr) {
+			t.Fatalf("error = %v", err)
+		}
+		state.assertCounts(t, 0, 0, 0)
+		state.assertUnlocked(t)
+	})
+}
+
 func TestApplyTargetKindsFailClosed(t *testing.T) {
 	for _, kind := range []string{"location", "site_layout", "page"} {
 		t.Run(kind, func(t *testing.T) {
-			_, err := applyRecord(context.Background(), nil, Record{Kind: kind})
+			db, state := newSeedTestDB(t)
+			manifest := testManifest()
+			manifest.Records = []Record{{Kind: kind, SourceKey: "one", SourcePaths: []string{"source.json"}, Payload: json.RawMessage(`{}`)}}
+			_, err := Apply(context.Background(), db, manifest, strings.Repeat("e", 64), "content-seed:v1")
 			want := fmt.Sprintf("target kind %q is not released", kind)
 			if err == nil || err.Error() != want {
 				t.Fatalf("error = %v, want %q", err, want)
 			}
+			state.assertCounts(t, 0, 0, 0)
+			state.assertUnlocked(t)
 		})
 	}
 	_, err := applyRecord(context.Background(), nil, Record{Kind: "other"})
@@ -194,20 +338,22 @@ type seedTestAttempt struct {
 }
 
 type seedTestState struct {
-	mu         sync.Mutex
-	locks      int
-	lockIDs    []int64
-	attempts   []seedTestAttempt
-	successful map[string]seedTestSuccess
-	domain     []string
-	provenance []string
+	mu              sync.Mutex
+	locks           int
+	lockIDs         []int64
+	attempts        []seedTestAttempt
+	successful      map[string]seedTestSuccess
+	domain          []string
+	provenance      []string
+	failures        map[string]error
+	cancelAfterLock context.CancelFunc
 }
 
 func newSeedTestDB(t *testing.T) (*sql.DB, *seedTestState) {
 	t.Helper()
-	state := &seedTestState{successful: make(map[string]seedTestSuccess)}
+	state := &seedTestState{successful: make(map[string]seedTestSuccess), failures: make(map[string]error)}
 	db := sql.OpenDB(seedTestConnector{state: state})
-	db.SetMaxOpenConns(1)
+	db.SetMaxOpenConns(4)
 	t.Cleanup(func() { _ = db.Close() })
 	return db, state
 }
@@ -236,9 +382,26 @@ func (state *seedTestState) attemptStatus(index int) string {
 	return state.attempts[index].status
 }
 
+func (state *seedTestState) statusCounts() (succeeded, failed int) {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	for _, attempt := range state.attempts {
+		switch attempt.status {
+		case "succeeded":
+			succeeded++
+		case "failed":
+			failed++
+		}
+	}
+	return succeeded, failed
+}
+
 type seedTestConnector struct{ state *seedTestState }
 
-func (connector seedTestConnector) Connect(context.Context) (driver.Conn, error) {
+func (connector seedTestConnector) Connect(ctx context.Context) (driver.Conn, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	return &seedTestConn{state: connector.state}, nil
 }
 
@@ -255,19 +418,29 @@ func (testDriver seedTestDriver) Open(string) (driver.Conn, error) {
 type seedTestConn struct {
 	state *seedTestState
 	tx    *seedTestTxState
+	locks int
 }
 
 func (conn *seedTestConn) Prepare(string) (driver.Stmt, error) {
 	return nil, errors.New("prepare is not supported")
 }
 
-func (conn *seedTestConn) Close() error { return nil }
+func (conn *seedTestConn) Close() error {
+	conn.state.mu.Lock()
+	defer conn.state.mu.Unlock()
+	conn.state.locks -= conn.locks
+	conn.locks = 0
+	return nil
+}
 
 func (conn *seedTestConn) Begin() (driver.Tx, error) {
 	return conn.BeginTx(context.Background(), driver.TxOptions{})
 }
 
-func (conn *seedTestConn) BeginTx(context.Context, driver.TxOptions) (driver.Tx, error) {
+func (conn *seedTestConn) BeginTx(ctx context.Context, _ driver.TxOptions) (driver.Tx, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if conn.tx != nil {
 		return nil, errors.New("transaction already active")
 	}
@@ -275,13 +448,19 @@ func (conn *seedTestConn) BeginTx(context.Context, driver.TxOptions) (driver.Tx,
 	return seedTestTx{conn: conn}, nil
 }
 
-func (conn *seedTestConn) QueryContext(_ context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
+func (conn *seedTestConn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if !strings.Contains(query, "FROM hhc_web.content_seed_run") || !strings.Contains(query, "status='succeeded'") {
 		return nil, fmt.Errorf("unexpected query: %s", query)
 	}
 	seedVersion := args[0].Value.(string)
 	conn.state.mu.Lock()
 	defer conn.state.mu.Unlock()
+	if err := conn.state.failures["lookup"]; err != nil {
+		return nil, err
+	}
 	success, ok := conn.state.successful[seedVersion]
 	rows := &seedTestRows{columns: []string{"manifest_sha256", "inserted_count", "skipped_count", "warning_count", "conflict_count"}}
 	if ok {
@@ -290,15 +469,27 @@ func (conn *seedTestConn) QueryContext(_ context.Context, query string, args []d
 	return rows, nil
 }
 
-func (conn *seedTestConn) ExecContext(_ context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
+func (conn *seedTestConn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	conn.state.mu.Lock()
 	defer conn.state.mu.Unlock()
+	operation := seedTestOperation(query)
+	if err := conn.state.failures[operation]; err != nil {
+		return nil, err
+	}
 	switch {
 	case strings.Contains(query, "pg_advisory_lock"):
 		conn.state.locks++
+		conn.locks++
 		conn.state.lockIDs = append(conn.state.lockIDs, args[0].Value.(int64))
+		if conn.state.cancelAfterLock != nil {
+			conn.state.cancelAfterLock()
+		}
 	case strings.Contains(query, "pg_advisory_unlock"):
 		conn.state.locks--
+		conn.locks--
 	case strings.Contains(query, "INSERT INTO hhc_web.content_seed_run"):
 		conn.state.attempts = append(conn.state.attempts, seedTestAttempt{
 			id: args[0].Value.(string), seedVersion: args[1].Value.(string), manifestSHA: args[4].Value.(string), status: "started",
@@ -315,6 +506,27 @@ func (conn *seedTestConn) ExecContext(_ context.Context, query string, args []dr
 		return nil, fmt.Errorf("unexpected exec: %s", query)
 	}
 	return driver.RowsAffected(1), nil
+}
+
+func seedTestOperation(query string) string {
+	switch {
+	case strings.Contains(query, "pg_advisory_lock"):
+		return "lock"
+	case strings.Contains(query, "pg_advisory_unlock"):
+		return "unlock"
+	case strings.Contains(query, "INSERT INTO hhc_web.content_seed_source"):
+		return "provenance"
+	case strings.Contains(query, "SET status='succeeded'"):
+		return "success"
+	case strings.Contains(query, "SET status='failed'"):
+		return "failure"
+	case strings.Contains(query, "INSERT INTO hhc_web.content_seed_run"):
+		return "attempt"
+	case strings.Contains(query, "INSERT INTO test_domain"):
+		return "domain"
+	default:
+		return "unexpected"
+	}
 }
 
 func (conn *seedTestConn) setAttemptStatus(id, status string, counts *seedTestAttempt) {
@@ -347,6 +559,17 @@ type seedTestTx struct{ conn *seedTestConn }
 func (tx seedTestTx) Commit() error {
 	tx.conn.state.mu.Lock()
 	defer tx.conn.state.mu.Unlock()
+	if tx.conn.tx.success != nil {
+		for _, attempt := range tx.conn.state.attempts {
+			if attempt.id == tx.conn.tx.success.id {
+				if _, exists := tx.conn.state.successful[attempt.seedVersion]; exists {
+					tx.conn.tx = nil
+					return errors.New("duplicate successful seed version")
+				}
+				break
+			}
+		}
+	}
 	tx.conn.state.domain = append(tx.conn.state.domain, tx.conn.tx.domain...)
 	tx.conn.state.provenance = append(tx.conn.state.provenance, tx.conn.tx.provenance...)
 	if tx.conn.tx.success != nil {
