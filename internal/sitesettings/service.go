@@ -154,11 +154,11 @@ func validExternalURL(value string) bool {
 	if err != nil || hasSASParameter(query) {
 		return false
 	}
-	host := strings.ToLower(strings.TrimSuffix(parsed.Hostname(), "."))
-	if host == "" || host == "localhost" || hasBlockedSuffix(host) {
+	host := strings.ToLower(parsed.Hostname())
+	if host == "" || strings.HasSuffix(host, ".") || host == "localhost" || hasBlockedSuffix(host) {
 		return false
 	}
-	if net.ParseIP(host) != nil {
+	if strings.Trim(host, "0123456789.") == "" || net.ParseIP(host) != nil {
 		return false
 	}
 	return true

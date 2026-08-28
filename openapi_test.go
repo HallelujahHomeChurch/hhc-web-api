@@ -205,6 +205,9 @@ func TestOpenAPISiteSettingsRejectsRuntimeInvalidWireShapes(t *testing.T) {
 		{"private IP URL", func(value map[string]any) { externalLinks(value)["churchYoutube"] = "https://10.0.0.1/channel" }},
 		{"loopback URL", func(value map[string]any) { externalLinks(value)["churchYoutube"] = "https://127.0.0.1/channel" }},
 		{"public IPv4 URL", func(value map[string]any) { externalLinks(value)["churchYoutube"] = "https://8.8.8.8/channel" }},
+		{"trailing-dot IPv4 URL", func(value map[string]any) { externalLinks(value)["churchYoutube"] = "https://8.8.8.8./channel" }},
+		{"integer numeric host URL", func(value map[string]any) { externalLinks(value)["churchYoutube"] = "https://2130706433/channel" }},
+		{"short numeric host URL", func(value map[string]any) { externalLinks(value)["churchYoutube"] = "https://127.1/channel" }},
 		{"canonical public IPv6 URL", func(value map[string]any) {
 			externalLinks(value)["churchYoutube"] = "https://[2606:4700:4700::1111]/channel"
 		}},
@@ -221,6 +224,9 @@ func TestOpenAPISiteSettingsRejectsRuntimeInvalidWireShapes(t *testing.T) {
 			externalLinks(value)["churchYoutube"] = "https://[::ffff:127.0.0.1]/channel"
 		}},
 		{"internal URL", func(value map[string]any) { externalLinks(value)["churchYoutube"] = "https://service.internal/channel" }},
+		{"trailing-dot internal URL", func(value map[string]any) {
+			externalLinks(value)["churchYoutube"] = "https://service.internal./channel"
+		}},
 		{"storage URL", func(value map[string]any) {
 			externalLinks(value)["churchYoutube"] = "https://account.blob.core.windows.net/container"
 		}},
