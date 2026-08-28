@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/content"
+	"github.com/HallelujahHomeChurch/hhc-web-api/internal/sitesettings"
 )
 
 type Action string
@@ -70,6 +71,11 @@ type locationSeedPayload struct {
 	Translations []locationSeedTranslation `json:"translations"`
 }
 
+type siteLayoutSeedPayload struct {
+	Locales []sitesettings.LocaleSettings `json:"locales"`
+	Links   sitesettings.ExternalLinks    `json:"links"`
+}
+
 var plannerKinds = map[string]plannerKind{
 	"location": {
 		decode:    decodeLocationSeedPayload,
@@ -77,6 +83,18 @@ var plannerKinds = map[string]plannerKind{
 		lookupTarget: func(ctx context.Context, db seedQuerier, sourceKey string) (string, bool, error) {
 			var targetID string
 			err := db.QueryRowContext(ctx, `SELECT content_id::text FROM hhc_web.location_item WHERE stable_key=$1`, strings.TrimPrefix(sourceKey, "location:")).Scan(&targetID)
+			if errors.Is(err, sql.ErrNoRows) {
+				return "", false, nil
+			}
+			return targetID, err == nil, err
+		},
+	},
+	"site_layout": {
+		decode:    decodeSiteLayoutSeedPayload,
+		sourceKey: func(any) string { return "site-layout:" + sitesettings.SingletonID },
+		lookupTarget: func(ctx context.Context, db seedQuerier, _ string) (string, bool, error) {
+			var targetID string
+			err := db.QueryRowContext(ctx, `SELECT id FROM hhc_web.site_setting_set WHERE id=$1`, sitesettings.SingletonID).Scan(&targetID)
 			if errors.Is(err, sql.ErrNoRows) {
 				return "", false, nil
 			}
@@ -182,6 +200,26 @@ func (payload locationSeedPayload) writeInput() content.WriteInput {
 		translations[i] = content.Translation{Locale: translation.Locale, Title: translation.Name, Body: translation.Address}
 	}
 	return content.WriteInput{LocationKey: payload.StableKey, MapHref: payload.MapHref, SortOrder: payload.SortOrder, Translations: translations}
+}
+
+func decodeSiteLayoutSeedPayload(raw json.RawMessage) (any, error) {
+	var payload siteLayoutSeedPayload
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&payload); err != nil {
+		return nil, err
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			err = errors.New("payload contains multiple JSON values")
+		}
+		return nil, err
+	}
+	normalized, ok := sitesettings.NormalizeWriteInput(sitesettings.WriteInput{Locales: payload.Locales, Links: payload.Links})
+	if !ok {
+		return nil, errors.New("site layout payload is invalid")
+	}
+	return siteLayoutSeedPayload{Locales: normalized.Locales, Links: normalized.Links}, nil
 }
 
 func canonicalSHA256(payload any) (string, error) {

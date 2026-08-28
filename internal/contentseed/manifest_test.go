@@ -88,12 +88,15 @@ func TestEmbeddedManifestLoadsLocationRecords(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if hash == "" || manifest.SeedVersion != "2026-08-28-public-content-locations-v1" || len(manifest.Records) != 2 {
+	if hash == "" || manifest.SeedVersion != "2026-08-28-public-content-site-layout-v1" || len(manifest.Records) != 3 {
 		t.Fatalf("embedded manifest hash=%q version=%q records=%d", hash, manifest.SeedVersion, len(manifest.Records))
 	}
 	for i, sourceKey := range []string{"location:taipei", "location:zhongli"} {
 		if manifest.Records[i].Kind != "location" || manifest.Records[i].SourceKey != sourceKey {
 			t.Fatalf("record %d = %#v", i, manifest.Records[i])
 		}
+	}
+	if record := manifest.Records[2]; record.Kind != "site_layout" || record.SourceKey != "site-layout:default" || len(record.SourcePaths) != 6 {
+		t.Fatalf("site layout record = %#v", record)
 	}
 }
