@@ -141,10 +141,19 @@ func TestOpenAPIDocumentsPublicLocationsContract(t *testing.T) {
 func TestOpenAPIDocumentsSiteSettingsContracts(t *testing.T) {
 	document := readOpenAPI(t)
 	public := operationByID(t, document, "getPublicSiteLayout")
-	for _, expected := range []string{"x-hhc-visibility: public", "x-hhc-callers: [api-gateway]", "security: []", "$ref: '#/components/parameters/ContentLocale'", "$ref: '#/components/responses/SiteLayout'"} {
+	for _, expected := range []string{"x-hhc-visibility: public", "x-hhc-callers: [api-gateway]", "security: []", "$ref: '#/components/parameters/ContentLocale'", "$ref: '#/components/parameters/IfNoneMatch'", "$ref: '#/components/responses/SiteLayout'", "'304': { description: Site Layout has not changed }"} {
 		if !strings.Contains(public, expected) {
 			t.Errorf("public Site Layout operation missing %q:\n%s", expected, public)
 		}
+	}
+	loader := openapi3.NewLoader()
+	spec, err := loader.LoadFromFile("openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := spec.Components.Responses["SiteLayout"]
+	if response == nil || response.Value == nil || response.Value.Headers["ETag"] == nil || response.Value.Headers["ETag"].Ref != "#/components/headers/SiteLayoutETag" {
+		t.Errorf("Site Layout response missing reusable ETag header")
 	}
 	for operationID, scope := range map[string]string{
 		"getSiteSettings": "cms:read", "saveSiteSettings": "cms:write", "publishSiteSettings": "cms:publish",
