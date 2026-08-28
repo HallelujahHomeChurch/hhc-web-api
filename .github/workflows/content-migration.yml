@@ -135,11 +135,11 @@ jobs:
             [[ "$job_image" == "$runtime_image" ]]
           }
 
-          image_ref="$(az containerapp job show \
+          job_template="$(az containerapp job show \
             --name "$CONTENT_IMPORT_JOB_NAME" \
             --resource-group "$RESOURCE_GROUP" \
-            --query properties.template.containers[0].image \
-            --output tsv --only-show-errors)"
+            --query properties.template --output json --only-show-errors)"
+          image_ref="$(jq -r '.containers[0].image' <<<"$job_template")"
           ready_revision="$(az containerapp show \
             --name "$API_APP_NAME" \
             --resource-group "$RESOURCE_GROUP" \
@@ -161,10 +161,14 @@ jobs:
           fi
           CONFIRMATION="$REVIEWED_SEED_VERSION"
           MANIFEST_SHA="$REVIEWED_MANIFEST_SHA"
+          execution_template="$(mktemp)"
+          jq --arg mode "$MODE" --arg confirmation "$CONFIRMATION" --arg sha "$MANIFEST_SHA" \
+            '.containers[0].args = ["--mode=\($mode)", "--confirmation=\($confirmation)", "--expected-manifest-sha=\($sha)"]' \
+            <<<"$job_template" > "$execution_template"
           execution_name="$(az containerapp job start \
             --name "$CONTENT_IMPORT_JOB_NAME" \
             --resource-group "$RESOURCE_GROUP" \
-            --args "--mode=${MODE}" "--confirmation=${CONFIRMATION}" "--expected-manifest-sha=${MANIFEST_SHA}" \
+            --yaml "$execution_template" \
             --query name -o tsv --only-show-errors)"
           test -n "$execution_name"
 
@@ -292,11 +296,11 @@ jobs:
             [[ "$job_image" == "$runtime_image" ]]
           }
 
-          current_image="$(az containerapp job show \
+          job_template="$(az containerapp job show \
             --name "$CONTENT_IMPORT_JOB_NAME" \
             --resource-group "$RESOURCE_GROUP" \
-            --query properties.template.containers[0].image \
-            --output tsv --only-show-errors)"
+            --query properties.template --output json --only-show-errors)"
+          current_image="$(jq -r '.containers[0].image' <<<"$job_template")"
           ready_revision="$(az containerapp show \
             --name "$API_APP_NAME" \
             --resource-group "$RESOURCE_GROUP" \
@@ -316,10 +320,14 @@ jobs:
           MODE=apply
           CONFIRMATION="$REVIEWED_SEED_VERSION"
           MANIFEST_SHA="$REVIEWED_MANIFEST_SHA"
+          execution_template="$(mktemp)"
+          jq --arg mode "$MODE" --arg confirmation "$CONFIRMATION" --arg sha "$MANIFEST_SHA" \
+            '.containers[0].args = ["--mode=\($mode)", "--confirmation=\($confirmation)", "--expected-manifest-sha=\($sha)"]' \
+            <<<"$job_template" > "$execution_template"
           execution_name="$(az containerapp job start \
             --name "$CONTENT_IMPORT_JOB_NAME" \
             --resource-group "$RESOURCE_GROUP" \
-            --args "--mode=${MODE}" "--confirmation=${CONFIRMATION}" "--expected-manifest-sha=${MANIFEST_SHA}" \
+            --yaml "$execution_template" \
             --query name -o tsv --only-show-errors)"
           test -n "$execution_name"
 

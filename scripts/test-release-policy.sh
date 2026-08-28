@@ -211,11 +211,26 @@ printf '%s\n' "$apply_job" | grep -Fq "if: \${{ inputs.mode == 'apply' && github
 printf '%s\n' "$apply_job" | grep -Fq 'environment: production'
 test "$(grep -Fc 'environment: production' "$import_workflow")" -eq 1
 printf '%s\n' "$apply_job" | grep -Fq 'needs.preflight.outputs.image_ref'
-printf '%s\n' "$apply_job" | grep -Fq -- '--confirmation=${CONFIRMATION}'
-printf '%s\n' "$apply_job" | grep -Fq -- '--expected-manifest-sha=${MANIFEST_SHA}'
+printf '%s\n' "$apply_job" | grep -Fq '"--confirmation=\($confirmation)"'
+printf '%s\n' "$apply_job" | grep -Fq '"--expected-manifest-sha=\($sha)"'
 test "$(grep -Fc 'uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' "$import_workflow")" -eq 2
 test "$(grep -Fc 'uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43' "$import_workflow")" -eq 2
 test "$(grep -Fc 'az containerapp job start' "$import_workflow")" -eq 2
+test "$(grep -Fc -- '--yaml "$execution_template"' "$import_workflow")" -eq 2
+if grep -Fq -- '--args "--mode=' "$import_workflow"; then
+  echo 'content migration must pass dash-leading importer arguments through an execution template' >&2
+  exit 1
+fi
+execution_filters="$(grep -F '.containers[0].args = [' "$import_workflow")"
+test "$(printf '%s\n' "$execution_filters" | awk 'NF { count++ } END { print count + 0 }')" -eq 2
+test "$(printf '%s\n' "$execution_filters" | sort -u | awk 'NF { count++ } END { print count + 0 }')" -eq 1
+execution_filter="$(printf '%s\n' "$execution_filters" | head -1 | sed -e "s/^[[:space:]]*'//" -e "s/' \\\\$//")"
+sample_template='{"containers":[{"name":"content-import","image":"registry/app@sha256:abc","command":["/hhc-web-content-import"],"args":["--mode=inventory"],"env":[{"name":"DATABASE_URL","secretRef":"database-url"}],"resources":{"cpu":0.25,"memory":"0.5Gi"}}],"initContainers":[{"name":"init"}]}'
+rendered_template="$(printf '%s\n' "$sample_template" | jq -c \
+  --arg mode plan --arg confirmation reviewed-v1 --arg sha 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
+  "$execution_filter")"
+expected_template='{"containers":[{"name":"content-import","image":"registry/app@sha256:abc","command":["/hhc-web-content-import"],"args":["--mode=plan","--confirmation=reviewed-v1","--expected-manifest-sha=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"],"env":[{"name":"DATABASE_URL","secretRef":"database-url"}],"resources":{"cpu":0.25,"memory":"0.5Gi"}}],"initContainers":[{"name":"init"}]}'
+test "$rendered_template" = "$expected_template"
 test "$(grep -Fc -- '--job-execution-name "$execution_name"' "$import_workflow")" -eq 2
 test "$(grep -Fc -- '--execution "$execution_name"' "$import_workflow")" -eq 2
 test "$(grep -Fc -- '--container content-import' "$import_workflow")" -eq 2
@@ -280,7 +295,7 @@ for job in "$preflight_job" "$apply_job"; do
   run_image_match_case "$image_guard" "$image_a" "$image_b" fail
   run_image_match_case "$image_guard" alive.azurecr.io/alive/hhc-web-api:main "$image_a" fail
 
-  job_image_line="$(printf '%s\n' "$job" | grep -nF 'az containerapp job show' | cut -d: -f1)"
+  job_image_line="$(printf '%s\n' "$job" | grep -nF 'az containerapp job show' | head -1 | cut -d: -f1)"
   runtime_line="$(printf '%s\n' "$job" | grep -nF 'properties.latestReadyRevisionName' | cut -d: -f1)"
   compare_line="$(printf '%s\n' "$job" | grep -nF 'require_same_image ' | tail -1 | cut -d: -f1)"
   start_line="$(printf '%s\n' "$job" | grep -nF 'az containerapp job start' | cut -d: -f1)"
