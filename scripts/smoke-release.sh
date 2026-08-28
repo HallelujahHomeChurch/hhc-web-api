@@ -63,14 +63,27 @@ if [[ "$smoke_mode" == forward ]]; then
         and (.data.version | type == "number" and . >= 1 and floor == .)
         and (.data.header | type == "array" and length == 3)
         and (.data.legal | type == "array" and length == 2)
-        and all(.data.header[], .data.legal[];
+        and ([.data.header[].key] | sort == ["about", "literature-ministry", "news"])
+        and ([.data.legal[].key] | sort == ["privacy-policy", "terms-of-use"])
+        and all(.data.header[];
           keys == ["href", "key", "label", "visible"]
           and (.key | type == "string")
-          and (.label | type == "string" and length > 0)
+          and (.label | type == "string")
           and (.href | type == "string")
-          and (.visible | type == "boolean"))
-        and ([.data.header[] | [.key, .href]] == [["about", "/zh-Hant/about"], ["news", "/zh-Hant/news"], ["literature-ministry", "/zh-Hant/literature-ministry"]])
-        and ([.data.legal[] | [.key, .href]] == [["privacy-policy", "/zh-Hant/privacy-policy"], ["terms-of-use", "/zh-Hant/terms-of-use"]])
+          and (.visible | type == "boolean")
+          and (.visible == false or (.label | length > 0))
+          and ((.key == "about" and .href == "/zh-Hant/about")
+            or (.key == "news" and .href == "/zh-Hant/news")
+            or (.key == "literature-ministry" and .href == "/zh-Hant/literature-ministry")))
+        and all(.data.legal[];
+          keys == ["href", "key", "label", "visible"]
+          and (.key | type == "string")
+          and (.label | type == "string")
+          and (.href | type == "string")
+          and (.visible | type == "boolean")
+          and (.visible == false or (.label | length > 0))
+          and ((.key == "privacy-policy" and .href == "/zh-Hant/privacy-policy")
+            or (.key == "terms-of-use" and .href == "/zh-Hant/terms-of-use")))
         and (.data.links | keys == ["churchFacebook", "churchYoutube", "musicYoutube"])
         and ([.data.links.churchFacebook, .data.links.churchYoutube, .data.links.musicYoutube] | all(type == "string" and startswith("https://")))
       ' "$smoke_dir/site-layout-body" >/dev/null

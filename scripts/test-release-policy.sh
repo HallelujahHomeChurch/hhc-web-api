@@ -187,11 +187,21 @@ run_smoke_case rollback 404 application/json '{"data":null,"meta":{},"error":{"c
 
 valid_site_layout='{"data":{"locale":"zh-Hant","siteName":"哈利路亞家教會","englishName":"Hallelujah Home Church","copyrightHolder":"Hallelujah Home Church","allRightsReserved":"版權所有","seoTitleSuffix":"HHC","seoDescriptionFallback":"教會網站","header":[{"key":"about","label":"關於我們","href":"/zh-Hant/about","visible":true},{"key":"news","label":"最新消息","href":"/zh-Hant/news","visible":true},{"key":"literature-ministry","label":"文字事工","href":"/zh-Hant/literature-ministry","visible":true}],"legal":[{"key":"privacy-policy","label":"隱私權政策","href":"/zh-Hant/privacy-policy","visible":true},{"key":"terms-of-use","label":"使用條款","href":"/zh-Hant/terms-of-use","visible":true}],"links":{"churchYoutube":"https://youtube.com/@hhc33","churchFacebook":"https://facebook.com/hhc","musicYoutube":"https://youtube.com/@music"},"version":1,"publishedAt":"2026-08-29T00:00:00Z"},"meta":{},"error":null}'
 backend_site_layout_not_found='{"data":null,"meta":{},"error":{"code":"not_found","message":"The site settings were not found."}}'
+hidden_site_layout="$(printf '%s\n' "$valid_site_layout" | jq -c '.data.header[0].visible = false | .data.header[0].label = "" | .data.legal[0].visible = false | .data.legal[0].label = ""')"
+reordered_site_layout="$(printf '%s\n' "$valid_site_layout" | jq -c '.data.header |= reverse | .data.legal |= reverse')"
+missing_site_layout="$(printf '%s\n' "$valid_site_layout" | jq -c 'del(.data.legal[1])')"
+duplicate_site_layout="$(printf '%s\n' "$valid_site_layout" | jq -c '.data.header[2] = .data.header[0]')"
+visible_empty_site_layout="$(printf '%s\n' "$valid_site_layout" | jq -c '.data.legal[0].label = ""')"
 run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' pass requested 200 application/json "$valid_site_layout" requested
+run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' pass requested 200 application/json "$hidden_site_layout" requested
+run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' pass requested 200 application/json "$reordered_site_layout" requested
 run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' pass requested 404 application/json "$backend_site_layout_not_found" requested
 run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' fail requested 404 application/json '{"error":"Not Found","message":"The requested resource was not found.","service":"api-gateway"}' requested
 run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' fail requested 404 text/plain '' requested
 run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' fail requested 200 application/json '{"data":{},"meta":{},"error":null}' requested
+run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' fail requested 200 application/json "$missing_site_layout" requested
+run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' fail requested 200 application/json "$duplicate_site_layout" requested
+run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' fail requested 200 application/json "$visible_empty_site_layout" requested
 run_smoke_case rollback 404 application/json '{"data":null,"meta":{},"error":{"code":"not_found"}}' pass skipped 404 application/json "$backend_site_layout_not_found" skipped
 
 forward_smoke_line="$(grep -nF 'SMOKE_MODE=forward ./scripts/smoke-release.sh' "$workflow" | cut -d: -f1)"
