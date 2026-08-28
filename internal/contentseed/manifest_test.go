@@ -44,6 +44,7 @@ func TestLoadRejectsInvalidManifest(t *testing.T) {
 		{name: "empty_source_key", payload: strings.Replace(withRecord, `"sourceKey":"one"`, `"sourceKey":""`, 1)},
 		{name: "duplicate_source_path", payload: strings.Replace(validManifestJSON, `"sources":[`, `"sources":[{"path":"source.json","sha256":"`+strings.Repeat("c", 64)+`"},`, 1)},
 		{name: "duplicate_record_key", payload: strings.Replace(withRecord, `"records":[`+record+`]`, `"records":[`+record+`,`+record+`]`, 1)},
+		{name: "duplicate_record_source_path", payload: strings.Replace(withRecord, `"sourcePaths":["source.json"]`, `"sourcePaths":["source.json","source.json"]`, 1)},
 		{name: "missing_record_source", payload: strings.Replace(withRecord, `"sourcePaths":["source.json"]`, `"sourcePaths":["missing.json"]`, 1)},
 		{name: "empty_record_sources", payload: strings.Replace(withRecord, `"sourcePaths":["source.json"]`, `"sourcePaths":[]`, 1)},
 	}
@@ -51,6 +52,30 @@ func TestLoadRejectsInvalidManifest(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			if _, _, err := Load([]byte(test.payload)); err == nil {
 				t.Fatal("expected validation error")
+			}
+		})
+	}
+}
+
+func TestLoadRejectsTrailingJSON(t *testing.T) {
+	if _, _, err := Load([]byte(validManifestJSON + `{}`)); err == nil {
+		t.Fatal("expected trailing JSON error")
+	}
+}
+
+func TestLoadRejectsUnknownNestedFields(t *testing.T) {
+	record := `{"kind":"location","sourcePaths":["source.json"],"sourceKey":"one","payload":{}}`
+	withRecord := strings.Replace(validManifestJSON, `"records":[]`, `"records":[`+record+`]`, 1)
+	for _, test := range []struct {
+		name    string
+		payload string
+	}{
+		{name: "source", payload: strings.Replace(validManifestJSON, `"path":"source.json"`, `"path":"source.json","extra":true`, 1)},
+		{name: "record", payload: strings.Replace(withRecord, `"kind":"location"`, `"kind":"location","extra":true`, 1)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if _, _, err := Load([]byte(test.payload)); err == nil {
+				t.Fatal("expected unknown nested field error")
 			}
 		})
 	}

@@ -99,7 +99,12 @@ func validateManifest(manifest Manifest) error {
 		if len(record.SourcePaths) == 0 {
 			return fmt.Errorf("record %q/%q must have a source path", record.Kind, record.SourceKey)
 		}
+		recordPaths := make(map[string]struct{}, len(record.SourcePaths))
 		for _, path := range record.SourcePaths {
+			if _, exists := recordPaths[path]; exists {
+				return fmt.Errorf("record %q/%q has duplicate source path %q", record.Kind, record.SourceKey, path)
+			}
+			recordPaths[path] = struct{}{}
 			if path == "" || sourceCounts[path] != 1 {
 				return fmt.Errorf("record %q/%q source path %q must resolve exactly once", record.Kind, record.SourceKey, path)
 			}
