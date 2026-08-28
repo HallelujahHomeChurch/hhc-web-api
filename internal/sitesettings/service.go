@@ -2,7 +2,7 @@ package sitesettings
 
 import (
 	"context"
-	"net/netip"
+	"net"
 	"net/url"
 	"strings"
 	"time"
@@ -158,8 +158,8 @@ func validExternalURL(value string) bool {
 	if host == "" || host == "localhost" || hasBlockedSuffix(host) {
 		return false
 	}
-	if address, err := netip.ParseAddr(host); err == nil {
-		return address.IsGlobalUnicast() && !address.IsPrivate()
+	if net.ParseIP(host) != nil {
+		return false
 	}
 	return true
 }
