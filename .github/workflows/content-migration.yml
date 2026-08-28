@@ -135,11 +135,17 @@ jobs:
             [[ "$job_image" == "$runtime_image" ]]
           }
 
-          job_template="$(az containerapp job show \
+          job="$(az containerapp job show \
             --name "$CONTENT_IMPORT_JOB_NAME" \
             --resource-group "$RESOURCE_GROUP" \
-            --query properties.template --output json --only-show-errors)"
+            --output json --only-show-errors)"
+          job_template="$(jq -c '.properties.template' <<<"$job")"
           image_ref="$(jq -r '.containers[0].image' <<<"$job_template")"
+          environment_id="$(jq -r '.properties.environmentId' <<<"$job")"
+          workspace_id="$(az containerapp env show --ids "$environment_id" \
+            --query properties.appLogsConfiguration.logAnalyticsConfiguration.customerId \
+            --output tsv --only-show-errors)"
+          test -n "$workspace_id"
           ready_revision="$(az containerapp show \
             --name "$API_APP_NAME" \
             --resource-group "$RESOURCE_GROUP" \
@@ -171,6 +177,7 @@ jobs:
             --yaml "$execution_template" \
             --query name -o tsv --only-show-errors)"
           test -n "$execution_name"
+          [[ "$execution_name" =~ ^[a-z0-9-]+$ ]]
 
           status=
           for attempt in {1..90}; do
@@ -190,12 +197,22 @@ jobs:
           done
           [[ "$status" == Succeeded ]] || { echo "Content import ${execution_name} timed out" >&2; exit 1; }
 
-          logs="$(az containerapp job logs show \
-            --name "$CONTENT_IMPORT_JOB_NAME" \
-            --resource-group "$RESOURCE_GROUP" \
-            --execution "$execution_name" \
-            --container content-import \
-            --format text --tail 300)"
+          logs=
+          for attempt in {1..30}; do
+            if logs="$(az monitor log-analytics query \
+              --workspace "$workspace_id" \
+              --analytics-query "ContainerAppConsoleLogs_CL
+                | where TimeGenerated > ago(30m)
+                | where ContainerGroupName_s startswith '${execution_name}-'
+                | where ContainerName_s == 'content-import'
+                | order by TimeGenerated asc
+                | project Log_s" \
+              --query '[].Log_s' --output tsv --only-show-errors)"; then
+              report_count="$(printf '%s\n' "$logs" | awk '/^[[:space:]]*\{/ { count++ } END { print count + 0 }')"
+              [[ "$report_count" -gt 0 ]] && break
+            fi
+            sleep 10
+          done
           report="$(validate_report "$logs" "$MODE" "$REVIEWED_SEED_VERSION" "$REVIEWED_MANIFEST_SHA")"
           echo "image_ref=$image_ref" >> "$GITHUB_OUTPUT"
           {
@@ -296,11 +313,17 @@ jobs:
             [[ "$job_image" == "$runtime_image" ]]
           }
 
-          job_template="$(az containerapp job show \
+          job="$(az containerapp job show \
             --name "$CONTENT_IMPORT_JOB_NAME" \
             --resource-group "$RESOURCE_GROUP" \
-            --query properties.template --output json --only-show-errors)"
+            --output json --only-show-errors)"
+          job_template="$(jq -c '.properties.template' <<<"$job")"
           current_image="$(jq -r '.containers[0].image' <<<"$job_template")"
+          environment_id="$(jq -r '.properties.environmentId' <<<"$job")"
+          workspace_id="$(az containerapp env show --ids "$environment_id" \
+            --query properties.appLogsConfiguration.logAnalyticsConfiguration.customerId \
+            --output tsv --only-show-errors)"
+          test -n "$workspace_id"
           ready_revision="$(az containerapp show \
             --name "$API_APP_NAME" \
             --resource-group "$RESOURCE_GROUP" \
@@ -330,6 +353,7 @@ jobs:
             --yaml "$execution_template" \
             --query name -o tsv --only-show-errors)"
           test -n "$execution_name"
+          [[ "$execution_name" =~ ^[a-z0-9-]+$ ]]
 
           status=
           for attempt in {1..90}; do
@@ -349,12 +373,22 @@ jobs:
           done
           [[ "$status" == Succeeded ]] || { echo "Content import ${execution_name} timed out" >&2; exit 1; }
 
-          logs="$(az containerapp job logs show \
-            --name "$CONTENT_IMPORT_JOB_NAME" \
-            --resource-group "$RESOURCE_GROUP" \
-            --execution "$execution_name" \
-            --container content-import \
-            --format text --tail 300)"
+          logs=
+          for attempt in {1..30}; do
+            if logs="$(az monitor log-analytics query \
+              --workspace "$workspace_id" \
+              --analytics-query "ContainerAppConsoleLogs_CL
+                | where TimeGenerated > ago(30m)
+                | where ContainerGroupName_s startswith '${execution_name}-'
+                | where ContainerName_s == 'content-import'
+                | order by TimeGenerated asc
+                | project Log_s" \
+              --query '[].Log_s' --output tsv --only-show-errors)"; then
+              report_count="$(printf '%s\n' "$logs" | awk '/^[[:space:]]*\{/ { count++ } END { print count + 0 }')"
+              [[ "$report_count" -gt 0 ]] && break
+            fi
+            sleep 10
+          done
           report="$(validate_report "$logs" "$MODE" "$CONFIRMATION" "$MANIFEST_SHA")"
           {
             echo '### Approved content import apply evidence'
