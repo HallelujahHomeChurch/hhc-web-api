@@ -232,9 +232,15 @@ rendered_template="$(printf '%s\n' "$sample_template" | jq -c \
 expected_template='{"containers":[{"name":"content-import","image":"registry/app@sha256:abc","command":["/hhc-web-content-import"],"args":["--mode=plan","--confirmation=reviewed-v1","--expected-manifest-sha=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"],"env":[{"name":"DATABASE_URL","secretRef":"database-url"}],"resources":{"cpu":0.25,"memory":"0.5Gi"}}],"initContainers":[{"name":"init"}]}'
 test "$rendered_template" = "$expected_template"
 test "$(grep -Fc -- '--job-execution-name "$execution_name"' "$import_workflow")" -eq 2
-test "$(grep -Fc -- '--execution "$execution_name"' "$import_workflow")" -eq 2
-test "$(grep -Fc -- '--container content-import' "$import_workflow")" -eq 2
-test "$(grep -Fc -- '--format text --tail 300' "$import_workflow")" -eq 2
+test "$(grep -Fc 'az containerapp env show' "$import_workflow")" -eq 2
+test "$(grep -Fc 'az monitor log-analytics query' "$import_workflow")" -eq 2
+test "$(grep -Fc 'ContainerGroupName_s startswith '\''${execution_name}-'\''' "$import_workflow")" -eq 2
+test "$(grep -Fc '[[ "$execution_name" =~ ^[a-z0-9-]+$ ]]' "$import_workflow")" -eq 2
+test "$(grep -Fc 'for attempt in {1..30}; do' "$import_workflow")" -eq 2
+if grep -Fq 'az containerapp job logs show' "$import_workflow"; then
+  echo 'content migration evidence must use durable execution-scoped Log Analytics logs' >&2
+  exit 1
+fi
 test "$(grep -Fc 'properties.latestReadyRevisionName' "$import_workflow")" -eq 2
 test "$(grep -Fc 'az containerapp revision show' "$import_workflow")" -eq 2
 test "$(grep -Fc 'az acr repository show' "$import_workflow")" -eq 2
@@ -246,7 +252,7 @@ test "$apply_verify_line" -lt "$apply_start_line"
 for job in "$preflight_job" "$apply_job"; do
   start_line="$(printf '%s\n' "$job" | grep -nF 'az containerapp job start' | cut -d: -f1)"
   status_line="$(printf '%s\n' "$job" | grep -nF 'az containerapp job execution show' | cut -d: -f1)"
-  logs_line="$(printf '%s\n' "$job" | grep -nF 'az containerapp job logs show' | cut -d: -f1)"
+  logs_line="$(printf '%s\n' "$job" | grep -nF 'az monitor log-analytics query' | cut -d: -f1)"
   report_line="$(printf '%s\n' "$job" | grep -nF 'report="$(validate_report' | cut -d: -f1)"
   test "$start_line" -lt "$status_line"
   test "$status_line" -lt "$logs_line"
