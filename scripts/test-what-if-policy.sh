@@ -41,6 +41,22 @@ if ./scripts/check-what-if.sh "$tmp/other-resource-revision-suffix-delete.json" 
   exit 1
 fi
 
+cat >"$tmp/nested-revision-suffix-delete.json" <<'JSON'
+{"changes":[{"resourceId":"/subscriptions/test/resourceGroups/alive/providers/Microsoft.App/containerApps/hhc-web-api","changeType":"Modify","delta":[{"path":"properties.template","propertyChangeType":"Object","children":[{"path":"properties.template.revisionSuffix","propertyChangeType":"Delete"}]}]}]}
+JSON
+if ./scripts/check-what-if.sh "$tmp/nested-revision-suffix-delete.json" 2>/dev/null; then
+  echo "nested revision suffix delete was not rejected" >&2
+  exit 1
+fi
+
+cat >"$tmp/extension-resource-revision-suffix-delete.json" <<'JSON'
+{"changes":[{"resourceId":"/subscriptions/test/resourceGroups/alive/providers/Contoso.Extensions/widgets/example/providers/Microsoft.App/containerApps/hhc-web-api","changeType":"Modify","delta":[{"path":"properties.template.revisionSuffix","propertyChangeType":"Delete"}]}]}
+JSON
+if ./scripts/check-what-if.sh "$tmp/extension-resource-revision-suffix-delete.json" 2>/dev/null; then
+  echo "extension resource revision suffix delete was not rejected" >&2
+  exit 1
+fi
+
 cat >"$tmp/web-api-resource-delete.json" <<'JSON'
 {"changes":[{"resourceId":"/subscriptions/test/resourceGroups/alive/providers/Microsoft.App/containerApps/hhc-web-api","changeType":"Delete","delta":[]}]}
 JSON

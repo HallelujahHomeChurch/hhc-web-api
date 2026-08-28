@@ -8,11 +8,14 @@ jq -e '
   and
   ([.changes[] as $change
     | $change
-    | .. | objects
-    | select(.propertyChangeType? == "Delete")
+    | path(.. | objects | select(.propertyChangeType? == "Delete")) as $propertyPath
+    | getpath($propertyPath) as $property
     | select((
-        ($change.resourceId | endswith("/Microsoft.App/containerApps/hhc-web-api"))
-        and (.path? == "properties.template.revisionSuffix")
+        (($propertyPath | length) == 2)
+        and ($propertyPath[0] == "delta")
+        and (($propertyPath[1] | type) == "number")
+        and ($change.resourceId | test("^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\\.App/containerApps/hhc-web-api$"; "i"))
+        and ($property.path? == "properties.template.revisionSuffix")
       ) | not)
   ] | length == 0)
   and
