@@ -281,6 +281,38 @@ func TestOpenAPIPagePayloadSchemasMatchRuntimeValidation(t *testing.T) {
 	}
 }
 
+func TestOpenAPIAndRuntimeRejectNullPageProperties(t *testing.T) {
+	for _, test := range []struct {
+		name, key, schema string
+		payload           []byte
+		mutate            func(map[string]any)
+	}{
+		{"home required", "home", "HomePageContentV1", openAPIValidHomePagePayload(), func(data map[string]any) { data["heroTitle"] = nil }},
+		{"about forbidden cards", "about", "AboutPageContentV1", openAPIValidAboutPagePayload(), func(data map[string]any) {
+			data["vision"].(map[string]any)["sections"].([]any)[0].(map[string]any)["cards"] = nil
+		}},
+		{"about forbidden body", "about", "AboutPageContentV1", openAPIValidAboutPagePayload(), func(data map[string]any) {
+			data["vision"].(map[string]any)["sections"].([]any)[2].(map[string]any)["body"] = nil
+		}},
+		{"legal optional subtitle", "privacy-policy", "LegalPageContentV1", openAPIValidLegalPagePayload(), func(data map[string]any) { data["heroSubtitle"] = nil }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var value map[string]any
+			if err := json.Unmarshal(test.payload, &value); err != nil {
+				t.Fatal(err)
+			}
+			test.mutate(value["data"].(map[string]any))
+			encoded, _ := json.Marshal(value)
+			if err := content.ValidatePagePayload(test.key, encoded); err == nil {
+				t.Fatal("runtime accepted JSON null")
+			}
+			if err := compileOpenAPISchema(t, test.schema).Validate(value); err == nil {
+				t.Fatal("OpenAPI accepted JSON null")
+			}
+		})
+	}
+}
+
 func TestOpenAPISiteSettingsSchemasAcceptValidWireShapes(t *testing.T) {
 	if err := compileOpenAPISchema(t, "SiteLayout").Validate(validPublicSiteLayout()); err != nil {
 		t.Fatalf("SiteLayout rejected valid payload: %v", err)
@@ -1030,6 +1062,10 @@ func responseBlock(document, name string) string {
 
 func openAPIValidAboutPagePayload() []byte {
 	return []byte(`{"schemaVersion":1,"template":"about.v1","data":{"heroTitle":"About","heroSubtitle":"Mission","vision":{"intro":"Intro","imageAlt":"Image","actionsImageAlt":"Actions","sections":[{"eyebrow":"One","title":"Vision","body":"Body"},{"eyebrow":"Two","title":"Goals","body":"Body"},{"eyebrow":"Three","title":"Actions","cards":[{"title":"Share","body":"Body"}]},{"eyebrow":"Four","title":"Convictions","cards":[{"title":"Mission","body":"Body"}]}]},"history":{"scripture":[{"lines":["Verse"],"cite":"Isaiah"}],"imageAlt":"Image","intro":"History","title":"Church History"}}}`)
+}
+
+func openAPIValidHomePagePayload() []byte {
+	return []byte(`{"schemaVersion":1,"template":"home.v1","data":{"heroTitle":"Home","heroSubtitle":"Welcome","newsTitle":"News","moreNews":"More","weeklyTitle":"Weekly","downloadWeekly":"Download","videosTitle":"Videos","videosSubtitle":"Music","watchMore":"Watch","aboutTitle":"About","aboutBody":"About us","aboutCta":"Meet us","locationsTitle":"Locations","mapLink":"Map"}}`)
 }
 
 func openAPIValidLegalPagePayload() []byte {

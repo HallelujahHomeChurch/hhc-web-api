@@ -116,10 +116,14 @@ if [[ "$smoke_mode" == forward ]]; then
       --output "$smoke_dir/page-$page_key-body" --write-out '%{http_code}' \
       "${page_smoke_base_url%/}/$page_key?locale=zh-Hant")"
     content_type="$(awk 'tolower($1) == "content-type:" { sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print }' "$smoke_dir/page-$page_key-headers" | tail -1)"
+    etag="$(awk 'tolower($1) == "etag:" { sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print }' "$smoke_dir/page-$page_key-headers" | tail -1)"
+    cache_control="$(awk 'tolower($1) == "cache-control:" { sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print }' "$smoke_dir/page-$page_key-headers" | tail -1)"
     media_type="$(printf '%s\n' "${content_type%%;*}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | tr '[:upper:]' '[:lower:]')"
     [[ "$media_type" == application/json ]] || { echo "Page $page_key smoke returned Content-Type $content_type" >&2; exit 1; }
     case "$status" in
       200)
+        [[ "$etag" =~ ^\"[^\"]+\"$ ]] || { echo "Page $page_key smoke returned non-strong ETag $etag" >&2; exit 1; }
+        [[ "$cache_control" == 'public, max-age=30, must-revalidate' ]] || { echo "Page $page_key smoke returned Cache-Control $cache_control" >&2; exit 1; }
         jq -e --arg key "$page_key" --arg template "$page_template" --arg route "$route_path" '
           (keys == ["data", "error", "meta"])
           and .error == null
@@ -134,6 +138,27 @@ if [[ "$smoke_mode" == forward ]]; then
           and (.data.version | type == "number" and . >= 1 and floor == .)
           and (.data.publishedAt | type == "string" and length > 0)
           and (.data.content | type == "object" and .schemaVersion == 1 and .template == $template and (.data | type == "object"))
+          and (
+            ($template == "home.v1"
+              and (.data.content.data | keys == ["aboutBody", "aboutCta", "aboutTitle", "downloadWeekly", "heroSubtitle", "heroTitle", "locationsTitle", "mapLink", "moreNews", "newsTitle", "videosSubtitle", "videosTitle", "watchMore", "weeklyTitle"])
+              and ([.data.content.data[]] | all(type == "string" and length > 0)))
+            or ($template == "about.v1"
+              and (.data.content.data | keys == ["heroSubtitle", "heroTitle", "history", "vision"])
+              and ([.data.content.data.heroTitle, .data.content.data.heroSubtitle] | all(type == "string" and length > 0))
+              and (.data.content.data.vision | keys == ["actionsImageAlt", "imageAlt", "intro", "sections"])
+              and ([.data.content.data.vision.intro, .data.content.data.vision.imageAlt, .data.content.data.vision.actionsImageAlt] | all(type == "string" and length > 0))
+              and (.data.content.data.vision.sections | type == "array" and length == 4)
+              and (.data.content.data.vision.sections[0:2] | all(keys == ["body", "eyebrow", "title"] and ([.body, .eyebrow, .title] | all(type == "string" and length > 0))))
+              and (.data.content.data.vision.sections[2:4] | all(keys == ["cards", "eyebrow", "title"] and ([.eyebrow, .title] | all(type == "string" and length > 0)) and (.cards | type == "array" and length > 0 and all(keys == ["body", "title"] and ([.body, .title] | all(type == "string" and length > 0))))))
+              and (.data.content.data.history | keys == ["imageAlt", "intro", "scripture", "title"])
+              and ([.data.content.data.history.imageAlt, .data.content.data.history.intro, .data.content.data.history.title] | all(type == "string" and length > 0))
+              and (.data.content.data.history.scripture | type == "array" and length > 0 and all(keys == ["cite", "lines"] and (.cite | type == "string" and length > 0) and (.lines | type == "array" and length > 0 and all(type == "string" and length > 0)))))
+            or ($template == "legal.v1"
+              and ((.data.content.data | keys) == ["heroSubtitle", "heroTitle", "intro", "sections", "updatedAt", "updatedAtLabel"] or (.data.content.data | keys) == ["heroTitle", "intro", "sections", "updatedAt", "updatedAtLabel"])
+              and ([.data.content.data.heroTitle, .data.content.data.updatedAtLabel, .data.content.data.updatedAt, .data.content.data.intro] | all(type == "string" and length > 0))
+              and ((.data.content.data | has("heroSubtitle") | not) or (.data.content.data.heroSubtitle | type == "string"))
+              and (.data.content.data.sections | type == "array" and length > 0 and all(keys == ["body", "title"] and (.title | type == "string" and length > 0) and (.body | type == "array" and length > 0 and all(type == "string" and length > 0)))))
+          )
         ' "$smoke_dir/page-$page_key-body" >/dev/null
         ;;
       404)

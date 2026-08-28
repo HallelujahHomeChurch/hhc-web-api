@@ -52,6 +52,32 @@ func TestValidatePagePayloadRejectsInvalidContent(t *testing.T) {
 	}
 }
 
+func TestValidatePagePayloadRejectsNullProperties(t *testing.T) {
+	aboutTextCards := mutatePagePayload(t, validAboutPagePayload(), func(data map[string]any) {
+		data["vision"].(map[string]any)["sections"].([]any)[0].(map[string]any)["cards"] = nil
+	})
+	aboutCardBody := mutatePagePayload(t, validAboutPagePayload(), func(data map[string]any) {
+		data["vision"].(map[string]any)["sections"].([]any)[2].(map[string]any)["body"] = nil
+	})
+	legalSubtitle := mutatePagePayload(t, validLegalPagePayload("Privacy", "August 10, 2026"), func(data map[string]any) { data["heroSubtitle"] = nil })
+	homeTitle := mutatePagePayload(t, validHomePagePayload(), func(data map[string]any) { data["heroTitle"] = nil })
+	for _, test := range []struct {
+		name, key string
+		payload   json.RawMessage
+	}{
+		{"home required", "home", homeTitle},
+		{"about forbidden cards", "about", aboutTextCards},
+		{"about forbidden body", "about", aboutCardBody},
+		{"legal optional subtitle", "privacy-policy", legalSubtitle},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if err := ValidatePagePayload(test.key, test.payload); !errors.Is(err, ErrInvalid) {
+				t.Fatalf("err=%v payload=%s", err, test.payload)
+			}
+		})
+	}
+}
+
 func TestPageDefinitionIsImmutable(t *testing.T) {
 	for _, test := range []struct{ key, template, route string }{
 		{"home", "home.v1", "/"},
@@ -93,6 +119,20 @@ func replaceJSONField(t *testing.T, raw json.RawMessage, field string, value any
 	}
 	data, _ := payload["data"].(map[string]any)
 	data[field] = value
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return encoded
+}
+
+func mutatePagePayload(t *testing.T, raw json.RawMessage, mutate func(map[string]any)) json.RawMessage {
+	t.Helper()
+	var payload map[string]any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		t.Fatal(err)
+	}
+	mutate(payload["data"].(map[string]any))
 	encoded, err := json.Marshal(payload)
 	if err != nil {
 		t.Fatal(err)

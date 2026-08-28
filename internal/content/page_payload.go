@@ -118,6 +118,10 @@ func ValidatePagePayload(key string, raw json.RawMessage) error {
 	if len(raw) == 0 || len(raw) > 200_000 {
 		return ErrInvalid
 	}
+	var wire any
+	if json.Unmarshal(raw, &wire) != nil || hasJSONNull(wire) {
+		return ErrInvalid
+	}
 	var envelope pageEnvelope
 	if err := decodeStrict(raw, &envelope); err != nil || envelope.SchemaVersion != 1 {
 		return ErrInvalid
@@ -142,6 +146,26 @@ func ValidatePagePayload(key string, raw json.RawMessage) error {
 		return ErrInvalid
 	}
 	return nil
+}
+
+func hasJSONNull(value any) bool {
+	switch value := value.(type) {
+	case nil:
+		return true
+	case []any:
+		for _, item := range value {
+			if hasJSONNull(item) {
+				return true
+			}
+		}
+	case map[string]any:
+		for _, item := range value {
+			if hasJSONNull(item) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func PagePayloadMetadata(key string, raw json.RawMessage) (title, summary string, err error) {

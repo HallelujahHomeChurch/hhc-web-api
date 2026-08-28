@@ -112,6 +112,10 @@ run_smoke_case() {
   page_body='{"data":null,"meta":{},"error":{"code":"not_found","message":"The content was not found."}}'
   [ "$#" -lt 14 ] || page_body="${14}"
   expected_page_request="${15:-unchecked}"
+  page_etag='"page-3"'
+  [ "$#" -lt 16 ] || page_etag="${16}"
+  page_cache_control='public, max-age=30, must-revalidate'
+  [ "$#" -lt 17 ] || page_cache_control="${17}"
   case_dir="$(mktemp -d)"
   mkdir "$case_dir/bin"
   cat >"$case_dir/bin/timeout" <<'SH'
@@ -156,16 +160,29 @@ case "$url" in
     printf '%s' "$SMOKE_SITE_LAYOUT_STATUS"
     ;;
   */api/pages/*)
-    printf 'HTTP/1.1 %s\nContent-Type: %s\n\n' "$SMOKE_PAGE_STATUS" "$SMOKE_PAGE_CONTENT_TYPE" >"$headers"
+    printf 'HTTP/1.1 %s\nContent-Type: %s\n' "$SMOKE_PAGE_STATUS" "$SMOKE_PAGE_CONTENT_TYPE" >"$headers"
+    [ -z "$SMOKE_PAGE_ETAG" ] || printf 'ETag: %s\n' "$SMOKE_PAGE_ETAG" >>"$headers"
+    [ -z "$SMOKE_PAGE_CACHE_CONTROL" ] || printf 'Cache-Control: %s\n' "$SMOKE_PAGE_CACHE_CONTROL" >>"$headers"
+    printf '\n' >>"$headers"
     page_key="${url%%\?*}"
     page_key="${page_key##*/}"
     case "$page_key" in
-      home) template=home.v1; route=/ ;;
-      about) template=about.v1; route=/about ;;
-      privacy-policy) template=legal.v1; route=/privacy-policy ;;
-      terms-of-use) template=legal.v1; route=/terms-of-use ;;
+      home)
+        template=home.v1; route=/
+        page_data='{"heroTitle":"Home","heroSubtitle":"Welcome","newsTitle":"News","moreNews":"More","weeklyTitle":"Weekly","downloadWeekly":"Download","videosTitle":"Videos","videosSubtitle":"Music","watchMore":"Watch","aboutTitle":"About","aboutBody":"About us","aboutCta":"Meet us","locationsTitle":"Locations","mapLink":"Map"}'
+        ;;
+      about)
+        template=about.v1; route=/about
+        page_data='{"heroTitle":"About","heroSubtitle":"Mission","vision":{"intro":"Intro","imageAlt":"Image","actionsImageAlt":"Actions","sections":[{"eyebrow":"One","title":"Vision","body":"Body"},{"eyebrow":"Two","title":"Goals","body":"Body"},{"eyebrow":"Three","title":"Actions","cards":[{"title":"Share","body":"Body"}]},{"eyebrow":"Four","title":"Convictions","cards":[{"title":"Mission","body":"Body"}]}]},"history":{"scripture":[{"lines":["Verse"],"cite":"Isaiah"}],"imageAlt":"Image","intro":"History","title":"Church History"}}'
+        ;;
+      privacy-policy) template=legal.v1; route=/privacy-policy; page_data='{"heroTitle":"Privacy","heroSubtitle":"","updatedAtLabel":"Updated","updatedAt":"August 10, 2026","intro":"Intro","sections":[{"title":"Scope","body":["Paragraph"]}]}' ;;
+      terms-of-use) template=legal.v1; route=/terms-of-use; page_data='{"heroTitle":"Terms","heroSubtitle":"","updatedAtLabel":"Updated","updatedAt":"August 10, 2026","intro":"Intro","sections":[{"title":"Scope","body":["Paragraph"]}]}' ;;
     esac
-    printf '%s\n' "$SMOKE_PAGE_BODY" | sed "s|__PAGE_KEY__|$page_key|g; s|__TEMPLATE__|$template|g; s|__ROUTE__|$route|g" >"$body"
+    if [ "$SMOKE_PAGE_BODY" = __VALID_PAGE__ ]; then
+      printf '{"data":{"pageKey":"%s","template":"%s","routePath":"%s","indexable":true,"content":{"schemaVersion":1,"template":"%s","data":%s},"resolvedLocale":"zh-Hant","availableLocales":["zh-Hant","zh-Hans","en","ja","ko"],"version":3,"publishedAt":"2026-08-29T00:00:00Z"},"meta":{},"error":null}\n' "$page_key" "$template" "$route" "$template" "$page_data" >"$body"
+    else
+      printf '%s\n' "$SMOKE_PAGE_BODY" | sed "s|__PAGE_KEY__|$page_key|g; s|__TEMPLATE__|$template|g; s|__ROUTE__|$route|g" >"$body"
+    fi
     printf '%s' "$SMOKE_PAGE_STATUS"
     ;;
 esac
@@ -178,6 +195,7 @@ SH
     SMOKE_SITE_LAYOUT_CONTENT_TYPE="$site_layout_content_type" SMOKE_SITE_LAYOUT_BODY="$site_layout_body" \
     SMOKE_SITE_LAYOUT_ETAG="$site_layout_etag" \
     SMOKE_PAGE_STATUS="$page_status" SMOKE_PAGE_CONTENT_TYPE="$page_content_type" SMOKE_PAGE_BODY="$page_body" \
+    SMOKE_PAGE_ETAG="$page_etag" SMOKE_PAGE_CACHE_CONTROL="$page_cache_control" \
     ./scripts/smoke-release.sh >/dev/null 2>&1
   status=$?
   set -e
@@ -240,7 +258,7 @@ run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}'
 run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' fail requested 200 application/json "$visible_empty_site_layout" requested
 run_smoke_case rollback 404 application/json '{"data":null,"meta":{},"error":{"code":"not_found"}}' pass skipped 404 application/json "$backend_site_layout_not_found" skipped
 
-valid_page='{"data":{"pageKey":"__PAGE_KEY__","template":"__TEMPLATE__","routePath":"__ROUTE__","indexable":true,"content":{"schemaVersion":1,"template":"__TEMPLATE__","data":{}},"resolvedLocale":"zh-Hant","availableLocales":["zh-Hant","zh-Hans","en","ja","ko"],"version":3,"publishedAt":"2026-08-29T00:00:00Z"},"meta":{},"error":null}'
+valid_page=__VALID_PAGE__
 backend_page_not_found='{"data":null,"meta":{},"error":{"code":"not_found","message":"The content was not found."}}'
 gateway_page_not_found='{"error":"Not Found","message":"The requested resource was not found.","service":"api-gateway"}'
 run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' pass requested 200 application/json "$valid_site_layout" requested '"site-layout-1"' 200 application/json "$valid_page" requested
@@ -248,6 +266,11 @@ run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}'
 run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' fail requested 200 application/json "$valid_site_layout" requested '"site-layout-1"' 404 application/json "$gateway_page_not_found" started
 run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' fail requested 200 application/json "$valid_site_layout" requested '"site-layout-1"' 404 text/plain '' started
 run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' fail requested 200 application/json "$valid_site_layout" requested '"site-layout-1"' 200 application/json '{"data":{},"meta":{},"error":null}' started
+run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' fail requested 200 application/json "$valid_site_layout" requested '"site-layout-1"' 200 application/json '' started
+run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' fail requested 200 application/json "$valid_site_layout" requested '"site-layout-1"' 200 application/json "$valid_page" started '' 'public, max-age=30, must-revalidate'
+run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' fail requested 200 application/json "$valid_site_layout" requested '"site-layout-1"' 200 application/json "$valid_page" started 'W/"page-3"' 'public, max-age=30, must-revalidate'
+run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' fail requested 200 application/json "$valid_site_layout" requested '"site-layout-1"' 200 application/json "$valid_page" started '"page-3"' ''
+run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' fail requested 200 application/json "$valid_site_layout" requested '"site-layout-1"' 200 application/json "$valid_page" started '"page-3"' 'public, max-age=30'
 run_smoke_case rollback 404 application/json '{"data":null,"meta":{},"error":{"code":"not_found"}}' pass skipped 404 application/json "$backend_site_layout_not_found" skipped '' 404 application/json "$backend_page_not_found" skipped
 
 forward_smoke_line="$(grep -nF 'SMOKE_MODE=forward ./scripts/smoke-release.sh' "$workflow" | cut -d: -f1)"

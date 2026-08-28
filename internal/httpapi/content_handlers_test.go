@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -203,27 +204,32 @@ func TestPageUpdateReturnsValidationEnvelope(t *testing.T) {
 	}
 }
 
-func TestPageUpdateRequiresIndexablePresenceAndPreservesFalse(t *testing.T) {
-	repo := &contentRepository{item: content.Item{ID: "page-1", Module: content.ModulePages, Version: 2, PageKey: "home", PageTemplate: "home.v1", RoutePath: "/", Indexable: true, Translations: []content.Translation{{Locale: "zh-Hant", BodyJSON: validHTTPPagePayload()}}}}
-	handler := contentTestHandler(repo)
-	body := `{"pageKey":"home","pageTemplate":"home.v1","routePath":"/","translations":[{"locale":"zh-Hant","bodyJson":` + string(validHTTPPagePayload()) + `}]}`
-	request := httptest.NewRequest(http.MethodPut, "/api/admin/content/pages/page-1", bytes.NewBufferString(body))
-	trusted(request, "cms:write")
-	request.Header.Set("If-Match", `"2"`)
-	response := httptest.NewRecorder()
-	handler.ServeHTTP(response, request)
-	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), `"code":"invalid_request"`) {
-		t.Fatalf("omitted status=%d body=%s", response.Code, response.Body.String())
-	}
-
-	body = strings.Replace(body, `"translations"`, `"indexable":false,"translations"`, 1)
-	request = httptest.NewRequest(http.MethodPut, "/api/admin/content/pages/page-1", bytes.NewBufferString(body))
-	trusted(request, "cms:write")
-	request.Header.Set("If-Match", `"2"`)
-	response = httptest.NewRecorder()
-	handler.ServeHTTP(response, request)
-	if response.Code != http.StatusOK || repo.updateInput.Indexable {
-		t.Fatalf("explicit false status=%d input=%#v body=%s", response.Code, repo.updateInput, response.Body.String())
+func TestPageUpdateRequiresBooleanIndexable(t *testing.T) {
+	base := `{"pageKey":"home","pageTemplate":"home.v1","routePath":"/",%s"translations":[{"locale":"zh-Hant","bodyJson":` + string(validHTTPPagePayload()) + `}]}`
+	for _, test := range []struct {
+		name, field string
+		status      int
+		want        bool
+	}{
+		{"omitted", "", http.StatusBadRequest, false},
+		{"null", `"indexable":null,`, http.StatusBadRequest, false},
+		{"string", `"indexable":"false",`, http.StatusBadRequest, false},
+		{"number", `"indexable":0,`, http.StatusBadRequest, false},
+		{"object", `"indexable":{},`, http.StatusBadRequest, false},
+		{"false", `"indexable":false,`, http.StatusOK, false},
+		{"true", `"indexable":true,`, http.StatusOK, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			repo := &contentRepository{item: content.Item{ID: "page-1", Module: content.ModulePages, Version: 2, PageKey: "home", PageTemplate: "home.v1", RoutePath: "/", Indexable: true, Translations: []content.Translation{{Locale: "zh-Hant", BodyJSON: validHTTPPagePayload()}}}}
+			request := httptest.NewRequest(http.MethodPut, "/api/admin/content/pages/page-1", bytes.NewBufferString(fmt.Sprintf(base, test.field)))
+			trusted(request, "cms:write")
+			request.Header.Set("If-Match", `"2"`)
+			response := httptest.NewRecorder()
+			contentTestHandler(repo).ServeHTTP(response, request)
+			if response.Code != test.status || (test.status == http.StatusBadRequest && !strings.Contains(response.Body.String(), `"code":"invalid_request"`)) || (test.status == http.StatusOK && repo.updateInput.Indexable != test.want) {
+				t.Fatalf("status=%d input=%#v body=%s", response.Code, repo.updateInput, response.Body.String())
+			}
+		})
 	}
 }
 

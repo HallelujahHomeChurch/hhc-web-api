@@ -235,7 +235,11 @@ func (request *contentWriteRequest) UnmarshalJSON(raw []byte) error {
 		return err
 	}
 	request.WriteInput = content.WriteInput(value)
-	_, request.indexablePresent = fields["indexable"]
+	indexable, present := fields["indexable"]
+	if present && !bytes.Equal(bytes.TrimSpace(indexable), []byte("true")) && !bytes.Equal(bytes.TrimSpace(indexable), []byte("false")) {
+		return content.ErrInvalid
+	}
+	request.indexablePresent = present
 	return nil
 }
 func (h *Handler) adminContentPublish(w http.ResponseWriter, r *http.Request) {
