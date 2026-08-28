@@ -525,7 +525,7 @@ paths:
         - { $ref: '#/components/parameters/IfNoneMatch' }
       responses:
         '200': { $ref: '#/components/responses/SiteLayout' }
-        '304': { description: Site Layout has not changed }
+        '304': { $ref: '#/components/responses/SiteLayoutNotModified' }
         '404': { $ref: '#/components/responses/Error' }
         '422': { $ref: '#/components/responses/Error' }
   /home:
@@ -1484,9 +1484,15 @@ components:
       description: Published Site Layout for the exact requested locale.
       headers:
         ETag: { $ref: '#/components/headers/SiteLayoutETag' }
+        Cache-Control: { $ref: '#/components/headers/SiteLayoutCacheControl' }
       content:
         application/json:
           schema: { $ref: '#/components/schemas/SiteLayoutEnvelope' }
+    SiteLayoutNotModified:
+      description: Site Layout has not changed.
+      headers:
+        ETag: { $ref: '#/components/headers/SiteLayoutETag' }
+        Cache-Control: { $ref: '#/components/headers/SiteLayoutCacheControl' }
     SiteSettings:
       description: Site Settings aggregate.
       headers:
@@ -1550,6 +1556,9 @@ components:
     SiteLayoutETag:
       description: Strong validator derived from the published aggregate version.
       schema: { type: string, pattern: '^"site-layout-[1-9][0-9]*"$' }
+    SiteLayoutCacheControl:
+      description: Public revalidation policy for Site Layout projections.
+      schema: { type: string, const: 'public, max-age=30, must-revalidate' }
   schemas:
     CampaignTranslation:
       type: object
