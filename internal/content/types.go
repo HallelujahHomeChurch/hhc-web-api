@@ -171,8 +171,5 @@ type Repository interface {
 	DeleteContent(context.Context, Module, string, int64, string, time.Time) error
 	PublicContent(context.Context, Module, string, int, int) (PublicPage, error)
 	PublicNews(context.Context, string, string) (PublicItem, string, error)
-}
-
-type LocationRepository interface {
 	PublicLocations(context.Context, string) ([]PublicLocation, error)
 }

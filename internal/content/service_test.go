@@ -149,6 +149,12 @@ func TestLocationsRequireStableKeyHTTPSMapAndTranslations(t *testing.T) {
 		{name: "private ipv6", input: func() WriteInput { value := valid; value.MapHref = "https://[fd00::1]/taipei"; return value }()},
 		{name: "internal host", input: func() WriteInput { value := valid; value.MapHref = "https://maps.internal/taipei"; return value }()},
 		{name: "bare internal host", input: func() WriteInput { value := valid; value.MapHref = "https://asset-api/taipei"; return value }()},
+		{name: "generic single label host", input: func() WriteInput { value := valid; value.MapHref = "https://postgres/taipei"; return value }()},
+		{name: "service discovery host", input: func() WriteInput {
+			value := valid
+			value.MapHref = "https://kubernetes.default.svc/taipei"
+			return value
+		}()},
 		{name: "blob host", input: func() WriteInput {
 			value := valid
 			value.MapHref = "https://account.blob.core.windows.net/maps/taipei"
@@ -163,6 +169,16 @@ func TestLocationsRequireStableKeyHTTPSMapAndTranslations(t *testing.T) {
 		{name: "private path", input: func() WriteInput {
 			value := valid
 			value.MapHref = "https://maps.example.com/priv/taipei"
+			return value
+		}()},
+		{name: "api path through dot segment", input: func() WriteInput {
+			value := valid
+			value.MapHref = "https://maps.example.com/x/../api/taipei"
+			return value
+		}()},
+		{name: "private path through dot segment", input: func() WriteInput {
+			value := valid
+			value.MapHref = "https://maps.example.com/x/../priv/taipei"
 			return value
 		}()},
 		{name: "negative sort", input: func() WriteInput { value := valid; value.SortOrder = -1; return value }()},

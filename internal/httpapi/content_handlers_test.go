@@ -381,3 +381,6 @@ func (r *contentRepository) PublicContent(_ context.Context, _ content.Module, _
 func (r *contentRepository) PublicNews(context.Context, string, string) (content.PublicItem, string, error) {
 	return r.publicNews, r.publicETag, r.publicNewsErr
 }
+func (*contentRepository) PublicLocations(context.Context, string) ([]content.PublicLocation, error) {
+	return nil, nil
+}

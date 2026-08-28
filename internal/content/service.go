@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"path"
 	"regexp"
 	"strings"
 	"time"
@@ -173,11 +174,7 @@ func (s *Service) PublicLocations(ctx context.Context, locale string) ([]PublicL
 	if !validLocale(locale) {
 		return nil, ErrInvalid
 	}
-	repository, ok := s.repository.(LocationRepository)
-	if !ok {
-		return nil, ErrInvalid
-	}
-	return repository.PublicLocations(ctx, locale)
+	return s.repository.PublicLocations(ctx, locale)
 }
 
 func validModule(module Module) bool {
@@ -393,11 +390,15 @@ func validPublicLocationURL(value string) bool {
 		strings.HasSuffix(host, ".blob.core.windows.net") || strings.HasSuffix(host, ".dfs.core.windows.net") {
 		return false
 	}
-	if ip := net.ParseIP(host); ip != nil && (ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() || ip.IsMulticast()) {
+	if ip := net.ParseIP(host); ip != nil {
+		if ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() || ip.IsMulticast() {
+			return false
+		}
+	} else if !strings.Contains(host, ".") || strings.HasSuffix(host, ".svc") {
 		return false
 	}
-	path := strings.ToLower(parsed.Path)
-	if path == "/api" || strings.HasPrefix(path, "/api/") || path == "/priv" || strings.HasPrefix(path, "/priv/") {
+	canonicalPath := strings.ToLower(path.Clean(parsed.Path))
+	if canonicalPath == "/api" || strings.HasPrefix(canonicalPath, "/api/") || canonicalPath == "/priv" || strings.HasPrefix(canonicalPath, "/priv/") {
 		return false
 	}
 	for key := range parsed.Query() {

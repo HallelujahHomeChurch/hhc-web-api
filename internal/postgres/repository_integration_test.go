@@ -1349,8 +1349,12 @@ func TestLocationContentLifecycle(t *testing.T) {
 	}
 	for _, locale := range []string{"zh-Hant", "zh-Hans", "en", "ja", "ko"} {
 		items, err := service.PublicLocations(ctx, locale)
-		if err != nil || len(items) == 0 || items[len(items)-1].ID != "taipei" || items[len(items)-1].MapHref != taipeiInput.MapHref {
+		if err != nil || len(items) == 0 {
 			t.Fatalf("locale=%s items=%#v err=%v", locale, items, err)
+		}
+		taipei := items[len(items)-1]
+		if taipei.ID != "taipei" || taipei.Name != locale+"-taipei" || taipei.Address != locale+"-taipei-address" || taipei.MapHref != taipeiInput.MapHref {
+			t.Fatalf("locale=%s items=%#v", locale, items)
 		}
 	}
 	zhongli, err = service.GetContent(ctx, content.ModuleLocations, zhongli.ID)
