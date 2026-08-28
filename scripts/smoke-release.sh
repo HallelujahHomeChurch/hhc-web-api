@@ -49,6 +49,7 @@ if [[ "$smoke_mode" == forward ]]; then
   status="$(curl --silent --show-error --max-time 30 --dump-header "$smoke_dir/site-layout-headers" \
     --output "$smoke_dir/site-layout-body" --write-out '%{http_code}' "$site_layout_url")"
   content_type="$(awk 'tolower($1) == "content-type:" { sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print }' "$smoke_dir/site-layout-headers" | tail -1)"
+  etag="$(awk 'tolower($1) == "etag:" { sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print }' "$smoke_dir/site-layout-headers" | tail -1)"
   media_type="$(printf '%s\n' "${content_type%%;*}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | tr '[:upper:]' '[:lower:]')"
   [[ "$media_type" == application/json ]] || { echo "Site Layout smoke returned Content-Type $content_type" >&2; exit 1; }
   case "$status" in
@@ -87,6 +88,8 @@ if [[ "$smoke_mode" == forward ]]; then
         and (.data.links | keys == ["churchFacebook", "churchYoutube", "musicYoutube"])
         and ([.data.links.churchFacebook, .data.links.churchYoutube, .data.links.musicYoutube] | all(type == "string" and startswith("https://")))
       ' "$smoke_dir/site-layout-body" >/dev/null
+      expected_etag="$(jq -r '"\"site-layout-\(.data.version)\""' "$smoke_dir/site-layout-body")"
+      [[ "$etag" == "$expected_etag" ]] || { echo "Site Layout smoke returned ETag $etag, expected $expected_etag" >&2; exit 1; }
       ;;
     404)
       jq -e '

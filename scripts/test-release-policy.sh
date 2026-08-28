@@ -105,6 +105,7 @@ run_smoke_case() {
   site_layout_body='{"data":null,"meta":{},"error":{"code":"not_found","message":"The site settings were not found."}}'
   [ "$#" -lt 9 ] || site_layout_body="$9"
   expected_site_layout_request="${10:-unchecked}"
+  site_layout_etag="${11:-}"
   case_dir="$(mktemp -d)"
   mkdir "$case_dir/bin"
   cat >"$case_dir/bin/timeout" <<'SH'
@@ -142,7 +143,9 @@ case "$url" in
     printf '%s' "$SMOKE_LOCATION_STATUS"
     ;;
   */api/site-layout*)
-    printf 'HTTP/1.1 %s\nContent-Type: %s\n\n' "$SMOKE_SITE_LAYOUT_STATUS" "$SMOKE_SITE_LAYOUT_CONTENT_TYPE" >"$headers"
+    printf 'HTTP/1.1 %s\nContent-Type: %s\n' "$SMOKE_SITE_LAYOUT_STATUS" "$SMOKE_SITE_LAYOUT_CONTENT_TYPE" >"$headers"
+    [ -z "$SMOKE_SITE_LAYOUT_ETAG" ] || printf 'ETag: %s\n' "$SMOKE_SITE_LAYOUT_ETAG" >>"$headers"
+    printf '\n' >>"$headers"
     printf '%s\n' "$SMOKE_SITE_LAYOUT_BODY" >"$body"
     printf '%s' "$SMOKE_SITE_LAYOUT_STATUS"
     ;;
@@ -154,6 +157,7 @@ SH
     SMOKE_LOCATION_STATUS="$location_status" SMOKE_LOCATION_CONTENT_TYPE="$location_content_type" \
     SMOKE_LOCATION_BODY="$location_body" SMOKE_SITE_LAYOUT_STATUS="$site_layout_status" \
     SMOKE_SITE_LAYOUT_CONTENT_TYPE="$site_layout_content_type" SMOKE_SITE_LAYOUT_BODY="$site_layout_body" \
+    SMOKE_SITE_LAYOUT_ETAG="$site_layout_etag" \
     ./scripts/smoke-release.sh >/dev/null 2>&1
   status=$?
   set -e
@@ -192,9 +196,11 @@ reordered_site_layout="$(printf '%s\n' "$valid_site_layout" | jq -c '.data.heade
 missing_site_layout="$(printf '%s\n' "$valid_site_layout" | jq -c 'del(.data.legal[1])')"
 duplicate_site_layout="$(printf '%s\n' "$valid_site_layout" | jq -c '.data.header[2] = .data.header[0]')"
 visible_empty_site_layout="$(printf '%s\n' "$valid_site_layout" | jq -c '.data.legal[0].label = ""')"
-run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' pass requested 200 application/json "$valid_site_layout" requested
-run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' pass requested 200 application/json "$hidden_site_layout" requested
-run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' pass requested 200 application/json "$reordered_site_layout" requested
+run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' pass requested 200 application/json "$valid_site_layout" requested '"site-layout-1"'
+run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' pass requested 200 application/json "$hidden_site_layout" requested '"site-layout-1"'
+run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' pass requested 200 application/json "$reordered_site_layout" requested '"site-layout-1"'
+run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' fail requested 200 application/json "$valid_site_layout" requested
+run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' fail requested 200 application/json "$valid_site_layout" requested '"site-layout-2"'
 run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' pass requested 404 application/json "$backend_site_layout_not_found" requested
 run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' fail requested 404 application/json '{"error":"Not Found","message":"The requested resource was not found.","service":"api-gateway"}' requested
 run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' fail requested 404 text/plain '' requested

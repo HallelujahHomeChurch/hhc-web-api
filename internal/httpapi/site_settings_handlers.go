@@ -33,6 +33,12 @@ func (h *Handler) publicSiteLayout(w http.ResponseWriter, r *http.Request) {
 		handleSiteSettingsError(w, err)
 		return
 	}
+	etag := fmt.Sprintf(`"site-layout-%d"`, value.Version)
+	w.Header().Set("ETag", etag)
+	if etagMatches(r.Header.Get("If-None-Match"), etag) {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
 	writeData(w, http.StatusOK, value, nil)
 }
 

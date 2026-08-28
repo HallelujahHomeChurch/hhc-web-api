@@ -19,8 +19,8 @@ func TestPublicSiteLayoutReadsOnlyExactPublishedLocale(t *testing.T) {
 	response := httptest.NewRecorder()
 	siteSettingsTestHandler(repo).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/site-layout?locale=ja", nil))
 
-	if response.Code != http.StatusOK || repo.publicLocale != "ja" || response.Header().Get("Cache-Control") == "" {
-		t.Fatalf("status=%d locale=%q cache=%q body=%s", response.Code, repo.publicLocale, response.Header().Get("Cache-Control"), response.Body.String())
+	if response.Code != http.StatusOK || repo.publicLocale != "ja" || response.Header().Get("Cache-Control") == "" || response.Header().Get("ETag") != `"site-layout-4"` {
+		t.Fatalf("status=%d locale=%q cache=%q etag=%q body=%s", response.Code, repo.publicLocale, response.Header().Get("Cache-Control"), response.Header().Get("ETag"), response.Body.String())
 	}
 	if !strings.Contains(response.Body.String(), `"siteName":"ハレルヤ家庭教会"`) || strings.Contains(response.Body.String(), `"status"`) {
 		t.Fatalf("body=%s", response.Body.String())
@@ -31,6 +31,18 @@ func TestPublicSiteLayoutReadsOnlyExactPublishedLocale(t *testing.T) {
 	siteSettingsTestHandler(repo).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/site-layout?locale=ko", nil))
 	if response.Code != http.StatusNotFound || !strings.Contains(response.Body.String(), `"code":"not_found"`) {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestPublicSiteLayoutHonorsIfNoneMatch(t *testing.T) {
+	repo := &siteSettingsRepository{public: sitesettings.PublicLayout{Locale: "ja", Version: 4}}
+	request := httptest.NewRequest(http.MethodGet, "/api/site-layout?locale=ja", nil)
+	request.Header.Set("If-None-Match", `"other", W/"site-layout-4"`)
+	response := httptest.NewRecorder()
+	siteSettingsTestHandler(repo).ServeHTTP(response, request)
+
+	if response.Code != http.StatusNotModified || response.Header().Get("ETag") != `"site-layout-4"` || response.Body.Len() != 0 {
+		t.Fatalf("status=%d etag=%q body=%q", response.Code, response.Header().Get("ETag"), response.Body.String())
 	}
 }
 

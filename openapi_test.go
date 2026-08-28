@@ -141,9 +141,41 @@ func TestOpenAPIDocumentsPublicLocationsContract(t *testing.T) {
 func TestOpenAPIDocumentsSiteSettingsContracts(t *testing.T) {
 	document := readOpenAPI(t)
 	public := operationByID(t, document, "getPublicSiteLayout")
-	for _, expected := range []string{"x-hhc-visibility: public", "x-hhc-callers: [api-gateway]", "security: []", "$ref: '#/components/parameters/ContentLocale'", "$ref: '#/components/responses/SiteLayout'"} {
+	for _, expected := range []string{"x-hhc-visibility: public", "x-hhc-callers: [api-gateway]", "security: []", "$ref: '#/components/parameters/ContentLocale'", "$ref: '#/components/parameters/IfNoneMatch'", "$ref: '#/components/responses/SiteLayout'"} {
 		if !strings.Contains(public, expected) {
 			t.Errorf("public Site Layout operation missing %q:\n%s", expected, public)
+		}
+	}
+	loader := openapi3.NewLoader()
+	spec, err := loader.LoadFromFile("openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for responseName, wantRef := range map[string]string{"SiteLayout": "#/components/responses/SiteLayout", "SiteLayoutNotModified": "#/components/responses/SiteLayoutNotModified"} {
+		response := spec.Components.Responses[responseName]
+		if response == nil || response.Value == nil {
+			t.Fatalf("missing %s response component", responseName)
+		}
+		for headerName, headerRef := range map[string]string{"ETag": "#/components/headers/SiteLayoutETag", "Cache-Control": "#/components/headers/SiteLayoutCacheControl"} {
+			if response.Value.Headers[headerName] == nil || response.Value.Headers[headerName].Ref != headerRef {
+				t.Errorf("%s response %s header ref=%v, want %s", responseName, headerName, response.Value.Headers[headerName], headerRef)
+			}
+		}
+		pathResponse := spec.Paths.Find("/site-layout").Get.Responses.Value(map[string]string{"SiteLayout": "200", "SiteLayoutNotModified": "304"}[responseName])
+		if pathResponse == nil || pathResponse.Ref != wantRef {
+			t.Errorf("/site-layout response ref=%v, want %s", pathResponse, wantRef)
+		}
+	}
+	for name, want := range map[string]struct {
+		pattern string
+		value   any
+	}{"SiteLayoutETag": {pattern: `^"site-layout-[1-9][0-9]*"$`}, "SiteLayoutCacheControl": {value: "public, max-age=30, must-revalidate"}} {
+		header := spec.Components.Headers[name]
+		if header == nil || header.Value == nil || header.Value.Schema == nil || header.Value.Schema.Value == nil || header.Value.Schema.Value.Type == nil || !header.Value.Schema.Value.Type.Is("string") {
+			t.Fatalf("%s must be a string header", name)
+		}
+		if header.Value.Schema.Value.Pattern != want.pattern || header.Value.Schema.Value.Const != want.value {
+			t.Errorf("%s pattern=%q const=%v", name, header.Value.Schema.Value.Pattern, header.Value.Schema.Value.Const)
 		}
 	}
 	for operationID, scope := range map[string]string{

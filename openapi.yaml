@@ -520,9 +520,12 @@ paths:
       x-hhc-visibility: public
       x-hhc-callers: [api-gateway]
       security: []
-      parameters: [{ $ref: '#/components/parameters/ContentLocale' }]
+      parameters:
+        - { $ref: '#/components/parameters/ContentLocale' }
+        - { $ref: '#/components/parameters/IfNoneMatch' }
       responses:
         '200': { $ref: '#/components/responses/SiteLayout' }
+        '304': { $ref: '#/components/responses/SiteLayoutNotModified' }
         '404': { $ref: '#/components/responses/Error' }
         '422': { $ref: '#/components/responses/Error' }
   /home:
@@ -1348,6 +1351,11 @@ components:
     IssueID: { name: issueId, in: path, required: true, schema: { type: string, format: uuid } }
     IdempotencyKey: { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 1 } }
     IfMatch: { name: If-Match, in: header, required: true, schema: { type: string, pattern: '^"[1-9][0-9]*"$' } }
+    IfNoneMatch:
+      name: If-None-Match
+      in: header
+      description: Conditional validator; weak validators and comma-separated lists are accepted.
+      schema: { type: string }
     ContentModule: { name: module, in: path, required: true, schema: { $ref: '#/components/schemas/ContentModule' } }
     ContentID: { name: contentId, in: path, required: true, schema: { type: string, format: uuid } }
     ContentTranslationTargetLocale: { name: targetLocale, in: path, required: true, schema: { $ref: '#/components/schemas/ContentTranslationTargetLocale' } }
@@ -1474,9 +1482,17 @@ components:
           schema: { $ref: '#/components/schemas/PublicLocationListEnvelope' }
     SiteLayout:
       description: Published Site Layout for the exact requested locale.
+      headers:
+        ETag: { $ref: '#/components/headers/SiteLayoutETag' }
+        Cache-Control: { $ref: '#/components/headers/SiteLayoutCacheControl' }
       content:
         application/json:
           schema: { $ref: '#/components/schemas/SiteLayoutEnvelope' }
+    SiteLayoutNotModified:
+      description: Site Layout has not changed.
+      headers:
+        ETag: { $ref: '#/components/headers/SiteLayoutETag' }
+        Cache-Control: { $ref: '#/components/headers/SiteLayoutCacheControl' }
     SiteSettings:
       description: Site Settings aggregate.
       headers:
@@ -1536,6 +1552,13 @@ components:
     TranslationTimeout:
       description: translation_timeout
       content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+  headers:
+    SiteLayoutETag:
+      description: Strong validator derived from the published aggregate version.
+      schema: { type: string, pattern: '^"site-layout-[1-9][0-9]*"$' }
+    SiteLayoutCacheControl:
+      description: Public revalidation policy for Site Layout projections.
+      schema: { type: string, const: 'public, max-age=30, must-revalidate' }
   schemas:
     CampaignTranslation:
       type: object
