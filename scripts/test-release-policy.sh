@@ -162,6 +162,9 @@ run_smoke_case forward 200 'application/json; charset=utf-8' '{"data":[{"id":"ta
 run_smoke_case forward 200 application/json '{"data":[{"id":"taipei","name":"台北","address":"台北地址","mapHref":"https://maps.example.com/taipei","sortOrder":10,"resolvedLocale":"zh-Hant"}],"meta":{},"error":null}' fail requested
 run_smoke_case forward 404 application/json '{"data":null,"meta":{},"error":{"code":"not_found"}}' fail requested
 run_smoke_case forward 200 text/html '{"data":[],"meta":{},"error":null}' fail requested
+run_smoke_case forward 200 application/jsonp '{"data":[],"meta":{},"error":null}' fail requested
+run_smoke_case forward 200 application/json-seq '{"data":[],"meta":{},"error":null}' fail requested
+run_smoke_case forward 200 ' Application/JSON ; charset=utf-8 ' '{"data":[],"meta":{},"error":null}' pass requested
 run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":{"code":"unexpected"}}' fail requested
 run_smoke_case rollback 404 application/json '{"data":null,"meta":{},"error":{"code":"not_found"}}' pass skipped
 

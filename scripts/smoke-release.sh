@@ -28,8 +28,9 @@ if [[ "$smoke_mode" == forward ]]; then
   status="$(curl --silent --show-error --max-time 30 --dump-header "$smoke_dir/headers" \
     --output "$smoke_dir/body" --write-out '%{http_code}' "$locations_url")"
   [[ "$status" == 200 ]] || { echo "Locations smoke returned HTTP $status" >&2; exit 1; }
-  content_type="$(awk 'tolower($1) == "content-type:" { print $2 }' "$smoke_dir/headers" | tail -1 | tr -d '\r' | tr '[:upper:]' '[:lower:]')"
-  [[ "$content_type" == application/json* ]] || { echo "Locations smoke returned Content-Type $content_type" >&2; exit 1; }
+  content_type="$(awk 'tolower($1) == "content-type:" { sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print }' "$smoke_dir/headers" | tail -1)"
+  media_type="$(printf '%s\n' "${content_type%%;*}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | tr '[:upper:]' '[:lower:]')"
+  [[ "$media_type" == application/json ]] || { echo "Locations smoke returned Content-Type $content_type" >&2; exit 1; }
   jq -e '
     .error == null
     and (.data | type == "array")
