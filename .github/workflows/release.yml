@@ -295,7 +295,7 @@ jobs:
             and ([$policy.properties.contentFilters[] | select(.name == "Jailbreak" and .source == "Prompt" and .enabled == true and .blocking == false)] | length == 1)
           ' rai-policy.json >/dev/null
       - name: Smoke HHC web API release
-        run: ./scripts/smoke-release.sh
+        run: SMOKE_MODE=forward ./scripts/smoke-release.sh
       - name: Capture healthy release
         id: release_outputs
         run: |
@@ -330,7 +330,7 @@ jobs:
           exit 1
       - name: Verify rolled back runtime
         if: ${{ failure() && steps.deploy_runtime.outcome != 'skipped' }}
-        run: ./scripts/smoke-release.sh
+        run: SMOKE_MODE=rollback ./scripts/smoke-release.sh
 
   publish_openapi:
     needs: deploy
