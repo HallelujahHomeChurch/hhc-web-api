@@ -25,7 +25,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: hhc-web-content-import
+  group: hhc-web-api-production
   cancel-in-progress: false
 
 jobs:
@@ -38,9 +38,13 @@ jobs:
     outputs:
       image_ref: ${{ steps.evidence.outputs.image_ref }}
     env:
+      ACR_NAME: alive
+      ACR_LOGIN_SERVER: alive.azurecr.io
       RESOURCE_GROUP: alive
       CONTENT_IMPORT_JOB_NAME: hhc-web-content-import
+      API_APP_NAME: hhc-web-api
       REQUESTED_MODE: ${{ inputs.mode }}
+      RUN_ATTEMPT: ${{ github.run_attempt }}
       REVIEWED_SEED_VERSION: ${{ inputs.seed_version }}
       REVIEWED_MANIFEST_SHA: ${{ inputs.manifest_sha }}
       AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
@@ -57,6 +61,7 @@ jobs:
           case "$REQUESTED_MODE" in
             inventory|plan) ;;
             apply)
+              [[ "$RUN_ATTEMPT" == 1 ]] || { echo "Apply is allowed only on workflow attempt 1" >&2; exit 1; }
               [[ "$REVIEWED_SEED_VERSION" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]
               [[ "$REVIEWED_MANIFEST_SHA" =~ ^[0-9a-f]{64}$ ]]
               ;;
@@ -104,12 +109,47 @@ jobs:
             ' <<<"$report"
           }
 
+          resolve_image_ref() {
+            local image="$1" image_spec repository digest
+            if [[ "$image" == *@sha256:* ]]; then
+              printf '%s\n' "$image"
+              return
+            fi
+            [[ "$image" == "${ACR_LOGIN_SERVER}/"* ]]
+            image_spec="${image#${ACR_LOGIN_SERVER}/}"
+            repository="${image_spec%:*}"
+            digest="$(az acr repository show --name "$ACR_NAME" --image "$image_spec" \
+              --query digest -o tsv --only-show-errors)"
+            [[ "$digest" == sha256:* ]]
+            printf '%s/%s@%s\n' "$ACR_LOGIN_SERVER" "$repository" "$digest"
+          }
+
+          require_same_image() {
+            local job_image="$1" runtime_image="$2"
+            [[ "$job_image" =~ ^[^[:space:]]+@sha256:[0-9a-f]{64}$ ]] || return 1
+            [[ "$runtime_image" =~ ^[^[:space:]]+@sha256:[0-9a-f]{64}$ ]] || return 1
+            [[ "$job_image" == "$runtime_image" ]]
+          }
+
           image_ref="$(az containerapp job show \
             --name "$CONTENT_IMPORT_JOB_NAME" \
             --resource-group "$RESOURCE_GROUP" \
             --query properties.template.containers[0].image \
             --output tsv --only-show-errors)"
-          [[ "$image_ref" =~ ^[^[:space:]]+@sha256:[0-9a-f]{64}$ ]]
+          ready_revision="$(az containerapp show \
+            --name "$API_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query properties.latestReadyRevisionName \
+            --output tsv --only-show-errors)"
+          test -n "$ready_revision"
+          runtime_image="$(az containerapp revision show \
+            --name "$API_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --revision "$ready_revision" \
+            --query properties.template.containers[0].image \
+            --output tsv --only-show-errors)"
+          runtime_image_ref="$(resolve_image_ref "$runtime_image")"
+          require_same_image "$image_ref" "$runtime_image_ref"
 
           MODE="$REQUESTED_MODE"
           if [[ "$REQUESTED_MODE" == apply ]]; then
@@ -159,7 +199,7 @@ jobs:
 
   approved_apply:
     needs: preflight
-    if: ${{ inputs.mode == 'apply' }}
+    if: ${{ inputs.mode == 'apply' && github.run_attempt == 1 }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     environment: production
@@ -167,9 +207,13 @@ jobs:
       contents: read
       id-token: write
     env:
+      ACR_NAME: alive
+      ACR_LOGIN_SERVER: alive.azurecr.io
       RESOURCE_GROUP: alive
       CONTENT_IMPORT_JOB_NAME: hhc-web-content-import
+      API_APP_NAME: hhc-web-api
       REVIEWED_IMAGE_REF: ${{ needs.preflight.outputs.image_ref }}
+      RUN_ATTEMPT: ${{ github.run_attempt }}
       REVIEWED_SEED_VERSION: ${{ inputs.seed_version }}
       REVIEWED_MANIFEST_SHA: ${{ inputs.manifest_sha }}
       AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
@@ -187,6 +231,7 @@ jobs:
       - name: Recheck image and apply reviewed manifest
         run: |
           set -euo pipefail
+          [[ "$RUN_ATTEMPT" == 1 ]]
 
           validate_report() {
             local logs="$1" expected_mode="$2" expected_seed="$3" expected_sha="$4" reports count report
@@ -202,8 +247,14 @@ jobs:
               and has("mode") and has("seedVersion") and has("manifestSHA256")
               and has("updates") and has("deletes") and has("warnings") and has("conflicts")
               and .mode == $mode
-              and .seedVersion == $seed
-              and .manifestSHA256 == $sha
+              and (if $seed == ""
+                then (((.seedVersion | type) == "string") and (.seedVersion | test("^[A-Za-z0-9][A-Za-z0-9._-]*$")))
+                else .seedVersion == $seed
+                end)
+              and (if $sha == ""
+                then (((.manifestSHA256 | type) == "string") and (.manifestSHA256 | test("^[0-9a-f]{64}$")))
+                else .manifestSHA256 == $sha
+                end)
               and .updates == 0
               and .deletes == 0
               and .warnings == 0
@@ -212,12 +263,47 @@ jobs:
             ' <<<"$report"
           }
 
+          resolve_image_ref() {
+            local image="$1" image_spec repository digest
+            if [[ "$image" == *@sha256:* ]]; then
+              printf '%s\n' "$image"
+              return
+            fi
+            [[ "$image" == "${ACR_LOGIN_SERVER}/"* ]]
+            image_spec="${image#${ACR_LOGIN_SERVER}/}"
+            repository="${image_spec%:*}"
+            digest="$(az acr repository show --name "$ACR_NAME" --image "$image_spec" \
+              --query digest -o tsv --only-show-errors)"
+            [[ "$digest" == sha256:* ]]
+            printf '%s/%s@%s\n' "$ACR_LOGIN_SERVER" "$repository" "$digest"
+          }
+
+          require_same_image() {
+            local job_image="$1" runtime_image="$2"
+            [[ "$job_image" =~ ^[^[:space:]]+@sha256:[0-9a-f]{64}$ ]] || return 1
+            [[ "$runtime_image" =~ ^[^[:space:]]+@sha256:[0-9a-f]{64}$ ]] || return 1
+            [[ "$job_image" == "$runtime_image" ]]
+          }
+
           current_image="$(az containerapp job show \
             --name "$CONTENT_IMPORT_JOB_NAME" \
             --resource-group "$RESOURCE_GROUP" \
             --query properties.template.containers[0].image \
             --output tsv --only-show-errors)"
-          [[ "$current_image" =~ ^[^[:space:]]+@sha256:[0-9a-f]{64}$ ]]
+          ready_revision="$(az containerapp show \
+            --name "$API_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query properties.latestReadyRevisionName \
+            --output tsv --only-show-errors)"
+          test -n "$ready_revision"
+          runtime_image="$(az containerapp revision show \
+            --name "$API_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --revision "$ready_revision" \
+            --query properties.template.containers[0].image \
+            --output tsv --only-show-errors)"
+          runtime_image_ref="$(resolve_image_ref "$runtime_image")"
+          require_same_image "$current_image" "$runtime_image_ref"
           [[ "$current_image" == "$REVIEWED_IMAGE_REF" ]]
 
           MODE=apply

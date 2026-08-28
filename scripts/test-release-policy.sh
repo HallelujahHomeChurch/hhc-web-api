@@ -96,6 +96,10 @@ test -f "$import_workflow" || {
   echo 'missing manual content migration workflow' >&2
   exit 1
 }
+release_concurrency_group="$(awk '$0 == "concurrency:" { found = 1; next } found && /^  group:/ { print $2; exit }' "$workflow")"
+import_concurrency_group="$(awk '$0 == "concurrency:" { found = 1; next } found && /^  group:/ { print $2; exit }' "$import_workflow")"
+test -n "$release_concurrency_group"
+test "$import_concurrency_group" = "$release_concurrency_group"
 
 content_import_job="$(sed -n '/^resource contentImport /,/^}/p' infra/main.bicep)"
 printf '%s\n' "$content_import_job" | grep -Fq "resource contentImport 'Microsoft.App/jobs@2024-03-01'"
@@ -125,6 +129,15 @@ grep -Fq 'Verify content import job image' "$workflow"
 grep -Fq 'CONTENT_IMPORT_JOB_NAME: hhc-web-content-import' "$workflow"
 grep -Fq 'az containerapp job show' "$workflow"
 grep -Fq '[[ "$content_import_image" == "$IMAGE_REF" ]]' "$workflow"
+release_update_line="$(grep -nF 'name: Update release jobs' "$workflow" | cut -d: -f1)"
+release_migration_start_line="$(grep -nF 'az containerapp job start -g "$RESOURCE_GROUP" -n "$MIGRATION_JOB_NAME"' "$workflow" | cut -d: -f1)"
+release_deploy_line="$(grep -nF 'name: Deploy API' "$workflow" | cut -d: -f1)"
+release_import_verify_line="$(grep -nF 'name: Verify content import job image' "$workflow" | cut -d: -f1)"
+release_rollback_line="$(grep -nF 'name: Roll back failed runtime' "$workflow" | cut -d: -f1)"
+test "$release_update_line" -lt "$release_migration_start_line"
+test "$release_migration_start_line" -lt "$release_deploy_line"
+test "$release_deploy_line" -lt "$release_import_verify_line"
+test "$release_import_verify_line" -lt "$release_rollback_line"
 
 grep -Fq 'mode:' "$import_workflow"
 for mode in inventory plan apply; do
@@ -136,6 +149,34 @@ grep -Fq 'preflight:' "$import_workflow"
 grep -Fq 'approved_apply:' "$import_workflow"
 preflight_job="$(sed -n '/^  preflight:/,/^  approved_apply:/p' "$import_workflow")"
 apply_job="$(sed -n '/^  approved_apply:/,$p' "$import_workflow")"
+input_validation_body="$(awk '
+  /^      - name: Validate workflow inputs$/ { found = 1; next }
+  found && /^        run: \|$/ { capture = 1; next }
+  capture && /^      - / { exit }
+  capture { sub(/^          /, ""); print }
+' "$import_workflow")"
+test -n "$input_validation_body"
+run_input_validation_case() {
+  mode="$1"
+  run_attempt="$2"
+  expected="$3"
+  if AZURE_CLIENT_ID=test AZURE_TENANT_ID=test AZURE_SUBSCRIPTION_ID=test \
+    REQUESTED_MODE="$mode" RUN_ATTEMPT="$run_attempt" \
+    REVIEWED_SEED_VERSION=reviewed-v1 REVIEWED_MANIFEST_SHA=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
+    bash -euo pipefail -c "$input_validation_body" >/dev/null 2>&1; then
+    status=0
+  else
+    status=$?
+  fi
+  case "$expected" in
+    pass) test "$status" -eq 0 ;;
+    fail) test "$status" -ne 0 ;;
+  esac
+}
+run_input_validation_case apply 1 pass
+run_input_validation_case apply 2 fail
+run_input_validation_case inventory 2 pass
+run_input_validation_case plan 2 pass
 if printf '%s\n' "$preflight_job" | grep -q 'environment: production'; then
   echo 'read-only content migration preflight must not require production approval' >&2
   exit 1
@@ -144,7 +185,7 @@ printf '%s\n' "$preflight_job" | grep -Fq 'MODE=plan'
 printf '%s\n' "$preflight_job" | grep -Fq 'inputs.seed_version'
 printf '%s\n' "$preflight_job" | grep -Fq 'inputs.manifest_sha'
 printf '%s\n' "$apply_job" | grep -Fq 'needs: preflight'
-printf '%s\n' "$apply_job" | grep -Fq "if: \${{ inputs.mode == 'apply' }}"
+printf '%s\n' "$apply_job" | grep -Fq "if: \${{ inputs.mode == 'apply' && github.run_attempt == 1 }}"
 printf '%s\n' "$apply_job" | grep -Fq 'environment: production'
 test "$(grep -Fc 'environment: production' "$import_workflow")" -eq 1
 printf '%s\n' "$apply_job" | grep -Fq 'needs.preflight.outputs.image_ref'
@@ -157,6 +198,10 @@ test "$(grep -Fc -- '--job-execution-name "$execution_name"' "$import_workflow")
 test "$(grep -Fc -- '--execution "$execution_name"' "$import_workflow")" -eq 2
 test "$(grep -Fc -- '--container content-import' "$import_workflow")" -eq 2
 test "$(grep -Fc -- '--format text --tail 300' "$import_workflow")" -eq 2
+test "$(grep -Fc 'properties.latestReadyRevisionName' "$import_workflow")" -eq 2
+test "$(grep -Fc 'az containerapp revision show' "$import_workflow")" -eq 2
+test "$(grep -Fc 'az acr repository show' "$import_workflow")" -eq 2
+test "$(grep -Fc 'runtime_image_ref="$(resolve_image_ref "$runtime_image")"' "$import_workflow")" -eq 2
 
 apply_verify_line="$(printf '%s\n' "$apply_job" | grep -nF '[[ "$current_image" == "$REVIEWED_IMAGE_REF" ]]' | cut -d: -f1)"
 apply_start_line="$(printf '%s\n' "$apply_job" | grep -nF 'az containerapp job start' | cut -d: -f1)"
@@ -171,16 +216,65 @@ for job in "$preflight_job" "$apply_job"; do
   test "$logs_line" -lt "$report_line"
 done
 
-validation_function="$(awk '
-  /^          validate_report\(\) \{/ { capture = 1 }
-  capture {
-    line = $0
-    sub(/^          /, "")
-    print
-    if (line ~ /^          }$/) exit
-  }
-' "$import_workflow")"
-test -n "$validation_function"
+extract_workflow_function() {
+  function_name="$1"
+  job_body="$2"
+  printf '%s\n' "$job_body" | awk -v function_name="$function_name" '
+    $0 == "          " function_name "() {" { capture = 1 }
+    capture {
+      line = $0
+      sub(/^          /, "")
+      print
+      if (line == "          }") exit
+    }
+  '
+}
+
+run_image_match_case() {
+  image_guard="$1"
+  job_image="$2"
+  runtime_image="$3"
+  expected="$4"
+  if IMAGE_GUARD="$image_guard" JOB_IMAGE="$job_image" RUNTIME_IMAGE="$runtime_image" bash -euo pipefail -c '
+    eval "$IMAGE_GUARD"
+    require_same_image "$JOB_IMAGE" "$RUNTIME_IMAGE"
+  ' >/dev/null 2>&1; then
+    status=0
+  else
+    status=$?
+  fi
+  case "$expected" in
+    pass) test "$status" -eq 0 ;;
+    fail) test "$status" -ne 0 ;;
+  esac
+}
+
+image_a=alive.azurecr.io/alive/hhc-web-api@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+image_b=alive.azurecr.io/alive/hhc-web-api@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+for job in "$preflight_job" "$apply_job"; do
+  image_guard="$(extract_workflow_function require_same_image "$job")"
+  test -n "$image_guard"
+  run_image_match_case "$image_guard" "$image_a" "$image_a" pass
+  run_image_match_case "$image_guard" "$image_a" "$image_b" fail
+  run_image_match_case "$image_guard" alive.azurecr.io/alive/hhc-web-api:main "$image_a" fail
+
+  job_image_line="$(printf '%s\n' "$job" | grep -nF 'az containerapp job show' | cut -d: -f1)"
+  runtime_line="$(printf '%s\n' "$job" | grep -nF 'properties.latestReadyRevisionName' | cut -d: -f1)"
+  compare_line="$(printf '%s\n' "$job" | grep -nF 'require_same_image ' | tail -1 | cut -d: -f1)"
+  start_line="$(printf '%s\n' "$job" | grep -nF 'az containerapp job start' | cut -d: -f1)"
+  attempt_guard_line="$(printf '%s\n' "$job" | grep -nF '[[ "$RUN_ATTEMPT" == 1 ]]' | tail -1 | cut -d: -f1)"
+  test "$attempt_guard_line" -lt "$start_line"
+  test "$job_image_line" -lt "$runtime_line"
+  test "$runtime_line" -lt "$compare_line"
+  test "$compare_line" -lt "$start_line"
+  test "$(printf '%s\n' "$job" | sed -n "${compare_line},${start_line}p" | grep -Fc 'az ')" -eq 1
+done
+
+preflight_validation_function="$(extract_workflow_function validate_report "$preflight_job")"
+apply_validation_function="$(extract_workflow_function validate_report "$apply_job")"
+test -n "$preflight_validation_function"
+test -n "$apply_validation_function"
+test "$preflight_validation_function" = "$apply_validation_function"
 
 run_report_validation_case() {
   logs="$1"
@@ -208,21 +302,23 @@ run_report_validation_case() {
 
 report_sha=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 valid_report="{\"mode\":\"plan\",\"seedVersion\":\"reviewed-v1\",\"manifestSHA256\":\"$report_sha\",\"inserts\":0,\"skips\":0,\"updates\":0,\"deletes\":0,\"warnings\":0,\"conflicts\":0}"
-run_report_validation_case "$valid_report" plan reviewed-v1 "$report_sha" pass
 duplicate_reports="$(printf '%s\n%s\n' "$valid_report" "$valid_report")"
-run_report_validation_case "$duplicate_reports" plan reviewed-v1 "$report_sha" fail
-run_report_validation_case 'no importer report' plan reviewed-v1 "$report_sha" fail
-run_report_validation_case '{"mode":"plan"' plan reviewed-v1 "$report_sha" fail
 valid_and_malformed="$(printf '%s\n%s\n' "$valid_report" '{"mode":"plan"')"
-run_report_validation_case "$valid_and_malformed" plan reviewed-v1 "$report_sha" fail
 unsafe_seed_report="$(printf '%s\n' "$valid_report" | jq -c '.seedVersion = "unsafe\\noutput"')"
-run_report_validation_case "$unsafe_seed_report" plan '' "$report_sha" fail
-run_report_validation_case "$valid_report" apply reviewed-v1 "$report_sha" fail
-run_report_validation_case "$valid_report" plan other-v1 "$report_sha" fail
-run_report_validation_case "$valid_report" plan reviewed-v1 ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff fail
-for field in updates deletes warnings conflicts; do
-  nonzero_report="$(printf '%s\n' "$valid_report" | jq -c --arg field "$field" '.[$field] = 1')"
-  run_report_validation_case "$nonzero_report" plan reviewed-v1 "$report_sha" fail
+for validation_function in "$preflight_validation_function" "$apply_validation_function"; do
+  run_report_validation_case "$valid_report" plan reviewed-v1 "$report_sha" pass
+  run_report_validation_case "$duplicate_reports" plan reviewed-v1 "$report_sha" fail
+  run_report_validation_case 'no importer report' plan reviewed-v1 "$report_sha" fail
+  run_report_validation_case '{"mode":"plan"' plan reviewed-v1 "$report_sha" fail
+  run_report_validation_case "$valid_and_malformed" plan reviewed-v1 "$report_sha" fail
+  run_report_validation_case "$unsafe_seed_report" plan '' "$report_sha" fail
+  run_report_validation_case "$valid_report" apply reviewed-v1 "$report_sha" fail
+  run_report_validation_case "$valid_report" plan other-v1 "$report_sha" fail
+  run_report_validation_case "$valid_report" plan reviewed-v1 ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff fail
+  for field in updates deletes warnings conflicts; do
+    nonzero_report="$(printf '%s\n' "$valid_report" | jq -c --arg field "$field" '.[$field] = 1')"
+    run_report_validation_case "$nonzero_report" plan reviewed-v1 "$report_sha" fail
+  done
 done
 
 grep -q 'fail_openapi_before_pointer:' "$workflow"
