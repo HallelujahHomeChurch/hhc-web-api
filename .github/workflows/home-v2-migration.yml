@@ -1,0 +1,208 @@
+name: Home v2 Migration
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Read-only plan, or approved apply
+        required: true
+        default: plan
+        type: choice
+        options: [plan, apply]
+      source_sha:
+        description: Reviewed source evidence SHA-256 (required for apply)
+        required: false
+        type: string
+      plan_sha:
+        description: Reviewed plan SHA-256 (required for apply)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hhc-web-api-production
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      image_ref: ${{ steps.evidence.outputs.image_ref }}
+      source_sha: ${{ steps.evidence.outputs.source_sha }}
+      plan_sha: ${{ steps.evidence.outputs.plan_sha }}
+    env:
+      RESOURCE_GROUP: alive
+      JOB_NAME: hhc-web-content-import
+      API_APP_NAME: hhc-web-api
+      REQUESTED_MODE: ${{ inputs.mode }}
+      REVIEWED_SOURCE_SHA: ${{ inputs.source_sha }}
+      REVIEWED_PLAN_SHA: ${{ inputs.plan_sha }}
+      RUN_ATTEMPT: ${{ github.run_attempt }}
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Validate workflow inputs
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == refs/heads/main ]]
+          for name in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID; do
+            test -n "${!name:-}" || { echo "Missing repository variable: ${name}" >&2; exit 1; }
+          done
+          case "$REQUESTED_MODE" in
+            plan) ;;
+            apply)
+              [[ "$RUN_ATTEMPT" == 1 ]] || { echo 'Apply is allowed only on workflow attempt 1' >&2; exit 1; }
+              [[ "$REVIEWED_SOURCE_SHA" =~ ^[0-9a-f]{64}$ ]]
+              [[ "$REVIEWED_PLAN_SHA" =~ ^[0-9a-f]{64}$ ]]
+              ;;
+            *) exit 1 ;;
+          esac
+      - name: Sign in to Azure with OIDC
+        uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3.0.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - run: az extension add --name containerapp --upgrade --yes
+      - name: Run reviewed read-only plan
+        id: evidence
+        run: |
+          set -euo pipefail
+          job="$(az containerapp job show -g "$RESOURCE_GROUP" -n "$JOB_NAME" -o json --only-show-errors)"
+          template="$(jq -c '.properties.template' <<<"$job")"
+          image_ref="$(jq -r '.containers[0].image' <<<"$template")"
+          [[ "$image_ref" =~ ^[^[:space:]]+@sha256:[0-9a-f]{64}$ ]]
+          environment_id="$(jq -r '.properties.environmentId' <<<"$job")"
+          workspace_id="$(az containerapp env show --ids "$environment_id" --query properties.appLogsConfiguration.logAnalyticsConfiguration.customerId -o tsv --only-show-errors)"
+          ready_revision="$(az containerapp show -g "$RESOURCE_GROUP" -n "$API_APP_NAME" --query properties.latestReadyRevisionName -o tsv --only-show-errors)"
+          runtime_image="$(az containerapp revision show -g "$RESOURCE_GROUP" -n "$API_APP_NAME" --revision "$ready_revision" --query properties.template.containers[0].image -o tsv --only-show-errors)"
+          [[ "$runtime_image" == "$image_ref" ]]
+
+          execution_template="$(mktemp)"
+          jq '.containers[0].command = ["/hhc-web-home-v2-migrate"] | .containers[0].args = ["--mode=plan"]' <<<"$template" >"$execution_template"
+          execution_name="$(az containerapp job start -g "$RESOURCE_GROUP" -n "$JOB_NAME" --yaml "$execution_template" --query name -o tsv --only-show-errors)"
+          [[ "$execution_name" =~ ^[a-z0-9-]+$ ]]
+          status=
+          for attempt in {1..90}; do
+            status="$(az containerapp job execution show -g "$RESOURCE_GROUP" -n "$JOB_NAME" --job-execution-name "$execution_name" --query properties.status -o tsv --only-show-errors)"
+            case "$status" in Succeeded) break ;; Failed|Canceled|Cancelled|Stopped) exit 1 ;; esac
+            sleep 10
+          done
+          [[ "$status" == Succeeded ]]
+          logs=
+          for attempt in {1..30}; do
+            logs="$(az monitor log-analytics query --workspace "$workspace_id" --analytics-query "ContainerAppConsoleLogs_CL | where TimeGenerated > ago(30m) | where ContainerGroupName_s startswith '${execution_name}-' | where ContainerName_s == 'content-import' | order by TimeGenerated asc | project Log_s" --query '[].Log_s' -o tsv --only-show-errors || true)"
+            [[ "$(printf '%s\n' "$logs" | awk '/^[[:space:]]*\{/ { count++ } END { print count + 0 }')" == 1 ]] && break
+            sleep 10
+          done
+          report="$(printf '%s\n' "$logs" | awk '/^[[:space:]]*\{/')"
+          jq -ce '
+            select(type=="object" and .mode=="plan" and .updates==1 and .inserts==0 and .deletes==0 and .warnings==0 and .conflicts==0
+              and .bannerState=="empty" and (.locationCount|type)=="number"
+              and (.sources.home.id|type)=="string" and (.sources.home.version|type)=="number"
+              and .sources.siteSettings.id=="default" and (.sources.siteSettings.version|type)=="number"
+              and (.sources.locations|type)=="array" and (.localeSHA256|length)==5
+              and (.links|keys)==["churchFacebook","churchYoutube","musicYoutube"]
+              and (.sourceSHA256|test("^[0-9a-f]{64}$")) and (.planSHA256|test("^[0-9a-f]{64}$")))
+          ' <<<"$report" >/dev/null
+          source_sha="$(jq -r .sourceSHA256 <<<"$report")"
+          plan_sha="$(jq -r .planSHA256 <<<"$report")"
+          if [[ "$REQUESTED_MODE" == apply ]]; then
+            [[ "$source_sha" == "$REVIEWED_SOURCE_SHA" ]]
+            [[ "$plan_sha" == "$REVIEWED_PLAN_SHA" ]]
+          fi
+          echo "image_ref=$image_ref" >>"$GITHUB_OUTPUT"
+          echo "source_sha=$source_sha" >>"$GITHUB_OUTPUT"
+          echo "plan_sha=$plan_sha" >>"$GITHUB_OUTPUT"
+          {
+            echo '### Home v2 migration plan evidence'
+            echo
+            jq -n --arg execution "$execution_name" --arg imageRef "$image_ref" --argjson report "$report" '{execution:$execution,imageRef:$imageRef,report:$report}'
+          } >>"$GITHUB_STEP_SUMMARY"
+
+  approved_apply:
+    needs: preflight
+    if: ${{ inputs.mode == 'apply' && github.run_attempt == 1 }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      RESOURCE_GROUP: alive
+      JOB_NAME: hhc-web-content-import
+      API_APP_NAME: hhc-web-api
+      REVIEWED_IMAGE_REF: ${{ needs.preflight.outputs.image_ref }}
+      REVIEWED_SOURCE_SHA: ${{ needs.preflight.outputs.source_sha }}
+      REVIEWED_PLAN_SHA: ${{ needs.preflight.outputs.plan_sha }}
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Sign in to Azure with OIDC
+        uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3.0.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - run: az extension add --name containerapp --upgrade --yes
+      - name: Replan and apply reviewed evidence
+        run: |
+          set -euo pipefail
+          job="$(az containerapp job show -g "$RESOURCE_GROUP" -n "$JOB_NAME" -o json --only-show-errors)"
+          template="$(jq -c '.properties.template' <<<"$job")"
+          image_ref="$(jq -r '.containers[0].image' <<<"$template")"
+          ready_revision="$(az containerapp show -g "$RESOURCE_GROUP" -n "$API_APP_NAME" --query properties.latestReadyRevisionName -o tsv --only-show-errors)"
+          runtime_image="$(az containerapp revision show -g "$RESOURCE_GROUP" -n "$API_APP_NAME" --revision "$ready_revision" --query properties.template.containers[0].image -o tsv --only-show-errors)"
+          [[ "$image_ref" == "$REVIEWED_IMAGE_REF" && "$runtime_image" == "$REVIEWED_IMAGE_REF" ]]
+          environment_id="$(jq -r '.properties.environmentId' <<<"$job")"
+          workspace_id="$(az containerapp env show --ids "$environment_id" --query properties.appLogsConfiguration.logAnalyticsConfiguration.customerId -o tsv --only-show-errors)"
+
+          run_mode() {
+            local mode="$1" execution_template execution_name status logs report
+            execution_template="$(mktemp)"
+            if [[ "$mode" == plan ]]; then
+              jq '.containers[0].command = ["/hhc-web-home-v2-migrate"] | .containers[0].args = ["--mode=plan"]' <<<"$template" >"$execution_template"
+            else
+              jq --arg source "$REVIEWED_SOURCE_SHA" --arg plan "$REVIEWED_PLAN_SHA" '.containers[0].command = ["/hhc-web-home-v2-migrate"] | .containers[0].args = ["--mode=apply","--expected-source-sha=\($source)","--expected-plan-sha=\($plan)"]' <<<"$template" >"$execution_template"
+            fi
+            execution_name="$(az containerapp job start -g "$RESOURCE_GROUP" -n "$JOB_NAME" --yaml "$execution_template" --query name -o tsv --only-show-errors)"
+            [[ "$execution_name" =~ ^[a-z0-9-]+$ ]]
+            status=
+            for attempt in {1..90}; do
+              status="$(az containerapp job execution show -g "$RESOURCE_GROUP" -n "$JOB_NAME" --job-execution-name "$execution_name" --query properties.status -o tsv --only-show-errors)"
+              case "$status" in Succeeded) break ;; Failed|Canceled|Cancelled|Stopped) return 1 ;; esac
+              sleep 10
+            done
+            [[ "$status" == Succeeded ]]
+            logs=
+            for attempt in {1..30}; do
+              logs="$(az monitor log-analytics query --workspace "$workspace_id" --analytics-query "ContainerAppConsoleLogs_CL | where TimeGenerated > ago(30m) | where ContainerGroupName_s startswith '${execution_name}-' | where ContainerName_s == 'content-import' | order by TimeGenerated asc | project Log_s" --query '[].Log_s' -o tsv --only-show-errors || true)"
+              [[ "$(printf '%s\n' "$logs" | awk '/^[[:space:]]*\{/ { count++ } END { print count + 0 }')" == 1 ]] && break
+              sleep 10
+            done
+            report="$(printf '%s\n' "$logs" | awk '/^[[:space:]]*\{/')"
+            jq -ce --arg mode "$mode" --arg source "$REVIEWED_SOURCE_SHA" --arg plan "$REVIEWED_PLAN_SHA" '
+              select(.mode==$mode and .sourceSHA256==$source and .planSHA256==$plan and .updates==1 and .inserts==0 and .deletes==0 and .warnings==0 and .conflicts==0)
+            ' <<<"$report"
+          }
+          plan_report="$(run_mode plan)"
+          [[ "$(jq -r .sourceSHA256 <<<"$plan_report")" == "$REVIEWED_SOURCE_SHA" ]]
+          [[ "$(jq -r .planSHA256 <<<"$plan_report")" == "$REVIEWED_PLAN_SHA" ]]
+          apply_report="$(run_mode apply)"
+          jq -e '.mode=="apply" and (.applied|type)=="boolean"' <<<"$apply_report" >/dev/null
+          {
+            echo '### Home v2 migration apply evidence'
+            echo
+            jq -n --arg imageRef "$image_ref" --argjson plan "$plan_report" --argjson apply "$apply_report" '{imageRef:$imageRef,plan:$plan,apply:$apply}'
+          } >>"$GITHUB_STEP_SUMMARY"
