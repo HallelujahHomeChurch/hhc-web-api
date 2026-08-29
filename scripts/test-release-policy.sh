@@ -3,8 +3,26 @@ set -eu
 
 workflow=.github/workflows/release.yml
 import_workflow=.github/workflows/content-migration.yml
+home_v2_workflow=.github/workflows/home-v2-migration.yml
 
 test ! -e azure-pipelines.yml
+test -f "$home_v2_workflow"
+grep -q 'workflow_dispatch:' "$home_v2_workflow"
+grep -q 'options: \[plan, apply\]' "$home_v2_workflow"
+grep -q 'group: hhc-web-api-production' "$home_v2_workflow"
+grep -Fq '[[ "$GITHUB_REF" == refs/heads/main ]]' "$home_v2_workflow"
+grep -Fq '[[ "$RUN_ATTEMPT" == 1 ]]' "$home_v2_workflow"
+test "$(grep -Fc 'environment: production' "$home_v2_workflow")" -eq 1
+test "$(grep -Fc 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' "$home_v2_workflow")" -eq 2
+test "$(grep -Fc 'azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43' "$home_v2_workflow")" -eq 2
+grep -Fq '/hhc-web-home-v2-migrate' "$home_v2_workflow"
+grep -Fq '[[ "$runtime_image" == "$image_ref" ]]' "$home_v2_workflow"
+grep -Fq '[[ "$image_ref" == "$REVIEWED_IMAGE_REF" && "$runtime_image" == "$REVIEWED_IMAGE_REF" ]]' "$home_v2_workflow"
+grep -Fq -- '--expected-source-sha=\($source)' "$home_v2_workflow"
+grep -Fq -- '--expected-plan-sha=\($plan)' "$home_v2_workflow"
+grep -Fq '.updates==1 and .inserts==0 and .deletes==0 and .warnings==0 and .conflicts==0' "$home_v2_workflow"
+grep -Fq 'go build -trimpath -ldflags="-s -w" -o /hhc-web-home-v2-migrate ./cmd/home-v2-migrate' Dockerfile
+grep -Fq 'COPY --from=build /hhc-web-home-v2-migrate /hhc-web-home-v2-migrate' Dockerfile
 grep -q 'workflow_dispatch:' "$workflow"
 grep -q '^  push:' "$workflow"
 grep -q 'branches: \[main\]' "$workflow"
