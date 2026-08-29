@@ -413,6 +413,107 @@ func TestNewsCoverStatusIsSafeAndFailedScanCanBeRetried(t *testing.T) {
 	}
 }
 
+func TestHomeBannerUploadUsesExactContractForFixedHomeV2(t *testing.T) {
+	repo := &contentRepository{item: homeV2HTTPItem()}
+	uploads := &apiUploads{}
+	request := httptest.NewRequest(http.MethodPost, "/api/admin/content/pages/page-home/upload-sessions", bytes.NewBufferString(`{"usage":"home_banner","fileName":"banner.jpg","mimeType":"image/jpeg","sizeBytes":128}`))
+	trusted(request, "cms:write assets:write")
+	request.Header.Set("Idempotency-Key", "home-banner-1")
+	response := httptest.NewRecorder()
+	contentTestHandlerWithAssets(repo, uploads).ServeHTTP(response, request)
+	if response.Code != http.StatusCreated || uploads.createdHomeID != "page-home" {
+		t.Fatalf("status=%d homeID=%q body=%s", response.Code, uploads.createdHomeID, response.Body.String())
+	}
+
+	for _, body := range []string{
+		`{"usage":"detail","fileName":"banner.jpg","mimeType":"image/jpeg","sizeBytes":128}`,
+		`{"usage":"home_banner","fileName":"banner.png","mimeType":"image/png","sizeBytes":128}`,
+	} {
+		request = httptest.NewRequest(http.MethodPost, "/api/admin/content/pages/page-home/upload-sessions", bytes.NewBufferString(body))
+		trusted(request, "cms:write assets:write")
+		request.Header.Set("Idempotency-Key", "invalid")
+		response = httptest.NewRecorder()
+		contentTestHandlerWithAssets(repo, uploads).ServeHTTP(response, request)
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+		}
+	}
+}
+
+func TestHomeBannerCompleteRechecksIdentityAndAttachesOnlyReadyContract(t *testing.T) {
+	repo := &contentRepository{item: homeV2HTTPItem()}
+	uploads := &apiUploads{completed: readyHomeBannerAsset()}
+	request := httptest.NewRequest(http.MethodPost, "/api/admin/content/pages/page-home/assets/banner-1/complete", bytes.NewBufferString(`{"mimeType":"image/jpeg","sizeBytes":128,"checksumSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`))
+	trusted(request, "cms:write assets:write")
+	request.Header.Set("If-Match", `"2"`)
+	response := httptest.NewRecorder()
+	contentTestHandlerWithAssets(repo, uploads).ServeHTTP(response, request)
+	if response.Code != http.StatusOK || repo.updateInput.BannerAssetID != "banner-1" || uploads.completeCalls != 1 {
+		t.Fatalf("status=%d input=%#v completeCalls=%d body=%s", response.Code, repo.updateInput, uploads.completeCalls, response.Body.String())
+	}
+
+	for _, mutate := range []func(*assetclient.Asset){
+		func(asset *assetclient.Asset) { asset.Namespace = "cms.news.cover" },
+		func(asset *assetclient.Asset) { asset.Purpose = "news_home_cover" },
+		func(asset *assetclient.Asset) { asset.ExpectedMIMEType = "image/png" },
+		func(asset *assetclient.Asset) { asset.DetectedMIMEType = "image/png" },
+		func(asset *assetclient.Asset) { asset.ProcessingStatus = "ready" },
+	} {
+		asset := readyHomeBannerAsset()
+		mutate(&asset)
+		uploads = &apiUploads{completed: asset}
+		repo = &contentRepository{item: homeV2HTTPItem()}
+		request = httptest.NewRequest(http.MethodPost, "/api/admin/content/pages/page-home/assets/banner-1/complete", bytes.NewBufferString(`{"mimeType":"image/jpeg","sizeBytes":128,"checksumSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`))
+		trusted(request, "cms:write assets:write")
+		request.Header.Set("If-Match", `"2"`)
+		response = httptest.NewRecorder()
+		contentTestHandlerWithAssets(repo, uploads).ServeHTTP(response, request)
+		if response.Code == http.StatusOK || repo.updateInput.BannerAssetID != "" {
+			t.Fatalf("asset=%#v status=%d input=%#v", asset, response.Code, repo.updateInput)
+		}
+	}
+}
+
+func TestHomeBannerStatusAndRetryRequireExactOwnedFailedAsset(t *testing.T) {
+	asset := readyHomeBannerAsset()
+	asset.ScanStatus = "failed"
+	uploads := &apiUploads{completed: asset}
+	handler := contentTestHandlerWithAssets(&contentRepository{item: homeV2HTTPItem()}, uploads)
+	request := httptest.NewRequest(http.MethodGet, "/api/admin/content/pages/page-home/assets/banner-1", nil)
+	trusted(request, "cms:read")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"retryable":true`) {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	request = httptest.NewRequest(http.MethodPost, "/api/admin/content/pages/page-home/assets/banner-1/scan/retry", nil)
+	trusted(request, "cms:write assets:write")
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || uploads.requeueCalls != 1 {
+		t.Fatalf("status=%d requeueCalls=%d body=%s", response.Code, uploads.requeueCalls, response.Body.String())
+	}
+}
+
+func readyHomeBannerAsset() assetclient.Asset {
+	return assetclient.Asset{ID: "banner-1", Namespace: "cms.home.banner", OwnerService: "hhc-web-api", OwnerType: "page", OwnerID: "page-home", Purpose: "home_banner", ExpectedMIMEType: "image/jpeg", UploadStatus: "completed", ScanStatus: "pending", ProcessingStatus: "not_required", DetectedMIMEType: "image/jpeg"}
+}
+
+func homeV2HTTPItem() content.Item {
+	payload := json.RawMessage(`{"schemaVersion":2,"template":"home.v2","data":{"heroTitle":"Home","heroSubtitle":"Welcome","kingdomJoyDescription":"Kingdom joy","aboutDescription":"About us"}}`)
+	translations := make([]content.Translation, 0, 5)
+	locationTranslations := make([]content.HomeLocationTranslation, 0, 5)
+	for _, locale := range []string{"zh-Hant", "zh-Hans", "en", "ja", "ko"} {
+		translations = append(translations, content.Translation{Locale: locale, Title: "Home", Summary: "Welcome", BodyJSON: payload})
+		locationTranslations = append(locationTranslations, content.HomeLocationTranslation{Locale: locale, Name: "Location", Address: "Address"})
+	}
+	return content.Item{
+		ID: "page-home", Module: content.ModulePages, Version: 2, PageKey: "home", PageTemplate: "home.v2", RoutePath: "/", Indexable: true,
+		Links:     content.HomeLinks{ChurchYouTube: "https://youtube.com/@hhc", ChurchFacebook: "https://facebook.com/hhc", MusicYouTube: "https://youtube.com/@music"},
+		Locations: []content.HomeLocation{{Key: "taipei", MapHref: "https://maps.example.com/taipei", SortOrder: 10, Translations: locationTranslations}}, Translations: translations,
+	}
+}
+
 func TestNewsUnpublishDoesNotDependOnCurrentDraftCover(t *testing.T) {
 	repo := &contentRepository{item: content.Item{
 		ID: "news-1", Module: content.ModuleNews, Status: content.StatusDraft, Version: 3,
@@ -496,7 +597,11 @@ func (r *contentRepository) UpdateContent(_ context.Context, _ content.Module, _
 	r.updateInput = input
 	r.item.CoverAssetID = input.CoverAssetID
 	r.item.HomeCoverAssetID = input.HomeCoverAssetID
+	r.item.BannerAssetID = input.BannerAssetID
 	return r.item, nil
+}
+func (r *contentRepository) RestoreContent(ctx context.Context, module content.Module, id string, expected int64, input content.WriteInput, actor string, now time.Time) (content.Item, error) {
+	return r.UpdateContent(ctx, module, id, expected, input, actor, now)
 }
 func (r *contentRepository) PublishContent(_ context.Context, _ content.Module, _ string, _ int64, _ string, _ time.Time) (content.Item, error) {
 	r.item.Status = content.StatusPublishing

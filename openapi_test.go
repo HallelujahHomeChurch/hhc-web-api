@@ -252,6 +252,51 @@ func TestOpenAPIDocumentsFixedEditorialPageContracts(t *testing.T) {
 	}
 }
 
+func TestOpenAPIDocumentsExactHomeV2AndBannerContracts(t *testing.T) {
+	document := readOpenAPI(t)
+	for _, schema := range []string{"HomePageWriteInputV2", "HomePageContentV2Draft", "HomePageContentV2", "HomeLocation", "HomeLocationTranslation", "PublicHomeLocation", "HomeBannerUploadInput", "HomeBannerCompleteInput"} {
+		if schemaBlock(document, schema) == "" {
+			t.Errorf("missing %s schema", schema)
+		}
+	}
+	for _, operationID := range []string{"createHomeBannerUpload", "getHomeBannerStatus", "retryHomeBannerScan", "completeHomeBannerUpload"} {
+		operation := operationByID(t, document, operationID)
+		for _, expected := range []string{"x-hhc-visibility: admin", "x-hhc-callers: [api-gateway]", "daprApiToken", "daprCallerAppId", "trustedUserId", "trustedAuthProvider", "trustedScopes"} {
+			if !strings.Contains(operation, expected) {
+				t.Errorf("%s missing %q:\n%s", operationID, expected, operation)
+			}
+		}
+	}
+	for _, operationID := range []string{"createHomeBannerUpload", "retryHomeBannerScan", "completeHomeBannerUpload"} {
+		if !strings.Contains(operationByID(t, document, operationID), "x-required-scopes: ['cms:write', 'assets:write']") {
+			t.Errorf("%s missing write scopes", operationID)
+		}
+	}
+	if !strings.Contains(operationByID(t, document, "getHomeBannerStatus"), "x-required-scopes: ['cms:read']") {
+		t.Error("getHomeBannerStatus missing read scope")
+	}
+	pageContent := schemaBlock(document, "PageContent")
+	pageWriteContent := schemaBlock(document, "PageWriteContent")
+	for _, block := range []string{pageContent, pageWriteContent} {
+		if !strings.Contains(block, "home.v2") || !strings.Contains(block, "propertyName: template") {
+			t.Errorf("Home v2 discriminator missing:\n%s", block)
+		}
+	}
+
+	schema := compileOpenAPISchema(t, "HomePageWriteInputV2")
+	var valid map[string]any
+	if err := json.Unmarshal(openAPIValidHomeV2WriteInput(), &valid); err != nil {
+		t.Fatal(err)
+	}
+	if err := schema.Validate(valid); err != nil {
+		t.Fatalf("valid Home v2 rejected: %v", err)
+	}
+	valid["translations"].([]any)[0].(map[string]any)["bodyJson"].(map[string]any)["data"].(map[string]any)["newsTitle"] = "removed"
+	if err := schema.Validate(valid); err == nil {
+		t.Fatal("Home v2 accepted a removed localized field")
+	}
+}
+
 func TestOpenAPIPagePayloadSchemasMatchRuntimeValidation(t *testing.T) {
 	about := compileOpenAPISchema(t, "AboutPageContentV1")
 	valid := map[string]any{}
@@ -1123,6 +1168,10 @@ func openAPIValidLegalPagePayload() []byte {
 	return []byte(`{"schemaVersion":1,"template":"legal.v1","data":{"heroTitle":"Privacy","heroSubtitle":"","updatedAtLabel":"Updated","updatedAt":"August 10, 2026","intro":"Intro","sections":[{"title":"Section","body":["Paragraph"]}]}}`)
 }
 
+func openAPIValidHomeV2WriteInput() []byte {
+	return []byte(`{"pageKey":"home","pageTemplate":"home.v2","routePath":"/","indexable":true,"bannerAssetId":"banner-1","links":{"churchYoutube":"https://youtube.com/@hhc","churchFacebook":"https://facebook.com/hhc","musicYoutube":"https://youtube.com/@music"},"locations":[{"key":"taipei","mapHref":"https://maps.example.com/taipei","sortOrder":10,"translations":[{"locale":"zh-Hant","name":"台北","address":"地址"},{"locale":"zh-Hans","name":"台北","address":"地址"},{"locale":"en","name":"Taipei","address":"Address"},{"locale":"ja","name":"台北","address":"住所"},{"locale":"ko","name":"타이베이","address":"주소"}]}],"translations":[{"locale":"zh-Hant","bodyJson":{"schemaVersion":2,"template":"home.v2","data":{"heroTitle":"Home","heroSubtitle":"Welcome","kingdomJoyDescription":"Kingdom joy","aboutDescription":"About us"}}},{"locale":"zh-Hans","bodyJson":{"schemaVersion":2,"template":"home.v2","data":{"heroTitle":"Home","heroSubtitle":"Welcome","kingdomJoyDescription":"Kingdom joy","aboutDescription":"About us"}}},{"locale":"en","bodyJson":{"schemaVersion":2,"template":"home.v2","data":{"heroTitle":"Home","heroSubtitle":"Welcome","kingdomJoyDescription":"Kingdom joy","aboutDescription":"About us"}}},{"locale":"ja","bodyJson":{"schemaVersion":2,"template":"home.v2","data":{"heroTitle":"Home","heroSubtitle":"Welcome","kingdomJoyDescription":"Kingdom joy","aboutDescription":"About us"}}},{"locale":"ko","bodyJson":{"schemaVersion":2,"template":"home.v2","data":{"heroTitle":"Home","heroSubtitle":"Welcome","kingdomJoyDescription":"Kingdom joy","aboutDescription":"About us"}}}]}`)
+}
+
 func canonicalPath(path string) string {
 	return pathParameter.ReplaceAllString(path, "{}")
 }
@@ -1181,6 +1230,10 @@ func expectedCatalogRoutes() []string {
 		GET /admin/content/news/{}/assets/{}
 		POST /admin/content/news/{}/assets/{}/scan/retry
 		POST /admin/content/news/{}/assets/{}/complete
+		POST /admin/content/pages/{}/upload-sessions
+		GET /admin/content/pages/{}/assets/{}
+		POST /admin/content/pages/{}/assets/{}/scan/retry
+		POST /admin/content/pages/{}/assets/{}/complete
 		GET /admin/campaigns
 		POST /admin/campaigns
 		GET /admin/campaigns/{}

@@ -66,6 +66,8 @@ func (w *Worker) processNext(ctx context.Context) (bool, error) {
 		err = w.retire(ctx, event, now)
 	case "news.publish.ensure_asset":
 		err = w.publishNews(ctx, event, now)
+	case "home.publish.ensure_asset":
+		err = w.publishHome(ctx, event, now)
 	case "news.unpublish.revoke_asset":
 		err = w.unpublishNews(ctx, event, now)
 	case "asset.grant.revoke":
@@ -191,6 +193,35 @@ func (w *Worker) publishNews(ctx context.Context, event Event, now time.Time) er
 		}
 		published = append(published, PublishedAsset{Usage: reference.Usage, AssetID: reference.AssetID, GrantID: grant.ID, PublicURL: w.assets.PublicURL(reference.AssetID)})
 	}
+	if err := w.repository.CompleteContentPublish(ctx, event, published, now); err != nil {
+		return w.handleContentPublishFailure(ctx, event, published, err, now)
+	}
+	return nil
+}
+
+func (w *Worker) publishHome(ctx context.Context, event Event, now time.Time) error {
+	var payload ContentPublishPayload
+	if err := json.Unmarshal(event.Payload, &payload); err != nil || payload.ContentID == "" || payload.AssetID == "" || payload.AggregateVersion < 1 {
+		return terminalError{fmt.Errorf("invalid Home publication payload")}
+	}
+	asset, err := w.assets.Get(ctx, payload.AssetID)
+	if err != nil {
+		return err
+	}
+	if asset.ID != payload.AssetID || asset.Namespace != "cms.home.banner" || asset.OwnerService != "hhc-web-api" || asset.OwnerType != "page" || asset.OwnerID != payload.ContentID || asset.Purpose != "home_banner" || asset.DetectedMIMEType != "image/jpeg" {
+		return terminalError{fmt.Errorf("Home Banner contract mismatch")}
+	}
+	if err := readyAsset(asset); err != nil {
+		return err
+	}
+	if asset.ProcessingStatus != "not_required" {
+		return terminalError{fmt.Errorf("Home Banner processing status %s", asset.ProcessingStatus)}
+	}
+	grant, err := w.assets.CreatePublicGrant(ctx, payload.AssetID, "home:"+payload.ContentID+":publish:v"+fmt.Sprint(payload.AggregateVersion))
+	if err != nil {
+		return compensationError{err}
+	}
+	published := []PublishedAsset{{Usage: "banner", AssetID: payload.AssetID, GrantID: grant.ID, PublicURL: w.assets.PublicURL(payload.AssetID)}}
 	if err := w.repository.CompleteContentPublish(ctx, event, published, now); err != nil {
 		return w.handleContentPublishFailure(ctx, event, published, err, now)
 	}

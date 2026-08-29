@@ -343,6 +343,70 @@ func TestPagePublishesWithAllFiveExactLocales(t *testing.T) {
 	}
 }
 
+func TestHomeV2UpdateValidatesAndSortsAggregate(t *testing.T) {
+	input := homeV2Input()
+	input.Locations[0], input.Locations[1] = input.Locations[1], input.Locations[0]
+	repo := &serviceRepository{item: Item{ID: "page-1", Module: ModulePages, Version: 1, PageKey: "home", PageTemplate: "home.v2", RoutePath: "/", Indexable: true, Translations: input.Translations}}
+	if _, err := NewService(repo, time.Now).UpdateContent(context.Background(), ModulePages, repo.item.ID, 1, input, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.updateInput.Locations) != 2 || repo.updateInput.Locations[0].Key != "taipei" || repo.updateInput.Locations[1].Key != "taichung" {
+		t.Fatalf("locations=%#v", repo.updateInput.Locations)
+	}
+}
+
+func TestHomeV2RejectsInvalidAggregate(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*WriteInput)
+	}{
+		{"missing page locale", func(value *WriteInput) { value.Translations = value.Translations[:4] }},
+		{"duplicate location key", func(value *WriteInput) { value.Locations[1].Key = value.Locations[0].Key }},
+		{"invalid location key", func(value *WriteInput) { value.Locations[0].Key = "Taipei" }},
+		{"duplicate sort order", func(value *WriteInput) { value.Locations[1].SortOrder = value.Locations[0].SortOrder }},
+		{"missing location locale", func(value *WriteInput) { value.Locations[0].Translations = value.Locations[0].Translations[:4] }},
+		{"unsafe map URL", func(value *WriteInput) { value.Locations[0].MapHref = "https://127.0.0.1/map" }},
+		{"unsafe external link", func(value *WriteInput) { value.Links.ChurchYouTube = "https://service.internal/channel" }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			input := homeV2Input()
+			test.mutate(&input)
+			repo := &serviceRepository{item: Item{ID: "page-1", Module: ModulePages, Version: 1, PageKey: "home", PageTemplate: "home.v2", RoutePath: "/", Translations: homeV2Input().Translations}}
+			if _, err := NewService(repo, time.Now).UpdateContent(context.Background(), ModulePages, repo.item.ID, 1, input, "admin"); !errors.Is(err, ErrInvalid) {
+				t.Fatalf("err=%v", err)
+			}
+		})
+	}
+}
+
+func TestHomeV2PublishRequiresBanner(t *testing.T) {
+	input := normalize(ModulePages, homeV2Input())
+	input.BannerAssetID = ""
+	repo := &serviceRepository{item: Item{ID: "page-1", Module: ModulePages, Version: 1, PageKey: input.PageKey, PageTemplate: input.PageTemplate, RoutePath: input.RoutePath, Indexable: input.Indexable, Links: input.Links, Locations: input.Locations, Translations: input.Translations}}
+	if _, err := NewService(repo, time.Now).PublishContent(context.Background(), ModulePages, repo.item.ID, 1, "admin"); !errors.Is(err, ErrNotPublishable) {
+		t.Fatalf("err=%v", err)
+	}
+	repo.item.BannerAssetID = "asset-banner"
+	if _, err := NewService(repo, time.Now).PublishContent(context.Background(), ModulePages, repo.item.ID, 1, "admin"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRestoreContentCopiesHomeV2DraftWithoutPublishedGrant(t *testing.T) {
+	input := homeV2Input()
+	repo := &serviceRepository{
+		item:     Item{ID: "page-1", Module: ModulePages, Version: 2, PageKey: "home", PageTemplate: "home.v2", RoutePath: "/", BannerAssetID: "current", BannerPublicGrantID: "grant-live", Translations: input.Translations},
+		revision: Revision{Version: 1, Snapshot: Item{Module: ModulePages, PageKey: "home", PageTemplate: "home.v2", RoutePath: "/", BannerAssetID: "historical", BannerPublicGrantID: "grant-old", Links: input.Links, Locations: input.Locations, Translations: input.Translations}},
+	}
+	if _, err := NewService(repo, time.Now).RestoreContent(context.Background(), ModulePages, repo.item.ID, 1, 2, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	if repo.updateInput.BannerAssetID != "historical" || repo.updateInput.Links != input.Links || len(repo.updateInput.Locations) != 2 {
+		t.Fatalf("input=%#v", repo.updateInput)
+	}
+}
+
 func TestRestoreContentPreservesLocationDetail(t *testing.T) {
 	repo := &serviceRepository{
 		item:     Item{ID: "location-1", Module: ModuleLocations, Version: 2, LocationKey: "taipei", MapHref: "https://maps.example.com/current", SortOrder: 20, Translations: locationInput().Translations},
@@ -724,6 +788,24 @@ func pageInput(key, template, route string, payload json.RawMessage) WriteInput 
 	}
 }
 
+func homeV2Input() WriteInput {
+	translations := []HomeLocationTranslation{
+		{Locale: "zh-Hant", Name: "據點", Address: "地址"},
+		{Locale: "zh-Hans", Name: "据点", Address: "地址"},
+		{Locale: "en", Name: "Location", Address: "Address"},
+		{Locale: "ja", Name: "拠点", Address: "住所"},
+		{Locale: "ko", Name: "지점", Address: "주소"},
+	}
+	input := pageInput("home", "home.v2", "/", validHomeV2PagePayload())
+	input.BannerAssetID = "asset-banner"
+	input.Links = HomeLinks{ChurchYouTube: "https://youtube.com/@hhc", ChurchFacebook: "https://facebook.com/hhc", MusicYouTube: "https://youtube.com/@music"}
+	input.Locations = []HomeLocation{
+		{Key: "taipei", MapHref: "https://maps.example.com/taipei", SortOrder: 10, Translations: append([]HomeLocationTranslation(nil), translations...)},
+		{Key: "taichung", MapHref: "https://maps.example.com/taichung", SortOrder: 20, Translations: append([]HomeLocationTranslation(nil), translations...)},
+	}
+	return input
+}
+
 type serviceRepository struct {
 	item                  Item
 	createInputs          []WriteInput
@@ -761,6 +843,9 @@ func (r *serviceRepository) UpdateContent(_ context.Context, _ Module, _ string,
 	r.item.Slug = input.Slug
 	r.item.Translations = input.Translations
 	return r.item, nil
+}
+func (r *serviceRepository) RestoreContent(ctx context.Context, module Module, id string, expected int64, input WriteInput, actor string, now time.Time) (Item, error) {
+	return r.UpdateContent(ctx, module, id, expected, input, actor, now)
 }
 func (r *serviceRepository) PublishContent(_ context.Context, _ Module, _ string, _ int64, _ string, _ time.Time) (Item, error) {
 	r.item.Status = StatusPublished

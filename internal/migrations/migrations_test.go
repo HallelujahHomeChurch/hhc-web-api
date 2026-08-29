@@ -310,3 +310,31 @@ func TestFixedEditorialPagesMigrationAddsJSONAndFixedPageMetadata(t *testing.T) 
 		}
 	}
 }
+
+func TestHomePageV2MigrationReplacesBothPageConstraintsAndAddsState(t *testing.T) {
+	contents, err := files.ReadFile("sql/030_home_page_v2.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := string(contents)
+	for _, expected := range []string{
+		"DROP CONSTRAINT page_item_page_template_check",
+		"DROP CONSTRAINT page_item_check",
+		"page_item_template_check",
+		"'home.v1','home.v2','about.v1','legal.v1'",
+		"page_item_definition_check",
+		"page_key = 'home' AND page_template IN ('home.v1','home.v2') AND route_path = '/'",
+		"ADD COLUMN banner_asset_id text",
+		"ADD COLUMN published_banner_asset_id text",
+		"ADD COLUMN banner_public_grant_id text",
+		"ADD COLUMN published_banner_version bigint",
+		"ADD COLUMN home_settings jsonb",
+	} {
+		if !strings.Contains(sql, expected) {
+			t.Fatalf("migration missing %q", expected)
+		}
+	}
+	if strings.Contains(sql, "DROP TABLE") || strings.Contains(sql, "DELETE ") {
+		t.Fatal("home v2 migration must preserve legacy data")
+	}
+}

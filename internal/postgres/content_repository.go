@@ -103,6 +103,7 @@ func (r *Repository) ListContent(ctx context.Context, module content.Module, opt
 				COALESCE(h.event_date,''),COALESCE(v.youtube_video_id,''),COALESCE(v.home_eligible,false),
 				COALESCE(l.stable_key,''),COALESCE(l.map_href,''),COALESCE(l.sort_order,0),
 				COALESCE(pg.page_key,''),COALESCE(pg.page_template,''),COALESCE(pg.route_path,''),COALESCE(pg.indexable,false),
+				COALESCE(pg.banner_asset_id,''),COALESCE(pg.published_banner_asset_id,''),COALESCE(pg.banner_public_grant_id,''),COALESCE(pg.published_banner_version,0),COALESCE(pg.home_settings,'{}'::jsonb),
 				p.published_version,t.locale,t.title,t.summary,CASE WHEN e.module='locations' THEN t.body ELSE '' END AS body,t.date_label,t.image_alt,t.body_json
 		FROM selected s
 		JOIN hhc_web.content_entry e ON e.id=s.id
@@ -128,14 +129,19 @@ func (r *Repository) ListContent(ctx context.Context, module content.Module, opt
 	for rows.Next() {
 		var item content.Item
 		var translation content.Translation
-		var bodyJSON []byte
+		var bodyJSON, homeSettingsJSON []byte
 		if err := rows.Scan(
 			&item.ID, &item.Module, &item.Status, &item.Version, &item.CreatedBy, &item.UpdatedBy, &item.FirstPublishedAt, &item.PublishedAt, &item.CreatedAt, &item.UpdatedAt,
 			&item.Slug, &item.DisplayDate, &item.CoverAssetID, &item.HomeCoverAssetID, &item.DetailLayout, &item.Featured, &item.AuthorName, &item.PublicGrantID, &item.HomePublicGrantID, &item.PublishedCoverID, &item.PublishedHomeCoverID,
 			&item.EventDate, &item.YouTubeVideoID, &item.HomeEligible, &item.LocationKey, &item.MapHref, &item.SortOrder,
-			&item.PageKey, &item.PageTemplate, &item.RoutePath, &item.Indexable, &item.PublishedVersion,
+			&item.PageKey, &item.PageTemplate, &item.RoutePath, &item.Indexable,
+			&item.BannerAssetID, &item.PublishedBannerAssetID, &item.BannerPublicGrantID, &item.PublishedBannerVersion, &homeSettingsJSON,
+			&item.PublishedVersion,
 			&translation.Locale, &translation.Title, &translation.Summary, &translation.Body, &translation.DateLabel, &translation.ImageAlt, &bodyJSON,
 		); err != nil {
+			return content.Page{}, err
+		}
+		if err := decodeHomeSettings(homeSettingsJSON, &item); err != nil {
 			return content.Page{}, err
 		}
 		translation.BodyJSON = bodyJSON
@@ -156,6 +162,14 @@ func (r *Repository) GetContent(ctx context.Context, module content.Module, id s
 }
 
 func (r *Repository) UpdateContent(ctx context.Context, module content.Module, id string, expected int64, input content.WriteInput, actor string, now time.Time) (content.Item, error) {
+	return r.updateContent(ctx, module, id, expected, input, actor, now, false)
+}
+
+func (r *Repository) RestoreContent(ctx context.Context, module content.Module, id string, expected int64, input content.WriteInput, actor string, now time.Time) (content.Item, error) {
+	return r.updateContent(ctx, module, id, expected, input, actor, now, true)
+}
+
+func (r *Repository) updateContent(ctx context.Context, module content.Module, id string, expected int64, input content.WriteInput, actor string, now time.Time, restore bool) (content.Item, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return content.Item{}, err
@@ -164,7 +178,12 @@ func (r *Repository) UpdateContent(ctx context.Context, module content.Module, i
 	if err := lockContentVersion(ctx, tx, module, id, expected); err != nil {
 		return content.Item{}, err
 	}
-	if err := writeTypedContent(ctx, tx, module, id, input, false); err != nil {
+	if restore && module == content.ModulePages {
+		err = writeRestoredPage(ctx, tx, id, input)
+	} else {
+		err = writeTypedContent(ctx, tx, module, id, input, false)
+	}
+	if err != nil {
 		return content.Item{}, mapContentConflict(err)
 	}
 	if err := replaceTranslations(ctx, tx, id, input.Translations); err != nil {
@@ -183,10 +202,34 @@ func (r *Repository) UpdateContent(ctx context.Context, module content.Module, i
 	return item, tx.Commit()
 }
 
+func writeRestoredPage(ctx context.Context, tx *sql.Tx, id string, input content.WriteInput) error {
+	homeSettingsJSON, err := encodeHomeSettings(input)
+	if err != nil {
+		return err
+	}
+	result, err := tx.ExecContext(ctx, `UPDATE hhc_web.page_item SET page_template=$3,indexable=$5,banner_asset_id=NULLIF($6,''),home_settings=$7 WHERE content_id=$1 AND page_key=$2 AND route_path=$4`, id, input.PageKey, input.PageTemplate, input.RoutePath, input.Indexable, input.BannerAssetID, homeSettingsJSON)
+	if err != nil {
+		return err
+	}
+	if rows, _ := result.RowsAffected(); rows != 1 {
+		return content.ErrInvalid
+	}
+	return nil
+}
+
 func (r *Repository) PublishContent(ctx context.Context, module content.Module, id string, expected int64, actor string, now time.Time) (content.Item, error) {
 	now = now.Truncate(time.Microsecond)
 	if module == content.ModuleNews {
 		return r.startNewsPublish(ctx, id, expected, actor, now)
+	}
+	if module == content.ModulePages {
+		current, err := r.GetContent(ctx, module, id)
+		if err != nil {
+			return content.Item{}, err
+		}
+		if current.PageKey == "home" && current.PageTemplate == "home.v2" {
+			return r.startHomePublish(ctx, id, expected, actor, now)
+		}
 	}
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -194,6 +237,10 @@ func (r *Repository) PublishContent(ctx context.Context, module content.Module, 
 	}
 	defer tx.Rollback()
 	if err := lockContentVersion(ctx, tx, module, id, expected); err != nil {
+		return content.Item{}, err
+	}
+	current, err := loadContent(ctx, tx, module, id)
+	if err != nil {
 		return content.Item{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.content_entry SET status='published',version=version+1,first_published_at=COALESCE(first_published_at,$2),published_at=$2,updated_by=$3,updated_at=$2 WHERE id=$1`, id, now, actor); err != nil {
@@ -232,6 +279,52 @@ func (r *Repository) PublishContent(ctx context.Context, module content.Module, 
 			return content.Item{}, err
 		}
 	}
+	if module == content.ModulePages && item.PageKey == "home" && current.BannerPublicGrantID != "" {
+		if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.page_item SET published_banner_asset_id=NULL,banner_public_grant_id=NULL,published_banner_version=NULL WHERE content_id=$1`, id); err != nil {
+			return content.Item{}, err
+		}
+		if err := enqueueGrantRevoke(ctx, tx, "home", id, item.Version, publication.PublishedAsset{Usage: "banner", AssetID: current.PublishedBannerAssetID, GrantID: current.BannerPublicGrantID}, now); err != nil {
+			return content.Item{}, err
+		}
+		item.PublishedBannerAssetID, item.BannerPublicGrantID, item.PublishedBannerVersion = "", "", 0
+	}
+	if err := insertRevision(ctx, tx, item, actor, now); err != nil {
+		return content.Item{}, err
+	}
+	return item, tx.Commit()
+}
+
+func (r *Repository) startHomePublish(ctx context.Context, id string, expected int64, actor string, now time.Time) (content.Item, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return content.Item{}, err
+	}
+	defer tx.Rollback()
+	if err := lockContentVersion(ctx, tx, content.ModulePages, id, expected); err != nil {
+		return content.Item{}, err
+	}
+	current, err := loadContent(ctx, tx, content.ModulePages, id)
+	if err != nil {
+		return content.Item{}, err
+	}
+	if current.PageKey != "home" || current.PageTemplate != "home.v2" || current.BannerAssetID == "" {
+		return content.Item{}, content.ErrNotPublishable
+	}
+	next := expected + 1
+	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.content_entry SET status='publishing',version=$2,updated_by=$3,updated_at=$4 WHERE id=$1`, id, next, actor, now); err != nil {
+		return content.Item{}, err
+	}
+	payload, _ := json.Marshal(publication.ContentPublishPayload{ContentID: id, AssetID: current.BannerAssetID, AggregateVersion: next})
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO hhc_web.outbox_event(id,destination,event_type,aggregate_type,aggregate_id,aggregate_version,payload_json,idempotency_key,status,next_attempt_at,created_at,updated_at)
+		VALUES($1,'asset-api','home.publish.ensure_asset','home',$2,$3,$4,$5,'pending',$6,$6,$6)`,
+		platform.NewID(), id, next, payload, fmt.Sprintf("home:%s:publish:v%d", id, next), now); err != nil {
+		return content.Item{}, err
+	}
+	item, err := loadContent(ctx, tx, content.ModulePages, id)
+	if err != nil {
+		return content.Item{}, err
+	}
 	if err := insertRevision(ctx, tx, item, actor, now); err != nil {
 		return content.Item{}, err
 	}
@@ -250,11 +343,23 @@ func (r *Repository) UnpublishContent(ctx context.Context, module content.Module
 	if err := lockContentVersion(ctx, tx, module, id, expected); err != nil {
 		return content.Item{}, err
 	}
+	current, err := loadContent(ctx, tx, module, id)
+	if err != nil {
+		return content.Item{}, err
+	}
 	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.content_entry SET status='unpublished',version=version+1,updated_by=$2,updated_at=$3 WHERE id=$1`, id, actor, now); err != nil {
 		return content.Item{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM hhc_web.public_projection WHERE resource_type=$1 AND resource_id=$2`, module, id); err != nil {
 		return content.Item{}, err
+	}
+	if module == content.ModulePages && current.PageKey == "home" && current.BannerPublicGrantID != "" {
+		if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.page_item SET published_banner_asset_id=NULL,banner_public_grant_id=NULL,published_banner_version=NULL WHERE content_id=$1`, id); err != nil {
+			return content.Item{}, err
+		}
+		if err := enqueueGrantRevoke(ctx, tx, "home", id, expected+1, publication.PublishedAsset{Usage: "banner", AssetID: current.PublishedBannerAssetID, GrantID: current.BannerPublicGrantID}, now); err != nil {
+			return content.Item{}, err
+		}
 	}
 	item, err := loadContent(ctx, tx, module, id)
 	if err != nil {
@@ -342,6 +447,9 @@ func (r *Repository) startNewsUnpublish(ctx context.Context, id string, expected
 }
 
 func (r *Repository) CompleteContentPublish(ctx context.Context, event publication.Event, assets []publication.PublishedAsset, now time.Time) error {
+	if event.EventType == "home.publish.ensure_asset" {
+		return r.completeHomePublish(ctx, event, assets, now)
+	}
 	now = now.Truncate(time.Microsecond)
 	var payload publication.ContentPublishPayload
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
@@ -419,9 +527,95 @@ func (r *Repository) CompleteContentPublish(ctx context.Context, event publicati
 	for _, old := range []publication.PublishedAsset{{Usage: "detail", AssetID: oldAssetID, GrantID: oldGrantID}, {Usage: "home", AssetID: oldHomeAssetID, GrantID: oldHomeGrantID}} {
 		current := publishedAsset(assets, old.Usage)
 		if old.GrantID != "" && old.GrantID != current.GrantID {
-			if err := enqueueGrantRevoke(ctx, tx, item.ID, version, old, now); err != nil {
+			if err := enqueueGrantRevoke(ctx, tx, "news", item.ID, version, old, now); err != nil {
 				return err
 			}
+		}
+	}
+	return tx.Commit()
+}
+
+func (r *Repository) completeHomePublish(ctx context.Context, event publication.Event, assets []publication.PublishedAsset, now time.Time) error {
+	now = now.Truncate(time.Microsecond)
+	var eventPayload publication.ContentPublishPayload
+	if err := json.Unmarshal(event.Payload, &eventPayload); err != nil {
+		return err
+	}
+	banner := publishedAsset(assets, "banner")
+	if len(assets) != 1 || banner.AssetID != eventPayload.AssetID || banner.GrantID == "" || banner.PublicURL == "" {
+		return fmt.Errorf("published Home Banner does not match event payload")
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	delivered, err := eventDelivered(ctx, tx, event.ID)
+	if err != nil {
+		return err
+	}
+	if delivered {
+		return nil
+	}
+	var status, template, oldAssetID, oldGrantID string
+	var version int64
+	if err := tx.QueryRowContext(ctx, `
+		SELECT e.status,e.version,p.page_template,COALESCE(p.published_banner_asset_id,''),COALESCE(p.banner_public_grant_id,'')
+		FROM hhc_web.content_entry e
+		JOIN hhc_web.page_item p ON p.content_id=e.id
+		WHERE e.id=$1 AND e.module='pages' AND p.page_key='home'
+		FOR UPDATE OF e,p`, eventPayload.ContentID).Scan(&status, &version, &template, &oldAssetID, &oldGrantID); err != nil {
+		return err
+	}
+	if status != content.StatusPublishing || version != eventPayload.AggregateVersion || template != "home.v2" {
+		return publication.ErrStalePublication
+	}
+	item, err := loadContent(ctx, tx, content.ModulePages, eventPayload.ContentID)
+	if err != nil {
+		return err
+	}
+	if item.BannerAssetID != eventPayload.AssetID {
+		return publication.ErrStalePublication
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM hhc_web.public_projection WHERE resource_type='pages' AND resource_id=$1`, item.ID); err != nil {
+		return err
+	}
+	availableLocales := make([]string, 0, len(item.Translations))
+	for _, translation := range item.Translations {
+		availableLocales = append(availableLocales, translation.Locale)
+	}
+	sortPublicLocales(availableLocales)
+	for _, translation := range item.Translations {
+		localized, err := content.BuildPublicHomeV2Payload(translation.BodyJSON, item.Links, item.Locations, translation.Locale, banner.PublicURL)
+		if err != nil {
+			return err
+		}
+		projection := content.PublicEditorialPage{PageKey: item.PageKey, Template: item.PageTemplate, RoutePath: item.RoutePath, Indexable: item.Indexable, Content: localized, ResolvedLocale: translation.Locale, AvailableLocales: availableLocales, Version: version, PublishedAt: now}
+		encoded, err := json.Marshal(projection)
+		if err != nil {
+			return err
+		}
+		etag := fmt.Sprintf(`%x`, sha256.Sum256(encoded))
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO hhc_web.public_projection(projection_key,resource_type,resource_id,locale,route_path,version,etag,payload_json,updated_at)
+			VALUES($1,'pages',$2,$3,$4,$5,$6,$7,$8)
+			ON CONFLICT(projection_key) DO UPDATE SET route_path=EXCLUDED.route_path,version=EXCLUDED.version,etag=EXCLUDED.etag,payload_json=EXCLUDED.payload_json,updated_at=EXCLUDED.updated_at`,
+			fmt.Sprintf("page:%s:home", translation.Locale), item.ID, translation.Locale, item.RoutePath, version, etag, encoded, now); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.content_entry SET status='published',first_published_at=COALESCE(first_published_at,$2),published_at=$2,updated_at=$2 WHERE id=$1`, item.ID, now); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.page_item SET published_banner_asset_id=$2,banner_public_grant_id=$3,published_banner_version=$4 WHERE content_id=$1`, item.ID, banner.AssetID, banner.GrantID, version); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.outbox_event SET status='delivered',claimed_until=NULL,last_error='',updated_at=$2 WHERE id=$1`, event.ID, now); err != nil {
+		return err
+	}
+	if oldGrantID != "" && oldGrantID != banner.GrantID {
+		if err := enqueueGrantRevoke(ctx, tx, "home", item.ID, version, publication.PublishedAsset{Usage: "banner", AssetID: oldAssetID, GrantID: oldGrantID}, now); err != nil {
+			return err
 		}
 	}
 	return tx.Commit()
@@ -484,13 +678,13 @@ func publishedAsset(assets []publication.PublishedAsset, usage string) publicati
 	return publication.PublishedAsset{Usage: usage}
 }
 
-func enqueueGrantRevoke(ctx context.Context, tx *sql.Tx, contentID string, version int64, asset publication.PublishedAsset, now time.Time) error {
+func enqueueGrantRevoke(ctx context.Context, tx *sql.Tx, aggregateType, contentID string, version int64, asset publication.PublishedAsset, now time.Time) error {
 	payload, _ := json.Marshal(publication.ContentUnpublishPayload{ContentID: contentID, AssetID: asset.AssetID, GrantID: asset.GrantID, AggregateVersion: version})
 	_, err := tx.ExecContext(ctx, `
 		INSERT INTO hhc_web.outbox_event(id,destination,event_type,aggregate_type,aggregate_id,aggregate_version,payload_json,idempotency_key,status,next_attempt_at,created_at,updated_at)
-		VALUES($1,'asset-api','asset.grant.revoke','news',$2,$3,$4,$5,'pending',$6,$6,$6)
+		VALUES($1,'asset-api','asset.grant.revoke',$2,$3,$4,$5,$6,'pending',$7,$7,$7)
 		ON CONFLICT(destination,idempotency_key) DO NOTHING`,
-		platform.NewID(), contentID, version, payload, fmt.Sprintf("news:%s:revoke:%s", contentID, asset.GrantID), now)
+		platform.NewID(), aggregateType, contentID, version, payload, fmt.Sprintf("%s:%s:revoke:%s", aggregateType, contentID, asset.GrantID), now)
 	return err
 }
 
@@ -891,7 +1085,12 @@ func loadContent(ctx context.Context, query contentQueryer, module content.Modul
 	case content.ModuleLocations:
 		err = query.QueryRowContext(ctx, `SELECT stable_key,map_href,sort_order FROM hhc_web.location_item WHERE content_id=$1`, id).Scan(&item.LocationKey, &item.MapHref, &item.SortOrder)
 	case content.ModulePages:
-		err = query.QueryRowContext(ctx, `SELECT page_key,page_template,route_path,indexable FROM hhc_web.page_item WHERE content_id=$1`, id).Scan(&item.PageKey, &item.PageTemplate, &item.RoutePath, &item.Indexable)
+		var homeSettingsJSON []byte
+		err = query.QueryRowContext(ctx, `SELECT page_key,page_template,route_path,indexable,COALESCE(banner_asset_id,''),COALESCE(published_banner_asset_id,''),COALESCE(banner_public_grant_id,''),COALESCE(published_banner_version,0),COALESCE(home_settings,'{}'::jsonb) FROM hhc_web.page_item WHERE content_id=$1`, id).
+			Scan(&item.PageKey, &item.PageTemplate, &item.RoutePath, &item.Indexable, &item.BannerAssetID, &item.PublishedBannerAssetID, &item.BannerPublicGrantID, &item.PublishedBannerVersion, &homeSettingsJSON)
+		if err == nil {
+			err = decodeHomeSettings(homeSettingsJSON, &item)
+		}
 	}
 	if err != nil {
 		return content.Item{}, err
@@ -1001,11 +1200,15 @@ func writeTypedContent(ctx context.Context, tx *sql.Tx, module content.Module, i
 		}
 		return nil
 	case content.ModulePages:
-		if verb == "INSERT" {
-			_, err := tx.ExecContext(ctx, `INSERT INTO hhc_web.page_item(content_id,page_key,page_template,route_path,indexable) VALUES($1,$2,$3,$4,$5)`, id, input.PageKey, input.PageTemplate, input.RoutePath, input.Indexable)
+		homeSettingsJSON, err := encodeHomeSettings(input)
+		if err != nil {
 			return err
 		}
-		result, err := tx.ExecContext(ctx, `UPDATE hhc_web.page_item SET indexable=$5 WHERE content_id=$1 AND page_key=$2 AND page_template=$3 AND route_path=$4`, id, input.PageKey, input.PageTemplate, input.RoutePath, input.Indexable)
+		if verb == "INSERT" {
+			_, err := tx.ExecContext(ctx, `INSERT INTO hhc_web.page_item(content_id,page_key,page_template,route_path,indexable,banner_asset_id,home_settings) VALUES($1,$2,$3,$4,$5,NULLIF($6,''),$7)`, id, input.PageKey, input.PageTemplate, input.RoutePath, input.Indexable, input.BannerAssetID, homeSettingsJSON)
+			return err
+		}
+		result, err := tx.ExecContext(ctx, `UPDATE hhc_web.page_item SET indexable=$5,banner_asset_id=NULLIF($6,''),home_settings=$7 WHERE content_id=$1 AND page_key=$2 AND page_template=$3 AND route_path=$4`, id, input.PageKey, input.PageTemplate, input.RoutePath, input.Indexable, input.BannerAssetID, homeSettingsJSON)
 		if err != nil {
 			return err
 		}
@@ -1016,6 +1219,32 @@ func writeTypedContent(ctx context.Context, tx *sql.Tx, module content.Module, i
 	}
 	return content.ErrInvalid
 }
+
+type storedHomeSettings struct {
+	Links     content.HomeLinks      `json:"links"`
+	Locations []content.HomeLocation `json:"locations"`
+}
+
+func encodeHomeSettings(input content.WriteInput) (any, error) {
+	if input.PageTemplate != "home.v2" {
+		return nil, nil
+	}
+	return json.Marshal(storedHomeSettings{Links: input.Links, Locations: input.Locations})
+}
+
+func decodeHomeSettings(payload []byte, item *content.Item) error {
+	if len(payload) == 0 || string(payload) == "{}" {
+		return nil
+	}
+	var settings storedHomeSettings
+	if err := json.Unmarshal(payload, &settings); err != nil {
+		return err
+	}
+	item.Links = settings.Links
+	item.Locations = settings.Locations
+	return nil
+}
+
 func replaceTranslations(ctx context.Context, tx *sql.Tx, id string, values []content.Translation) error {
 	if _, err := tx.ExecContext(ctx, `DELETE FROM hhc_web.content_translation WHERE entry_id=$1`, id); err != nil {
 		return err

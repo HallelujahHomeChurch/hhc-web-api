@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -28,6 +29,34 @@ type HomePageData struct {
 	AboutCTA       string `json:"aboutCta"`
 	LocationsTitle string `json:"locationsTitle"`
 	MapLink        string `json:"mapLink"`
+}
+
+type HomePageDataV2 struct {
+	HeroTitle             string `json:"heroTitle"`
+	HeroSubtitle          string `json:"heroSubtitle"`
+	KingdomJoyDescription string `json:"kingdomJoyDescription"`
+	AboutDescription      string `json:"aboutDescription"`
+}
+
+type PublicHomeLocation struct {
+	Key       string `json:"key"`
+	Name      string `json:"name"`
+	Address   string `json:"address"`
+	MapHref   string `json:"mapHref"`
+	SortOrder int    `json:"sortOrder"`
+}
+
+type publicHomePageDataV2 struct {
+	HomePageDataV2
+	BannerImageURL string               `json:"bannerImageUrl"`
+	Links          HomeLinks            `json:"links"`
+	Locations      []PublicHomeLocation `json:"locations"`
+}
+
+type publicHomePageV2 struct {
+	SchemaVersion int                  `json:"schemaVersion"`
+	Template      string               `json:"template"`
+	Data          publicHomePageDataV2 `json:"data"`
 }
 
 type AboutCard struct {
@@ -92,6 +121,9 @@ var cjkDate = regexp.MustCompile(`^(\d{4})年(\d{1,2})月(\d{1,2})日$`)
 var koreanDate = regexp.MustCompile(`^(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일$`)
 
 func ValidatePageDefinition(key, template, route string) error {
+	if key == "home" && template == "home.v2" && route == "/" {
+		return nil
+	}
 	wantTemplate, wantRoute, ok := PageDefinition(key)
 	if !ok || template != wantTemplate || route != wantRoute {
 		return ErrInvalid
@@ -123,29 +155,36 @@ func ValidatePagePayload(key string, raw json.RawMessage) error {
 		return ErrInvalid
 	}
 	var envelope pageEnvelope
-	if err := decodeStrict(raw, &envelope); err != nil || envelope.SchemaVersion != 1 {
+	if err := decodeStrict(raw, &envelope); err != nil {
 		return ErrInvalid
 	}
-	template, _, ok := PageDefinition(key)
-	if !ok || envelope.Template != template {
+	if err := ValidatePageDefinition(key, envelope.Template, pageRoute(key)); err != nil {
 		return ErrInvalid
 	}
 	var valid bool
-	switch template {
+	switch envelope.Template {
 	case "home.v1":
 		var data HomePageData
-		valid = decodeStrict(envelope.Data, &data) == nil && validHomePage(data)
+		valid = envelope.SchemaVersion == 1 && decodeStrict(envelope.Data, &data) == nil && validHomePage(data)
+	case "home.v2":
+		var data HomePageDataV2
+		valid = envelope.SchemaVersion == 2 && decodeStrict(envelope.Data, &data) == nil && validHomePageV2(data)
 	case "about.v1":
 		var data AboutPageData
-		valid = decodeStrict(envelope.Data, &data) == nil && validAboutPage(data)
+		valid = envelope.SchemaVersion == 1 && decodeStrict(envelope.Data, &data) == nil && validAboutPage(data)
 	case "legal.v1":
 		var data LegalPageData
-		valid = decodeStrict(envelope.Data, &data) == nil && validLegalPage(data)
+		valid = envelope.SchemaVersion == 1 && decodeStrict(envelope.Data, &data) == nil && validLegalPage(data)
 	}
 	if !valid {
 		return ErrInvalid
 	}
 	return nil
+}
+
+func pageRoute(key string) string {
+	_, route, _ := PageDefinition(key)
+	return route
 }
 
 func hasJSONNull(value any) bool {
@@ -179,6 +218,10 @@ func PagePayloadMetadata(key string, raw json.RawMessage) (title, summary string
 		var data HomePageData
 		_ = json.Unmarshal(envelope.Data, &data)
 		return data.HeroTitle, data.HeroSubtitle, nil
+	case "home.v2":
+		var data HomePageDataV2
+		_ = json.Unmarshal(envelope.Data, &data)
+		return data.HeroTitle, data.HeroSubtitle, nil
 	case "about.v1":
 		var data AboutPageData
 		_ = json.Unmarshal(envelope.Data, &data)
@@ -191,6 +234,43 @@ func PagePayloadMetadata(key string, raw json.RawMessage) (title, summary string
 		}
 		return data.HeroTitle, data.Intro, nil
 	}
+}
+
+func validHomePageV2(data HomePageDataV2) bool {
+	return plainRequired(data.HeroTitle, 200) && plainRequired(data.HeroSubtitle, 500) &&
+		plainRequired(data.KingdomJoyDescription, 5_000) && plainRequired(data.AboutDescription, 5_000)
+}
+
+func BuildPublicHomeV2Payload(raw json.RawMessage, links HomeLinks, locations []HomeLocation, locale, bannerURL string) (json.RawMessage, error) {
+	if ValidatePagePayload("home", raw) != nil || strings.TrimSpace(bannerURL) == "" {
+		return nil, ErrInvalid
+	}
+	var envelope pageEnvelope
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return nil, ErrInvalid
+	}
+	var localized HomePageDataV2
+	if err := json.Unmarshal(envelope.Data, &localized); err != nil {
+		return nil, ErrInvalid
+	}
+	ordered := append([]HomeLocation(nil), locations...)
+	sort.Slice(ordered, func(i, j int) bool { return ordered[i].SortOrder < ordered[j].SortOrder })
+	publicLocations := make([]PublicHomeLocation, 0, len(ordered))
+	for _, location := range ordered {
+		var found *HomeLocationTranslation
+		for index := range location.Translations {
+			if location.Translations[index].Locale == locale {
+				found = &location.Translations[index]
+				break
+			}
+		}
+		if found == nil {
+			return nil, ErrInvalid
+		}
+		publicLocations = append(publicLocations, PublicHomeLocation{Key: location.Key, Name: found.Name, Address: found.Address, MapHref: location.MapHref, SortOrder: location.SortOrder})
+	}
+	payload, err := json.Marshal(publicHomePageV2{SchemaVersion: 2, Template: "home.v2", Data: publicHomePageDataV2{HomePageDataV2: localized, BannerImageURL: bannerURL, Links: links, Locations: publicLocations}})
+	return payload, err
 }
 
 func decodeStrict(raw []byte, target any) error {

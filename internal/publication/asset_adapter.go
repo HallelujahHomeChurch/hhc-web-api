@@ -20,9 +20,11 @@ func (a *AssetAdapter) Get(ctx context.Context, id string) (Asset, error) {
 		OwnerType:        value.OwnerType,
 		OwnerID:          value.OwnerID,
 		Locale:           value.Locale,
+		Purpose:          value.Purpose,
 		UploadStatus:     value.UploadStatus,
 		ScanStatus:       value.ScanStatus,
 		ProcessingStatus: value.ProcessingStatus,
+		DetectedMIMEType: value.DetectedMIMEType,
 	}, err
 }
 func (a *AssetAdapter) CreatePublicGrant(ctx context.Context, id, key string) (Grant, error) {

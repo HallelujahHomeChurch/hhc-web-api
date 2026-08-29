@@ -19,6 +19,12 @@ if ./scripts/test-migration-policy.sh "$tmp/not-null.sql" 2>/dev/null; then
   exit 1
 fi
 
+printf '%s\n' 'ALTER TABLE users ALTER COLUMN name TYPE text;' >"$tmp/alter-type.sql"
+if ./scripts/test-migration-policy.sh "$tmp/alter-type.sql" 2>/dev/null; then
+  echo 'blocking type migration was not rejected' >&2
+  exit 1
+fi
+
 printf '%s\n' 'DROP /* bypass */ TABLE users;' >"$tmp/comment-bypass.sql"
 if ./scripts/test-migration-policy.sh "$tmp/comment-bypass.sql" 2>/dev/null; then
   echo 'comment-obfuscated destructive migration was not rejected' >&2
@@ -65,5 +71,21 @@ trap 'restore_locale_migration; restore_location_migration; rm -rf "$tmp"' EXIT
 printf '%s\n' '-- test mutation' >>"$location_migration"
 if ./scripts/test-migration-policy.sh "$location_migration" 2>/dev/null; then
   echo 'locations constraint replacement was not immutable' >&2
+  exit 1
+fi
+
+home_migration='internal/migrations/sql/030_home_page_v2.sql'
+restore_location_migration
+./scripts/test-migration-policy.sh "$home_migration"
+
+home_backup="$tmp/030_home_page_v2.sql"
+cp "$home_migration" "$home_backup"
+restore_home_migration() {
+  cp "$home_backup" "$home_migration"
+}
+trap 'restore_locale_migration; restore_location_migration; restore_home_migration; rm -rf "$tmp"' EXIT
+printf '%s\n' '-- test mutation' >>"$home_migration"
+if ./scripts/test-migration-policy.sh "$home_migration" 2>/dev/null; then
+  echo 'Home v2 constraint replacement was not immutable' >&2
   exit 1
 fi

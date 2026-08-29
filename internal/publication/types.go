@@ -88,7 +88,7 @@ type AssetClient interface {
 }
 type Asset struct {
 	ID, Namespace, OwnerService, OwnerType, OwnerID, Locale, Purpose string
-	UploadStatus, ScanStatus, ProcessingStatus                       string
+	UploadStatus, ScanStatus, ProcessingStatus, DetectedMIMEType     string
 }
 type Grant struct{ ID string }
 

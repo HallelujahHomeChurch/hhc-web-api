@@ -47,65 +47,93 @@ type Translation struct {
 	BodyJSON  json.RawMessage `json:"bodyJson,omitempty"`
 }
 
+type HomeLinks struct {
+	ChurchYouTube  string `json:"churchYoutube"`
+	ChurchFacebook string `json:"churchFacebook"`
+	MusicYouTube   string `json:"musicYoutube"`
+}
+
+type HomeLocationTranslation struct {
+	Locale  string `json:"locale"`
+	Name    string `json:"name"`
+	Address string `json:"address"`
+}
+
+type HomeLocation struct {
+	Key          string                    `json:"key"`
+	MapHref      string                    `json:"mapHref"`
+	SortOrder    int                       `json:"sortOrder"`
+	Translations []HomeLocationTranslation `json:"translations"`
+}
+
 type WriteInput struct {
-	AuthorName       string        `json:"authorName,omitempty"`
-	Slug             string        `json:"slug,omitempty"`
-	DisplayDate      string        `json:"displayDate,omitempty"`
-	EventDate        string        `json:"eventDate,omitempty"`
-	YouTubeVideoID   string        `json:"youtubeVideoId,omitempty"`
-	CoverAssetID     string        `json:"coverAssetId,omitempty"`
-	HomeCoverAssetID string        `json:"homeCoverAssetId,omitempty"`
-	DetailLayout     string        `json:"detailLayout,omitempty"`
-	Featured         bool          `json:"featured,omitempty"`
-	HomeEligible     bool          `json:"homeEligible,omitempty"`
-	LocationKey      string        `json:"locationKey,omitempty"`
-	MapHref          string        `json:"mapHref,omitempty"`
-	SortOrder        int           `json:"sortOrder,omitempty"`
-	PageKey          string        `json:"pageKey,omitempty"`
-	PageTemplate     string        `json:"pageTemplate,omitempty"`
-	RoutePath        string        `json:"routePath,omitempty"`
-	Indexable        bool          `json:"indexable,omitempty"`
-	Translations     []Translation `json:"translations"`
-	DeleteLocales    []string      `json:"deleteLocales,omitempty"`
+	AuthorName       string         `json:"authorName,omitempty"`
+	Slug             string         `json:"slug,omitempty"`
+	DisplayDate      string         `json:"displayDate,omitempty"`
+	EventDate        string         `json:"eventDate,omitempty"`
+	YouTubeVideoID   string         `json:"youtubeVideoId,omitempty"`
+	CoverAssetID     string         `json:"coverAssetId,omitempty"`
+	HomeCoverAssetID string         `json:"homeCoverAssetId,omitempty"`
+	DetailLayout     string         `json:"detailLayout,omitempty"`
+	Featured         bool           `json:"featured,omitempty"`
+	HomeEligible     bool           `json:"homeEligible,omitempty"`
+	LocationKey      string         `json:"locationKey,omitempty"`
+	MapHref          string         `json:"mapHref,omitempty"`
+	SortOrder        int            `json:"sortOrder,omitempty"`
+	PageKey          string         `json:"pageKey,omitempty"`
+	PageTemplate     string         `json:"pageTemplate,omitempty"`
+	RoutePath        string         `json:"routePath,omitempty"`
+	Indexable        bool           `json:"indexable,omitempty"`
+	BannerAssetID    string         `json:"bannerAssetId,omitempty"`
+	Links            HomeLinks      `json:"links,omitzero"`
+	Locations        []HomeLocation `json:"locations,omitempty"`
+	Translations     []Translation  `json:"translations"`
+	DeleteLocales    []string       `json:"deleteLocales,omitempty"`
 }
 
 type Item struct {
-	ID                   string        `json:"id"`
-	Module               Module        `json:"module"`
-	Status               string        `json:"status"`
-	Version              int64         `json:"version"`
-	Slug                 string        `json:"slug,omitempty"`
-	DisplayDate          string        `json:"displayDate,omitempty"`
-	EventDate            string        `json:"eventDate,omitempty"`
-	YouTubeVideoID       string        `json:"youtubeVideoId,omitempty"`
-	CoverAssetID         string        `json:"coverAssetId,omitempty"`
-	HomeCoverAssetID     string        `json:"homeCoverAssetId,omitempty"`
-	DetailLayout         string        `json:"detailLayout,omitempty"`
-	CoverURL             string        `json:"coverUrl,omitempty"`
-	HomeCoverURL         string        `json:"homeCoverUrl,omitempty"`
-	PublicGrantID        string        `json:"-"`
-	HomePublicGrantID    string        `json:"-"`
-	PublishedCoverID     string        `json:"-"`
-	PublishedHomeCoverID string        `json:"-"`
-	IsPublished          bool          `json:"isPublished"`
-	PublishedVersion     int64         `json:"publishedVersion,omitempty"`
-	AuthorName           string        `json:"authorName,omitempty"`
-	Featured             bool          `json:"featured,omitempty"`
-	HomeEligible         bool          `json:"homeEligible,omitempty"`
-	LocationKey          string        `json:"locationKey,omitempty"`
-	MapHref              string        `json:"mapHref,omitempty"`
-	SortOrder            int           `json:"sortOrder,omitempty"`
-	PageKey              string        `json:"pageKey,omitempty"`
-	PageTemplate         string        `json:"pageTemplate,omitempty"`
-	RoutePath            string        `json:"routePath,omitempty"`
-	Indexable            bool          `json:"indexable,omitempty"`
-	Translations         []Translation `json:"translations"`
-	CreatedBy            string        `json:"createdBy"`
-	UpdatedBy            string        `json:"updatedBy"`
-	PublishedAt          *time.Time    `json:"publishedAt,omitempty"`
-	FirstPublishedAt     *time.Time    `json:"-"`
-	CreatedAt            time.Time     `json:"createdAt"`
-	UpdatedAt            time.Time     `json:"updatedAt"`
+	ID                     string         `json:"id"`
+	Module                 Module         `json:"module"`
+	Status                 string         `json:"status"`
+	Version                int64          `json:"version"`
+	Slug                   string         `json:"slug,omitempty"`
+	DisplayDate            string         `json:"displayDate,omitempty"`
+	EventDate              string         `json:"eventDate,omitempty"`
+	YouTubeVideoID         string         `json:"youtubeVideoId,omitempty"`
+	CoverAssetID           string         `json:"coverAssetId,omitempty"`
+	HomeCoverAssetID       string         `json:"homeCoverAssetId,omitempty"`
+	DetailLayout           string         `json:"detailLayout,omitempty"`
+	CoverURL               string         `json:"coverUrl,omitempty"`
+	HomeCoverURL           string         `json:"homeCoverUrl,omitempty"`
+	PublicGrantID          string         `json:"-"`
+	HomePublicGrantID      string         `json:"-"`
+	PublishedCoverID       string         `json:"-"`
+	PublishedHomeCoverID   string         `json:"-"`
+	IsPublished            bool           `json:"isPublished"`
+	PublishedVersion       int64          `json:"publishedVersion,omitempty"`
+	AuthorName             string         `json:"authorName,omitempty"`
+	Featured               bool           `json:"featured,omitempty"`
+	HomeEligible           bool           `json:"homeEligible,omitempty"`
+	LocationKey            string         `json:"locationKey,omitempty"`
+	MapHref                string         `json:"mapHref,omitempty"`
+	SortOrder              int            `json:"sortOrder,omitempty"`
+	PageKey                string         `json:"pageKey,omitempty"`
+	PageTemplate           string         `json:"pageTemplate,omitempty"`
+	RoutePath              string         `json:"routePath,omitempty"`
+	Indexable              bool           `json:"indexable,omitempty"`
+	BannerAssetID          string         `json:"bannerAssetId,omitempty"`
+	Links                  HomeLinks      `json:"links,omitzero"`
+	Locations              []HomeLocation `json:"locations,omitempty"`
+	BannerPublicGrantID    string         `json:"-"`
+	PublishedBannerAssetID string         `json:"-"`
+	PublishedBannerVersion int64          `json:"-"`
+	Translations           []Translation  `json:"translations"`
+	CreatedBy              string         `json:"createdBy"`
+	UpdatedBy              string         `json:"updatedBy"`
+	PublishedAt            *time.Time     `json:"publishedAt,omitempty"`
+	FirstPublishedAt       *time.Time     `json:"-"`
+	CreatedAt              time.Time      `json:"createdAt"`
+	UpdatedAt              time.Time      `json:"updatedAt"`
 }
 
 type Revision struct {
@@ -188,6 +216,7 @@ type Repository interface {
 	ListContent(context.Context, Module, ListOptions) (Page, error)
 	GetContent(context.Context, Module, string) (Item, error)
 	UpdateContent(context.Context, Module, string, int64, WriteInput, string, time.Time) (Item, error)
+	RestoreContent(context.Context, Module, string, int64, WriteInput, string, time.Time) (Item, error)
 	PublishContent(context.Context, Module, string, int64, string, time.Time) (Item, error)
 	UnpublishContent(context.Context, Module, string, int64, string, time.Time) (Item, error)
 	ContentRevisions(context.Context, Module, string) ([]Revision, error)

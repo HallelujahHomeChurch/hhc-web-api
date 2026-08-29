@@ -116,6 +116,8 @@ run_smoke_case() {
   [ "$#" -lt 16 ] || page_etag="${16}"
   page_cache_control='public, max-age=30, must-revalidate'
   [ "$#" -lt 17 ] || page_cache_control="${17}"
+  home_contract_mode="${18:-dual}"
+  home_template="${19:-home.v1}"
   case_dir="$(mktemp -d)"
   mkdir "$case_dir/bin"
   cat >"$case_dir/bin/timeout" <<'SH'
@@ -168,18 +170,24 @@ case "$url" in
     page_key="${page_key##*/}"
     case "$page_key" in
       home)
-        template=home.v1; route=/
-        page_data='{"heroTitle":"Home","heroSubtitle":"Welcome","newsTitle":"News","moreNews":"More","weeklyTitle":"Weekly","downloadWeekly":"Download","videosTitle":"Videos","videosSubtitle":"Music","watchMore":"Watch","aboutTitle":"About","aboutBody":"About us","aboutCta":"Meet us","locationsTitle":"Locations","mapLink":"Map"}'
+        route=/
+        if [ "$SMOKE_HOME_TEMPLATE" = home.v2 ]; then
+          template=home.v2; schema_version=2
+          page_data='{"heroTitle":"Home","heroSubtitle":"Welcome","kingdomJoyDescription":"Joy","aboutDescription":"About us","bannerImageUrl":"/api/assets/banner","links":{"churchYoutube":"https://youtube.com/@hhc33","churchFacebook":"https://facebook.com/hhc","musicYoutube":"https://youtube.com/@music"},"locations":[{"key":"taipei","name":"Taipei","address":"Taipei address","mapHref":"https://maps.example.com/taipei","sortOrder":10}]}'
+        else
+          template=home.v1; schema_version=1
+          page_data='{"heroTitle":"Home","heroSubtitle":"Welcome","newsTitle":"News","moreNews":"More","weeklyTitle":"Weekly","downloadWeekly":"Download","videosTitle":"Videos","videosSubtitle":"Music","watchMore":"Watch","aboutTitle":"About","aboutBody":"About us","aboutCta":"Meet us","locationsTitle":"Locations","mapLink":"Map"}'
+        fi
         ;;
       about)
-        template=about.v1; route=/about
+        template=about.v1; schema_version=1; route=/about
         page_data='{"heroTitle":"About","heroSubtitle":"Mission","vision":{"intro":"Intro","imageAlt":"Image","actionsImageAlt":"Actions","sections":[{"eyebrow":"One","title":"Vision","body":"Body"},{"eyebrow":"Two","title":"Goals","body":"Body"},{"eyebrow":"Three","title":"Actions","cards":[{"title":"Share","body":"Body"}]},{"eyebrow":"Four","title":"Convictions","cards":[{"title":"Mission","body":"Body"}]}]},"history":{"scripture":[{"lines":["Verse"],"cite":"Isaiah"}],"imageAlt":"Image","intro":"History","title":"Church History"}}'
         ;;
-      privacy-policy) template=legal.v1; route=/privacy-policy; page_data='{"heroTitle":"Privacy","heroSubtitle":"","updatedAtLabel":"Updated","updatedAt":"August 10, 2026","intro":"Intro","sections":[{"title":"Scope","body":["Paragraph"]}]}' ;;
-      terms-of-use) template=legal.v1; route=/terms-of-use; page_data='{"heroTitle":"Terms","heroSubtitle":"","updatedAtLabel":"Updated","updatedAt":"August 10, 2026","intro":"Intro","sections":[{"title":"Scope","body":["Paragraph"]}]}' ;;
+      privacy-policy) template=legal.v1; schema_version=1; route=/privacy-policy; page_data='{"heroTitle":"Privacy","heroSubtitle":"","updatedAtLabel":"Updated","updatedAt":"August 10, 2026","intro":"Intro","sections":[{"title":"Scope","body":["Paragraph"]}]}' ;;
+      terms-of-use) template=legal.v1; schema_version=1; route=/terms-of-use; page_data='{"heroTitle":"Terms","heroSubtitle":"","updatedAtLabel":"Updated","updatedAt":"August 10, 2026","intro":"Intro","sections":[{"title":"Scope","body":["Paragraph"]}]}' ;;
     esac
     if [ "$SMOKE_PAGE_BODY" = __VALID_PAGE__ ]; then
-      printf '{"data":{"pageKey":"%s","template":"%s","routePath":"%s","indexable":true,"content":{"schemaVersion":1,"template":"%s","data":%s},"resolvedLocale":"zh-Hant","availableLocales":["zh-Hant","zh-Hans","en","ja","ko"],"version":3,"publishedAt":"2026-08-29T00:00:00Z"},"meta":{},"error":null}\n' "$page_key" "$template" "$route" "$template" "$page_data" >"$body"
+      printf '{"data":{"pageKey":"%s","template":"%s","routePath":"%s","indexable":true,"content":{"schemaVersion":%s,"template":"%s","data":%s},"resolvedLocale":"zh-Hant","availableLocales":["zh-Hant","zh-Hans","en","ja","ko"],"version":3,"publishedAt":"2026-08-29T00:00:00Z"},"meta":{},"error":null}\n' "$page_key" "$template" "$route" "$schema_version" "$template" "$page_data" >"$body"
     else
       printf '%s\n' "$SMOKE_PAGE_BODY" | sed "s|__PAGE_KEY__|$page_key|g; s|__TEMPLATE__|$template|g; s|__ROUTE__|$route|g" >"$body"
     fi
@@ -196,6 +204,7 @@ SH
     SMOKE_SITE_LAYOUT_ETAG="$site_layout_etag" \
     SMOKE_PAGE_STATUS="$page_status" SMOKE_PAGE_CONTENT_TYPE="$page_content_type" SMOKE_PAGE_BODY="$page_body" \
     SMOKE_PAGE_ETAG="$page_etag" SMOKE_PAGE_CACHE_CONTROL="$page_cache_control" \
+    HOME_PAGE_CONTRACT_MODE="$home_contract_mode" SMOKE_HOME_TEMPLATE="$home_template" \
     ./scripts/smoke-release.sh >/dev/null 2>&1
   status=$?
   set -e
@@ -262,6 +271,8 @@ valid_page=__VALID_PAGE__
 backend_page_not_found='{"data":null,"meta":{},"error":{"code":"not_found","message":"The content was not found."}}'
 gateway_page_not_found='{"error":"Not Found","message":"The requested resource was not found.","service":"api-gateway"}'
 run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' pass requested 200 application/json "$valid_site_layout" requested '"site-layout-1"' 200 application/json "$valid_page" requested
+run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' pass requested 200 application/json "$valid_site_layout" requested '"site-layout-1"' 200 application/json "$valid_page" requested '"page-3"' 'public, max-age=30, must-revalidate' v2-only home.v2
+run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' fail requested 200 application/json "$valid_site_layout" requested '"site-layout-1"' 200 application/json "$valid_page" started '"page-3"' 'public, max-age=30, must-revalidate' v2-only home.v1
 run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' pass requested 200 application/json "$valid_site_layout" requested '"site-layout-1"' 404 application/json "$backend_page_not_found" requested
 run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' fail requested 200 application/json "$valid_site_layout" requested '"site-layout-1"' 404 application/json "$gateway_page_not_found" started
 run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' fail requested 200 application/json "$valid_site_layout" requested '"site-layout-1"' 404 text/plain '' started
