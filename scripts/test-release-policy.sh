@@ -116,6 +116,8 @@ run_smoke_case() {
   [ "$#" -lt 16 ] || page_etag="${16}"
   page_cache_control='public, max-age=30, must-revalidate'
   [ "$#" -lt 17 ] || page_cache_control="${17}"
+  home_contract_mode="${18:-dual}"
+  home_template="${19:-home.v1}"
   case_dir="$(mktemp -d)"
   mkdir "$case_dir/bin"
   cat >"$case_dir/bin/timeout" <<'SH'
@@ -202,7 +204,7 @@ SH
     SMOKE_SITE_LAYOUT_ETAG="$site_layout_etag" \
     SMOKE_PAGE_STATUS="$page_status" SMOKE_PAGE_CONTENT_TYPE="$page_content_type" SMOKE_PAGE_BODY="$page_body" \
     SMOKE_PAGE_ETAG="$page_etag" SMOKE_PAGE_CACHE_CONTROL="$page_cache_control" \
-    HOME_PAGE_CONTRACT_MODE="${HOME_PAGE_CONTRACT_MODE:-dual}" SMOKE_HOME_TEMPLATE="${SMOKE_HOME_TEMPLATE:-home.v1}" \
+    HOME_PAGE_CONTRACT_MODE="$home_contract_mode" SMOKE_HOME_TEMPLATE="$home_template" \
     ./scripts/smoke-release.sh >/dev/null 2>&1
   status=$?
   set -e
@@ -269,8 +271,8 @@ valid_page=__VALID_PAGE__
 backend_page_not_found='{"data":null,"meta":{},"error":{"code":"not_found","message":"The content was not found."}}'
 gateway_page_not_found='{"error":"Not Found","message":"The requested resource was not found.","service":"api-gateway"}'
 run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' pass requested 200 application/json "$valid_site_layout" requested '"site-layout-1"' 200 application/json "$valid_page" requested
-HOME_PAGE_CONTRACT_MODE=v2-only SMOKE_HOME_TEMPLATE=home.v2 run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' pass requested 200 application/json "$valid_site_layout" requested '"site-layout-1"' 200 application/json "$valid_page" requested
-HOME_PAGE_CONTRACT_MODE=v2-only run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' fail requested 200 application/json "$valid_site_layout" requested '"site-layout-1"' 200 application/json "$valid_page" started
+run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' pass requested 200 application/json "$valid_site_layout" requested '"site-layout-1"' 200 application/json "$valid_page" requested '"page-3"' 'public, max-age=30, must-revalidate' v2-only home.v2
+run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' fail requested 200 application/json "$valid_site_layout" requested '"site-layout-1"' 200 application/json "$valid_page" started '"page-3"' 'public, max-age=30, must-revalidate' v2-only home.v1
 run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' pass requested 200 application/json "$valid_site_layout" requested '"site-layout-1"' 404 application/json "$backend_page_not_found" requested
 run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' fail requested 200 application/json "$valid_site_layout" requested '"site-layout-1"' 404 application/json "$gateway_page_not_found" started
 run_smoke_case forward 200 application/json '{"data":[],"meta":{},"error":null}' fail requested 200 application/json "$valid_site_layout" requested '"site-layout-1"' 404 text/plain '' started
