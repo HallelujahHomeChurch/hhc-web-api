@@ -29,9 +29,11 @@ type Asset struct {
 	Purpose          string `json:"purpose"`
 	Locale           string `json:"locale"`
 	OriginalFileName string `json:"originalFileName"`
+	ExpectedMIMEType string `json:"expectedMimeType"`
 	UploadStatus     string `json:"uploadStatus"`
 	ScanStatus       string `json:"scanStatus"`
 	ProcessingStatus string `json:"processingStatus"`
+	DetectedMIMEType string `json:"detectedMimeType"`
 	Visibility       string `json:"visibility"`
 }
 type Grant struct {
@@ -94,6 +96,16 @@ func (c *Client) CreateNewsCoverUpload(ctx context.Context, newsID, purpose, fil
 	body := map[string]any{
 		"namespace": "cms.news.cover", "ownerService": "hhc-web-api", "ownerType": "news", "ownerId": newsID,
 		"purpose": purpose, "originalFileName": fileName, "expectedMimeType": mimeType,
+		"maxSizeBytes": sizeBytes, "visibility": "public",
+	}
+	var value CreatedUpload
+	err := c.request(ctx, http.MethodPost, "/priv/assets/upload-sessions", body, key, &value)
+	return value, err
+}
+func (c *Client) CreateHomeBannerUpload(ctx context.Context, homeID, fileName, mimeType string, sizeBytes int64, key string) (CreatedUpload, error) {
+	body := map[string]any{
+		"namespace": "cms.home.banner", "ownerService": "hhc-web-api", "ownerType": "page", "ownerId": homeID,
+		"purpose": "home_banner", "originalFileName": fileName, "expectedMimeType": mimeType,
 		"maxSizeBytes": sizeBytes, "visibility": "public",
 	}
 	var value CreatedUpload

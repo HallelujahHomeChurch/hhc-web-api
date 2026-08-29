@@ -37,6 +37,10 @@ func (h *Handler) contentRoutes(public, admin *http.ServeMux) {
 	admin.HandleFunc("POST /api/admin/content/news/{contentID}/assets/{assetID}/complete", requireScopes([]string{"cms:write", "assets:write"}, h.adminNewsCoverComplete))
 	admin.HandleFunc("GET /api/admin/content/news/{contentID}/assets/{assetID}", requireScope("cms:read", h.adminNewsCoverStatus))
 	admin.HandleFunc("POST /api/admin/content/news/{contentID}/assets/{assetID}/scan/retry", requireScopes([]string{"cms:write", "assets:write"}, h.adminNewsCoverRetry))
+	admin.HandleFunc("POST /api/admin/content/pages/{contentID}/upload-sessions", requireScopes([]string{"cms:write", "assets:write"}, h.adminHomeBannerUpload))
+	admin.HandleFunc("POST /api/admin/content/pages/{contentID}/assets/{assetID}/complete", requireScopes([]string{"cms:write", "assets:write"}, h.adminHomeBannerComplete))
+	admin.HandleFunc("GET /api/admin/content/pages/{contentID}/assets/{assetID}", requireScope("cms:read", h.adminHomeBannerStatus))
+	admin.HandleFunc("POST /api/admin/content/pages/{contentID}/assets/{assetID}/scan/retry", requireScopes([]string{"cms:write", "assets:write"}, h.adminHomeBannerRetry))
 }
 
 func (h *Handler) publicEditorialPage(w http.ResponseWriter, r *http.Request) {
@@ -464,7 +468,154 @@ func validImageMIME(value string) bool {
 	return value == "image/jpeg" || value == "image/png" || value == "image/webp"
 }
 func writeInput(item content.Item) content.WriteInput {
-	return content.WriteInput{Slug: item.Slug, DisplayDate: item.DisplayDate, EventDate: item.EventDate, YouTubeVideoID: item.YouTubeVideoID, CoverAssetID: item.CoverAssetID, HomeCoverAssetID: item.HomeCoverAssetID, Featured: item.Featured, HomeEligible: item.HomeEligible, Translations: item.Translations}
+	return content.WriteInput{AuthorName: item.AuthorName, Slug: item.Slug, DisplayDate: item.DisplayDate, EventDate: item.EventDate, YouTubeVideoID: item.YouTubeVideoID, CoverAssetID: item.CoverAssetID, HomeCoverAssetID: item.HomeCoverAssetID, DetailLayout: item.DetailLayout, Featured: item.Featured, HomeEligible: item.HomeEligible, LocationKey: item.LocationKey, MapHref: item.MapHref, SortOrder: item.SortOrder, PageKey: item.PageKey, PageTemplate: item.PageTemplate, RoutePath: item.RoutePath, Indexable: item.Indexable, BannerAssetID: item.BannerAssetID, Links: item.Links, Locations: item.Locations, Translations: item.Translations}
+}
+
+type homeBannerUploadInput struct {
+	Usage     string `json:"usage"`
+	FileName  string `json:"fileName"`
+	MIMEType  string `json:"mimeType"`
+	SizeBytes int64  `json:"sizeBytes"`
+}
+
+type homeBannerCompleteInput struct {
+	MIMEType       string `json:"mimeType"`
+	SizeBytes      int64  `json:"sizeBytes"`
+	ChecksumSHA256 string `json:"checksumSha256"`
+}
+
+func (h *Handler) adminHomeBannerUpload(w http.ResponseWriter, r *http.Request) {
+	if h.uploads == nil {
+		writeError(w, http.StatusServiceUnavailable, "asset_service_unavailable", "Asset uploads are unavailable.")
+		return
+	}
+	var input homeBannerUploadInput
+	if !decode(w, r, &input) {
+		return
+	}
+	if input.Usage != "home_banner" || input.MIMEType != "image/jpeg" || strings.TrimSpace(input.FileName) == "" || input.SizeBytes < 1 || input.SizeBytes > 10<<20 || strings.TrimSpace(r.Header.Get("Idempotency-Key")) == "" {
+		handleContentError(w, content.ErrInvalid)
+		return
+	}
+	if _, err := h.fixedHomeV2(r, r.PathValue("contentID")); err != nil {
+		handleContentError(w, err)
+		return
+	}
+	created, err := h.uploads.CreateHomeBannerUpload(r.Context(), r.PathValue("contentID"), input.FileName, input.MIMEType, input.SizeBytes, r.Header.Get("Idempotency-Key"))
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "asset_service_unavailable", "The upload session could not be created.")
+		return
+	}
+	logAssetEvent(r, "asset upload session created", "page", r.PathValue("contentID"), created.Asset.ID)
+	writeData(w, http.StatusCreated, created, nil)
+}
+
+func (h *Handler) adminHomeBannerComplete(w http.ResponseWriter, r *http.Request) {
+	if h.uploads == nil {
+		writeError(w, http.StatusServiceUnavailable, "asset_service_unavailable", "Asset uploads are unavailable.")
+		return
+	}
+	expected, ok := ifMatch(w, r)
+	if !ok {
+		return
+	}
+	var input homeBannerCompleteInput
+	if !decode(w, r, &input) {
+		return
+	}
+	if input.MIMEType != "image/jpeg" || input.SizeBytes < 1 || len(input.ChecksumSHA256) != 64 {
+		handleContentError(w, content.ErrInvalid)
+		return
+	}
+	current, err := h.fixedHomeV2(r, r.PathValue("contentID"))
+	if err != nil {
+		handleContentError(w, err)
+		return
+	}
+	assetID := r.PathValue("assetID")
+	asset, err := h.uploads.Get(r.Context(), assetID)
+	if errors.Is(err, assetclient.ErrUnavailable) {
+		writeError(w, http.StatusServiceUnavailable, "asset_service_unavailable", "Asset uploads are unavailable.")
+		return
+	}
+	if err != nil || !ownedHomeBanner(asset, current.ID, assetID) || asset.ExpectedMIMEType != "image/jpeg" {
+		writeError(w, http.StatusForbidden, "asset_owner_mismatch", "The uploaded asset does not belong to the Home page.")
+		return
+	}
+	asset, err = h.uploads.CompleteUpload(r.Context(), assetID, assetclient.CompleteUploadInput{SizeBytes: input.SizeBytes, ChecksumSHA256: input.ChecksumSHA256, MIMEType: input.MIMEType})
+	if errors.Is(err, assetclient.ErrUnavailable) {
+		writeError(w, http.StatusServiceUnavailable, "asset_service_unavailable", "Asset uploads are unavailable.")
+		return
+	}
+	if err != nil || !ownedHomeBanner(asset, current.ID, assetID) || asset.ExpectedMIMEType != "image/jpeg" || asset.DetectedMIMEType != "image/jpeg" || asset.UploadStatus != "completed" || asset.ProcessingStatus != "not_required" {
+		writeError(w, http.StatusForbidden, "asset_contract_mismatch", "The uploaded asset does not satisfy the Home Banner contract.")
+		return
+	}
+	inputWrite := writeInput(current)
+	inputWrite.BannerAssetID = asset.ID
+	updated, err := h.content.UpdateContent(r.Context(), content.ModulePages, current.ID, expected, inputWrite, actor(r))
+	if err != nil {
+		handleContentError(w, err)
+		return
+	}
+	logAssetEvent(r, "asset attached", "page", current.ID, asset.ID)
+	writeContentItem(w, updated)
+}
+
+func (h *Handler) adminHomeBannerStatus(w http.ResponseWriter, r *http.Request) {
+	h.homeBannerStatusOrRetry(w, r, false)
+}
+
+func (h *Handler) adminHomeBannerRetry(w http.ResponseWriter, r *http.Request) {
+	h.homeBannerStatusOrRetry(w, r, true)
+}
+
+func (h *Handler) homeBannerStatusOrRetry(w http.ResponseWriter, r *http.Request, retry bool) {
+	if h.uploads == nil {
+		writeError(w, http.StatusServiceUnavailable, "asset_service_unavailable", "Asset status is unavailable.")
+		return
+	}
+	current, err := h.fixedHomeV2(r, r.PathValue("contentID"))
+	if err != nil {
+		handleContentError(w, err)
+		return
+	}
+	asset, err := h.uploads.Get(r.Context(), r.PathValue("assetID"))
+	if errors.Is(err, assetclient.ErrUnavailable) {
+		writeError(w, http.StatusServiceUnavailable, "asset_service_unavailable", "Asset status is unavailable.")
+		return
+	}
+	if err != nil || !ownedHomeBanner(asset, current.ID, r.PathValue("assetID")) {
+		writeError(w, http.StatusNotFound, "not_found", "The Home Banner was not found.")
+		return
+	}
+	if retry {
+		if asset.ScanStatus != "failed" {
+			writeError(w, http.StatusConflict, "asset_not_retryable", "The asset scan cannot be retried.")
+			return
+		}
+		if err := h.uploads.RequeueScan(r.Context(), asset.ID); err != nil {
+			writeError(w, http.StatusConflict, "asset_not_retryable", "The asset scan state changed.")
+			return
+		}
+		asset.ScanStatus = "pending"
+	}
+	writeData(w, http.StatusOK, cmsAssetStatus(asset), nil)
+}
+
+func (h *Handler) fixedHomeV2(r *http.Request, id string) (content.Item, error) {
+	item, err := h.content.GetContent(r.Context(), content.ModulePages, id)
+	if err != nil {
+		return content.Item{}, err
+	}
+	if item.ID != id || item.Module != content.ModulePages || item.PageKey != "home" || item.PageTemplate != "home.v2" || item.RoutePath != "/" {
+		return content.Item{}, content.ErrInvalid
+	}
+	return item, nil
+}
+
+func ownedHomeBanner(asset assetclient.Asset, contentID, assetID string) bool {
+	return asset.ID == assetID && asset.Namespace == "cms.home.banner" && asset.OwnerService == "hhc-web-api" && asset.OwnerType == "page" && asset.OwnerID == contentID && asset.Purpose == "home_banner"
 }
 func (h *Handler) adminContentRevisions(w http.ResponseWriter, r *http.Request) {
 	values, err := h.content.ContentRevisions(r.Context(), content.Module(r.PathValue("module")), r.PathValue("contentID"))

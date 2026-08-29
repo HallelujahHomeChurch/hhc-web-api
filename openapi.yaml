@@ -1329,6 +1329,111 @@ paths:
         '401': { $ref: '#/components/responses/AdminUnauthorized' }
         '403': { $ref: '#/components/responses/AdminForbidden' }
         '200': { $ref: '#/components/responses/ContentItem' }
+  /admin/content/pages/{contentId}/upload-sessions:
+    post:
+      operationId: createHomeBannerUpload
+      summary: Create an exact Home Banner JPEG upload
+      description: Only the fixed home.v2 page is accepted. The asset uses namespace cms.home.banner, owner service hhc-web-api, owner type page, and purpose home_banner.
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
+      x-required-scopes: ['cms:write', 'assets:write']
+      parameters:
+        - $ref: '#/components/parameters/ContentID'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/HomeBannerUploadInput' }
+      responses:
+        '201':
+          description: Home Banner upload target
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreatedUploadEnvelope' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
+        '503': { $ref: '#/components/responses/Error' }
+  /admin/content/pages/{contentId}/assets/{assetId}:
+    get:
+      operationId: getHomeBannerStatus
+      summary: Get the owned Home Banner status
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
+      x-required-scopes: ['cms:read']
+      parameters:
+        - $ref: '#/components/parameters/ContentID'
+        - { name: assetId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Home Banner scan status after exact namespace, owner, and purpose validation
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AssetStatusEnvelope' }
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
+        '404': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+  /admin/content/pages/{contentId}/assets/{assetId}/scan/retry:
+    post:
+      operationId: retryHomeBannerScan
+      summary: Retry a failed owned Home Banner scan
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
+      x-required-scopes: ['cms:write', 'assets:write']
+      parameters:
+        - $ref: '#/components/parameters/ContentID'
+        - { name: assetId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Home Banner scan requeued
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AssetStatusEnvelope' }
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+  /admin/content/pages/{contentId}/assets/{assetId}/complete:
+    post:
+      operationId: completeHomeBannerUpload
+      summary: Complete and attach an exact Home Banner JPEG
+      description: Revalidates asset ID, namespace, owner, purpose, detected image/jpeg, completed upload, and not_required processing before attaching the Banner to the draft. Scan readiness remains asynchronous.
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
+      x-required-scopes: ['cms:write', 'assets:write']
+      parameters:
+        - $ref: '#/components/parameters/ContentID'
+        - { name: assetId, in: path, required: true, schema: { type: string } }
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/HomeBannerCompleteInput' }
+      responses:
+        '200': { $ref: '#/components/responses/ContentItem' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
+        '409': { $ref: '#/components/responses/Error' }
+        '412': { $ref: '#/components/responses/Error' }
+        '428': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
 components:
   securitySchemes:
     daprApiToken:
@@ -1394,7 +1499,10 @@ components:
       required: true
       content:
         application/json:
-          schema: { $ref: '#/components/schemas/ContentWriteInput' }
+          schema:
+            anyOf:
+              - $ref: '#/components/schemas/ContentWriteInput'
+              - $ref: '#/components/schemas/HomePageWriteInputV2'
     TranslationPreviewInput:
       required: true
       content:
@@ -2036,6 +2144,23 @@ components:
         mimeType: { type: string, enum: [image/jpeg, image/png, image/webp] }
         sizeBytes: { type: integer, format: int64, minimum: 1, maximum: 10485760 }
         checksumSha256: { type: string, pattern: '^[a-fA-F0-9]{64}$' }
+    HomeBannerUploadInput:
+      type: object
+      additionalProperties: false
+      required: [usage, fileName, mimeType, sizeBytes]
+      properties:
+        usage: { type: string, const: home_banner }
+        fileName: { type: string, minLength: 1 }
+        mimeType: { type: string, const: image/jpeg }
+        sizeBytes: { type: integer, format: int64, minimum: 1, maximum: 10485760 }
+    HomeBannerCompleteInput:
+      type: object
+      additionalProperties: false
+      required: [mimeType, sizeBytes, checksumSha256]
+      properties:
+        mimeType: { type: string, const: image/jpeg }
+        sizeBytes: { type: integer, format: int64, minimum: 1, maximum: 10485760 }
+        checksumSha256: { type: string, pattern: '^[a-fA-F0-9]{64}$' }
     AssetStatus:
       type: object
       additionalProperties: false
@@ -2082,6 +2207,76 @@ components:
             aboutCta: { type: string, minLength: 1, maxLength: 200 }
             locationsTitle: { type: string, minLength: 1, maxLength: 200 }
             mapLink: { type: string, minLength: 1, maxLength: 200 }
+    HomePageLocalizedDataV2:
+      type: object
+      additionalProperties: false
+      required: [heroTitle, heroSubtitle, kingdomJoyDescription, aboutDescription]
+      properties:
+        heroTitle: { type: string, minLength: 1, maxLength: 200 }
+        heroSubtitle: { type: string, minLength: 1, maxLength: 500 }
+        kingdomJoyDescription: { type: string, minLength: 1, maxLength: 5000 }
+        aboutDescription: { type: string, minLength: 1, maxLength: 5000 }
+    HomePageContentV2Draft:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, template, data]
+      properties:
+        schemaVersion: { type: integer, const: 2 }
+        template: { type: string, const: home.v2 }
+        data: { $ref: '#/components/schemas/HomePageLocalizedDataV2' }
+    HomeLocationTranslation:
+      type: object
+      additionalProperties: false
+      required: [locale, name, address]
+      properties:
+        locale: { $ref: '#/components/schemas/ContentLocale' }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        address: { type: string, minLength: 1, maxLength: 500 }
+    HomeLocation:
+      type: object
+      additionalProperties: false
+      required: [key, mapHref, sortOrder, translations]
+      properties:
+        key: { type: string, minLength: 1, maxLength: 120, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$' }
+        mapHref: { type: string, format: uri, pattern: '^https://' }
+        sortOrder: { type: integer, minimum: 0 }
+        translations:
+          type: array
+          minItems: 5
+          maxItems: 5
+          items: { $ref: '#/components/schemas/HomeLocationTranslation' }
+    PublicHomeLocation:
+      type: object
+      additionalProperties: false
+      required: [key, name, address, mapHref, sortOrder]
+      properties:
+        key: { type: string, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$' }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        address: { type: string, minLength: 1, maxLength: 500 }
+        mapHref: { type: string, format: uri, pattern: '^https://' }
+        sortOrder: { type: integer, minimum: 0 }
+    HomePageContentV2:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, template, data]
+      properties:
+        schemaVersion: { type: integer, const: 2 }
+        template: { type: string, const: home.v2 }
+        data:
+          type: object
+          additionalProperties: false
+          required: [heroTitle, heroSubtitle, kingdomJoyDescription, aboutDescription, bannerImageUrl, links, locations]
+          properties:
+            heroTitle: { type: string, minLength: 1, maxLength: 200 }
+            heroSubtitle: { type: string, minLength: 1, maxLength: 500 }
+            kingdomJoyDescription: { type: string, minLength: 1, maxLength: 5000 }
+            aboutDescription: { type: string, minLength: 1, maxLength: 5000 }
+            bannerImageUrl: { type: string, format: uri-reference, description: Opaque canonical granted-original URL returned by asset publication. }
+            links: { $ref: '#/components/schemas/SiteExternalLinks' }
+            locations:
+              type: array
+              maxItems: 100
+              items: { $ref: '#/components/schemas/PublicHomeLocation' }
     AboutVisionTextSection:
       type: object
       additionalProperties: false
@@ -2190,12 +2385,27 @@ components:
     PageContent:
       oneOf:
         - $ref: '#/components/schemas/HomePageContentV1'
+        - $ref: '#/components/schemas/HomePageContentV2'
         - $ref: '#/components/schemas/AboutPageContentV1'
         - $ref: '#/components/schemas/LegalPageContentV1'
       discriminator:
         propertyName: template
         mapping:
           home.v1: '#/components/schemas/HomePageContentV1'
+          home.v2: '#/components/schemas/HomePageContentV2'
+          about.v1: '#/components/schemas/AboutPageContentV1'
+          legal.v1: '#/components/schemas/LegalPageContentV1'
+    PageWriteContent:
+      oneOf:
+        - $ref: '#/components/schemas/HomePageContentV1'
+        - $ref: '#/components/schemas/HomePageContentV2Draft'
+        - $ref: '#/components/schemas/AboutPageContentV1'
+        - $ref: '#/components/schemas/LegalPageContentV1'
+      discriminator:
+        propertyName: template
+        mapping:
+          home.v1: '#/components/schemas/HomePageContentV1'
+          home.v2: '#/components/schemas/HomePageContentV2Draft'
           about.v1: '#/components/schemas/AboutPageContentV1'
           legal.v1: '#/components/schemas/LegalPageContentV1'
     PublicEditorialPage:
@@ -2204,7 +2414,7 @@ components:
       required: [pageKey, template, routePath, indexable, content, resolvedLocale, availableLocales, version, publishedAt]
       properties:
         pageKey: { type: string, enum: [home, about, privacy-policy, terms-of-use] }
-        template: { type: string, enum: [home.v1, about.v1, legal.v1] }
+        template: { type: string, enum: [home.v1, home.v2, about.v1, legal.v1] }
         routePath: { type: string, enum: ['/', /about, /privacy-policy, /terms-of-use] }
         indexable: { type: boolean }
         content: { $ref: '#/components/schemas/PageContent' }
@@ -2223,7 +2433,7 @@ components:
         body: { type: string, maxLength: 100000 }
         dateLabel: { type: string, maxLength: 100 }
         imageAlt: { type: string, maxLength: 300 }
-        bodyJson: { $ref: '#/components/schemas/PageContent' }
+        bodyJson: { $ref: '#/components/schemas/PageWriteContent' }
     ContentTranslation:
       type: object
       additionalProperties: false
@@ -2235,7 +2445,7 @@ components:
         body: { type: string, maxLength: 100000 }
         dateLabel: { type: string, maxLength: 100 }
         imageAlt: { type: string, maxLength: 300 }
-        bodyJson: { $ref: '#/components/schemas/PageContent' }
+        bodyJson: { $ref: '#/components/schemas/PageWriteContent' }
     TranslationPreviewInput:
       type: object
       additionalProperties: false
@@ -2312,6 +2522,33 @@ components:
       properties:
         title: { type: string, minLength: 1, maxLength: 200 }
         subtitle: { type: string, maxLength: 300 }
+    HomePageTranslationV2:
+      type: object
+      additionalProperties: false
+      required: [locale, bodyJson]
+      properties:
+        locale: { $ref: '#/components/schemas/ContentLocale' }
+        bodyJson: { $ref: '#/components/schemas/HomePageContentV2Draft' }
+    HomePageWriteInputV2:
+      type: object
+      additionalProperties: false
+      required: [pageKey, pageTemplate, routePath, indexable, links, locations, translations]
+      properties:
+        pageKey: { type: string, const: home }
+        pageTemplate: { type: string, const: home.v2 }
+        routePath: { type: string, const: '/' }
+        indexable: { type: boolean }
+        bannerAssetId: { type: string, maxLength: 200 }
+        links: { $ref: '#/components/schemas/SiteExternalLinks' }
+        locations:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/HomeLocation' }
+        translations:
+          type: array
+          minItems: 5
+          maxItems: 5
+          items: { $ref: '#/components/schemas/HomePageTranslationV2' }
     ContentWriteInput:
       allOf:
         - $ref: '#/components/schemas/ContentWriteFields'
@@ -2335,9 +2572,15 @@ components:
         mapHref: { type: string, format: uri, pattern: '^https://' }
         sortOrder: { type: integer, minimum: 0 }
         pageKey: { type: string, enum: [home, about, privacy-policy, terms-of-use] }
-        pageTemplate: { type: string, enum: [home.v1, about.v1, legal.v1] }
+        pageTemplate: { type: string, enum: [home.v1, home.v2, about.v1, legal.v1] }
         routePath: { type: string, enum: ['/', /about, /privacy-policy, /terms-of-use] }
         indexable: { type: boolean }
+        bannerAssetId: { type: string, maxLength: 200 }
+        links: { $ref: '#/components/schemas/SiteExternalLinks' }
+        locations:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/HomeLocation' }
         translations:
           type: array
           minItems: 1

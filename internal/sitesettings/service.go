@@ -141,10 +141,11 @@ func normalizeNav(items []NavItem, routes map[string]string) ([]NavItem, bool) {
 }
 
 func validExternalLinks(links ExternalLinks) bool {
-	return validExternalURL(links.ChurchYouTube) && validExternalURL(links.ChurchFacebook) && validExternalURL(links.MusicYouTube)
+	return ValidExternalURL(links.ChurchYouTube) && ValidExternalURL(links.ChurchFacebook) && ValidExternalURL(links.MusicYouTube)
 }
 
-func validExternalURL(value string) bool {
+// ValidExternalURL applies the shared public-link trust-boundary policy.
+func ValidExternalURL(value string) bool {
 	parsed, err := url.Parse(strings.TrimSpace(value))
 	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.Fragment != "" {
 		return false

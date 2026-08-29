@@ -8,9 +8,12 @@ import (
 	"net/url"
 	"path"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/HallelujahHomeChurch/hhc-web-api/internal/sitesettings"
 )
 
 var youtubeID = regexp.MustCompile(`^[A-Za-z0-9_-]{11}$`)
@@ -145,8 +148,18 @@ func (s *Service) RestoreContent(ctx context.Context, module Module, id string, 
 	if err != nil {
 		return Item{}, err
 	}
-	input := WriteInput{AuthorName: value.Snapshot.AuthorName, Slug: value.Snapshot.Slug, DisplayDate: value.Snapshot.DisplayDate, EventDate: value.Snapshot.EventDate, YouTubeVideoID: value.Snapshot.YouTubeVideoID, CoverAssetID: value.Snapshot.CoverAssetID, HomeCoverAssetID: value.Snapshot.HomeCoverAssetID, DetailLayout: value.Snapshot.DetailLayout, Featured: value.Snapshot.Featured, HomeEligible: value.Snapshot.HomeEligible, LocationKey: value.Snapshot.LocationKey, MapHref: value.Snapshot.MapHref, SortOrder: value.Snapshot.SortOrder, PageKey: value.Snapshot.PageKey, PageTemplate: value.Snapshot.PageTemplate, RoutePath: value.Snapshot.RoutePath, Indexable: value.Snapshot.Indexable, Translations: preserveMissingLocales(value.Snapshot.Translations, current.Translations)}
-	return s.UpdateContent(ctx, module, id, expected, input, actor)
+	input := WriteInput{AuthorName: value.Snapshot.AuthorName, Slug: value.Snapshot.Slug, DisplayDate: value.Snapshot.DisplayDate, EventDate: value.Snapshot.EventDate, YouTubeVideoID: value.Snapshot.YouTubeVideoID, CoverAssetID: value.Snapshot.CoverAssetID, HomeCoverAssetID: value.Snapshot.HomeCoverAssetID, DetailLayout: value.Snapshot.DetailLayout, Featured: value.Snapshot.Featured, HomeEligible: value.Snapshot.HomeEligible, LocationKey: value.Snapshot.LocationKey, MapHref: value.Snapshot.MapHref, SortOrder: value.Snapshot.SortOrder, PageKey: value.Snapshot.PageKey, PageTemplate: value.Snapshot.PageTemplate, RoutePath: value.Snapshot.RoutePath, Indexable: value.Snapshot.Indexable, BannerAssetID: value.Snapshot.BannerAssetID, Links: value.Snapshot.Links, Locations: value.Snapshot.Locations, Translations: preserveMissingLocales(value.Snapshot.Translations, current.Translations)}
+	if module == ModuleLocations && input.LocationKey != current.LocationKey {
+		return Item{}, ErrInvalid
+	}
+	if module == ModulePages && (input.PageKey != current.PageKey || input.RoutePath != current.RoutePath || (input.PageTemplate != current.PageTemplate && !(input.PageKey == "home" && (input.PageTemplate == "home.v1" || input.PageTemplate == "home.v2") && (current.PageTemplate == "home.v1" || current.PageTemplate == "home.v2")))) {
+		return Item{}, ErrInvalid
+	}
+	input = normalize(module, input)
+	if !valid(module, input) || !validDeleteLocales(input.DeleteLocales) {
+		return Item{}, ErrInvalid
+	}
+	return s.repository.RestoreContent(ctx, module, id, expected, input, actor, s.now().UTC())
 }
 func (s *Service) DeleteContent(ctx context.Context, module Module, id string, expected int64, actor string) error {
 	if module == ModulePages {
@@ -226,6 +239,9 @@ func valid(module Module, input WriteInput) bool {
 	if module != ModulePages && (input.PageKey != "" || input.PageTemplate != "" || input.RoutePath != "" || input.Indexable) {
 		return false
 	}
+	if module != ModulePages && (input.BannerAssetID != "" || input.Links != (HomeLinks{}) || len(input.Locations) != 0) {
+		return false
+	}
 	seen := map[string]bool{}
 	for _, value := range input.Translations {
 		if !validLocale(value.Locale) || seen[value.Locale] ||
@@ -255,14 +271,21 @@ func valid(module Module, input WriteInput) bool {
 	case ModuleLocations:
 		return ValidateLocation(input)
 	case ModulePages:
-		return ValidatePageDefinition(input.PageKey, input.PageTemplate, input.RoutePath) == nil &&
+		if ValidatePageDefinition(input.PageKey, input.PageTemplate, input.RoutePath) != nil ||
+			input.AuthorName != "" || input.Slug != "" || input.DisplayDate != "" || input.EventDate != "" || input.YouTubeVideoID != "" || input.CoverAssetID != "" || input.HomeCoverAssetID != "" || input.DetailLayout != "" || input.Featured || input.HomeEligible {
+			return false
+		}
+		if input.PageTemplate == "home.v2" {
+			return validHomeV2(input)
+		}
+		return input.BannerAssetID == "" && input.Links == (HomeLinks{}) && len(input.Locations) == 0 &&
 			input.AuthorName == "" && input.Slug == "" && input.DisplayDate == "" && input.EventDate == "" && input.YouTubeVideoID == "" && input.CoverAssetID == "" && input.HomeCoverAssetID == "" && input.DetailLayout == "" && !input.Featured && !input.HomeEligible
 	default:
 		return false
 	}
 }
 func publishable(item Item) bool {
-	if !valid(item.Module, WriteInput{AuthorName: item.AuthorName, Slug: item.Slug, DisplayDate: item.DisplayDate, EventDate: item.EventDate, YouTubeVideoID: item.YouTubeVideoID, CoverAssetID: item.CoverAssetID, HomeCoverAssetID: item.HomeCoverAssetID, DetailLayout: item.DetailLayout, LocationKey: item.LocationKey, MapHref: item.MapHref, SortOrder: item.SortOrder, PageKey: item.PageKey, PageTemplate: item.PageTemplate, RoutePath: item.RoutePath, Indexable: item.Indexable, Translations: item.Translations}) {
+	if !valid(item.Module, WriteInput{AuthorName: item.AuthorName, Slug: item.Slug, DisplayDate: item.DisplayDate, EventDate: item.EventDate, YouTubeVideoID: item.YouTubeVideoID, CoverAssetID: item.CoverAssetID, HomeCoverAssetID: item.HomeCoverAssetID, DetailLayout: item.DetailLayout, LocationKey: item.LocationKey, MapHref: item.MapHref, SortOrder: item.SortOrder, PageKey: item.PageKey, PageTemplate: item.PageTemplate, RoutePath: item.RoutePath, Indexable: item.Indexable, BannerAssetID: item.BannerAssetID, Links: item.Links, Locations: item.Locations, Translations: item.Translations}) {
 		return false
 	}
 	for _, value := range item.Translations {
@@ -284,6 +307,9 @@ func publishable(item Item) bool {
 				return false
 			}
 		}
+	}
+	if item.Module == ModulePages && item.PageTemplate == "home.v2" && item.BannerAssetID == "" {
+		return false
 	}
 	return true
 }
@@ -323,6 +349,24 @@ func normalize(module Module, input WriteInput) WriteInput {
 	}
 	input.LocationKey = strings.TrimSpace(input.LocationKey)
 	input.MapHref = strings.TrimSpace(input.MapHref)
+	input.BannerAssetID = strings.TrimSpace(input.BannerAssetID)
+	input.Links.ChurchYouTube = strings.TrimSpace(input.Links.ChurchYouTube)
+	input.Links.ChurchFacebook = strings.TrimSpace(input.Links.ChurchFacebook)
+	input.Links.MusicYouTube = strings.TrimSpace(input.Links.MusicYouTube)
+	input.Locations = append([]HomeLocation(nil), input.Locations...)
+	for index := range input.Locations {
+		location := &input.Locations[index]
+		location.Key = strings.TrimSpace(location.Key)
+		location.MapHref = strings.TrimSpace(location.MapHref)
+		location.Translations = append([]HomeLocationTranslation(nil), location.Translations...)
+		for translationIndex := range location.Translations {
+			translation := &location.Translations[translationIndex]
+			translation.Locale = strings.TrimSpace(translation.Locale)
+			translation.Name = strings.TrimSpace(translation.Name)
+			translation.Address = strings.TrimSpace(translation.Address)
+		}
+	}
+	sort.Slice(input.Locations, func(i, j int) bool { return input.Locations[i].SortOrder < input.Locations[j].SortOrder })
 	for index := range input.Translations {
 		input.Translations[index].Locale = strings.TrimSpace(input.Translations[index].Locale)
 		input.Translations[index].Title = strings.TrimSpace(input.Translations[index].Title)
@@ -344,6 +388,36 @@ func normalize(module Module, input WriteInput) WriteInput {
 		input.DeleteLocales[index] = strings.TrimSpace(input.DeleteLocales[index])
 	}
 	return input
+}
+
+func validHomeV2(input WriteInput) bool {
+	if len(input.Translations) != 5 || input.DeleteLocales != nil || len(input.BannerAssetID) > 200 ||
+		!sitesettings.ValidExternalURL(input.Links.ChurchYouTube) || !sitesettings.ValidExternalURL(input.Links.ChurchFacebook) || !sitesettings.ValidExternalURL(input.Links.MusicYouTube) || len(input.Locations) > 100 {
+		return false
+	}
+	pageLocales := make(map[string]bool, 5)
+	for _, translation := range input.Translations {
+		pageLocales[translation.Locale] = true
+	}
+	if len(pageLocales) != 5 {
+		return false
+	}
+	keys := make(map[string]bool, len(input.Locations))
+	orders := make(map[int]bool, len(input.Locations))
+	for _, location := range input.Locations {
+		if len(location.Key) > 120 || !locationKey.MatchString(location.Key) || location.SortOrder < 0 || keys[location.Key] || orders[location.SortOrder] || !validPublicLocationURL(location.MapHref) || len(location.Translations) != 5 {
+			return false
+		}
+		keys[location.Key], orders[location.SortOrder] = true, true
+		locales := make(map[string]bool, 5)
+		for _, translation := range location.Translations {
+			if !validLocale(translation.Locale) || locales[translation.Locale] || !validText(translation.Name, 1, 200) || !validText(translation.Address, 1, 500) {
+				return false
+			}
+			locales[translation.Locale] = true
+		}
+	}
+	return true
 }
 
 func validDeleteLocales(locales []string) bool {

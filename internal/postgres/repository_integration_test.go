@@ -1532,6 +1532,310 @@ func pageIntegrationInput(t *testing.T, key, title string) content.WriteInput {
 	return content.WriteInput{PageKey: key, PageTemplate: template, RoutePath: route, Indexable: true, Translations: translations}
 }
 
+func TestHomeV2PagePersistenceAndDefinitionConstraints(t *testing.T) {
+	databaseURL := os.Getenv("HHW_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("HHW_TEST_DATABASE_URL is not configured")
+	}
+	db, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	if err := migrations.Run(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `TRUNCATE hhc_web.public_projection,hhc_web.content_revision,hhc_web.content_translation,hhc_web.content_entry CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+
+	for index, test := range []struct {
+		name, key, template, route string
+		valid                      bool
+	}{
+		{"legacy home", "home", "home.v1", "/", true},
+		{"home v2", "home", "home.v2", "/", true},
+		{"home v2 wrong route", "home", "home.v2", "/home", false},
+		{"home v2 wrong key", "about", "home.v2", "/about", false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			tx, err := db.BeginTx(ctx, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer tx.Rollback()
+			id := fmt.Sprintf("00000000-0000-0000-0000-%012d", index+1)
+			if _, err := tx.ExecContext(ctx, `INSERT INTO hhc_web.content_entry(id,module,idempotency_key,created_by,updated_by,created_at,updated_at) VALUES($1,'pages',$2,'test','test',now(),now())`, id, "home-v2-constraint-"+test.name); err != nil {
+				t.Fatal(err)
+			}
+			_, err = tx.ExecContext(ctx, `INSERT INTO hhc_web.page_item(content_id,page_key,page_template,route_path) VALUES($1,$2,$3,$4)`, id, test.key, test.template, test.route)
+			if test.valid && err != nil {
+				t.Fatal(err)
+			}
+			if !test.valid && err == nil {
+				t.Fatal("invalid page definition was accepted")
+			}
+		})
+	}
+
+	repository := New(db)
+	now := time.Date(2026, 8, 29, 12, 0, 0, 0, time.UTC)
+	input := homeV2IntegrationInput(t, "Home")
+	created, err := repository.CreateContent(ctx, content.ModulePages, input, "admin", "page:home-v2", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.BannerAssetID != input.BannerAssetID || created.Links != input.Links || !reflect.DeepEqual(created.Locations, input.Locations) {
+		t.Fatalf("created=%#v", created)
+	}
+	input.BannerAssetID = "banner-2"
+	input.Locations[0].Translations[0].Address = "changed address"
+	updated, err := repository.UpdateContent(ctx, content.ModulePages, created.ID, created.Version, input, "admin", now.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	revision, err := repository.ContentRevision(ctx, content.ModulePages, updated.ID, updated.Version)
+	if err != nil || revision.Snapshot.BannerAssetID != "banner-2" || !reflect.DeepEqual(revision.Snapshot.Links, input.Links) || !reflect.DeepEqual(revision.Snapshot.Locations, input.Locations) {
+		t.Fatalf("revision=%#v err=%v", revision, err)
+	}
+}
+
+func TestHomeV2PublicationReplacesAndRetiresBannerGrants(t *testing.T) {
+	databaseURL := os.Getenv("HHW_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("HHW_TEST_DATABASE_URL is not configured")
+	}
+	db, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	if err := migrations.Run(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `TRUNCATE hhc_web.outbox_event,hhc_web.public_projection,hhc_web.content_revision,hhc_web.content_translation,hhc_web.content_entry CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+	repository := New(db)
+	now := time.Date(2026, 8, 29, 12, 0, 0, 0, time.UTC)
+	service := content.NewService(repository, func() time.Time { return now })
+
+	legacy, err := repository.CreateContent(ctx, content.ModulePages, pageIntegrationInput(t, "home", "Legacy Home"), "seed", "page:home", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy, err = service.PublishContent(ctx, content.ModulePages, legacy.ID, legacy.Version, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyPublic, _, err := repository.PublicEditorialPage(ctx, "home", "ja")
+	if err != nil || legacyPublic.Template != "home.v1" {
+		t.Fatalf("legacy=%#v err=%v", legacyPublic, err)
+	}
+
+	v2Input := homeV2IntegrationInput(t, "Home V2")
+	draft, err := repository.RestoreContent(ctx, content.ModulePages, legacy.ID, legacy.Version, v2Input, "migration", now.Add(time.Minute))
+	if err != nil || draft.PageTemplate != "home.v2" || !draft.IsPublished {
+		t.Fatalf("draft=%#v err=%v", draft, err)
+	}
+	draft, err = service.PublishContent(ctx, content.ModulePages, draft.ID, draft.Version, "admin")
+	if err != nil || draft.Status != content.StatusPublishing {
+		t.Fatalf("publishing=%#v err=%v", draft, err)
+	}
+	stillLegacy, _, err := repository.PublicEditorialPage(ctx, "home", "ja")
+	if err != nil || stillLegacy.Template != "home.v1" {
+		t.Fatalf("during publish=%#v err=%v", stillLegacy, err)
+	}
+	publish, found, err := repository.Claim(ctx, now.Add(2*time.Minute), 30*time.Second)
+	if err != nil || !found || publish.EventType != "home.publish.ensure_asset" {
+		t.Fatalf("publish=%#v found=%v err=%v", publish, found, err)
+	}
+	if err := repository.CompleteContentPublish(ctx, publish, []publication.PublishedAsset{{Usage: "banner", AssetID: "banner-1", GrantID: "grant-1", PublicURL: "/assets/banner-1"}}, now.Add(3*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	v2Public, _, err := repository.PublicEditorialPage(ctx, "home", "ja")
+	var publicPayload struct {
+		Data struct {
+			BannerImageURL string                       `json:"bannerImageUrl"`
+			Locations      []content.PublicHomeLocation `json:"locations"`
+		} `json:"data"`
+	}
+	decodeErr := json.Unmarshal(v2Public.Content, &publicPayload)
+	if err != nil || decodeErr != nil || v2Public.Template != "home.v2" || publicPayload.Data.BannerImageURL != "/assets/banner-1" || len(publicPayload.Data.Locations) != 1 || publicPayload.Data.Locations[0].Name != "ja location" {
+		t.Fatalf("v2=%#v err=%v", v2Public, err)
+	}
+
+	current, err := repository.GetContent(ctx, content.ModulePages, draft.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v2Input.BannerAssetID = "banner-2"
+	v2Input.Translations[3].BodyJSON = json.RawMessage(strings.ReplaceAll(string(v2Input.Translations[3].BodyJSON), "Home V2", "Updated V2"))
+	updated, err := service.UpdateContent(ctx, content.ModulePages, current.ID, current.Version, v2Input, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err = service.PublishContent(ctx, content.ModulePages, updated.ID, updated.Version, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacement, found, err := repository.Claim(ctx, now.Add(4*time.Minute), 30*time.Second)
+	if err != nil || !found || replacement.EventType != "home.publish.ensure_asset" {
+		t.Fatalf("replacement=%#v found=%v err=%v", replacement, found, err)
+	}
+	if err := repository.CompleteContentPublish(ctx, replacement, []publication.PublishedAsset{{Usage: "banner", AssetID: "banner-2", GrantID: "grant-2", PublicURL: "/assets/banner-2"}}, now.Add(5*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	retireFirst, found, err := repository.Claim(ctx, now.Add(5*time.Minute), 30*time.Second)
+	if err != nil || !found || retireFirst.EventType != "asset.grant.revoke" || !strings.Contains(string(retireFirst.Payload), "grant-1") {
+		t.Fatalf("retire=%#v found=%v err=%v", retireFirst, found, err)
+	}
+	if err := repository.Complete(ctx, retireFirst.ID, now.Add(6*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+
+	current, err = repository.GetContent(ctx, content.ModulePages, draft.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unpublished, err := service.UnpublishContent(ctx, content.ModulePages, current.ID, current.Version, "admin")
+	if err != nil || unpublished.Status != content.StatusUnpublished || unpublished.IsPublished || unpublished.BannerPublicGrantID != "" {
+		t.Fatalf("unpublished=%#v err=%v", unpublished, err)
+	}
+	retireSecond, found, err := repository.Claim(ctx, now.Add(7*time.Minute), 30*time.Second)
+	if err != nil || !found || retireSecond.EventType != "asset.grant.revoke" || !strings.Contains(string(retireSecond.Payload), "grant-2") {
+		t.Fatalf("retire=%#v found=%v err=%v", retireSecond, found, err)
+	}
+	if err := repository.Complete(ctx, retireSecond.ID, now.Add(8*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+
+	republished, err := service.PublishContent(ctx, content.ModulePages, unpublished.ID, unpublished.Version, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	republish, found, err := repository.Claim(ctx, now.Add(9*time.Minute), 30*time.Second)
+	if err != nil || !found || republish.EventType != "home.publish.ensure_asset" {
+		t.Fatalf("republish=%#v found=%v err=%v", republish, found, err)
+	}
+	if err := repository.CompleteContentPublish(ctx, republish, []publication.PublishedAsset{{Usage: "banner", AssetID: "banner-2", GrantID: "grant-3", PublicURL: "/assets/banner-2"}}, now.Add(10*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	current, err = repository.GetContent(ctx, content.ModulePages, republished.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored, err := service.RestoreContent(ctx, content.ModulePages, current.ID, 1, current.Version, "admin")
+	if err != nil || restored.PageTemplate != "home.v1" || restored.BannerAssetID != "" {
+		t.Fatalf("restored=%#v err=%v", restored, err)
+	}
+	restored, err = service.PublishContent(ctx, content.ModulePages, restored.ID, restored.Version, "admin")
+	if err != nil || restored.Status != content.StatusPublished || restored.BannerPublicGrantID != "" {
+		t.Fatalf("legacy republish=%#v err=%v", restored, err)
+	}
+	retireThird, found, err := repository.Claim(ctx, now.Add(11*time.Minute), 30*time.Second)
+	if err != nil || !found || retireThird.EventType != "asset.grant.revoke" || !strings.Contains(string(retireThird.Payload), "grant-3") {
+		t.Fatalf("retire=%#v found=%v err=%v", retireThird, found, err)
+	}
+}
+
+func TestHomeV2PublishFailureDoesNotOverwriteSupersedingDraft(t *testing.T) {
+	databaseURL := os.Getenv("HHW_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("HHW_TEST_DATABASE_URL is not configured")
+	}
+	db, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	if err := migrations.Run(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `TRUNCATE hhc_web.outbox_event,hhc_web.public_projection,hhc_web.content_revision,hhc_web.content_translation,hhc_web.content_entry CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+	repository := New(db)
+	now := time.Date(2026, 8, 29, 12, 0, 0, 0, time.UTC)
+	service := content.NewService(repository, func() time.Time { return now })
+	draft, err := repository.CreateContent(ctx, content.ModulePages, homeV2IntegrationInput(t, "Home"), "admin", "page:home-v2-failure", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.PublishContent(ctx, content.ModulePages, draft.ID, draft.Version, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	event, found, err := repository.Claim(ctx, now.Add(time.Minute), 30*time.Second)
+	if err != nil || !found {
+		t.Fatalf("event=%#v found=%v err=%v", event, found, err)
+	}
+	if err := repository.FailContentPublish(ctx, event, []publication.PublishedAsset{{Usage: "banner", AssetID: "banner-1", GrantID: "grant-1"}}, "failed", now.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	current, err := repository.GetContent(ctx, content.ModulePages, draft.ID)
+	if err != nil || current.Status != content.StatusPublishFailed || current.Version != event.AggregateVersion {
+		t.Fatalf("current=%#v err=%v", current, err)
+	}
+	compensation, found, err := repository.Claim(ctx, now.Add(3*time.Minute), 30*time.Second)
+	if err != nil || !found || compensation.EventType != "asset.grant.revoke" || !strings.Contains(string(compensation.Payload), "grant-1") {
+		t.Fatalf("compensation=%#v found=%v err=%v", compensation, found, err)
+	}
+	if err := repository.Complete(ctx, compensation.ID, now.Add(4*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := service.UpdateContent(ctx, content.ModulePages, current.ID, current.Version, homeV2IntegrationInput(t, "Updated Home"), "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	publishing, err := service.PublishContent(ctx, content.ModulePages, updated.ID, updated.Version, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	event, found, err = repository.Claim(ctx, now.Add(5*time.Minute), 30*time.Second)
+	if err != nil || !found || event.AggregateVersion != publishing.Version {
+		t.Fatalf("event=%#v found=%v err=%v", event, found, err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE hhc_web.content_entry SET status='draft',version=version+1 WHERE id=$1`, draft.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.FailContentPublish(ctx, event, []publication.PublishedAsset{{Usage: "banner", AssetID: "banner-1", GrantID: "grant-2"}}, "superseded", now.Add(6*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	current, err = repository.GetContent(ctx, content.ModulePages, draft.ID)
+	if err != nil || current.Status != content.StatusDraft || current.Version != publishing.Version+1 {
+		t.Fatalf("current=%#v err=%v", current, err)
+	}
+	compensation, found, err = repository.Claim(ctx, now.Add(7*time.Minute), 30*time.Second)
+	if err != nil || !found || compensation.EventType != "asset.grant.revoke" || !strings.Contains(string(compensation.Payload), "grant-2") {
+		t.Fatalf("compensation=%#v found=%v err=%v", compensation, found, err)
+	}
+}
+
+func homeV2IntegrationInput(t *testing.T, title string) content.WriteInput {
+	t.Helper()
+	payload := json.RawMessage(fmt.Sprintf(`{"schemaVersion":2,"template":"home.v2","data":{"heroTitle":%q,"heroSubtitle":"Welcome","kingdomJoyDescription":"Kingdom joy","aboutDescription":"About us"}}`, title))
+	translations := make([]content.Translation, 0, 5)
+	locationTranslations := make([]content.HomeLocationTranslation, 0, 5)
+	for _, locale := range []string{"zh-Hant", "zh-Hans", "en", "ja", "ko"} {
+		pageTitle, summary, err := content.PagePayloadMetadata("home", payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		translations = append(translations, content.Translation{Locale: locale, Title: pageTitle, Summary: summary, BodyJSON: payload})
+		locationTranslations = append(locationTranslations, content.HomeLocationTranslation{Locale: locale, Name: locale + " location", Address: locale + " address"})
+	}
+	return content.WriteInput{
+		PageKey: "home", PageTemplate: "home.v2", RoutePath: "/", Indexable: true, BannerAssetID: "banner-1",
+		Links:        content.HomeLinks{ChurchYouTube: "https://youtube.com/@hhc", ChurchFacebook: "https://facebook.com/hhc", MusicYouTube: "https://youtube.com/@music"},
+		Locations:    []content.HomeLocation{{Key: "taipei", MapHref: "https://maps.example.com/taipei", SortOrder: 10, Translations: locationTranslations}},
+		Translations: translations,
+	}
+}
+
 func TestSiteSettingsLifecycle(t *testing.T) {
 	databaseURL := os.Getenv("HHW_TEST_DATABASE_URL")
 	if databaseURL == "" {

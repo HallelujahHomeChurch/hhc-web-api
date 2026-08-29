@@ -283,6 +283,59 @@ func TestWorkerPublishesOwnedNewsCover(t *testing.T) {
 	}
 }
 
+func TestWorkerPublishesExactReadyHomeBanner(t *testing.T) {
+	repository := &workerRepository{event: Event{
+		ID: "event-home", EventType: "home.publish.ensure_asset", AggregateID: "page-home", AggregateVersion: 3,
+		Payload: []byte(`{"contentId":"page-home","assetId":"banner-1","aggregateVersion":3}`), Attempts: 1,
+	}}
+	assets := &workerAssets{asset: readyHomeBanner(), grant: Grant{ID: "grant-home"}}
+	worker := NewWorker(repository, assets, 5)
+	if _, err := worker.processNext(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(repository.completedContentAssets) != 1 || repository.completedContentAssets[0].Usage != "banner" || repository.completedContentAssets[0].GrantID != "grant-home" {
+		t.Fatalf("completed=%#v", repository.completedContentAssets)
+	}
+}
+
+func TestWorkerRejectsHomeBannerContractDrift(t *testing.T) {
+	for _, mutate := range []func(*Asset){
+		func(asset *Asset) { asset.Namespace = "cms.news.cover" },
+		func(asset *Asset) { asset.OwnerID = "other-page" },
+		func(asset *Asset) { asset.Purpose = "news_home_cover" },
+		func(asset *Asset) { asset.DetectedMIMEType = "image/png" },
+		func(asset *Asset) { asset.ProcessingStatus = "ready" },
+	} {
+		asset := readyHomeBanner()
+		mutate(&asset)
+		repository := &workerRepository{event: Event{
+			ID: "event-home", EventType: "home.publish.ensure_asset", AggregateID: "page-home", AggregateVersion: 3,
+			Payload: []byte(`{"contentId":"page-home","assetId":"banner-1","aggregateVersion":3}`), Attempts: 1,
+		}}
+		assets := &workerAssets{asset: asset, grant: Grant{ID: "grant-home"}}
+		if _, err := NewWorker(repository, assets, 5).processNext(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		if repository.failCount != 1 || assets.grantCalls != 0 {
+			t.Fatalf("asset=%#v fail=%d grants=%d", asset, repository.failCount, assets.grantCalls)
+		}
+	}
+}
+
+func TestWorkerCompensatesSupersededHomeBannerGrant(t *testing.T) {
+	repository := &workerRepository{event: Event{
+		ID: "event-home", EventType: "home.publish.ensure_asset", AggregateID: "page-home", AggregateVersion: 3,
+		Payload: []byte(`{"contentId":"page-home","assetId":"banner-1","aggregateVersion":3}`), Attempts: 1,
+	}, completeContentError: ErrStalePublication}
+	assets := &workerAssets{asset: readyHomeBanner(), grant: Grant{ID: "grant-home"}}
+	if _, err := NewWorker(repository, assets, 5).processNext(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if repository.failCount != 1 || len(repository.compensationAssets) != 1 || repository.compensationAssets[0].GrantID != "grant-home" || repository.retryCount != 0 {
+		t.Fatalf("fail=%d compensation=%#v retry=%d", repository.failCount, repository.compensationAssets, repository.retryCount)
+	}
+}
+
 func TestWorkerPublishesNewsWithoutImages(t *testing.T) {
 	repository := &workerRepository{event: Event{
 		ID: "event-news", EventType: "news.publish.ensure_asset", AggregateID: "news-1", AggregateVersion: 3,
@@ -549,6 +602,13 @@ func readyNewsAsset(id, purpose string) Asset {
 	return Asset{
 		ID: id, OwnerService: "hhc-web-api", Namespace: "cms.news.cover", OwnerType: "news", OwnerID: "news-1", Purpose: purpose,
 		UploadStatus: "completed", ScanStatus: "clean", ProcessingStatus: "ready",
+	}
+}
+
+func readyHomeBanner() Asset {
+	return Asset{
+		ID: "banner-1", OwnerService: "hhc-web-api", Namespace: "cms.home.banner", OwnerType: "page", OwnerID: "page-home", Purpose: "home_banner",
+		UploadStatus: "completed", ScanStatus: "clean", ProcessingStatus: "not_required", DetectedMIMEType: "image/jpeg",
 	}
 }
 

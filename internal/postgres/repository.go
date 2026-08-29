@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/bulletins"
+	"github.com/HallelujahHomeChurch/hhc-web-api/internal/content"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/platform"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/publication"
 )
@@ -893,6 +894,10 @@ func (r *Repository) FailContentPublish(ctx context.Context, event publication.E
 	if err := failEvent(ctx, tx, event, detail, now); err != nil {
 		return err
 	}
+	aggregateType := "news"
+	if strings.HasPrefix(event.EventType, "home.") {
+		aggregateType = "home"
+	}
 	for _, asset := range assets {
 		if asset.AssetID == "" || asset.GrantID == "" {
 			continue
@@ -903,9 +908,9 @@ func (r *Repository) FailContentPublish(ctx context.Context, event publication.E
 		}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO hhc_web.outbox_event(id,destination,event_type,aggregate_type,aggregate_id,aggregate_version,payload_json,idempotency_key,status,next_attempt_at,created_at,updated_at)
-			VALUES($1,'asset-api','asset.grant.revoke','news',$2,$3,$4,$5,$6,'pending',$7,$7,$7)
+			VALUES($1,'asset-api','asset.grant.revoke',$2,$3,$4,$5,$6,'pending',$7,$7,$7)
 			ON CONFLICT(destination,idempotency_key) DO NOTHING`,
-			platform.NewID(), event.AggregateID, event.AggregateVersion, payload,
+			platform.NewID(), aggregateType, event.AggregateID, event.AggregateVersion, payload,
 			fmt.Sprintf("publication:%s:revoke:%s", event.ID, asset.GrantID), now); err != nil {
 			return err
 		}
@@ -927,10 +932,13 @@ func failEvent(ctx context.Context, tx *sql.Tx, event publication.Event, detail 
 		_, err := tx.ExecContext(ctx, `UPDATE hhc_web.bulletin_issue SET notification_status='failed',notification_error_code='NOTIFICATION_QUEUE_FAILED',updated_at=$2 WHERE id=$1 AND notification_status='pending'`, notification.IssueID, now)
 		return err
 	}
-	if strings.HasPrefix(event.EventType, "news.") {
+	if strings.HasPrefix(event.EventType, "news.") || strings.HasPrefix(event.EventType, "home.") {
 		var contentID string
 		var version int64
 		nextStatus := "draft"
+		if strings.HasPrefix(event.EventType, "home.") {
+			nextStatus = content.StatusPublishFailed
+		}
 		if event.EventType == "news.unpublish.revoke_asset" {
 			var contentPayload publication.ContentUnpublishPayload
 			if err := json.Unmarshal(event.Payload, &contentPayload); err != nil {
@@ -944,7 +952,11 @@ func failEvent(ctx context.Context, tx *sql.Tx, event publication.Event, detail 
 			}
 			contentID, version = contentPayload.ContentID, contentPayload.AggregateVersion
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.content_entry SET status=$3,updated_at=$4 WHERE id=$1 AND version=$2`, contentID, version, nextStatus, now); err != nil {
+		expectedStatus := content.StatusPublishing
+		if event.EventType == "news.unpublish.revoke_asset" {
+			expectedStatus = content.StatusUnpublishing
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.content_entry SET status=$3,updated_at=$4 WHERE id=$1 AND version=$2 AND status=$5`, contentID, version, nextStatus, now, expectedStatus); err != nil {
 			return err
 		}
 		return nil

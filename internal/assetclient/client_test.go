@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 )
 
@@ -42,6 +43,37 @@ func TestClientCreatesNewsUploadWithPurpose(t *testing.T) {
 	}
 	if purpose != "news_home_cover" {
 		t.Fatalf("purpose=%q", purpose)
+	}
+}
+
+func TestClientCreatesExactHomeBannerUpload(t *testing.T) {
+	var body map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		_ = json.NewEncoder(w).Encode(CreatedUpload{Asset: Asset{ID: "banner-1"}})
+	}))
+	defer server.Close()
+	client := New(server.URL, "hhc-web-api", "https://www.alive.org.tw/assets")
+	if _, err := client.CreateHomeBannerUpload(context.Background(), "page-1", "banner.jpg", "image/jpeg", 128, "key"); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]any{
+		"namespace": "cms.home.banner", "ownerService": "hhc-web-api", "ownerType": "page", "ownerId": "page-1",
+		"purpose": "home_banner", "originalFileName": "banner.jpg", "expectedMimeType": "image/jpeg", "maxSizeBytes": float64(128), "visibility": "public",
+	}
+	if !reflect.DeepEqual(body, want) {
+		t.Fatalf("body=%#v", body)
+	}
+}
+
+func TestClientDecodesDetectedMIMEType(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"id":"banner-1","detectedMimeType":"image/jpeg"}`))
+	}))
+	defer server.Close()
+	asset, err := New(server.URL, "hhc-web-api", "https://www.alive.org.tw/assets").Get(context.Background(), "banner-1")
+	if err != nil || asset.DetectedMIMEType != "image/jpeg" {
+		t.Fatalf("asset=%#v err=%v", asset, err)
 	}
 }
 

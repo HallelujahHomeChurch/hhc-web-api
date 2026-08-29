@@ -7,6 +7,12 @@ case "$smoke_mode" in
   *) echo 'SMOKE_MODE must be forward or rollback' >&2; exit 1 ;;
 esac
 
+home_page_contract_mode="${HOME_PAGE_CONTRACT_MODE:-dual}"
+case "$home_page_contract_mode" in
+  dual|v2-only) ;;
+  *) echo 'HOME_PAGE_CONTRACT_MODE must be dual or v2-only' >&2; exit 1 ;;
+esac
+
 resource_group="${RESOURCE_GROUP:-alive}"
 gateway_app="${API_GATEWAY_APP_NAME:-api-gateway}"
 public_url="${PUBLIC_SMOKE_URL:-https://www.alive.org.tw/api/home?locale=zh-Hant}"
@@ -107,7 +113,7 @@ if [[ "$smoke_mode" == forward ]]; then
 
   for page_key in home about privacy-policy terms-of-use; do
     case "$page_key" in
-      home) page_template=home.v1; route_path=/ ;;
+      home) page_template=; route_path=/ ;;
       about) page_template=about.v1; route_path=/about ;;
       privacy-policy) page_template=legal.v1; route_path=/privacy-policy ;;
       terms-of-use) page_template=legal.v1; route_path=/terms-of-use ;;
@@ -124,25 +130,36 @@ if [[ "$smoke_mode" == forward ]]; then
       200)
         [[ "$etag" =~ ^\"[^\"]+\"$ ]] || { echo "Page $page_key smoke returned non-strong ETag $etag" >&2; exit 1; }
         [[ "$cache_control" == 'public, max-age=30, must-revalidate' ]] || { echo "Page $page_key smoke returned Cache-Control $cache_control" >&2; exit 1; }
-        jq -e --arg key "$page_key" --arg template "$page_template" --arg route "$route_path" '
+        jq -e --arg key "$page_key" --arg template "$page_template" --arg route "$route_path" --arg home_contract "$home_page_contract_mode" '
           (keys == ["data", "error", "meta"])
           and .error == null
           and (.meta | type == "object")
           and (.data | keys == ["availableLocales", "content", "indexable", "pageKey", "publishedAt", "resolvedLocale", "routePath", "template", "version"])
           and .data.pageKey == $key
-          and .data.template == $template
+          and ((.data.pageKey == "home" and (($home_contract == "dual" and (.data.template == "home.v1" or .data.template == "home.v2")) or ($home_contract == "v2-only" and .data.template == "home.v2"))) or (.data.pageKey != "home" and .data.template == $template))
           and .data.routePath == $route
           and (.data.indexable | type == "boolean")
           and .data.resolvedLocale == "zh-Hant"
           and (.data.availableLocales | type == "array" and index("zh-Hant") != null)
           and (.data.version | type == "number" and . >= 1 and floor == .)
           and (.data.publishedAt | type == "string" and length > 0)
-          and (.data.content | type == "object" and .schemaVersion == 1 and .template == $template and (.data | type == "object"))
+          and (.data.content | type == "object")
+          and .data.content.template == .data.template
+          and (.data.content.data | type == "object")
           and (
-            ($template == "home.v1"
+            (.data.template == "home.v1"
+              and .data.content.schemaVersion == 1
               and (.data.content.data | keys == ["aboutBody", "aboutCta", "aboutTitle", "downloadWeekly", "heroSubtitle", "heroTitle", "locationsTitle", "mapLink", "moreNews", "newsTitle", "videosSubtitle", "videosTitle", "watchMore", "weeklyTitle"])
               and ([.data.content.data[]] | all(type == "string" and length > 0)))
-            or ($template == "about.v1"
+            or (.data.template == "home.v2"
+              and .data.content.schemaVersion == 2
+              and (.data.content.data | keys == ["aboutDescription", "bannerImageUrl", "heroSubtitle", "heroTitle", "kingdomJoyDescription", "links", "locations"])
+              and ([.data.content.data.heroTitle, .data.content.data.heroSubtitle, .data.content.data.kingdomJoyDescription, .data.content.data.aboutDescription, .data.content.data.bannerImageUrl] | all(type == "string" and length > 0))
+              and (.data.content.data.links | keys == ["churchFacebook", "churchYoutube", "musicYoutube"])
+              and ([.data.content.data.links.churchFacebook, .data.content.data.links.churchYoutube, .data.content.data.links.musicYoutube] | all(type == "string" and startswith("https://")))
+              and (.data.content.data.locations | type == "array" and all(keys == ["address", "key", "mapHref", "name", "sortOrder"] and ([.address, .key, .mapHref, .name] | all(type == "string" and length > 0)) and (.sortOrder | type == "number"))))
+            or (.data.template == "about.v1"
+              and .data.content.schemaVersion == 1
               and (.data.content.data | keys == ["heroSubtitle", "heroTitle", "history", "vision"])
               and ([.data.content.data.heroTitle, .data.content.data.heroSubtitle] | all(type == "string" and length > 0))
               and (.data.content.data.vision | keys == ["actionsImageAlt", "imageAlt", "intro", "sections"])
@@ -153,7 +170,8 @@ if [[ "$smoke_mode" == forward ]]; then
               and (.data.content.data.history | keys == ["imageAlt", "intro", "scripture", "title"])
               and ([.data.content.data.history.imageAlt, .data.content.data.history.intro, .data.content.data.history.title] | all(type == "string" and length > 0))
               and (.data.content.data.history.scripture | type == "array" and length > 0 and all(keys == ["cite", "lines"] and (.cite | type == "string" and length > 0) and (.lines | type == "array" and length > 0 and all(type == "string" and length > 0)))))
-            or ($template == "legal.v1"
+            or (.data.template == "legal.v1"
+              and .data.content.schemaVersion == 1
               and ((.data.content.data | keys) == ["heroSubtitle", "heroTitle", "intro", "sections", "updatedAt", "updatedAtLabel"] or (.data.content.data | keys) == ["heroTitle", "intro", "sections", "updatedAt", "updatedAtLabel"])
               and ([.data.content.data.heroTitle, .data.content.data.updatedAtLabel, .data.content.data.updatedAt, .data.content.data.intro] | all(type == "string" and length > 0))
               and ((.data.content.data | has("heroSubtitle") | not) or (.data.content.data.heroSubtitle | type == "string"))
