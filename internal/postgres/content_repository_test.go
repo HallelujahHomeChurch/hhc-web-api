@@ -14,6 +14,29 @@ import (
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/content"
 )
 
+func TestGetContentReturnsNotFoundForMalformedID(t *testing.T) {
+	for _, id := range []string{
+		"page-home",
+		"x10000000-0000-4000-8000-000000000001y",
+	} {
+		t.Run(id, func(t *testing.T) {
+			db, mock, err := sqlmock.New()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+
+			_, err = New(db).GetContent(context.Background(), content.ModulePages, id)
+			if !errors.Is(err, content.ErrNotFound) {
+				t.Fatalf("error=%v", err)
+			}
+			if err := mock.ExpectationsWereMet(); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
 func TestContentRevisionLoadsTargetedSnapshot(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
