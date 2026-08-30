@@ -44,6 +44,21 @@ func TestServiceAcceptsCanonicalHistoryEventDates(t *testing.T) {
 	}
 }
 
+func TestChildPublicationIsOwnedByPageGroup(t *testing.T) {
+	service := NewService(&serviceRepository{}, time.Now)
+	for _, module := range []Module{ModuleHistory, ModuleVideos} {
+		if _, err := service.PublishContent(context.Background(), module, "item-1", 1, "admin"); !errors.Is(err, ErrMethodNotAllowed) {
+			t.Fatalf("publish %s: %v", module, err)
+		}
+		if _, err := service.UnpublishContent(context.Background(), module, "item-1", 1, "admin"); !errors.Is(err, ErrMethodNotAllowed) {
+			t.Fatalf("unpublish %s: %v", module, err)
+		}
+		if _, err := service.RestoreContent(context.Background(), module, "item-1", 1, 1, "admin"); !errors.Is(err, ErrMethodNotAllowed) {
+			t.Fatalf("restore %s: %v", module, err)
+		}
+	}
+}
+
 func TestServiceTrimsHistoryEventDate(t *testing.T) {
 	repo := &serviceRepository{}
 	service := NewService(repo, time.Now)
@@ -480,15 +495,15 @@ func TestUpdateContentAllowsExplicitLocaleDeletion(t *testing.T) {
 
 func TestRestoreRevisionPreservesLocalesMissingFromSnapshot(t *testing.T) {
 	repo := &serviceRepository{item: Item{
-		ID: "video-1", Module: ModuleVideos, Version: 2, YouTubeVideoID: "K3ckFWeSQ-k",
+		ID: "news-1", Module: ModuleNews, Version: 2, Slug: "news", DisplayDate: "2026-08-30",
 		Translations: []Translation{{Locale: "zh-Hant", Title: "目前影片"}, {Locale: "en", Title: "Current video"}},
 	}, revision: Revision{Version: 1, Snapshot: Item{
-		Module: ModuleVideos, YouTubeVideoID: "K3ckFWeSQ-k",
+		Module: ModuleNews, Slug: "news", DisplayDate: "2026-08-30",
 		Translations: []Translation{{Locale: "zh-Hant", Title: "歷史影片"}},
 	}}}
 	service := NewService(repo, time.Now)
 
-	if _, err := service.RestoreContent(context.Background(), ModuleVideos, "video-1", 1, 2, "user-1"); err != nil {
+	if _, err := service.RestoreContent(context.Background(), ModuleNews, "news-1", 1, 2, "user-1"); err != nil {
 		t.Fatal(err)
 	}
 	if got := repo.updateInput.Translations; len(got) != 2 || got[0].Locale != "zh-Hant" || got[0].Title != "歷史影片" || got[1].Locale != "en" || got[1].Title != "Current video" {
@@ -501,12 +516,12 @@ func TestRestoreRevisionPreservesLocalesMissingFromSnapshot(t *testing.T) {
 
 func TestRestoreContentReturnsNotFoundForMissingRevision(t *testing.T) {
 	repo := &serviceRepository{
-		item:          Item{ID: "video-1", Module: ModuleVideos, Version: 2},
+		item:          Item{ID: "news-1", Module: ModuleNews, Version: 2},
 		revisionError: ErrNotFound,
 	}
 	service := NewService(repo, time.Now)
 
-	_, err := service.RestoreContent(context.Background(), ModuleVideos, "video-1", 99, 2, "user-1")
+	_, err := service.RestoreContent(context.Background(), ModuleNews, "news-1", 99, 2, "user-1")
 	if !errors.Is(err, ErrNotFound) || repo.updateCalls != 0 || repo.contentRevisionsCalls != 0 {
 		t.Fatalf("err=%v updateCalls=%d broadCalls=%d", err, repo.updateCalls, repo.contentRevisionsCalls)
 	}
@@ -561,18 +576,6 @@ func TestPublishRequiresPublicContent(t *testing.T) {
 		t.Fatalf("news error=%v", err)
 	}
 
-	repo.item = Item{
-		ID: "history-1", Module: ModuleHistory, Status: StatusDraft, Version: 1, EventDate: "2026",
-		Translations: []Translation{{Locale: "zh-Hant", Title: "標題"}},
-	}
-	if _, err := service.PublishContent(context.Background(), ModuleHistory, repo.item.ID, 1, "user-1"); !errors.Is(err, ErrNotPublishable) {
-		t.Fatalf("history error=%v", err)
-	}
-
-	repo.item.Translations[0].Body = "Milestone"
-	if _, err := service.PublishContent(context.Background(), ModuleHistory, repo.item.ID, 1, "user-1"); err != nil {
-		t.Fatal(err)
-	}
 }
 
 func TestNewsPublishAllowsOptionalImages(t *testing.T) {
@@ -739,9 +742,6 @@ func TestServiceAcceptsJapaneseAndKoreanContentLocales(t *testing.T) {
 		YouTubeVideoID: "K3ckFWeSQ-k",
 		Translations:   translations,
 	}, "user-1"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := service.PublishContent(context.Background(), ModuleVideos, created.ID, created.Version, "user-1"); err != nil {
 		t.Fatal(err)
 	}
 	for _, locale := range []string{"ja", "ko"} {

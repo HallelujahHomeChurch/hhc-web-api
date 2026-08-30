@@ -35,6 +35,7 @@ const (
 	StatusPublishFailed   = "publish_failed"
 	StatusUnpublishFailed = "unpublish_failed"
 	StatusUnpublished     = "unpublished"
+	StatusPendingRemoval  = "pending_removal"
 )
 
 type Translation struct {
@@ -137,10 +138,11 @@ type Item struct {
 }
 
 type Revision struct {
-	Version   int64     `json:"version"`
-	Snapshot  Item      `json:"snapshot"`
-	CreatedBy string    `json:"createdBy"`
-	CreatedAt time.Time `json:"createdAt"`
+	Version       int64              `json:"version"`
+	Snapshot      Item               `json:"snapshot"`
+	GroupManifest *PageGroupManifest `json:"groupManifest,omitempty"`
+	CreatedBy     string             `json:"createdBy"`
+	CreatedAt     time.Time          `json:"createdAt"`
 }
 
 type PublicItem struct {
