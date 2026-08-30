@@ -111,6 +111,9 @@ grep -Fq 'npx --yes @redocly/cli@2.47.0 lint openapi.yaml' .github/workflows/ci.
 grep -Fq './scripts/test-release-policy.sh' .github/workflows/ci.yml
 grep -Fq 'SITE_LAYOUT_SMOKE_URL: https://www.alive.org.tw/api/site-layout?locale=zh-Hant' "$workflow"
 grep -Fq 'PAGE_SMOKE_BASE_URL: https://www.alive.org.tw/api/pages' "$workflow"
+grep -Fq 'for locale in zh-Hant zh-Hans en ja ko; do' scripts/smoke-release.sh
+grep -Fq 'Home Video order differs for $locale' scripts/smoke-release.sh
+grep -Fq 'Home Video order changed across repeated zh-Hant reads' scripts/smoke-release.sh
 
 run_smoke_case() {
   mode="$1"
@@ -167,6 +170,9 @@ while [ "$#" -gt 0 ]; do
 done
 printf '%s\n' "$url" >>"$SMOKE_EVENTS"
 case "$url" in
+  */api/home*)
+    printf '%s\n' '{"data":{"news":[],"videos":[{"id":"video-a"},{"id":"video-b"}]},"meta":{},"error":null}'
+    ;;
   */api/locations*)
     printf 'HTTP/1.1 %s\nContent-Type: %s\n\n' "$SMOKE_LOCATION_STATUS" "$SMOKE_LOCATION_CONTENT_TYPE" >"$headers"
     printf '%s\n' "$SMOKE_LOCATION_BODY" >"$body"

@@ -89,3 +89,19 @@ if ./scripts/test-migration-policy.sh "$home_migration" 2>/dev/null; then
   echo 'Home v2 constraint replacement was not immutable' >&2
   exit 1
 fi
+
+page_group_migration='internal/migrations/sql/031_page_group_publication.sql'
+restore_home_migration
+./scripts/test-migration-policy.sh "$page_group_migration"
+
+page_group_backup="$tmp/031_page_group_publication.sql"
+cp "$page_group_migration" "$page_group_backup"
+restore_page_group_migration() {
+  cp "$page_group_backup" "$page_group_migration"
+}
+trap 'restore_locale_migration; restore_location_migration; restore_home_migration; restore_page_group_migration; rm -rf "$tmp"' EXIT
+printf '%s\n' '-- test mutation' >>"$page_group_migration"
+if ./scripts/test-migration-policy.sh "$page_group_migration" 2>/dev/null; then
+  echo 'Page-group constraint replacement was not immutable' >&2
+  exit 1
+fi
