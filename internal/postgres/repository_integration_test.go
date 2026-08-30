@@ -1394,28 +1394,28 @@ func TestFixedEditorialPageLifecycle(t *testing.T) {
 	repository := New(db)
 	now := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
 	service := content.NewService(repository, func() time.Time { return now })
-	homeInput := pageIntegrationInput(t, "home", "Home")
-	home, err := repository.CreateContent(ctx, content.ModulePages, homeInput, "content-seed:pages-v1", "page:home", now)
+	homeInput := aboutGroupPageInput(t, "About")
+	home, err := repository.CreateContent(ctx, content.ModulePages, homeInput, "content-seed:pages-v1", "page:about", now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := service.PublicEditorialPage(ctx, "home", "ja"); !errors.Is(err, content.ErrNotFound) {
+	if _, _, err := service.PublicEditorialPage(ctx, "about", "ja"); !errors.Is(err, content.ErrNotFound) {
 		t.Fatalf("draft public err=%v", err)
 	}
 	home, err = service.PublishContent(ctx, content.ModulePages, home.ID, home.Version, "admin")
 	if err != nil {
 		t.Fatal(err)
 	}
-	first, firstETag, err := service.PublicEditorialPage(ctx, "home", "ja")
+	first, firstETag, err := service.PublicEditorialPage(ctx, "about", "ja")
 	if err != nil || first.ResolvedLocale != "ja" || len(first.AvailableLocales) != 5 || first.Version != home.Version {
 		t.Fatalf("first=%#v etag=%q err=%v", first, firstETag, err)
 	}
-	changed := pageIntegrationInput(t, "home", "Changed Home")
+	changed := aboutGroupPageInput(t, "Changed About")
 	home, err = service.UpdateContent(ctx, content.ModulePages, home.ID, home.Version, changed, "admin")
 	if err != nil {
 		t.Fatal(err)
 	}
-	stillPublic, stillETag, err := service.PublicEditorialPage(ctx, "home", "ja")
+	stillPublic, stillETag, err := service.PublicEditorialPage(ctx, "about", "ja")
 	if err != nil || stillETag != firstETag || string(stillPublic.Content) != string(first.Content) {
 		t.Fatalf("draft changed public=%#v etag=%q err=%v", stillPublic, stillETag, err)
 	}
@@ -1423,23 +1423,23 @@ func TestFixedEditorialPageLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	publishedChange, changedETag, err := service.PublicEditorialPage(ctx, "home", "ja")
-	if err != nil || changedETag == firstETag || !strings.Contains(string(publishedChange.Content), "Changed Home") {
+	publishedChange, changedETag, err := service.PublicEditorialPage(ctx, "about", "ja")
+	if err != nil || changedETag == firstETag || !strings.Contains(string(publishedChange.Content), "Changed About") {
 		t.Fatalf("changed=%#v etag=%q err=%v", publishedChange, changedETag, err)
 	}
 	changedETags := make(map[string]string, 5)
 	for _, locale := range []string{"zh-Hant", "zh-Hans", "en", "ja", "ko"} {
-		_, etag, err := service.PublicEditorialPage(ctx, "home", locale)
+		_, etag, err := service.PublicEditorialPage(ctx, "about", locale)
 		if err != nil {
 			t.Fatalf("changed %s: %v", locale, err)
 		}
 		changedETags[locale] = etag
 	}
-	home, err = service.RestoreContent(ctx, content.ModulePages, home.ID, 1, home.Version, "admin")
+	home, err = service.RestoreContent(ctx, content.ModulePages, home.ID, 2, home.Version, "admin")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if afterRestore, etag, err := service.PublicEditorialPage(ctx, "home", "ja"); err != nil || etag != changedETag || string(afterRestore.Content) != string(publishedChange.Content) {
+	if afterRestore, etag, err := service.PublicEditorialPage(ctx, "about", "ja"); err != nil || etag != changedETag || string(afterRestore.Content) != string(publishedChange.Content) {
 		t.Fatalf("restore changed public=%#v etag=%q err=%v", afterRestore, etag, err)
 	}
 	home, err = service.PublishContent(ctx, content.ModulePages, home.ID, home.Version, "admin")
@@ -1447,19 +1447,19 @@ func TestFixedEditorialPageLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, locale := range []string{"zh-Hant", "zh-Hans", "en", "ja", "ko"} {
-		restored, etag, err := service.PublicEditorialPage(ctx, "home", locale)
+		restored, etag, err := service.PublicEditorialPage(ctx, "about", locale)
 		var payload struct {
 			Data struct {
 				HeroTitle string `json:"heroTitle"`
 			} `json:"data"`
 		}
 		payloadErr := json.Unmarshal(restored.Content, &payload)
-		if err != nil || payloadErr != nil || restored.Version != home.Version || !restored.PublishedAt.Equal(*home.PublishedAt) || etag == changedETags[locale] || payload.Data.HeroTitle != "Home" {
+		if err != nil || payloadErr != nil || restored.Version != home.Version || !restored.PublishedAt.Equal(*home.PublishedAt) || etag == changedETags[locale] || payload.Data.HeroTitle != "About" {
 			t.Fatalf("restored %s=%#v etag=%q changed=%q heroTitle=%q err=%v payloadErr=%v", locale, restored, etag, changedETags[locale], payload.Data.HeroTitle, err, payloadErr)
 		}
 	}
 	revisions, err := service.ContentRevisions(ctx, content.ModulePages, home.ID)
-	if err != nil || len(revisions) < 5 {
+	if err != nil || len(revisions) != 3 || revisions[0].GroupManifest == nil {
 		t.Fatalf("revisions=%d err=%v", len(revisions), err)
 	}
 	privacyInput := pageIntegrationInput(t, "privacy-policy", "Privacy")
@@ -1510,7 +1510,7 @@ func TestFixedEditorialPageLifecycle(t *testing.T) {
 	if _, err := service.UnpublishContent(ctx, content.ModulePages, home.ID, home.Version, "admin"); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := service.PublicEditorialPage(ctx, "home", "ja"); !errors.Is(err, content.ErrNotFound) {
+	if _, _, err := service.PublicEditorialPage(ctx, "about", "ja"); !errors.Is(err, content.ErrNotFound) {
 		t.Fatalf("unpublished err=%v", err)
 	}
 }
@@ -1836,6 +1836,20 @@ func TestHomeV2PublicationReplacesAndRetiresBannerGrants(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	firstVideo, err := repository.CreateContent(ctx, content.ModuleVideos, videoGroupInput("First Video"), "admin", "video:first", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	removedInput := videoGroupInput("Removed Video")
+	removedInput.YouTubeVideoID = "dQw4w9WgXcQ"
+	removedVideo, err := repository.CreateContent(ctx, content.ModuleVideos, removedInput, "admin", "video:removed", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy, err = repository.GetContent(ctx, content.ModulePages, legacy.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
 	legacy, err = service.PublishContent(ctx, content.ModulePages, legacy.ID, legacy.Version, "admin")
 	if err != nil {
 		t.Fatal(err)
@@ -1875,6 +1889,15 @@ func TestHomeV2PublicationReplacesAndRetiresBannerGrants(t *testing.T) {
 	decodeErr := json.Unmarshal(v2Public.Content, &publicPayload)
 	if err != nil || decodeErr != nil || v2Public.Template != "home.v2" || publicPayload.Data.BannerImageURL != "/assets/banner-1" || len(publicPayload.Data.Locations) != 1 || publicPayload.Data.Locations[0].Name != "ja location" {
 		t.Fatalf("v2=%#v err=%v", v2Public, err)
+	}
+	firstVideo, _ = repository.GetContent(ctx, content.ModuleVideos, firstVideo.ID)
+	firstVideo, err = service.UpdateContent(ctx, content.ModuleVideos, firstVideo.ID, firstVideo.Version, videoGroupInput("Changed Video"), "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	removedVideo, _ = repository.GetContent(ctx, content.ModuleVideos, removedVideo.ID)
+	if err := service.DeleteContent(ctx, content.ModuleVideos, removedVideo.ID, removedVideo.Version, "admin"); err != nil {
+		t.Fatal(err)
 	}
 
 	current, err := repository.GetContent(ctx, content.ModulePages, draft.ID)
@@ -1937,13 +1960,24 @@ func TestHomeV2PublicationReplacesAndRetiresBannerGrants(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	restored, err := service.RestoreContent(ctx, content.ModulePages, current.ID, 1, current.Version, "admin")
+	restored, err := service.RestoreContent(ctx, content.ModulePages, current.ID, legacy.Version, current.Version, "admin")
 	if err != nil || restored.PageTemplate != "home.v1" || restored.BannerAssetID != "" {
 		t.Fatalf("restored=%#v err=%v", restored, err)
+	}
+	firstVideo, _ = repository.GetContent(ctx, content.ModuleVideos, firstVideo.ID)
+	removedVideo, _ = repository.GetContent(ctx, content.ModuleVideos, removedVideo.ID)
+	if firstVideo.Status != content.StatusDraft || removedVideo.Status != content.StatusDraft || groupTranslationTitle(firstVideo, "zh-Hant") != "First Video zh-Hant" {
+		t.Fatalf("restored first=%#v removed=%#v", firstVideo, removedVideo)
 	}
 	restored, err = service.PublishContent(ctx, content.ModulePages, restored.ID, restored.Version, "admin")
 	if err != nil || restored.Status != content.StatusPublished || restored.BannerPublicGrantID != "" {
 		t.Fatalf("legacy republish=%#v err=%v", restored, err)
+	}
+	firstVideo, _ = repository.GetContent(ctx, content.ModuleVideos, firstVideo.ID)
+	removedVideo, _ = repository.GetContent(ctx, content.ModuleVideos, removedVideo.ID)
+	var videoProjections int
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM hhc_web.public_projection WHERE resource_type='videos'`).Scan(&videoProjections); err != nil || videoProjections != 10 || firstVideo.Status != content.StatusPublished || removedVideo.Status != content.StatusPublished {
+		t.Fatalf("first=%#v removed=%#v projections=%d err=%v", firstVideo, removedVideo, videoProjections, err)
 	}
 	retireThird, found, err := repository.Claim(ctx, now.Add(11*time.Minute), 30*time.Second)
 	if err != nil || !found || retireThird.EventType != "asset.grant.revoke" || !strings.Contains(string(retireThird.Payload), "grant-3") {

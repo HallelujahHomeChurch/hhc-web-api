@@ -3,6 +3,7 @@ package publication
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -286,14 +287,14 @@ func TestWorkerPublishesOwnedNewsCover(t *testing.T) {
 func TestWorkerPublishesExactReadyHomeBanner(t *testing.T) {
 	repository := &workerRepository{event: Event{
 		ID: "event-home", EventType: "home.publish.ensure_asset", AggregateID: "page-home", AggregateVersion: 3,
-		Payload: []byte(`{"contentId":"page-home","assetId":"banner-1","aggregateVersion":3}`), Attempts: 1,
+		Payload: []byte(`{"contentId":"page-home","assetId":"banner-1","manifestSha256":"manifest","aggregateVersion":3}`), Attempts: 1,
 	}}
 	assets := &workerAssets{asset: readyHomeBanner(), grant: Grant{ID: "grant-home"}}
 	worker := NewWorker(repository, assets, 5)
 	if _, err := worker.processNext(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if len(repository.completedContentAssets) != 1 || repository.completedContentAssets[0].Usage != "banner" || repository.completedContentAssets[0].GrantID != "grant-home" {
+	if len(repository.completedContentAssets) != 1 || repository.completedContentAssets[0].Usage != "banner" || repository.completedContentAssets[0].GrantID != "grant-home" || !strings.Contains(string(repository.completedContentEvent.Payload), `"manifestSha256":"manifest"`) {
 		t.Fatalf("completed=%#v", repository.completedContentAssets)
 	}
 }
@@ -325,13 +326,13 @@ func TestWorkerRejectsHomeBannerContractDrift(t *testing.T) {
 func TestWorkerCompensatesSupersededHomeBannerGrant(t *testing.T) {
 	repository := &workerRepository{event: Event{
 		ID: "event-home", EventType: "home.publish.ensure_asset", AggregateID: "page-home", AggregateVersion: 3,
-		Payload: []byte(`{"contentId":"page-home","assetId":"banner-1","aggregateVersion":3}`), Attempts: 1,
+		Payload: []byte(`{"contentId":"page-home","assetId":"banner-1","manifestSha256":"manifest","aggregateVersion":3}`), Attempts: 1,
 	}, completeContentError: ErrStalePublication}
 	assets := &workerAssets{asset: readyHomeBanner(), grant: Grant{ID: "grant-home"}}
 	if _, err := NewWorker(repository, assets, 5).processNext(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if repository.failCount != 1 || len(repository.compensationAssets) != 1 || repository.compensationAssets[0].GrantID != "grant-home" || repository.retryCount != 0 {
+	if repository.failCount != 1 || len(repository.compensationAssets) != 1 || repository.compensationAssets[0].GrantID != "grant-home" || repository.retryCount != 0 || !strings.Contains(string(repository.failedContentEvent.Payload), `"manifestSha256":"manifest"`) {
 		t.Fatalf("fail=%d compensation=%#v retry=%d", repository.failCount, repository.compensationAssets, repository.retryCount)
 	}
 }
@@ -635,6 +636,7 @@ type workerRepository struct {
 	completedGrant                string
 	completedContentGrant         string
 	completedContentAssets        []PublishedAsset
+	completedContentEvent         Event
 	completePublishError          error
 	completeContentError          error
 	completeContentUnpublishCount int
@@ -642,6 +644,7 @@ type workerRepository struct {
 	eventDeliveredError           error
 	compensationGrant             string
 	compensationAssets            []PublishedAsset
+	failedContentEvent            Event
 	failPublishError              error
 	completeNotificationCount     int
 }
@@ -673,11 +676,12 @@ func (r *workerRepository) FailPublish(_ context.Context, _ Event, _, grantID, _
 	r.compensationGrant = grantID
 	return nil
 }
-func (r *workerRepository) FailContentPublish(_ context.Context, _ Event, assets []PublishedAsset, _ string, _ time.Time) error {
+func (r *workerRepository) FailContentPublish(_ context.Context, event Event, assets []PublishedAsset, _ string, _ time.Time) error {
 	if r.failPublishError != nil {
 		return r.failPublishError
 	}
 	r.failCount++
+	r.failedContentEvent = event
 	r.compensationAssets = append([]PublishedAsset(nil), assets...)
 	return nil
 }
@@ -688,7 +692,8 @@ func (r *workerRepository) CompletePublish(_ context.Context, _ Event, grantID, 
 	r.completedGrant = grantID
 	return r.completePublishError
 }
-func (r *workerRepository) CompleteContentPublish(_ context.Context, _ Event, assets []PublishedAsset, _ time.Time) error {
+func (r *workerRepository) CompleteContentPublish(_ context.Context, event Event, assets []PublishedAsset, _ time.Time) error {
+	r.completedContentEvent = event
 	r.completedContentAssets = append([]PublishedAsset(nil), assets...)
 	if len(assets) > 0 {
 		r.completedContentGrant = assets[0].GrantID

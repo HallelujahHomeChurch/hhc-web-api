@@ -264,6 +264,27 @@ func TestPublicHomeIsCacheableAndSelectsVideosDeterministically(t *testing.T) {
 	}
 }
 
+func TestHomeVideoSeedUsesTaipeiDateWithoutLocale(t *testing.T) {
+	before := time.Date(2026, 8, 30, 15, 59, 0, 0, time.UTC)
+	after := time.Date(2026, 8, 30, 16, 1, 0, 0, time.UTC)
+	if got := homeVideoSeed(before); got != "2026-08-30" {
+		t.Fatalf("before=%s", got)
+	}
+	if got := homeVideoSeed(after); got != "2026-08-31" {
+		t.Fatalf("after=%s", got)
+	}
+}
+
+func TestEligibleVideosAreDeterministicForTaipeiDate(t *testing.T) {
+	values := []content.PublicItem{{ID: "a", HomeEligible: true}, {ID: "b", HomeEligible: true}, {ID: "c", HomeEligible: true}, {ID: "d", HomeEligible: true}}
+	seed := homeVideoSeed(time.Date(2026, 8, 30, 3, 0, 0, 0, time.UTC))
+	first := eligibleVideos(values, 3, seed)
+	second := eligibleVideos(append([]content.PublicItem(nil), values...), 3, seed)
+	if !reflect.DeepEqual(first, second) {
+		t.Fatalf("first=%#v second=%#v", first, second)
+	}
+}
+
 func TestPublicHomeUsesLatestNewsOrder(t *testing.T) {
 	values := []content.PublicItem{
 		{ID: "newest"},

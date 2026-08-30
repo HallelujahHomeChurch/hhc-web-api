@@ -234,8 +234,8 @@ func (r *Repository) PublishContent(ctx context.Context, module content.Module, 
 		if err != nil {
 			return content.Item{}, err
 		}
-		if current.PageKey == "about" {
-			return r.publishAboutGroup(ctx, id, expected, actor, now)
+		if current.PageKey == "about" || (current.PageKey == "home" && current.PageTemplate != "home.v2") {
+			return r.publishPageGroup(ctx, id, expected, actor, now)
 		}
 		if current.PageKey == "home" && current.PageTemplate == "home.v2" {
 			return r.startHomePublish(ctx, id, expected, actor, now)
@@ -317,14 +317,24 @@ func (r *Repository) startHomePublish(ctx context.Context, id string, expected i
 	if err != nil {
 		return content.Item{}, err
 	}
-	if current.PageKey != "home" || current.PageTemplate != "home.v2" || current.BannerAssetID == "" {
+	if current.PageKey != "home" || current.PageTemplate != "home.v2" || current.BannerAssetID == "" || requireFiveLocales(current) != nil {
 		return content.Item{}, content.ErrNotPublishable
 	}
+	if err := capturePublishedBaseline(ctx, tx, current, actor, now); err != nil {
+		return content.Item{}, err
+	}
 	next := expected + 1
+	manifest, err := collectGroupManifest(ctx, tx, current, next)
+	if err != nil {
+		return content.Item{}, err
+	}
+	if err := insertGroupManifest(ctx, tx, manifest, "pending", actor, now); err != nil {
+		return content.Item{}, err
+	}
 	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.content_entry SET status='publishing',version=$2,updated_by=$3,updated_at=$4 WHERE id=$1`, id, next, actor, now); err != nil {
 		return content.Item{}, err
 	}
-	payload, _ := json.Marshal(publication.ContentPublishPayload{ContentID: id, AssetID: current.BannerAssetID, AggregateVersion: next})
+	payload, _ := json.Marshal(publication.ContentPublishPayload{ContentID: id, AssetID: current.BannerAssetID, ManifestSHA256: manifest.SHA256, AggregateVersion: next})
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO hhc_web.outbox_event(id,destination,event_type,aggregate_type,aggregate_id,aggregate_version,payload_json,idempotency_key,status,next_attempt_at,created_at,updated_at)
 		VALUES($1,'asset-api','home.publish.ensure_asset','home',$2,$3,$4,$5,'pending',$6,$6,$6)`,
@@ -333,9 +343,6 @@ func (r *Repository) startHomePublish(ctx context.Context, id string, expected i
 	}
 	item, err := loadContent(ctx, tx, content.ModulePages, id)
 	if err != nil {
-		return content.Item{}, err
-	}
-	if err := insertRevision(ctx, tx, item, actor, now); err != nil {
 		return content.Item{}, err
 	}
 	return item, tx.Commit()
@@ -352,6 +359,9 @@ func (r *Repository) UnpublishContent(ctx context.Context, module content.Module
 		}
 		if current.PageKey == "about" {
 			return r.unpublishAboutGroup(ctx, id, expected, actor, now)
+		}
+		if current.PageKey == "home" {
+			return r.unpublishHomeGroup(ctx, id, expected, actor, now)
 		}
 	}
 	tx, err := r.db.BeginTx(ctx, nil)
@@ -589,6 +599,10 @@ func (r *Repository) completeHomePublish(ctx context.Context, event publication.
 	if status != content.StatusPublishing || version != eventPayload.AggregateVersion || template != "home.v2" {
 		return publication.ErrStalePublication
 	}
+	manifest, err := loadPendingGroupManifest(ctx, tx, eventPayload.ContentID, version, eventPayload.ManifestSHA256)
+	if err != nil {
+		return err
+	}
 	item, err := loadContent(ctx, tx, content.ModulePages, eventPayload.ContentID)
 	if err != nil {
 		return err
@@ -596,7 +610,11 @@ func (r *Repository) completeHomePublish(ctx context.Context, event publication.
 	if item.BannerAssetID != eventPayload.AssetID {
 		return publication.ErrStalePublication
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM hhc_web.public_projection WHERE resource_type='pages' AND resource_id=$1`, item.ID); err != nil {
+	children, err := validateGroupManifestChildren(ctx, tx, manifest)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM hhc_web.public_projection WHERE (resource_type='pages' AND resource_id=$1) OR resource_type='videos'`, item.ID); err != nil {
 		return err
 	}
 	availableLocales := make([]string, 0, len(item.Translations))
@@ -626,7 +644,49 @@ func (r *Repository) completeHomePublish(ctx context.Context, event publication.
 	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.content_entry SET status='published',first_published_at=COALESCE(first_published_at,$2),published_at=$2,updated_at=$2 WHERE id=$1`, item.ID, now); err != nil {
 		return err
 	}
+	for _, member := range manifest.Items {
+		child := children[member.ID]
+		switch member.Action {
+		case content.GroupActionKeep:
+			if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.content_entry SET first_published_at=COALESCE(first_published_at,$2),published_at=$2,updated_at=$2 WHERE id=$1 AND version=$3`, child.ID, now, member.SourceVersion); err != nil {
+				return err
+			}
+		case content.GroupActionPublish:
+			if err := updateGroupChildStatus(ctx, tx, child.ID, member.SourceVersion, member.TargetVersion, content.StatusPublished, item.UpdatedBy, now); err != nil {
+				return publication.ErrStalePublication
+			}
+		case content.GroupActionRemove:
+			if err := updateGroupChildStatus(ctx, tx, child.ID, member.SourceVersion, member.TargetVersion, content.StatusUnpublished, item.UpdatedBy, now); err != nil {
+				return publication.ErrStalePublication
+			}
+			continue
+		}
+		child, err = loadContent(ctx, tx, content.ModuleVideos, child.ID)
+		if err != nil {
+			return err
+		}
+		for _, translation := range child.Translations {
+			if err := writeGroupProjection(ctx, tx, child, translation, now); err != nil {
+				return err
+			}
+		}
+		if member.Action == content.GroupActionPublish {
+			if err := insertRevision(ctx, tx, child, item.UpdatedBy, now); err != nil {
+				return err
+			}
+		}
+	}
 	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.page_item SET published_banner_asset_id=$2,banner_public_grant_id=$3,published_banner_version=$4 WHERE content_id=$1`, item.ID, banner.AssetID, banner.GrantID, version); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.page_publication_manifest SET publication_status='published' WHERE page_id=$1 AND page_version=$2 AND publication_status='pending'`, item.ID, version); err != nil {
+		return err
+	}
+	publishedPage, err := loadContent(ctx, tx, content.ModulePages, item.ID)
+	if err != nil {
+		return err
+	}
+	if err := insertRevision(ctx, tx, publishedPage, item.UpdatedBy, now); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.outbox_event SET status='delivered',claimed_until=NULL,last_error='',updated_at=$2 WHERE id=$1`, event.ID, now); err != nil {

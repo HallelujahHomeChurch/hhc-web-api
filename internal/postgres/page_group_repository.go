@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/content"
+	"github.com/HallelujahHomeChurch/hhc-web-api/internal/publication"
 )
 
 func groupChildModule(pageKey string) (content.Module, bool) {
@@ -68,6 +69,51 @@ func insertGroupManifest(ctx context.Context, tx *sql.Tx, manifest content.PageG
 		INSERT INTO hhc_web.page_publication_manifest(page_id,page_version,child_module,manifest_sha256,manifest_json,publication_status,created_by,created_at)
 		VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, manifest.PageID, manifest.PageTargetVersion, manifest.ChildModule, manifest.SHA256, payload, status, actor, now)
 	return err
+}
+
+func loadPendingGroupManifest(ctx context.Context, tx *sql.Tx, pageID string, version int64, expectedSHA string) (content.PageGroupManifest, error) {
+	var storedSHA string
+	var payload []byte
+	err := tx.QueryRowContext(ctx, `SELECT manifest_sha256,manifest_json FROM hhc_web.page_publication_manifest WHERE page_id=$1 AND page_version=$2 AND publication_status='pending' FOR UPDATE`, pageID, version).Scan(&storedSHA, &payload)
+	if errors.Is(err, sql.ErrNoRows) || expectedSHA == "" || storedSHA != expectedSHA {
+		return content.PageGroupManifest{}, publication.ErrStalePublication
+	}
+	if err != nil {
+		return content.PageGroupManifest{}, err
+	}
+	var manifest content.PageGroupManifest
+	if err := json.Unmarshal(payload, &manifest); err != nil {
+		return content.PageGroupManifest{}, err
+	}
+	canonical, err := content.NewPageGroupManifest(manifest.PageID, manifest.PageSourceVersion, manifest.PageTargetVersion, manifest.ChildModule, manifest.Items)
+	if err != nil || canonical.SHA256 != storedSHA || manifest.PageID != pageID || manifest.PageTargetVersion != version {
+		return content.PageGroupManifest{}, publication.ErrStalePublication
+	}
+	return manifest, nil
+}
+
+func validateGroupManifestChildren(ctx context.Context, tx *sql.Tx, manifest content.PageGroupManifest) (map[string]content.Item, error) {
+	children, err := lockGroupChildren(ctx, tx, manifest.ChildModule)
+	if err != nil {
+		return nil, err
+	}
+	byID := make(map[string]content.Item, len(children))
+	for _, child := range children {
+		byID[child.ID] = child
+	}
+	for _, member := range manifest.Items {
+		child, ok := byID[member.ID]
+		if !ok || child.Version != member.SourceVersion {
+			return nil, publication.ErrStalePublication
+		}
+		valid := member.Action == content.GroupActionKeep && child.Status == content.StatusPublished ||
+			member.Action == content.GroupActionPublish && (child.Status == content.StatusDraft || child.Status == content.StatusPublishFailed) ||
+			member.Action == content.GroupActionRemove && child.Status == content.StatusPendingRemoval
+		if !valid {
+			return nil, publication.ErrStalePublication
+		}
+	}
+	return byID, nil
 }
 
 func capturePublishedBaseline(ctx context.Context, tx *sql.Tx, page content.Item, actor string, now time.Time) error {
@@ -167,7 +213,7 @@ func writeGroupProjection(ctx context.Context, tx *sql.Tx, item content.Item, tr
 	return err
 }
 
-func (r *Repository) publishAboutGroup(ctx context.Context, id string, expected int64, actor string, now time.Time) (content.Item, error) {
+func (r *Repository) publishPageGroup(ctx context.Context, id string, expected int64, actor string, now time.Time) (content.Item, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return content.Item{}, err
@@ -180,7 +226,8 @@ func (r *Repository) publishAboutGroup(ctx context.Context, id string, expected 
 	if err != nil {
 		return content.Item{}, err
 	}
-	if page.PageKey != "about" || requireFiveLocales(page) != nil {
+	module, grouped := groupChildModule(page.PageKey)
+	if !grouped || (page.PageKey == "home" && page.PageTemplate != "home.v1") || requireFiveLocales(page) != nil {
 		return content.Item{}, content.ErrNotPublishable
 	}
 	if err := capturePublishedBaseline(ctx, tx, page, actor, now); err != nil {
@@ -193,7 +240,7 @@ func (r *Repository) publishAboutGroup(ctx context.Context, id string, expected 
 	if err := insertGroupManifest(ctx, tx, manifest, "published", actor, now); err != nil {
 		return content.Item{}, err
 	}
-	children, err := loadGroupChildren(ctx, tx, content.ModuleHistory)
+	children, err := loadGroupChildren(ctx, tx, module)
 	if err != nil {
 		return content.Item{}, err
 	}
@@ -201,7 +248,7 @@ func (r *Repository) publishAboutGroup(ctx context.Context, id string, expected 
 	for _, child := range children {
 		byID[child.ID] = child
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM hhc_web.public_projection WHERE (resource_type='pages' AND resource_id=$1) OR resource_type='history'`, id); err != nil {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM hhc_web.public_projection WHERE (resource_type='pages' AND resource_id=$1) OR resource_type=$2`, id, module); err != nil {
 		return content.Item{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.content_entry SET status='published',version=$2,first_published_at=COALESCE(first_published_at,$3),published_at=$3,updated_by=$4,updated_at=$3 WHERE id=$1`, id, manifest.PageTargetVersion, now, actor); err != nil {
@@ -233,7 +280,7 @@ func (r *Repository) publishAboutGroup(ctx context.Context, id string, expected 
 			}
 			continue
 		}
-		child, err = loadContent(ctx, tx, content.ModuleHistory, child.ID)
+		child, err = loadContent(ctx, tx, module, child.ID)
 		if err != nil {
 			return content.Item{}, err
 		}
@@ -246,6 +293,18 @@ func (r *Repository) publishAboutGroup(ctx context.Context, id string, expected 
 			if err := insertRevision(ctx, tx, child, actor, now); err != nil {
 				return content.Item{}, err
 			}
+		}
+	}
+	if page.PageKey == "home" && page.BannerPublicGrantID != "" {
+		if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.page_item SET published_banner_asset_id=NULL,banner_public_grant_id=NULL,published_banner_version=NULL WHERE content_id=$1`, id); err != nil {
+			return content.Item{}, err
+		}
+		if err := enqueueGrantRevoke(ctx, tx, "home", id, manifest.PageTargetVersion, publication.PublishedAsset{Usage: "banner", AssetID: page.PublishedBannerAssetID, GrantID: page.BannerPublicGrantID}, now); err != nil {
+			return content.Item{}, err
+		}
+		page, err = loadContent(ctx, tx, content.ModulePages, id)
+		if err != nil {
+			return content.Item{}, err
 		}
 	}
 	if err := insertRevision(ctx, tx, page, actor, now); err != nil {
@@ -307,6 +366,78 @@ func (r *Repository) unpublishAboutGroup(ctx context.Context, id string, expecte
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.content_entry SET status='unpublished',version=$2,updated_by=$3,updated_at=$4 WHERE id=$1`, id, manifest.PageTargetVersion, actor, now); err != nil {
 		return content.Item{}, err
+	}
+	page, err = loadContent(ctx, tx, content.ModulePages, id)
+	if err != nil {
+		return content.Item{}, err
+	}
+	if err := insertRevision(ctx, tx, page, actor, now); err != nil {
+		return content.Item{}, err
+	}
+	return page, tx.Commit()
+}
+
+func (r *Repository) unpublishHomeGroup(ctx context.Context, id string, expected int64, actor string, now time.Time) (content.Item, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return content.Item{}, err
+	}
+	defer tx.Rollback()
+	if err := lockContentVersion(ctx, tx, content.ModulePages, id, expected); err != nil {
+		return content.Item{}, err
+	}
+	page, err := loadContent(ctx, tx, content.ModulePages, id)
+	if err != nil {
+		return content.Item{}, err
+	}
+	if page.PageKey != "home" || !page.IsPublished {
+		return content.Item{}, content.ErrNotPublishable
+	}
+	if err := capturePublishedBaseline(ctx, tx, page, actor, now); err != nil {
+		return content.Item{}, err
+	}
+	children, err := lockGroupChildren(ctx, tx, content.ModuleVideos)
+	if err != nil {
+		return content.Item{}, err
+	}
+	items := make([]content.PageGroupManifestItem, 0, len(children))
+	for _, child := range children {
+		if child.IsPublished {
+			items = append(items, content.PageGroupManifestItem{ID: child.ID, SourceVersion: child.Version, TargetVersion: child.Version + 1, Action: content.GroupActionRemove})
+		}
+	}
+	manifest, err := content.NewPageGroupManifest(page.ID, page.Version, page.Version+1, content.ModuleVideos, items)
+	if err != nil {
+		return content.Item{}, err
+	}
+	if err := insertGroupManifest(ctx, tx, manifest, "unpublished", actor, now); err != nil {
+		return content.Item{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM hhc_web.public_projection WHERE (resource_type='pages' AND resource_id=$1) OR resource_type='videos'`, id); err != nil {
+		return content.Item{}, err
+	}
+	for _, member := range manifest.Items {
+		if err := updateGroupChildStatus(ctx, tx, member.ID, member.SourceVersion, member.TargetVersion, content.StatusUnpublished, actor, now); err != nil {
+			return content.Item{}, err
+		}
+		child, err := loadContent(ctx, tx, content.ModuleVideos, member.ID)
+		if err != nil {
+			return content.Item{}, err
+		}
+		if err := insertRevision(ctx, tx, child, actor, now); err != nil {
+			return content.Item{}, err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.content_entry SET status='unpublished',version=$2,updated_by=$3,updated_at=$4 WHERE id=$1`, id, manifest.PageTargetVersion, actor, now); err != nil {
+		return content.Item{}, err
+	}
+	if page.BannerPublicGrantID != "" {
+		if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.page_item SET published_banner_asset_id=NULL,banner_public_grant_id=NULL,published_banner_version=NULL WHERE content_id=$1`, id); err != nil {
+			return content.Item{}, err
+		}
+		if err := enqueueGrantRevoke(ctx, tx, "home", id, manifest.PageTargetVersion, publication.PublishedAsset{Usage: "banner", AssetID: page.PublishedBannerAssetID, GrantID: page.BannerPublicGrantID}, now); err != nil {
+			return content.Item{}, err
+		}
 	}
 	page, err = loadContent(ctx, tx, content.ModulePages, id)
 	if err != nil {
