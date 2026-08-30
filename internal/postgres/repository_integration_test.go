@@ -1015,6 +1015,7 @@ func TestContentRepublishRemovesDeletedLocaleProjection(t *testing.T) {
 	}
 	repository := New(db)
 	now := time.Now().UTC()
+	seedPageGroupPage(t, ctx, repository, "home", now)
 	service := content.NewService(repository, func() time.Time { return now })
 	input := content.WriteInput{
 		YouTubeVideoID: "K3ckFWeSQ-k",
@@ -1069,6 +1070,7 @@ func TestContentDeleteCascadesRevisionsAndKeepsAudit(t *testing.T) {
 
 	repository := New(db)
 	now := time.Now().UTC()
+	seedPageGroupPage(t, ctx, repository, "home", now)
 	item, err := repository.CreateContent(ctx, content.ModuleVideos, content.WriteInput{
 		YouTubeVideoID: "K3ckFWeSQ-k",
 		Translations:   []content.Translation{{Locale: "zh-Hant", Title: "影片"}},
@@ -1218,6 +1220,7 @@ func TestHistoryUsesCanonicalEventDateOrderingAndIndex(t *testing.T) {
 
 	repository := New(db)
 	now := time.Now().UTC()
+	seedPageGroupPage(t, ctx, repository, "about", now)
 	dates := []string{"1988", "", "1990-09-02", "1988-03"}
 	for index, eventDate := range dates {
 		item, err := repository.CreateContent(ctx, content.ModuleHistory, content.WriteInput{
@@ -1509,6 +1512,213 @@ func TestFixedEditorialPageLifecycle(t *testing.T) {
 	}
 	if _, _, err := service.PublicEditorialPage(ctx, "home", "ja"); !errors.Is(err, content.ErrNotFound) {
 		t.Fatalf("unpublished err=%v", err)
+	}
+}
+
+func TestPageGroupChildMutation(t *testing.T) {
+	db := pageGroupTestDatabase(t)
+	ctx := context.Background()
+	repository := New(db)
+	now := time.Date(2026, 8, 30, 12, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		module  content.Module
+		pageKey string
+		input   content.WriteInput
+	}{
+		{content.ModuleVideos, "home", content.WriteInput{YouTubeVideoID: "K3ckFWeSQ-k", Translations: []content.Translation{{Locale: "zh-Hant", Title: "影片"}}}},
+		{content.ModuleHistory, "about", content.WriteInput{EventDate: "1988-03", Translations: []content.Translation{{Locale: "zh-Hant", Title: "沿革", Body: "事件"}}}},
+	}
+	for _, test := range tests {
+		t.Run(string(test.module), func(t *testing.T) {
+			if _, err := db.ExecContext(ctx, `TRUNCATE hhc_web.public_projection,hhc_web.content_revision,hhc_web.content_translation,hhc_web.content_entry CASCADE`); err != nil {
+				t.Fatal(err)
+			}
+			page, err := repository.CreateContent(ctx, content.ModulePages, pageGroupPageInput(test.pageKey), "seed", "page:"+test.pageKey, now)
+			if err != nil {
+				t.Fatal(err)
+			}
+			child, err := repository.CreateContent(ctx, test.module, test.input, "admin", "child:"+string(test.module), now.Add(time.Minute))
+			if err != nil {
+				t.Fatal(err)
+			}
+			page, err = repository.GetContent(ctx, content.ModulePages, page.ID)
+			if err != nil || page.Version != 2 || page.Status != content.StatusDraft {
+				t.Fatalf("page after create=%#v err=%v", page, err)
+			}
+
+			if _, err := repository.CreateContent(ctx, test.module, test.input, "admin", "child:"+string(test.module), now.Add(2*time.Minute)); err != nil {
+				t.Fatal(err)
+			}
+			unchanged, err := repository.GetContent(ctx, content.ModulePages, page.ID)
+			if err != nil || unchanged.Version != page.Version {
+				t.Fatalf("page after idempotent replay=%#v err=%v", unchanged, err)
+			}
+
+			changedInput := test.input
+			if test.module == content.ModuleVideos {
+				changedInput.HomeEligible = true
+			} else {
+				changedInput.EventDate = "1988-04"
+			}
+			child, err = repository.UpdateContent(ctx, test.module, child.ID, child.Version, changedInput, "admin", now.Add(3*time.Minute))
+			if err != nil {
+				t.Fatal(err)
+			}
+			page, err = repository.GetContent(ctx, content.ModulePages, page.ID)
+			if err != nil || page.Version != 3 {
+				t.Fatalf("page after update=%#v err=%v", page, err)
+			}
+
+			for _, status := range []string{content.StatusPublishing, content.StatusUnpublishing} {
+				if _, err := db.ExecContext(ctx, `UPDATE hhc_web.content_entry SET status=$2 WHERE id=$1`, page.ID, status); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := repository.CreateContent(ctx, test.module, test.input, "admin", "blocked:"+status+":"+string(test.module), now.Add(4*time.Minute)); !errors.Is(err, content.ErrConflict) {
+					t.Fatalf("create while %s: %v", status, err)
+				}
+				if _, err := repository.UpdateContent(ctx, test.module, child.ID, child.Version, changedInput, "admin", now.Add(4*time.Minute)); !errors.Is(err, content.ErrConflict) {
+					t.Fatalf("update while %s: %v", status, err)
+				}
+				if err := repository.DeleteContent(ctx, test.module, child.ID, child.Version, "admin", now.Add(4*time.Minute)); !errors.Is(err, content.ErrConflict) {
+					t.Fatalf("delete while %s: %v", status, err)
+				}
+				current, err := repository.GetContent(ctx, test.module, child.ID)
+				if err != nil || current.Version != child.Version || !reflect.DeepEqual(current.Translations, child.Translations) {
+					t.Fatalf("child changed while %s: %#v err=%v", status, current, err)
+				}
+			}
+			if _, err := db.ExecContext(ctx, `UPDATE hhc_web.content_entry SET status='draft' WHERE id=$1`, page.ID); err != nil {
+				t.Fatal(err)
+			}
+			if err := repository.DeleteContent(ctx, test.module, child.ID, child.Version, "admin", now.Add(5*time.Minute)); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := repository.GetContent(ctx, test.module, child.ID); !errors.Is(err, content.ErrNotFound) {
+				t.Fatalf("hard-deleted child err=%v", err)
+			}
+			page, err = repository.GetContent(ctx, content.ModulePages, page.ID)
+			if err != nil || page.Version != 4 {
+				t.Fatalf("page after hard delete=%#v err=%v", page, err)
+			}
+		})
+	}
+}
+
+func TestPageGroupPendingRemoval(t *testing.T) {
+	db := pageGroupTestDatabase(t)
+	ctx := context.Background()
+	repository := New(db)
+	now := time.Date(2026, 8, 30, 12, 0, 0, 0, time.UTC)
+
+	for _, test := range []struct {
+		module  content.Module
+		pageKey string
+		input   content.WriteInput
+	}{
+		{content.ModuleVideos, "home", content.WriteInput{YouTubeVideoID: "K3ckFWeSQ-k", Translations: []content.Translation{{Locale: "zh-Hant", Title: "影片"}}}},
+		{content.ModuleHistory, "about", content.WriteInput{EventDate: "1988-03", Translations: []content.Translation{{Locale: "zh-Hant", Title: "沿革", Body: "事件"}}}},
+	} {
+		t.Run(string(test.module), func(t *testing.T) {
+			if _, err := db.ExecContext(ctx, `TRUNCATE hhc_web.public_projection,hhc_web.content_revision,hhc_web.content_translation,hhc_web.content_entry CASCADE`); err != nil {
+				t.Fatal(err)
+			}
+			page, err := repository.CreateContent(ctx, content.ModulePages, pageGroupPageInput(test.pageKey), "seed", "page:"+test.pageKey, now)
+			if err != nil {
+				t.Fatal(err)
+			}
+			child, err := repository.CreateContent(ctx, test.module, test.input, "admin", "child:"+string(test.module), now.Add(time.Minute))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := db.ExecContext(ctx, `UPDATE hhc_web.content_entry SET status='published' WHERE id=$1`, child.ID); err != nil {
+				t.Fatal(err)
+			}
+			projection := []byte(fmt.Sprintf(`{"id":%q,"title":"live"}`, child.ID))
+			if _, err := db.ExecContext(ctx, `INSERT INTO hhc_web.public_projection(projection_key,resource_type,resource_id,locale,route_path,version,etag,payload_json,updated_at) VALUES($1,$2,$3,'zh-Hant','/',1,'live-etag',$4,$5)`, "live:"+string(test.module), test.module, child.ID, projection, now); err != nil {
+				t.Fatal(err)
+			}
+			var baselineProjection []byte
+			if err := db.QueryRowContext(ctx, `SELECT payload_json FROM hhc_web.public_projection WHERE resource_type=$1 AND resource_id=$2`, test.module, child.ID).Scan(&baselineProjection); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := repository.DeleteContent(ctx, test.module, child.ID, child.Version, "admin", now.Add(2*time.Minute)); err != nil {
+				t.Fatal(err)
+			}
+			pending, err := repository.GetContent(ctx, test.module, child.ID)
+			if err != nil || pending.Status != content.StatusPendingRemoval || pending.Version != child.Version+1 || !pending.IsPublished {
+				t.Fatalf("pending=%#v err=%v", pending, err)
+			}
+			page, err = repository.GetContent(ctx, content.ModulePages, page.ID)
+			if err != nil || page.Version != 3 {
+				t.Fatalf("page after pending removal=%#v err=%v", page, err)
+			}
+			var liveProjection []byte
+			if err := db.QueryRowContext(ctx, `SELECT payload_json FROM hhc_web.public_projection WHERE resource_type=$1 AND resource_id=$2`, test.module, child.ID).Scan(&liveProjection); err != nil || string(liveProjection) != string(baselineProjection) {
+				t.Fatalf("projection=%s err=%v", liveProjection, err)
+			}
+			revision, err := repository.ContentRevision(ctx, test.module, child.ID, pending.Version)
+			if err != nil || revision.Snapshot.Status != content.StatusPendingRemoval {
+				t.Fatalf("revision=%#v err=%v", revision, err)
+			}
+
+			cancelled, err := repository.UpdateContent(ctx, test.module, child.ID, pending.Version, test.input, "admin", now.Add(3*time.Minute))
+			if err != nil || cancelled.Status != content.StatusDraft || cancelled.Version != pending.Version+1 || !cancelled.IsPublished {
+				t.Fatalf("cancelled=%#v err=%v", cancelled, err)
+			}
+			page, err = repository.GetContent(ctx, content.ModulePages, page.ID)
+			if err != nil || page.Version != 4 {
+				t.Fatalf("page after cancel=%#v err=%v", page, err)
+			}
+
+			if _, err := db.ExecContext(ctx, `DELETE FROM hhc_web.public_projection WHERE resource_type=$1 AND resource_id=$2`, test.module, child.ID); err != nil {
+				t.Fatal(err)
+			}
+			manifest := []byte(fmt.Sprintf(`{"items":[{"id":%q}]}`, child.ID))
+			if _, err := db.ExecContext(ctx, `INSERT INTO hhc_web.page_publication_manifest(page_id,page_version,child_module,manifest_sha256,manifest_json,publication_status,created_by,created_at) VALUES($1,$2,$3,$4,$5,'published','admin',$6)`, page.ID, page.Version, test.module, strings.Repeat("0", 64), manifest, now); err != nil {
+				t.Fatal(err)
+			}
+			if err := repository.DeleteContent(ctx, test.module, child.ID, cancelled.Version, "admin", now.Add(4*time.Minute)); err != nil {
+				t.Fatal(err)
+			}
+			preserved, err := repository.GetContent(ctx, test.module, child.ID)
+			if err != nil || preserved.Status != content.StatusPendingRemoval || preserved.IsPublished {
+				t.Fatalf("manifest-preserved=%#v err=%v", preserved, err)
+			}
+		})
+	}
+}
+
+func pageGroupTestDatabase(t *testing.T) *sql.DB {
+	t.Helper()
+	databaseURL := os.Getenv("HHW_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("HHW_TEST_DATABASE_URL is not configured")
+	}
+	db, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	if err := migrations.Run(context.Background(), db); err != nil {
+		t.Fatal(err)
+	}
+	return db
+}
+
+func pageGroupPageInput(key string) content.WriteInput {
+	template, route, _ := content.PageDefinition(key)
+	return content.WriteInput{
+		PageKey: key, PageTemplate: template, RoutePath: route, Indexable: true,
+		Translations: []content.Translation{{Locale: "zh-Hant", Title: key, BodyJSON: json.RawMessage(`{}`)}},
+	}
+}
+
+func seedPageGroupPage(t *testing.T, ctx context.Context, repository *Repository, key string, now time.Time) {
+	t.Helper()
+	if _, err := repository.CreateContent(ctx, content.ModulePages, pageGroupPageInput(key), "test", "test-page:"+key, now); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -1985,6 +2195,8 @@ func TestLegacyContentRetriesPreserveOmittedDetailLayoutFingerprint(t *testing.T
 
 	repository := New(db)
 	service := content.NewService(repository, time.Now)
+	seedPageGroupPage(t, ctx, repository, "home", time.Now().UTC())
+	seedPageGroupPage(t, ctx, repository, "about", time.Now().UTC())
 	for _, test := range []struct {
 		name   string
 		module content.Module

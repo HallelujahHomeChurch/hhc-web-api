@@ -64,6 +64,9 @@ func (r *Repository) CreateContent(ctx context.Context, module content.Module, i
 	if err := insertRevision(ctx, tx, item, actor, now); err != nil {
 		return content.Item{}, err
 	}
+	if err := touchPageGroup(ctx, tx, module, actor, now); err != nil {
+		return content.Item{}, err
+	}
 	return item, tx.Commit()
 }
 
@@ -198,6 +201,9 @@ func (r *Repository) updateContent(ctx context.Context, module content.Module, i
 		return content.Item{}, err
 	}
 	if err := insertRevision(ctx, tx, item, actor, now); err != nil {
+		return content.Item{}, err
+	}
+	if err := touchPageGroup(ctx, tx, module, actor, now); err != nil {
 		return content.Item{}, err
 	}
 	return item, tx.Commit()
@@ -748,15 +754,41 @@ func (r *Repository) DeleteContent(ctx context.Context, module content.Module, i
 	if current != expected {
 		return content.ErrPrecondition
 	}
-	if status == content.StatusPublishing || status == content.StatusPublished || status == content.StatusUnpublishing || status == content.StatusUnpublishFailed {
+	if status == content.StatusPublishing || status == content.StatusUnpublishing {
 		return content.ErrConflict
 	}
 	hasPublicState, err := hasPublicContentState(ctx, tx, module, id)
 	if err != nil {
 		return err
 	}
+	hasManifestState, err := hasPageGroupManifestState(ctx, tx, module, id)
+	if err != nil {
+		return err
+	}
+	if _, grouped := content.PageGroupForChild(module); grouped && (hasPublicState || hasManifestState) {
+		if err := touchPageGroup(ctx, tx, module, actor, now); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.content_entry SET status='pending_removal',version=version+1,updated_by=$2,updated_at=$3 WHERE id=$1`, id, actor, now); err != nil {
+			return err
+		}
+		item, err := loadContent(ctx, tx, module, id)
+		if err != nil {
+			return err
+		}
+		if err := insertRevision(ctx, tx, item, actor, now); err != nil {
+			return err
+		}
+		return tx.Commit()
+	}
+	if status == content.StatusPublished || status == content.StatusUnpublishFailed {
+		return content.ErrConflict
+	}
 	if hasPublicState {
 		return content.ErrConflict
+	}
+	if err := touchPageGroup(ctx, tx, module, actor, now); err != nil {
+		return err
 	}
 	assetIDs, err := contentAssetIDs(ctx, tx, module, id)
 	if err != nil {
@@ -777,6 +809,44 @@ func (r *Repository) DeleteContent(ctx context.Context, module content.Module, i
 		return content.ErrNotFound
 	}
 	return tx.Commit()
+}
+
+func touchPageGroup(ctx context.Context, tx *sql.Tx, module content.Module, actor string, now time.Time) error {
+	pageKey, ok := content.PageGroupForChild(module)
+	if !ok {
+		return nil
+	}
+	var id, status string
+	if err := tx.QueryRowContext(ctx, `
+		SELECT e.id,e.status
+		FROM hhc_web.content_entry e
+		JOIN hhc_web.page_item p ON p.content_id=e.id
+		WHERE e.module='pages' AND p.page_key=$1
+		FOR UPDATE OF e`, pageKey).Scan(&id, &status); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return content.ErrNotFound
+		}
+		return err
+	}
+	if status == content.StatusPublishing || status == content.StatusUnpublishing {
+		return content.ErrConflict
+	}
+	_, err := tx.ExecContext(ctx, `UPDATE hhc_web.content_entry SET status='draft',version=version+1,updated_by=$2,updated_at=$3 WHERE id=$1`, id, actor, now)
+	return err
+}
+
+func hasPageGroupManifestState(ctx context.Context, tx *sql.Tx, module content.Module, id string) (bool, error) {
+	if _, ok := content.PageGroupForChild(module); !ok {
+		return false, nil
+	}
+	var exists bool
+	err := tx.QueryRowContext(ctx, `
+		SELECT EXISTS(
+			SELECT 1
+			FROM hhc_web.page_publication_manifest
+			WHERE manifest_json->'items' @> jsonb_build_array(jsonb_build_object('id',$1::text))
+		)`, id).Scan(&exists)
+	return exists, err
 }
 
 func contentAssetIDs(ctx context.Context, tx *sql.Tx, module content.Module, id string) ([]string, error) {
