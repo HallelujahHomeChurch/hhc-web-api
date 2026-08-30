@@ -14,6 +14,7 @@ import (
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/content"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/platform"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/publication"
+	"github.com/google/uuid"
 )
 
 func (r *Repository) CreateContent(ctx context.Context, module content.Module, input content.WriteInput, actor, key string, now time.Time) (content.Item, error) {
@@ -1062,6 +1063,12 @@ type contentQueryer interface {
 }
 
 func loadContent(ctx context.Context, query contentQueryer, module content.Module, id string) (content.Item, error) {
+	if len(id) != 36 {
+		return content.Item{}, content.ErrNotFound
+	}
+	if _, err := uuid.Parse(id); err != nil {
+		return content.Item{}, content.ErrNotFound
+	}
 	var item content.Item
 	err := query.QueryRowContext(ctx, `SELECT id::text,module,status,version,created_by,updated_by,first_published_at,published_at,created_at,updated_at FROM hhc_web.content_entry WHERE id=$1 AND module=$2`, id, module).Scan(&item.ID, &item.Module, &item.Status, &item.Version, &item.CreatedBy, &item.UpdatedBy, &item.FirstPublishedAt, &item.PublishedAt, &item.CreatedAt, &item.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
