@@ -48,6 +48,7 @@ type ContentPublishPayload struct {
 	ContentID        string `json:"contentId"`
 	AssetID          string `json:"assetId,omitempty"`
 	HomeAssetID      string `json:"homeAssetId,omitempty"`
+	ManifestSHA256   string `json:"manifestSha256,omitempty"`
 	AggregateVersion int64  `json:"aggregateVersion"`
 }
 type PublishedAsset struct {

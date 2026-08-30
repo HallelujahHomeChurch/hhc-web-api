@@ -118,6 +118,9 @@ func (s *Service) UpdateContent(ctx context.Context, module Module, id string, e
 	return s.repository.UpdateContent(ctx, module, id, expected, input, actor, s.now().UTC())
 }
 func (s *Service) PublishContent(ctx context.Context, module Module, id string, expected int64, actor string) (Item, error) {
+	if _, ok := PageGroupForChild(module); ok {
+		return Item{}, ErrMethodNotAllowed
+	}
 	item, err := s.repository.GetContent(ctx, module, id)
 	if err != nil {
 		return Item{}, err
@@ -125,24 +128,33 @@ func (s *Service) PublishContent(ctx context.Context, module Module, id string, 
 	if item.Version != expected {
 		return Item{}, ErrPrecondition
 	}
-	if !publishable(item) {
+	if !IsPublishable(item) {
 		return Item{}, ErrNotPublishable
 	}
 	return s.repository.PublishContent(ctx, module, id, expected, actor, s.now().UTC())
 }
 func (s *Service) UnpublishContent(ctx context.Context, module Module, id string, expected int64, actor string) (Item, error) {
+	if _, ok := PageGroupForChild(module); ok {
+		return Item{}, ErrMethodNotAllowed
+	}
 	return s.repository.UnpublishContent(ctx, module, id, expected, actor, s.now().UTC())
 }
 func (s *Service) ContentRevisions(ctx context.Context, module Module, id string) ([]Revision, error) {
 	return s.repository.ContentRevisions(ctx, module, id)
 }
 func (s *Service) RestoreContent(ctx context.Context, module Module, id string, revision, expected int64, actor string) (Item, error) {
+	if _, ok := PageGroupForChild(module); ok {
+		return Item{}, ErrMethodNotAllowed
+	}
 	if !validModule(module) || revision < 1 || expected < 1 {
 		return Item{}, ErrInvalid
 	}
 	current, err := s.repository.GetContent(ctx, module, id)
 	if err != nil {
 		return Item{}, err
+	}
+	if module == ModulePages && (current.PageKey == "home" || current.PageKey == "about") {
+		return s.repository.RestorePageGroup(ctx, id, revision, expected, actor, s.now().UTC())
 	}
 	value, err := s.repository.ContentRevision(ctx, module, id, revision)
 	if err != nil {
@@ -220,7 +232,7 @@ func validLocale(locale string) bool {
 func validStatus(status string) bool {
 	switch status {
 	case "", StatusDraft, StatusPublishing, StatusPublished, StatusPublishFailed,
-		StatusUnpublishing, StatusUnpublishFailed, StatusUnpublished:
+		StatusUnpublishing, StatusUnpublishFailed, StatusUnpublished, StatusPendingRemoval:
 		return true
 	default:
 		return false
@@ -284,7 +296,7 @@ func valid(module Module, input WriteInput) bool {
 		return false
 	}
 }
-func publishable(item Item) bool {
+func IsPublishable(item Item) bool {
 	if !valid(item.Module, WriteInput{AuthorName: item.AuthorName, Slug: item.Slug, DisplayDate: item.DisplayDate, EventDate: item.EventDate, YouTubeVideoID: item.YouTubeVideoID, CoverAssetID: item.CoverAssetID, HomeCoverAssetID: item.HomeCoverAssetID, DetailLayout: item.DetailLayout, LocationKey: item.LocationKey, MapHref: item.MapHref, SortOrder: item.SortOrder, PageKey: item.PageKey, PageTemplate: item.PageTemplate, RoutePath: item.RoutePath, Indexable: item.Indexable, BannerAssetID: item.BannerAssetID, Links: item.Links, Locations: item.Locations, Translations: item.Translations}) {
 		return false
 	}

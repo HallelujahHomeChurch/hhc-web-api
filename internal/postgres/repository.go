@@ -935,6 +935,7 @@ func failEvent(ctx context.Context, tx *sql.Tx, event publication.Event, detail 
 	if strings.HasPrefix(event.EventType, "news.") || strings.HasPrefix(event.EventType, "home.") {
 		var contentID string
 		var version int64
+		var manifestSHA string
 		nextStatus := "draft"
 		if strings.HasPrefix(event.EventType, "home.") {
 			nextStatus = content.StatusPublishFailed
@@ -950,7 +951,7 @@ func failEvent(ctx context.Context, tx *sql.Tx, event publication.Event, detail 
 			if err := json.Unmarshal(event.Payload, &contentPayload); err != nil {
 				return err
 			}
-			contentID, version = contentPayload.ContentID, contentPayload.AggregateVersion
+			contentID, version, manifestSHA = contentPayload.ContentID, contentPayload.AggregateVersion, contentPayload.ManifestSHA256
 		}
 		expectedStatus := content.StatusPublishing
 		if event.EventType == "news.unpublish.revoke_asset" {
@@ -958,6 +959,11 @@ func failEvent(ctx context.Context, tx *sql.Tx, event publication.Event, detail 
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.content_entry SET status=$3,updated_at=$4 WHERE id=$1 AND version=$2 AND status=$5`, contentID, version, nextStatus, now, expectedStatus); err != nil {
 			return err
+		}
+		if event.EventType == "home.publish.ensure_asset" {
+			if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.page_publication_manifest SET publication_status='failed' WHERE page_id=$1 AND page_version=$2 AND manifest_sha256=$3 AND publication_status='pending'`, contentID, version, manifestSHA); err != nil {
+				return err
+			}
 		}
 		return nil
 	}

@@ -116,9 +116,14 @@ func (h *Handler) publicHome(w http.ResponseWriter, r *http.Request) {
 		handleContentError(w, err)
 		return
 	}
-	seed := time.Now().UTC().Format("2006-01-02") + ":" + requestedLocale
 	w.Header().Set("Cache-Control", "public, max-age=30, must-revalidate")
-	writeData(w, http.StatusOK, map[string]any{"news": latestNews(news.Items, 3), "videos": eligibleVideos(videos.Items, 3, seed)}, nil)
+	writeData(w, http.StatusOK, map[string]any{"news": latestNews(news.Items, 3), "videos": eligibleVideos(videos.Items, 3, homeVideoSeed(time.Now()))}, nil)
+}
+
+var taipei = time.FixedZone("Asia/Taipei", 8*60*60)
+
+func homeVideoSeed(now time.Time) string {
+	return now.In(taipei).Format("2006-01-02")
 }
 
 func etagMatches(header, target string) bool {

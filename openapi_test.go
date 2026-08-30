@@ -252,6 +252,45 @@ func TestOpenAPIDocumentsFixedEditorialPageContracts(t *testing.T) {
 	}
 }
 
+func TestOpenAPIDocumentsPageGroupPublicationContracts(t *testing.T) {
+	document := readOpenAPI(t)
+	if !strings.Contains(schemaBlock(document, "ContentStatus"), "pending_removal") {
+		t.Error("ContentStatus must include pending_removal")
+	}
+	if !strings.Contains(schemaBlock(document, "PublicationContentModule"), "enum: [news, locations, pages]") {
+		t.Error("publication module must exclude history and videos")
+	}
+	for _, operationID := range []string{"publishContent", "unpublishContent", "restoreContentRevision"} {
+		operation := operationByID(t, document, operationID)
+		if !strings.Contains(operation, "$ref: '#/components/parameters/PublicationContentModule'") || !strings.Contains(operation, "'405': { $ref: '#/components/responses/Error' }") {
+			t.Errorf("%s must restrict child publication and document 405:\n%s", operationID, operation)
+		}
+	}
+	for _, schema := range []string{"PageGroupManifest", "PageGroupManifestItem"} {
+		if schemaBlock(document, schema) == "" {
+			t.Errorf("missing %s", schema)
+		}
+	}
+	if !strings.Contains(schemaBlock(document, "ContentRevision"), "groupManifest: { $ref: '#/components/schemas/PageGroupManifest' }") {
+		t.Error("ContentRevision must expose optional groupManifest")
+	}
+	deleteOperation := operationByID(t, document, "deleteContent")
+	for _, expected := range []string{"never-published and never-manifested draft", "manifest-backed", "pending removal", "'204':"} {
+		if !strings.Contains(deleteOperation, expected) {
+			t.Errorf("deleteContent missing %q:\n%s", expected, deleteOperation)
+		}
+	}
+	for _, operationID := range []string{"publishContent", "unpublishContent", "restoreContentRevision"} {
+		operation := operationByID(t, document, operationID)
+		if !strings.Contains(operation, "Home") || !strings.Contains(operation, "About") || !strings.Contains(operation, "group") {
+			t.Errorf("%s must document Home/About group semantics", operationID)
+		}
+	}
+	if restore := operationByID(t, document, "restoreContentRevision"); !strings.Contains(restore, "marks removed or absent children pending removal") || !strings.Contains(restore, "leaves live projections unchanged") {
+		t.Errorf("restoreContentRevision must distinguish included drafts and pending removals:\n%s", restore)
+	}
+}
+
 func TestOpenAPIDocumentsExactHomeV2AndBannerContracts(t *testing.T) {
 	document := readOpenAPI(t)
 	for _, schema := range []string{"HomePageWriteInputV2", "HomePageContentV2Draft", "HomePageContentV2", "HomeLocation", "HomeLocationTranslation", "PublicHomeLocation", "HomeBannerUploadInput", "HomeBannerCompleteInput"} {

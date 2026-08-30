@@ -44,6 +44,21 @@ func TestServiceAcceptsCanonicalHistoryEventDates(t *testing.T) {
 	}
 }
 
+func TestChildPublicationIsOwnedByPageGroup(t *testing.T) {
+	service := NewService(&serviceRepository{}, time.Now)
+	for _, module := range []Module{ModuleHistory, ModuleVideos} {
+		if _, err := service.PublishContent(context.Background(), module, "item-1", 1, "admin"); !errors.Is(err, ErrMethodNotAllowed) {
+			t.Fatalf("publish %s: %v", module, err)
+		}
+		if _, err := service.UnpublishContent(context.Background(), module, "item-1", 1, "admin"); !errors.Is(err, ErrMethodNotAllowed) {
+			t.Fatalf("unpublish %s: %v", module, err)
+		}
+		if _, err := service.RestoreContent(context.Background(), module, "item-1", 1, 1, "admin"); !errors.Is(err, ErrMethodNotAllowed) {
+			t.Fatalf("restore %s: %v", module, err)
+		}
+	}
+}
+
 func TestServiceTrimsHistoryEventDate(t *testing.T) {
 	repo := &serviceRepository{}
 	service := NewService(repo, time.Now)
@@ -393,7 +408,7 @@ func TestHomeV2PublishRequiresBanner(t *testing.T) {
 	}
 }
 
-func TestRestoreContentCopiesHomeV2DraftWithoutPublishedGrant(t *testing.T) {
+func TestRestoreHomeUsesPageGroupBoundary(t *testing.T) {
 	input := homeV2Input()
 	repo := &serviceRepository{
 		item:     Item{ID: "page-1", Module: ModulePages, Version: 2, PageKey: "home", PageTemplate: "home.v2", RoutePath: "/", BannerAssetID: "current", BannerPublicGrantID: "grant-live", Translations: input.Translations},
@@ -402,8 +417,8 @@ func TestRestoreContentCopiesHomeV2DraftWithoutPublishedGrant(t *testing.T) {
 	if _, err := NewService(repo, time.Now).RestoreContent(context.Background(), ModulePages, repo.item.ID, 1, 2, "admin"); err != nil {
 		t.Fatal(err)
 	}
-	if repo.updateInput.BannerAssetID != "historical" || repo.updateInput.Links != input.Links || len(repo.updateInput.Locations) != 2 {
-		t.Fatalf("input=%#v", repo.updateInput)
+	if repo.pageGroupRestoreRevision != 1 || repo.pageGroupRestoreExpected != 2 || repo.updateCalls != 0 {
+		t.Fatalf("revision=%d expected=%d updateCalls=%d", repo.pageGroupRestoreRevision, repo.pageGroupRestoreExpected, repo.updateCalls)
 	}
 }
 
@@ -480,15 +495,15 @@ func TestUpdateContentAllowsExplicitLocaleDeletion(t *testing.T) {
 
 func TestRestoreRevisionPreservesLocalesMissingFromSnapshot(t *testing.T) {
 	repo := &serviceRepository{item: Item{
-		ID: "video-1", Module: ModuleVideos, Version: 2, YouTubeVideoID: "K3ckFWeSQ-k",
+		ID: "news-1", Module: ModuleNews, Version: 2, Slug: "news", DisplayDate: "2026-08-30",
 		Translations: []Translation{{Locale: "zh-Hant", Title: "目前影片"}, {Locale: "en", Title: "Current video"}},
 	}, revision: Revision{Version: 1, Snapshot: Item{
-		Module: ModuleVideos, YouTubeVideoID: "K3ckFWeSQ-k",
+		Module: ModuleNews, Slug: "news", DisplayDate: "2026-08-30",
 		Translations: []Translation{{Locale: "zh-Hant", Title: "歷史影片"}},
 	}}}
 	service := NewService(repo, time.Now)
 
-	if _, err := service.RestoreContent(context.Background(), ModuleVideos, "video-1", 1, 2, "user-1"); err != nil {
+	if _, err := service.RestoreContent(context.Background(), ModuleNews, "news-1", 1, 2, "user-1"); err != nil {
 		t.Fatal(err)
 	}
 	if got := repo.updateInput.Translations; len(got) != 2 || got[0].Locale != "zh-Hant" || got[0].Title != "歷史影片" || got[1].Locale != "en" || got[1].Title != "Current video" {
@@ -501,12 +516,12 @@ func TestRestoreRevisionPreservesLocalesMissingFromSnapshot(t *testing.T) {
 
 func TestRestoreContentReturnsNotFoundForMissingRevision(t *testing.T) {
 	repo := &serviceRepository{
-		item:          Item{ID: "video-1", Module: ModuleVideos, Version: 2},
+		item:          Item{ID: "news-1", Module: ModuleNews, Version: 2},
 		revisionError: ErrNotFound,
 	}
 	service := NewService(repo, time.Now)
 
-	_, err := service.RestoreContent(context.Background(), ModuleVideos, "video-1", 99, 2, "user-1")
+	_, err := service.RestoreContent(context.Background(), ModuleNews, "news-1", 99, 2, "user-1")
 	if !errors.Is(err, ErrNotFound) || repo.updateCalls != 0 || repo.contentRevisionsCalls != 0 {
 		t.Fatalf("err=%v updateCalls=%d broadCalls=%d", err, repo.updateCalls, repo.contentRevisionsCalls)
 	}
@@ -561,18 +576,6 @@ func TestPublishRequiresPublicContent(t *testing.T) {
 		t.Fatalf("news error=%v", err)
 	}
 
-	repo.item = Item{
-		ID: "history-1", Module: ModuleHistory, Status: StatusDraft, Version: 1, EventDate: "2026",
-		Translations: []Translation{{Locale: "zh-Hant", Title: "標題"}},
-	}
-	if _, err := service.PublishContent(context.Background(), ModuleHistory, repo.item.ID, 1, "user-1"); !errors.Is(err, ErrNotPublishable) {
-		t.Fatalf("history error=%v", err)
-	}
-
-	repo.item.Translations[0].Body = "Milestone"
-	if _, err := service.PublishContent(context.Background(), ModuleHistory, repo.item.ID, 1, "user-1"); err != nil {
-		t.Fatal(err)
-	}
 }
 
 func TestNewsPublishAllowsOptionalImages(t *testing.T) {
@@ -741,9 +744,6 @@ func TestServiceAcceptsJapaneseAndKoreanContentLocales(t *testing.T) {
 	}, "user-1"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.PublishContent(context.Background(), ModuleVideos, created.ID, created.Version, "user-1"); err != nil {
-		t.Fatal(err)
-	}
 	for _, locale := range []string{"ja", "ko"} {
 		if _, err := service.PublicContent(context.Background(), ModuleVideos, locale, 1, 20); err != nil {
 			t.Fatalf("public %s: %v", locale, err)
@@ -807,20 +807,22 @@ func homeV2Input() WriteInput {
 }
 
 type serviceRepository struct {
-	item                  Item
-	createInputs          []WriteInput
-	revision              Revision
-	revisionError         error
-	listOptions           ListOptions
-	updateInput           WriteInput
-	updateCalls           int
-	contentRevisionsCalls int
-	deletedID             string
-	expected              int64
-	actor                 string
-	now                   time.Time
-	publicPage            int
-	publicPageSize        int
+	item                     Item
+	createInputs             []WriteInput
+	revision                 Revision
+	revisionError            error
+	listOptions              ListOptions
+	updateInput              WriteInput
+	updateCalls              int
+	contentRevisionsCalls    int
+	deletedID                string
+	expected                 int64
+	actor                    string
+	now                      time.Time
+	publicPage               int
+	publicPageSize           int
+	pageGroupRestoreRevision int64
+	pageGroupRestoreExpected int64
 }
 
 func (r *serviceRepository) CreateContent(_ context.Context, module Module, input WriteInput, actor, key string, now time.Time) (Item, error) {
@@ -846,6 +848,11 @@ func (r *serviceRepository) UpdateContent(_ context.Context, _ Module, _ string,
 }
 func (r *serviceRepository) RestoreContent(ctx context.Context, module Module, id string, expected int64, input WriteInput, actor string, now time.Time) (Item, error) {
 	return r.UpdateContent(ctx, module, id, expected, input, actor, now)
+}
+func (r *serviceRepository) RestorePageGroup(_ context.Context, _ string, revision, expected int64, _ string, _ time.Time) (Item, error) {
+	r.pageGroupRestoreRevision = revision
+	r.pageGroupRestoreExpected = expected
+	return r.item, nil
 }
 func (r *serviceRepository) PublishContent(_ context.Context, _ Module, _ string, _ int64, _ string, _ time.Time) (Item, error) {
 	r.item.Status = StatusPublished

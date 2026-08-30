@@ -264,6 +264,27 @@ func TestPublicHomeIsCacheableAndSelectsVideosDeterministically(t *testing.T) {
 	}
 }
 
+func TestHomeVideoSeedUsesTaipeiDateWithoutLocale(t *testing.T) {
+	before := time.Date(2026, 8, 30, 15, 59, 0, 0, time.UTC)
+	after := time.Date(2026, 8, 30, 16, 1, 0, 0, time.UTC)
+	if got := homeVideoSeed(before); got != "2026-08-30" {
+		t.Fatalf("before=%s", got)
+	}
+	if got := homeVideoSeed(after); got != "2026-08-31" {
+		t.Fatalf("after=%s", got)
+	}
+}
+
+func TestEligibleVideosAreDeterministicForTaipeiDate(t *testing.T) {
+	values := []content.PublicItem{{ID: "a", HomeEligible: true}, {ID: "b", HomeEligible: true}, {ID: "c", HomeEligible: true}, {ID: "d", HomeEligible: true}}
+	seed := homeVideoSeed(time.Date(2026, 8, 30, 3, 0, 0, 0, time.UTC))
+	first := eligibleVideos(values, 3, seed)
+	second := eligibleVideos(append([]content.PublicItem(nil), values...), 3, seed)
+	if !reflect.DeepEqual(first, second) {
+		t.Fatalf("first=%#v second=%#v", first, second)
+	}
+}
+
 func TestPublicHomeUsesLatestNewsOrder(t *testing.T) {
 	values := []content.PublicItem{
 		{ID: "newest"},
@@ -290,6 +311,42 @@ func TestNewsPublishQueuesOwnedCoverWhileScanIsPending(t *testing.T) {
 	}
 	if repo.item.Status != content.StatusPublishing {
 		t.Fatalf("status=%q", repo.item.Status)
+	}
+}
+
+func TestChildPublicationOperationsFailClosed(t *testing.T) {
+	for _, module := range []string{"history", "videos"} {
+		for _, path := range []string{
+			"/api/admin/content/" + module + "/item-1/publish",
+			"/api/admin/content/" + module + "/item-1/unpublish",
+			"/api/admin/content/" + module + "/item-1/revisions/1/restore",
+		} {
+			request := httptest.NewRequest(http.MethodPost, path, nil)
+			trusted(request, "cms:publish cms:write")
+			request.Header.Set("If-Match", `"1"`)
+			response := httptest.NewRecorder()
+			contentTestHandler(&contentRepository{}).ServeHTTP(response, request)
+			if response.Code != http.StatusMethodNotAllowed || !strings.Contains(response.Body.String(), `"code":"method_not_allowed"`) {
+				t.Fatalf("path=%s status=%d body=%s", path, response.Code, response.Body.String())
+			}
+		}
+	}
+}
+
+func TestAboutPagePublishKeepsPageEnvelope(t *testing.T) {
+	payload := json.RawMessage(`{"schemaVersion":1,"template":"about.v1","data":{"heroTitle":"About","heroSubtitle":"Subtitle","vision":{"intro":"Vision","imageAlt":"Image","actionsImageAlt":"Actions","sections":[{"eyebrow":"One","title":"Vision","body":"Body"},{"eyebrow":"Two","title":"Goals","body":"Body"},{"eyebrow":"Three","title":"Actions","cards":[{"title":"Share","body":"Body"}]},{"eyebrow":"Four","title":"Commitments","cards":[{"title":"Mission","body":"Body"}]}]},"history":{"scripture":[{"lines":["Scripture"],"cite":"Isaiah"}],"imageAlt":"History","intro":"History intro","title":"History"}}}`)
+	translations := make([]content.Translation, 0, 5)
+	for _, locale := range []string{"zh-Hant", "zh-Hans", "en", "ja", "ko"} {
+		translations = append(translations, content.Translation{Locale: locale, Title: "About", Summary: "Subtitle", BodyJSON: payload})
+	}
+	repo := &contentRepository{item: content.Item{ID: "page-about", Module: content.ModulePages, Status: content.StatusDraft, Version: 2, PageKey: "about", PageTemplate: "about.v1", RoutePath: "/about", Indexable: true, Translations: translations}}
+	request := httptest.NewRequest(http.MethodPost, "/api/admin/content/pages/page-about/publish", nil)
+	trusted(request, "cms:publish")
+	request.Header.Set("If-Match", `"2"`)
+	response := httptest.NewRecorder()
+	contentTestHandler(repo).ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"module":"pages"`) {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 
@@ -602,6 +659,10 @@ func (r *contentRepository) UpdateContent(_ context.Context, _ content.Module, _
 }
 func (r *contentRepository) RestoreContent(ctx context.Context, module content.Module, id string, expected int64, input content.WriteInput, actor string, now time.Time) (content.Item, error) {
 	return r.UpdateContent(ctx, module, id, expected, input, actor, now)
+}
+
+func (r *contentRepository) RestorePageGroup(context.Context, string, int64, int64, string, time.Time) (content.Item, error) {
+	return r.item, nil
 }
 func (r *contentRepository) PublishContent(_ context.Context, _ content.Module, _ string, _ int64, _ string, _ time.Time) (content.Item, error) {
 	r.item.Status = content.StatusPublishing

@@ -16,6 +16,7 @@ esac
 resource_group="${RESOURCE_GROUP:-alive}"
 gateway_app="${API_GATEWAY_APP_NAME:-api-gateway}"
 public_url="${PUBLIC_SMOKE_URL:-https://www.alive.org.tw/api/home?locale=zh-Hant}"
+home_smoke_base_url="${HOME_SMOKE_BASE_URL:-https://www.alive.org.tw/api/home}"
 locations_url="${LOCATIONS_SMOKE_URL:-https://www.alive.org.tw/api/locations?locale=zh-Hant}"
 site_layout_url="${SITE_LAYOUT_SMOKE_URL:-https://www.alive.org.tw/api/site-layout?locale=zh-Hant}"
 page_smoke_base_url="${PAGE_SMOKE_BASE_URL:-https://www.alive.org.tw/api/pages}"
@@ -33,6 +34,21 @@ curl --fail --silent --show-error --max-time 30 "$public_url" >/dev/null
 if [[ "$smoke_mode" == forward ]]; then
   smoke_dir="$(mktemp -d)"
   trap 'rm -rf "$smoke_dir"' EXIT
+  expected_video_ids=
+  for locale in zh-Hant zh-Hans en ja ko; do
+    curl --fail --silent --show-error --max-time 30 "${home_smoke_base_url}?locale=$locale" >"$smoke_dir/home-$locale"
+    video_ids="$(jq -ce 'if (.error == null and (.data.videos | type == "array")) then [.data.videos[].id] else error("invalid Home response") end' "$smoke_dir/home-$locale")"
+    if [[ -z "$expected_video_ids" ]]; then
+      expected_video_ids="$video_ids"
+    elif [[ "$video_ids" != "$expected_video_ids" ]]; then
+      echo "Home Video order differs for $locale" >&2
+      exit 1
+    fi
+  done
+  curl --fail --silent --show-error --max-time 30 "${home_smoke_base_url}?locale=zh-Hant" >"$smoke_dir/home-zh-Hant-repeat"
+  repeated_video_ids="$(jq -ce '[.data.videos[].id]' "$smoke_dir/home-zh-Hant-repeat")"
+  [[ "$repeated_video_ids" == "$expected_video_ids" ]] || { echo 'Home Video order changed across repeated zh-Hant reads' >&2; exit 1; }
+
   status="$(curl --silent --show-error --max-time 30 --dump-header "$smoke_dir/headers" \
     --output "$smoke_dir/body" --write-out '%{http_code}' "$locations_url")"
   [[ "$status" == 200 ]] || { echo "Locations smoke returned HTTP $status" >&2; exit 1; }

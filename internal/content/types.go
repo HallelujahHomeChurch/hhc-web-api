@@ -35,6 +35,7 @@ const (
 	StatusPublishFailed   = "publish_failed"
 	StatusUnpublishFailed = "unpublish_failed"
 	StatusUnpublished     = "unpublished"
+	StatusPendingRemoval  = "pending_removal"
 )
 
 type Translation struct {
@@ -137,10 +138,11 @@ type Item struct {
 }
 
 type Revision struct {
-	Version   int64     `json:"version"`
-	Snapshot  Item      `json:"snapshot"`
-	CreatedBy string    `json:"createdBy"`
-	CreatedAt time.Time `json:"createdAt"`
+	Version       int64              `json:"version"`
+	Snapshot      Item               `json:"snapshot"`
+	GroupManifest *PageGroupManifest `json:"groupManifest,omitempty"`
+	CreatedBy     string             `json:"createdBy"`
+	CreatedAt     time.Time          `json:"createdAt"`
 }
 
 type PublicItem struct {
@@ -217,6 +219,7 @@ type Repository interface {
 	GetContent(context.Context, Module, string) (Item, error)
 	UpdateContent(context.Context, Module, string, int64, WriteInput, string, time.Time) (Item, error)
 	RestoreContent(context.Context, Module, string, int64, WriteInput, string, time.Time) (Item, error)
+	RestorePageGroup(context.Context, string, int64, int64, string, time.Time) (Item, error)
 	PublishContent(context.Context, Module, string, int64, string, time.Time) (Item, error)
 	UnpublishContent(context.Context, Module, string, int64, string, time.Time) (Item, error)
 	ContentRevisions(context.Context, Module, string) ([]Revision, error)

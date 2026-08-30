@@ -1113,6 +1113,7 @@ paths:
     delete:
       operationId: deleteContent
       summary: Delete content
+      description: Immediately hard deletes a never-published and never-manifested draft. Deleting a published or manifest-backed History or Video child stages pending removal for the next About or Home group publication and still returns 204.
       tags: [Admin]
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
@@ -1126,7 +1127,7 @@ paths:
       responses:
         '401': { $ref: '#/components/responses/AdminUnauthorized' }
         '403': { $ref: '#/components/responses/AdminForbidden' }
-        '204': { description: Content and its revisions deleted }
+        '204': { description: Draft deleted immediately or group child staged for pending removal }
         '405': { $ref: '#/components/responses/Error' }
         '409': { $ref: '#/components/responses/Error' }
         '412': { $ref: '#/components/responses/Error' }
@@ -1164,6 +1165,7 @@ paths:
     post:
       operationId: publishContent
       summary: Publish content
+      description: Publishes ordinary content directly. Publishing the Home or About Page is a group operation that atomically publishes its Video or History children; direct child publication returns 405.
       tags: [Admin]
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
@@ -1171,18 +1173,20 @@ paths:
       servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-scopes: ['cms:publish']
       parameters:
-        - $ref: '#/components/parameters/ContentModule'
+        - $ref: '#/components/parameters/PublicationContentModule'
         - $ref: '#/components/parameters/ContentID'
         - $ref: '#/components/parameters/IfMatch'
       responses:
         '401': { $ref: '#/components/responses/AdminUnauthorized' }
         '403': { $ref: '#/components/responses/AdminForbidden' }
         '200': { $ref: '#/components/responses/ContentItem' }
+        '405': { $ref: '#/components/responses/Error' }
         '422': { $ref: '#/components/responses/Error' }
   /admin/content/{module}/{contentId}/unpublish:
     post:
       operationId: unpublishContent
       summary: Unpublish content
+      description: Unpublishes ordinary content directly. Unpublishing the Home or About Page is a group operation that atomically removes its Video or History projections; direct child unpublication returns 405.
       tags: [Admin]
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
@@ -1190,13 +1194,14 @@ paths:
       servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-scopes: ['cms:publish']
       parameters:
-        - $ref: '#/components/parameters/ContentModule'
+        - $ref: '#/components/parameters/PublicationContentModule'
         - $ref: '#/components/parameters/ContentID'
         - $ref: '#/components/parameters/IfMatch'
       responses:
         '401': { $ref: '#/components/responses/AdminUnauthorized' }
         '403': { $ref: '#/components/responses/AdminForbidden' }
         '200': { $ref: '#/components/responses/ContentItem' }
+        '405': { $ref: '#/components/responses/Error' }
   /admin/content/{module}/{contentId}/revisions:
     get:
       operationId: listContentRevisions
@@ -1222,6 +1227,7 @@ paths:
     post:
       operationId: restoreContentRevision
       summary: Restore content revision
+      description: Restores ordinary content as a draft. Restoring a Home or About Page is a group operation that restores included Video or History snapshots as drafts, marks removed or absent children pending removal, and leaves live projections unchanged; direct child restore returns 405.
       tags: [Admin]
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
@@ -1229,7 +1235,7 @@ paths:
       servers: [{ url: https://admin.alive.org.tw/api }]
       x-required-scopes: ['cms:write']
       parameters:
-        - $ref: '#/components/parameters/ContentModule'
+        - $ref: '#/components/parameters/PublicationContentModule'
         - $ref: '#/components/parameters/ContentID'
         - $ref: '#/components/parameters/Revision'
         - $ref: '#/components/parameters/IfMatch'
@@ -1237,6 +1243,7 @@ paths:
         '401': { $ref: '#/components/responses/AdminUnauthorized' }
         '403': { $ref: '#/components/responses/AdminForbidden' }
         '200': { $ref: '#/components/responses/ContentItem' }
+        '405': { $ref: '#/components/responses/Error' }
   /admin/content/news/{contentId}/upload-sessions:
     post:
       operationId: createNewsCoverUpload
@@ -1481,6 +1488,7 @@ components:
       description: Conditional validator; weak validators and comma-separated lists are accepted.
       schema: { type: string }
     ContentModule: { name: module, in: path, required: true, schema: { $ref: '#/components/schemas/ContentModule' } }
+    PublicationContentModule: { name: module, in: path, required: true, schema: { $ref: '#/components/schemas/PublicationContentModule' } }
     CreatableContentModule: { name: module, in: path, required: true, schema: { $ref: '#/components/schemas/CreatableContentModule' } }
     TranslatableContentModule: { name: module, in: path, required: true, schema: { $ref: '#/components/schemas/TranslatableContentModule' } }
     PageKey: { name: pageKey, in: path, required: true, schema: { type: string, enum: [home, about, privacy-policy, terms-of-use] } }
@@ -1966,6 +1974,9 @@ components:
     ContentModule:
       type: string
       enum: [news, history, videos, locations, pages]
+    PublicationContentModule:
+      type: string
+      enum: [news, locations, pages]
     CreatableContentModule:
       type: string
       enum: [news, history, videos, locations]
@@ -1974,7 +1985,7 @@ components:
       enum: [news, history, videos]
     ContentStatus:
       type: string
-      enum: [draft, publishing, published, publish_failed, unpublishing, unpublish_failed, unpublished]
+      enum: [draft, publishing, published, publish_failed, unpublishing, unpublish_failed, unpublished, pending_removal]
     PageMeta:
       type: object
       required: [page, pageSize, total]
@@ -2622,8 +2633,31 @@ components:
       properties:
         version: { type: integer, format: int64 }
         snapshot: { $ref: '#/components/schemas/ContentItem' }
+        groupManifest: { $ref: '#/components/schemas/PageGroupManifest' }
         createdBy: { type: string }
         createdAt: { type: string, format: date-time }
+    PageGroupManifest:
+      type: object
+      additionalProperties: false
+      required: [pageId, pageSourceVersion, pageTargetVersion, childModule, items, sha256]
+      properties:
+        pageId: { type: string, format: uuid }
+        pageSourceVersion: { type: integer, format: int64, minimum: 1 }
+        pageTargetVersion: { type: integer, format: int64, minimum: 1 }
+        childModule: { type: string, enum: [history, videos] }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/PageGroupManifestItem' }
+        sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+    PageGroupManifestItem:
+      type: object
+      additionalProperties: false
+      required: [id, sourceVersion, targetVersion, action]
+      properties:
+        id: { type: string, format: uuid }
+        sourceVersion: { type: integer, format: int64, minimum: 1 }
+        targetVersion: { type: integer, format: int64, minimum: 1 }
+        action: { type: string, enum: [keep, publish, remove] }
     PublicContentItem:
       type: object
       required: [id, title, resolvedLocale, availableLocales]

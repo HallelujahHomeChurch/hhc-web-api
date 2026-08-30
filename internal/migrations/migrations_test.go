@@ -338,3 +338,28 @@ func TestHomePageV2MigrationReplacesBothPageConstraintsAndAddsState(t *testing.T
 		t.Fatal("home v2 migration must preserve legacy data")
 	}
 }
+
+func TestPageGroupPublicationMigrationAddsPendingRemovalAndManifest(t *testing.T) {
+	contents, err := files.ReadFile("sql/031_page_group_publication.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := string(contents)
+	for _, expected := range []string{
+		"'pending_removal'",
+		"CREATE TABLE hhc_web.page_publication_manifest",
+		"page_id uuid NOT NULL",
+		"page_version bigint NOT NULL",
+		"child_module text NOT NULL",
+		"manifest_sha256 text NOT NULL",
+		"manifest_json jsonb NOT NULL",
+		"publication_status text NOT NULL",
+		"PRIMARY KEY(page_id,page_version)",
+		"CHECK (child_module IN ('history','videos'))",
+		"CHECK (manifest_sha256 ~ '^[0-9a-f]{64}$')",
+	} {
+		if !strings.Contains(sql, expected) {
+			t.Fatalf("migration missing %q", expected)
+		}
+	}
+}
