@@ -408,7 +408,7 @@ func TestHomeV2PublishRequiresBanner(t *testing.T) {
 	}
 }
 
-func TestRestoreContentCopiesHomeV2DraftWithoutPublishedGrant(t *testing.T) {
+func TestRestoreHomeUsesPageGroupBoundary(t *testing.T) {
 	input := homeV2Input()
 	repo := &serviceRepository{
 		item:     Item{ID: "page-1", Module: ModulePages, Version: 2, PageKey: "home", PageTemplate: "home.v2", RoutePath: "/", BannerAssetID: "current", BannerPublicGrantID: "grant-live", Translations: input.Translations},
@@ -417,8 +417,8 @@ func TestRestoreContentCopiesHomeV2DraftWithoutPublishedGrant(t *testing.T) {
 	if _, err := NewService(repo, time.Now).RestoreContent(context.Background(), ModulePages, repo.item.ID, 1, 2, "admin"); err != nil {
 		t.Fatal(err)
 	}
-	if repo.updateInput.BannerAssetID != "historical" || repo.updateInput.Links != input.Links || len(repo.updateInput.Locations) != 2 {
-		t.Fatalf("input=%#v", repo.updateInput)
+	if repo.pageGroupRestoreRevision != 1 || repo.pageGroupRestoreExpected != 2 || repo.updateCalls != 0 {
+		t.Fatalf("revision=%d expected=%d updateCalls=%d", repo.pageGroupRestoreRevision, repo.pageGroupRestoreExpected, repo.updateCalls)
 	}
 }
 
@@ -807,20 +807,22 @@ func homeV2Input() WriteInput {
 }
 
 type serviceRepository struct {
-	item                  Item
-	createInputs          []WriteInput
-	revision              Revision
-	revisionError         error
-	listOptions           ListOptions
-	updateInput           WriteInput
-	updateCalls           int
-	contentRevisionsCalls int
-	deletedID             string
-	expected              int64
-	actor                 string
-	now                   time.Time
-	publicPage            int
-	publicPageSize        int
+	item                     Item
+	createInputs             []WriteInput
+	revision                 Revision
+	revisionError            error
+	listOptions              ListOptions
+	updateInput              WriteInput
+	updateCalls              int
+	contentRevisionsCalls    int
+	deletedID                string
+	expected                 int64
+	actor                    string
+	now                      time.Time
+	publicPage               int
+	publicPageSize           int
+	pageGroupRestoreRevision int64
+	pageGroupRestoreExpected int64
 }
 
 func (r *serviceRepository) CreateContent(_ context.Context, module Module, input WriteInput, actor, key string, now time.Time) (Item, error) {
@@ -846,6 +848,11 @@ func (r *serviceRepository) UpdateContent(_ context.Context, _ Module, _ string,
 }
 func (r *serviceRepository) RestoreContent(ctx context.Context, module Module, id string, expected int64, input WriteInput, actor string, now time.Time) (Item, error) {
 	return r.UpdateContent(ctx, module, id, expected, input, actor, now)
+}
+func (r *serviceRepository) RestorePageGroup(_ context.Context, _ string, revision, expected int64, _ string, _ time.Time) (Item, error) {
+	r.pageGroupRestoreRevision = revision
+	r.pageGroupRestoreExpected = expected
+	return r.item, nil
 }
 func (r *serviceRepository) PublishContent(_ context.Context, _ Module, _ string, _ int64, _ string, _ time.Time) (Item, error) {
 	r.item.Status = StatusPublished

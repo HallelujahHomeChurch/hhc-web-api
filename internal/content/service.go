@@ -128,7 +128,7 @@ func (s *Service) PublishContent(ctx context.Context, module Module, id string, 
 	if item.Version != expected {
 		return Item{}, ErrPrecondition
 	}
-	if !publishable(item) {
+	if !IsPublishable(item) {
 		return Item{}, ErrNotPublishable
 	}
 	return s.repository.PublishContent(ctx, module, id, expected, actor, s.now().UTC())
@@ -152,6 +152,9 @@ func (s *Service) RestoreContent(ctx context.Context, module Module, id string, 
 	current, err := s.repository.GetContent(ctx, module, id)
 	if err != nil {
 		return Item{}, err
+	}
+	if module == ModulePages && (current.PageKey == "home" || current.PageKey == "about") {
+		return s.repository.RestorePageGroup(ctx, id, revision, expected, actor, s.now().UTC())
 	}
 	value, err := s.repository.ContentRevision(ctx, module, id, revision)
 	if err != nil {
@@ -293,7 +296,7 @@ func valid(module Module, input WriteInput) bool {
 		return false
 	}
 }
-func publishable(item Item) bool {
+func IsPublishable(item Item) bool {
 	if !valid(item.Module, WriteInput{AuthorName: item.AuthorName, Slug: item.Slug, DisplayDate: item.DisplayDate, EventDate: item.EventDate, YouTubeVideoID: item.YouTubeVideoID, CoverAssetID: item.CoverAssetID, HomeCoverAssetID: item.HomeCoverAssetID, DetailLayout: item.DetailLayout, LocationKey: item.LocationKey, MapHref: item.MapHref, SortOrder: item.SortOrder, PageKey: item.PageKey, PageTemplate: item.PageTemplate, RoutePath: item.RoutePath, Indexable: item.Indexable, BannerAssetID: item.BannerAssetID, Links: item.Links, Locations: item.Locations, Translations: item.Translations}) {
 		return false
 	}

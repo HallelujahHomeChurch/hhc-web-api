@@ -293,6 +293,42 @@ func TestNewsPublishQueuesOwnedCoverWhileScanIsPending(t *testing.T) {
 	}
 }
 
+func TestChildPublicationOperationsFailClosed(t *testing.T) {
+	for _, module := range []string{"history", "videos"} {
+		for _, path := range []string{
+			"/api/admin/content/" + module + "/item-1/publish",
+			"/api/admin/content/" + module + "/item-1/unpublish",
+			"/api/admin/content/" + module + "/item-1/revisions/1/restore",
+		} {
+			request := httptest.NewRequest(http.MethodPost, path, nil)
+			trusted(request, "cms:publish cms:write")
+			request.Header.Set("If-Match", `"1"`)
+			response := httptest.NewRecorder()
+			contentTestHandler(&contentRepository{}).ServeHTTP(response, request)
+			if response.Code != http.StatusMethodNotAllowed || !strings.Contains(response.Body.String(), `"code":"method_not_allowed"`) {
+				t.Fatalf("path=%s status=%d body=%s", path, response.Code, response.Body.String())
+			}
+		}
+	}
+}
+
+func TestAboutPagePublishKeepsPageEnvelope(t *testing.T) {
+	payload := json.RawMessage(`{"schemaVersion":1,"template":"about.v1","data":{"heroTitle":"About","heroSubtitle":"Subtitle","vision":{"intro":"Vision","imageAlt":"Image","actionsImageAlt":"Actions","sections":[{"eyebrow":"One","title":"Vision","body":"Body"},{"eyebrow":"Two","title":"Goals","body":"Body"},{"eyebrow":"Three","title":"Actions","cards":[{"title":"Share","body":"Body"}]},{"eyebrow":"Four","title":"Commitments","cards":[{"title":"Mission","body":"Body"}]}]},"history":{"scripture":[{"lines":["Scripture"],"cite":"Isaiah"}],"imageAlt":"History","intro":"History intro","title":"History"}}}`)
+	translations := make([]content.Translation, 0, 5)
+	for _, locale := range []string{"zh-Hant", "zh-Hans", "en", "ja", "ko"} {
+		translations = append(translations, content.Translation{Locale: locale, Title: "About", Summary: "Subtitle", BodyJSON: payload})
+	}
+	repo := &contentRepository{item: content.Item{ID: "page-about", Module: content.ModulePages, Status: content.StatusDraft, Version: 2, PageKey: "about", PageTemplate: "about.v1", RoutePath: "/about", Indexable: true, Translations: translations}}
+	request := httptest.NewRequest(http.MethodPost, "/api/admin/content/pages/page-about/publish", nil)
+	trusted(request, "cms:publish")
+	request.Header.Set("If-Match", `"2"`)
+	response := httptest.NewRecorder()
+	contentTestHandler(repo).ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"module":"pages"`) {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
 func TestNewsPublishRejectsUnknownAssetStates(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -602,6 +638,10 @@ func (r *contentRepository) UpdateContent(_ context.Context, _ content.Module, _
 }
 func (r *contentRepository) RestoreContent(ctx context.Context, module content.Module, id string, expected int64, input content.WriteInput, actor string, now time.Time) (content.Item, error) {
 	return r.UpdateContent(ctx, module, id, expected, input, actor, now)
+}
+
+func (r *contentRepository) RestorePageGroup(context.Context, string, int64, int64, string, time.Time) (content.Item, error) {
+	return r.item, nil
 }
 func (r *contentRepository) PublishContent(_ context.Context, _ content.Module, _ string, _ int64, _ string, _ time.Time) (content.Item, error) {
 	r.item.Status = content.StatusPublishing

@@ -234,6 +234,9 @@ func (r *Repository) PublishContent(ctx context.Context, module content.Module, 
 		if err != nil {
 			return content.Item{}, err
 		}
+		if current.PageKey == "about" {
+			return r.publishAboutGroup(ctx, id, expected, actor, now)
+		}
 		if current.PageKey == "home" && current.PageTemplate == "home.v2" {
 			return r.startHomePublish(ctx, id, expected, actor, now)
 		}
@@ -341,6 +344,15 @@ func (r *Repository) startHomePublish(ctx context.Context, id string, expected i
 func (r *Repository) UnpublishContent(ctx context.Context, module content.Module, id string, expected int64, actor string, now time.Time) (content.Item, error) {
 	if module == content.ModuleNews {
 		return r.startNewsUnpublish(ctx, id, expected, actor, now)
+	}
+	if module == content.ModulePages {
+		current, err := r.GetContent(ctx, module, id)
+		if err != nil {
+			return content.Item{}, err
+		}
+		if current.PageKey == "about" {
+			return r.unpublishAboutGroup(ctx, id, expected, actor, now)
+		}
 	}
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -696,8 +708,12 @@ func enqueueGrantRevoke(ctx context.Context, tx *sql.Tx, aggregateType, contentI
 }
 
 func (r *Repository) ContentRevisions(ctx context.Context, module content.Module, id string) ([]content.Revision, error) {
-	if _, err := loadContent(ctx, r.db, module, id); err != nil {
+	item, err := loadContent(ctx, r.db, module, id)
+	if err != nil {
 		return nil, err
+	}
+	if module == content.ModulePages && (item.PageKey == "home" || item.PageKey == "about") {
+		return r.pageGroupRevisions(ctx, id)
 	}
 	rows, err := r.db.QueryContext(ctx, `SELECT version,snapshot_json,created_by,created_at FROM hhc_web.content_revision WHERE entry_id=$1 ORDER BY version DESC`, id)
 	if err != nil {
