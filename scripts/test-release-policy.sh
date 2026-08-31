@@ -109,6 +109,18 @@ grep -Fq 'test-migration-policy.sh internal/migrations/sql/*.sql' .github/workfl
 grep -Fq 'test-migration-policy.sh internal/migrations/sql/*.sql' "$workflow"
 grep -Fq 'npx --yes @redocly/cli@2.47.0 lint openapi.yaml' .github/workflows/ci.yml
 grep -Fq './scripts/test-release-policy.sh' .github/workflows/ci.yml
+scanner='ghcr.io/aquasecurity/trivy@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969'
+test "$(grep -Fc "$scanner" .github/workflows/ci.yml)" -eq 2
+test "$(grep -Fc "$scanner" "$workflow")" -eq 6
+grep -Fq 'fs --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1' .github/workflows/ci.yml
+grep -Fq 'fs --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1' "$workflow"
+grep -Fq 'image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 hhc-web-api:verify' .github/workflows/ci.yml
+grep -Fq 'image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 hhc-web-api:verify' "$workflow"
+grep -Fq 'docker pull "$IMAGE_REF"' "$workflow"
+grep -Fq 'image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 "$IMAGE_REF"' "$workflow"
+release_scan_line="$(grep -nF 'name: Scan immutable image' "$workflow" | cut -d: -f1)"
+release_what_if_line="$(grep -nF 'name: Reject destructive infrastructure changes' "$workflow" | cut -d: -f1)"
+test "$release_scan_line" -lt "$release_what_if_line"
 grep -Fq 'SITE_LAYOUT_SMOKE_URL: https://www.alive.org.tw/api/site-layout?locale=zh-Hant' "$workflow"
 grep -Fq 'PAGE_SMOKE_BASE_URL: https://www.alive.org.tw/api/pages' "$workflow"
 grep -Fq 'for locale in zh-Hant zh-Hans en ja ko; do' scripts/smoke-release.sh
