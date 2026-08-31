@@ -1,0 +1,18 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Deterministic content-key hashes in planner test fixtures"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+regexes = ['''\bKeySetSHA256:\s*"[0-9a-f]{64}"''']
+paths = ['''^internal/contentseed/planner_test\.go$''']
+
+[[allowlists]]
+description = "Synthetic release commit hash in the immutable workflow test fixture"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+regexes = ['''\bRELEASE_COMMIT=[0-9a-f]{40}\b''']
+paths = ['''^scripts/test-release-policy\.sh$''']
