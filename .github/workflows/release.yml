@@ -54,6 +54,17 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: Scan dependencies
+        run: |
+          trivy_cache="$RUNNER_TEMP/trivy-cache"
+          mkdir -p "$trivy_cache"
+          echo "TRIVY_CACHE=$trivy_cache" >> "$GITHUB_ENV"
+          docker run --rm \
+            -v "$PWD:/workspace:ro" \
+            -v "$trivy_cache:/root/.cache/trivy" \
+            ghcr.io/aquasecurity/trivy@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 \
+            fs --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 \
+            --skip-dirs /workspace/.git --skip-dirs /workspace/node_modules /workspace
       - run: |
           ./scripts/bootstrap-migration-role.test.sh
           ./scripts/test-migration-policy-test.sh
@@ -63,6 +74,11 @@ jobs:
           go vet ./...
           ./scripts/test-release-policy.sh
           docker build -t hhc-web-api:verify .
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$TRIVY_CACHE:/root/.cache/trivy" \
+            ghcr.io/aquasecurity/trivy@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 \
+            image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 hhc-web-api:verify
 
   deploy:
     needs: verify
@@ -204,6 +220,39 @@ jobs:
             --query digest -o tsv --only-show-errors)"
           [[ "$digest" == sha256:* ]]
           echo "IMAGE_REF=${ACR_LOGIN_SERVER}/${IMAGE_REPOSITORY}@${digest}" >> "$GITHUB_ENV"
+      - name: Scan immutable image
+        run: |
+          trivy_cache="$RUNNER_TEMP/trivy-cache"
+          report="$RUNNER_TEMP/trivy-hhc-web-api.json"
+          trap 'test ! -e "$report" || unlink "$report"' EXIT
+          mkdir -p "$trivy_cache"
+          az acr login --name "$ACR_NAME" --only-show-errors
+          docker pull "$IMAGE_REF"
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$trivy_cache:/root/.cache/trivy" \
+            ghcr.io/aquasecurity/trivy@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 \
+            image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 "$IMAGE_REF"
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$trivy_cache:/root/.cache/trivy" \
+            -v "$RUNNER_TEMP:/evidence" \
+            ghcr.io/aquasecurity/trivy@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 \
+            image --severity HIGH,CRITICAL --format json \
+            --output /evidence/trivy-hhc-web-api.json "$IMAGE_REF"
+          fixable="$(jq '[.Results[]?.Vulnerabilities[]? | select((.Severity == "HIGH" or .Severity == "CRITICAL") and (.FixedVersion // "") != "")] | unique_by(.VulnerabilityID,.PkgName,.InstalledVersion,.FixedVersion) | length' "$report")"
+          unfixed="$(jq '[.Results[]?.Vulnerabilities[]? | select((.Severity == "HIGH" or .Severity == "CRITICAL") and (.FixedVersion // "") == "")] | unique_by(.VulnerabilityID,.PkgName,.InstalledVersion) | length' "$report")"
+          {
+            echo '### Trivy image summary'
+            echo "- Scanner: \`ghcr.io/aquasecurity/trivy@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969\`"
+            echo "- Artifact: \`$IMAGE_REF\`"
+            echo "- Fixable High/Critical: $fixable"
+            echo "- Unfixed High/Critical: $unfixed"
+            docker run --rm -v "$trivy_cache:/root/.cache/trivy" \
+              ghcr.io/aquasecurity/trivy@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 \
+              version --format json | jq -r '"- Trivy: " + .Version, "- Vulnerability DB updated: " + .VulnerabilityDB.UpdatedAt'
+          } >> "$GITHUB_STEP_SUMMARY"
+          test "$fixable" -eq 0
       - name: Reject destructive infrastructure changes
         run: |
           az deployment group what-if \
