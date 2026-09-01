@@ -49,6 +49,7 @@ type Handler struct {
 	operations               operationsHTTPService
 	operationsNow            func() time.Time
 	operationsAllowedCallers map[string]bool
+	operationsWorkloadAuth   ServiceWorkloadAuth
 	trustedCaller            string
 	daprAPIToken             string
 	allowDevCaller           bool
@@ -67,6 +68,10 @@ func NewWithContent(service *bulletins.Service, contentService *content.Service,
 func (h *Handler) WithOperations(service operationsHTTPService, allowedCallers map[string]bool) *Handler {
 	h.operations = service
 	h.operationsAllowedCallers = allowedCallers
+	return h
+}
+func (h *Handler) WithOperationsWorkloadAuth(config ServiceWorkloadAuth) *Handler {
+	h.operationsWorkloadAuth = config
 	return h
 }
 func (h *Handler) WithSiteSettings(service *sitesettings.Service) *Handler {
@@ -143,9 +148,9 @@ func (h *Handler) Routes() http.Handler {
 	mux.Handle("/api/admin/", privateNoStore(requireTrusted(h.trustedCaller, h.daprAPIToken, h.allowDevCaller, admin)))
 	if h.operations != nil {
 		private := http.NewServeMux()
-		private.HandleFunc("GET /priv/meeting-occurrences", h.privateMeetingOccurrences)
-		private.HandleFunc("GET /priv/meeting-sync-windows", h.privateMeetingSyncWindows)
-		mux.Handle("/priv/", privateNoStore(requireServiceCaller(h.operationsAllowedCallers, h.daprAPIToken, h.allowDevCaller, private)))
+		private.Handle("GET /priv/meeting-occurrences", requireServiceCaller(h.operationsAllowedCallers, h.daprAPIToken, h.allowDevCaller, http.HandlerFunc(h.privateMeetingOccurrences)))
+		private.Handle("GET /priv/meeting-sync-windows", requireServiceCallerOrWorkload(h.operationsAllowedCallers, h.daprAPIToken, h.allowDevCaller, h.operationsWorkloadAuth, http.HandlerFunc(h.privateMeetingSyncWindows)))
+		mux.Handle("/priv/", privateNoStore(private))
 	}
 	return requestID(accessLog(mux))
 }

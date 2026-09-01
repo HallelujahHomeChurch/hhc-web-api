@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/subtle"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -16,6 +17,15 @@ type principal struct {
 	RequestID     string
 }
 type principalKey struct{}
+
+type ServiceWorkloadAuth struct {
+	TenantID string
+	Issuer   string
+	Audience string
+	ClientID string
+	ObjectID string
+	Caller   string
+}
 
 func requireTrusted(caller, daprAPIToken string, allowDevCaller bool, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -48,6 +58,54 @@ func requireServiceCaller(allowed map[string]bool, daprAPIToken string, allowDev
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func requireServiceCallerOrWorkload(allowed map[string]bool, daprAPIToken string, allowDevCaller bool, workload ServiceWorkloadAuth, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if caller := workloadCaller(r.Header.Get("X-MS-CLIENT-PRINCIPAL"), workload); caller != "" && allowed[caller] {
+			next.ServeHTTP(w, r)
+			return
+		}
+		requireServiceCaller(allowed, daprAPIToken, allowDevCaller, next).ServeHTTP(w, r)
+	})
+}
+
+func workloadCaller(encoded string, config ServiceWorkloadAuth) string {
+	if encoded == "" || config.TenantID == "" || config.Issuer == "" || config.Audience == "" || config.ClientID == "" || config.ObjectID == "" || config.Caller == "" {
+		return ""
+	}
+	raw, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return ""
+	}
+	var value struct {
+		AuthType string `json:"auth_typ"`
+		Claims   []struct {
+			Type  string `json:"typ"`
+			Value string `json:"val"`
+		} `json:"claims"`
+	}
+	if json.Unmarshal(raw, &value) != nil || value.AuthType != "aad" {
+		return ""
+	}
+	claims := map[string]string{}
+	for _, claim := range value.Claims {
+		if claims[claim.Type] == "" {
+			claims[claim.Type] = claim.Value
+		}
+	}
+	claim := func(names ...string) string {
+		for _, name := range names {
+			if claims[name] != "" {
+				return claims[name]
+			}
+		}
+		return ""
+	}
+	if claim("tid", "http://schemas.microsoft.com/identity/claims/tenantid") != config.TenantID || claim("iss") != config.Issuer || claim("aud") != config.Audience || claim("appid", "azp") != config.ClientID || claim("oid", "http://schemas.microsoft.com/identity/claims/objectidentifier") != config.ObjectID {
+		return ""
+	}
+	return config.Caller
 }
 func requireScope(scope string, next http.HandlerFunc) http.HandlerFunc {
 	return requireScopes([]string{scope}, next)

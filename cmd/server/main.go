@@ -74,7 +74,13 @@ func run() error {
 	for _, caller := range cfg.OperationsAllowedCallerAppIDs {
 		operationsAllowedCallers[caller] = true
 	}
-	handler := httpapi.NewWithTranslation(service, contentService, db, assetClient, cfg.AdminAllowedCaller, cfg.DaprAPIToken, cfg.AllowDevCaller, previewer, cfg.Translation.WriteDeadline, time.Now, engagementClient).WithSiteSettings(siteSettingsService).WithOperations(operationsService, operationsAllowedCallers)
+	handler := httpapi.NewWithTranslation(service, contentService, db, assetClient, cfg.AdminAllowedCaller, cfg.DaprAPIToken, cfg.AllowDevCaller, previewer, cfg.Translation.WriteDeadline, time.Now, engagementClient).
+		WithSiteSettings(siteSettingsService).
+		WithOperations(operationsService, operationsAllowedCallers).
+		WithOperationsWorkloadAuth(httpapi.ServiceWorkloadAuth{
+			TenantID: cfg.OperationsWorkloadTenantID, Issuer: cfg.OperationsWorkloadIssuer, Audience: cfg.OperationsWorkloadAudience,
+			ClientID: cfg.OperationsWorkloadClientID, ObjectID: cfg.OperationsWorkloadObjectID, Caller: "asset-api",
+		})
 	assets := publication.NewAssetAdapter(assetClient)
 	worker := publication.NewWorker(repository, assets, cfg.OutboxMaxAttempts, engagementClient)
 	go func() {

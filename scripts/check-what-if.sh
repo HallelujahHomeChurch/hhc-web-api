@@ -6,6 +6,8 @@ file="${1:?what-if JSON is required}"
 jq -e '
   def is_hhc_web_api_resource:
     test("^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\\.App/containerApps/hhc-web-api$"; "i");
+  def is_operations_auth:
+    endswith("/Microsoft.App/containerApps/hhc-web-api/authConfigs/current");
 
   ([.changes[] | select(.changeType == "Delete" or .changeType == "Unsupported")] | length == 0)
   and
@@ -30,6 +32,8 @@ jq -e '
         ((.changeType == "Create" or .changeType == "Modify") and (.resourceId | endswith("/Microsoft.App/jobs/hhc-web-content-import")))
         or
         ((.changeType == "Create" or .changeType == "Modify") and (.resourceId | endswith("/Microsoft.CognitiveServices/accounts/bible-text-embedding-resource/raiPolicies/hhc-cms-translation-v1")))
+        or
+        ((.changeType == "Create" or .changeType == "Modify") and (.resourceId | is_operations_auth))
       ) | not)
   ] | length == 0)
 ' "$file" >/dev/null
