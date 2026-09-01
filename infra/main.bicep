@@ -39,6 +39,7 @@ var commonEnvironment = [
   { name: 'ASSET_API_BASE_URL', value: 'http://localhost:3500/v1.0/invoke/asset-api/method' }
   { name: 'INTERNAL_CALLER_APP_ID', value: 'hhc-web-api' }
   { name: 'ADMIN_ALLOWED_CALLER_APP_ID', value: 'api-gateway' }
+  { name: 'OPERATIONS_ALLOWED_CALLER_APP_IDS', value: 'asset-api,hhc-line-function-bot' }
   { name: 'ALLOW_DEV_CALLER_HEADER', value: 'false' }
   { name: 'ENABLE_FIVE_LOCALE_BULLETIN_NOTIFICATIONS_AFTER_FLUENT_REVIEW', value: 'false' }
   { name: 'CMS_TRANSLATION_ENABLED', value: cmsTranslationEnabled ? 'true' : 'false' }

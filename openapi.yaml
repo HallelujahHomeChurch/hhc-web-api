@@ -10,6 +10,10 @@ tags:
     description: Published website projections exposed through api-gateway.
   - name: Admin
     description: CMS administration exposed through api-gateway and authorized by trusted Account identity headers.
+  - name: Authenticated
+    description: Signed-in application projections exposed through api-gateway.
+  - name: Private
+    description: Direct Dapr service-to-service operations.
   - name: Operations
     description: Direct service health and readiness endpoints used by platform probes.
 x-hhc-service: hhc-web-api
@@ -65,6 +69,495 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/Health' }
         '503': { $ref: '#/components/responses/Error' }
+  /meetings:
+    get:
+      operationId: listPublicMeetings
+      summary: List public meetings
+      tags: [Public]
+      x-hhc-visibility: public
+      x-hhc-callers: [api-gateway]
+      x-hhc-required-headers: [If-None-Match]
+      x-hhc-cache: 'public, max-age=30'
+      security: []
+      parameters: [{ $ref: '#/components/parameters/IfNoneMatch' }]
+      responses:
+        '200': { $ref: '#/components/responses/PublicMeetingList' }
+        '304': { $ref: '#/components/responses/MeetingNotModified' }
+        '500': { $ref: '#/components/responses/Error' }
+  /meetings/{meetingKey}:
+    parameters:
+      - $ref: '#/components/parameters/MeetingKey'
+    get:
+      operationId: getPublicMeeting
+      summary: Get a public meeting
+      tags: [Public]
+      x-hhc-visibility: public
+      x-hhc-callers: [api-gateway]
+      x-hhc-required-headers: [If-None-Match]
+      x-hhc-cache: 'public, max-age=30'
+      security: []
+      parameters: [{ $ref: '#/components/parameters/IfNoneMatch' }]
+      responses:
+        '200': { $ref: '#/components/responses/PublicMeeting' }
+        '304': { $ref: '#/components/responses/MeetingNotModified' }
+        '404': { $ref: '#/components/responses/Error' }
+        '500': { $ref: '#/components/responses/Error' }
+  /meeting-occurrences:
+    get:
+      operationId: listPublicMeetingOccurrences
+      summary: List public meeting occurrences
+      tags: [Public]
+      x-hhc-visibility: public
+      x-hhc-callers: [api-gateway]
+      x-hhc-required-headers: [If-None-Match]
+      x-hhc-cache: 'public, max-age=30'
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/IfNoneMatch'
+        - $ref: '#/components/parameters/RangeFrom'
+        - $ref: '#/components/parameters/RangeTo'
+      responses:
+        '200': { $ref: '#/components/responses/PublicMeetingOccurrenceList' }
+        '304': { $ref: '#/components/responses/MeetingNotModified' }
+        '400': { $ref: '#/components/responses/Error' }
+        '500': { $ref: '#/components/responses/Error' }
+  /meeting-sync-windows:
+    get:
+      operationId: listMeetingSyncWindows
+      summary: List redacted meeting media sync windows
+      tags: [Authenticated]
+      x-hhc-visibility: authenticated
+      x-hhc-callers: [api-gateway]
+      x-hhc-required-headers: [Dapr-Caller-App-Id, dapr-api-token, X-HHC-User-ID, X-HHC-Auth-Provider, X-HHC-Scopes]
+      x-hhc-cache: 'private, no-store'
+      x-required-scopes: ['assets:read']
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      parameters:
+        - $ref: '#/components/parameters/RangeFrom'
+        - $ref: '#/components/parameters/RangeTo'
+      responses:
+        '200': { $ref: '#/components/responses/MediaSyncWindowList' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
+        '500': { $ref: '#/components/responses/Error' }
+  /admin/operations/church-units:
+    get:
+      operationId: listChurchUnits
+      summary: List church units
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      x-hhc-required-headers: [Dapr-Caller-App-Id, dapr-api-token, X-HHC-User-ID, X-HHC-Auth-Provider, X-HHC-Scopes]
+      x-hhc-cache: 'private, no-store'
+      x-required-scopes: ['cms:read']
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
+      parameters: [{ $ref: '#/components/parameters/IncludeArchived' }]
+      responses:
+        '200': { $ref: '#/components/responses/ChurchUnitList' }
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
+        '500': { $ref: '#/components/responses/Error' }
+    post:
+      operationId: createChurchUnit
+      summary: Create a church unit
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      x-hhc-required-headers: [Dapr-Caller-App-Id, dapr-api-token, X-HHC-User-ID, X-HHC-Auth-Provider, X-HHC-Scopes, Idempotency-Key]
+      x-hhc-cache: 'private, no-store'
+      x-required-scopes: ['cms:write']
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { $ref: '#/components/requestBodies/ChurchUnitInput' }
+      responses:
+        '201': { $ref: '#/components/responses/ChurchUnit' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
+        '409': { $ref: '#/components/responses/Error' }
+        '500': { $ref: '#/components/responses/Error' }
+  /admin/operations/church-units/{id}:
+    parameters: [{ $ref: '#/components/parameters/OperationsID' }]
+    get:
+      operationId: getChurchUnit
+      summary: Get a church unit
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      x-hhc-required-headers: [Dapr-Caller-App-Id, dapr-api-token, X-HHC-User-ID, X-HHC-Auth-Provider, X-HHC-Scopes]
+      x-hhc-cache: 'private, no-store'
+      x-required-scopes: ['cms:read']
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
+      responses:
+        '200': { $ref: '#/components/responses/ChurchUnit' }
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
+        '404': { $ref: '#/components/responses/Error' }
+        '500': { $ref: '#/components/responses/Error' }
+    put:
+      operationId: updateChurchUnit
+      summary: Update a church unit
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      x-hhc-required-headers: [Dapr-Caller-App-Id, dapr-api-token, X-HHC-User-ID, X-HHC-Auth-Provider, X-HHC-Scopes, If-Match]
+      x-hhc-cache: 'private, no-store'
+      x-required-scopes: ['cms:write']
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
+      parameters: [{ $ref: '#/components/parameters/IfMatch' }]
+      requestBody: { $ref: '#/components/requestBodies/ChurchUnitInput' }
+      responses:
+        '200': { $ref: '#/components/responses/ChurchUnit' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
+        '404': { $ref: '#/components/responses/Error' }
+        '412': { $ref: '#/components/responses/Error' }
+        '428': { $ref: '#/components/responses/Error' }
+        '500': { $ref: '#/components/responses/Error' }
+  /admin/operations/church-units/{id}/{action}:
+    parameters:
+      - $ref: '#/components/parameters/OperationsID'
+      - $ref: '#/components/parameters/StatusAction'
+    post:
+      operationId: setChurchUnitStatus
+      summary: Change a church unit status
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      x-hhc-required-headers: [Dapr-Caller-App-Id, dapr-api-token, X-HHC-User-ID, X-HHC-Auth-Provider, X-HHC-Scopes, If-Match]
+      x-hhc-cache: 'private, no-store'
+      x-required-scopes: ['cms:write']
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
+      parameters: [{ $ref: '#/components/parameters/IfMatch' }]
+      responses:
+        '200': { $ref: '#/components/responses/ChurchUnit' }
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
+        '404': { $ref: '#/components/responses/Error' }
+        '412': { $ref: '#/components/responses/Error' }
+        '428': { $ref: '#/components/responses/Error' }
+        '500': { $ref: '#/components/responses/Error' }
+  /admin/operations/resources:
+    get:
+      operationId: listOperationsResources
+      summary: List operations resources
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      x-hhc-required-headers: [Dapr-Caller-App-Id, dapr-api-token, X-HHC-User-ID, X-HHC-Auth-Provider, X-HHC-Scopes]
+      x-hhc-cache: 'private, no-store'
+      x-required-scopes: ['cms:read']
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
+      parameters: [{ $ref: '#/components/parameters/IncludeArchived' }]
+      responses:
+        '200': { $ref: '#/components/responses/OperationsResourceList' }
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
+        '500': { $ref: '#/components/responses/Error' }
+    post:
+      operationId: createOperationsResource
+      summary: Create an operations resource
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      x-hhc-required-headers: [Dapr-Caller-App-Id, dapr-api-token, X-HHC-User-ID, X-HHC-Auth-Provider, X-HHC-Scopes, Idempotency-Key]
+      x-hhc-cache: 'private, no-store'
+      x-required-scopes: ['cms:write']
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { $ref: '#/components/requestBodies/OperationsResourceInput' }
+      responses:
+        '201': { $ref: '#/components/responses/OperationsResource' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
+        '409': { $ref: '#/components/responses/Error' }
+        '500': { $ref: '#/components/responses/Error' }
+  /admin/operations/resources/{id}:
+    parameters: [{ $ref: '#/components/parameters/OperationsID' }]
+    get:
+      operationId: getOperationsResource
+      summary: Get an operations resource
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      x-hhc-required-headers: [Dapr-Caller-App-Id, dapr-api-token, X-HHC-User-ID, X-HHC-Auth-Provider, X-HHC-Scopes]
+      x-hhc-cache: 'private, no-store'
+      x-required-scopes: ['cms:read']
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
+      responses:
+        '200': { $ref: '#/components/responses/OperationsResource' }
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
+        '404': { $ref: '#/components/responses/Error' }
+        '500': { $ref: '#/components/responses/Error' }
+    put:
+      operationId: updateOperationsResource
+      summary: Update an operations resource
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      x-hhc-required-headers: [Dapr-Caller-App-Id, dapr-api-token, X-HHC-User-ID, X-HHC-Auth-Provider, X-HHC-Scopes, If-Match]
+      x-hhc-cache: 'private, no-store'
+      x-required-scopes: ['cms:write']
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
+      parameters: [{ $ref: '#/components/parameters/IfMatch' }]
+      requestBody: { $ref: '#/components/requestBodies/OperationsResourceInput' }
+      responses:
+        '200': { $ref: '#/components/responses/OperationsResource' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
+        '404': { $ref: '#/components/responses/Error' }
+        '412': { $ref: '#/components/responses/Error' }
+        '428': { $ref: '#/components/responses/Error' }
+        '500': { $ref: '#/components/responses/Error' }
+  /admin/operations/resources/{id}/{action}:
+    parameters:
+      - $ref: '#/components/parameters/OperationsID'
+      - $ref: '#/components/parameters/StatusAction'
+    post:
+      operationId: setOperationsResourceStatus
+      summary: Change an operations resource status
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      x-hhc-required-headers: [Dapr-Caller-App-Id, dapr-api-token, X-HHC-User-ID, X-HHC-Auth-Provider, X-HHC-Scopes, If-Match]
+      x-hhc-cache: 'private, no-store'
+      x-required-scopes: ['cms:write']
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
+      parameters: [{ $ref: '#/components/parameters/IfMatch' }]
+      responses:
+        '200': { $ref: '#/components/responses/OperationsResource' }
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
+        '404': { $ref: '#/components/responses/Error' }
+        '412': { $ref: '#/components/responses/Error' }
+        '428': { $ref: '#/components/responses/Error' }
+        '500': { $ref: '#/components/responses/Error' }
+  /admin/operations/meetings:
+    get:
+      operationId: listMeetings
+      summary: List meetings for administration
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      x-hhc-required-headers: [Dapr-Caller-App-Id, dapr-api-token, X-HHC-User-ID, X-HHC-Auth-Provider, X-HHC-Scopes]
+      x-hhc-cache: 'private, no-store'
+      x-required-scopes: ['cms:read']
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
+      parameters: [{ $ref: '#/components/parameters/IncludeArchived' }]
+      responses:
+        '200': { $ref: '#/components/responses/MeetingList' }
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
+        '500': { $ref: '#/components/responses/Error' }
+    post:
+      operationId: createMeeting
+      summary: Create a meeting
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      x-hhc-required-headers: [Dapr-Caller-App-Id, dapr-api-token, X-HHC-User-ID, X-HHC-Auth-Provider, X-HHC-Scopes, Idempotency-Key]
+      x-hhc-cache: 'private, no-store'
+      x-required-scopes: ['cms:write']
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { $ref: '#/components/requestBodies/MeetingInput' }
+      responses:
+        '201': { $ref: '#/components/responses/Meeting' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
+        '409': { $ref: '#/components/responses/Error' }
+        '500': { $ref: '#/components/responses/Error' }
+  /admin/operations/meetings/{id}:
+    parameters: [{ $ref: '#/components/parameters/OperationsID' }]
+    get:
+      operationId: getMeeting
+      summary: Get a meeting for administration
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      x-hhc-required-headers: [Dapr-Caller-App-Id, dapr-api-token, X-HHC-User-ID, X-HHC-Auth-Provider, X-HHC-Scopes]
+      x-hhc-cache: 'private, no-store'
+      x-required-scopes: ['cms:read']
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
+      responses:
+        '200': { $ref: '#/components/responses/MeetingDetail' }
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
+        '404': { $ref: '#/components/responses/Error' }
+        '500': { $ref: '#/components/responses/Error' }
+    put:
+      operationId: updateMeeting
+      summary: Update a meeting
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      x-hhc-required-headers: [Dapr-Caller-App-Id, dapr-api-token, X-HHC-User-ID, X-HHC-Auth-Provider, X-HHC-Scopes, If-Match]
+      x-hhc-cache: 'private, no-store'
+      x-required-scopes: ['cms:write']
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
+      parameters: [{ $ref: '#/components/parameters/IfMatch' }]
+      requestBody: { $ref: '#/components/requestBodies/MeetingInput' }
+      responses:
+        '200': { $ref: '#/components/responses/Meeting' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
+        '404': { $ref: '#/components/responses/Error' }
+        '412': { $ref: '#/components/responses/Error' }
+        '428': { $ref: '#/components/responses/Error' }
+        '500': { $ref: '#/components/responses/Error' }
+  /admin/operations/meetings/{id}/{action}:
+    parameters:
+      - $ref: '#/components/parameters/OperationsID'
+      - $ref: '#/components/parameters/StatusAction'
+    post:
+      operationId: setMeetingStatus
+      summary: Change a meeting status
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      x-hhc-required-headers: [Dapr-Caller-App-Id, dapr-api-token, X-HHC-User-ID, X-HHC-Auth-Provider, X-HHC-Scopes, If-Match]
+      x-hhc-cache: 'private, no-store'
+      x-required-scopes: ['cms:write']
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
+      parameters: [{ $ref: '#/components/parameters/IfMatch' }]
+      responses:
+        '200': { $ref: '#/components/responses/Meeting' }
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
+        '404': { $ref: '#/components/responses/Error' }
+        '412': { $ref: '#/components/responses/Error' }
+        '428': { $ref: '#/components/responses/Error' }
+        '500': { $ref: '#/components/responses/Error' }
+  /admin/operations/meetings/{id}/overrides/{occurrenceDate}:
+    parameters:
+      - $ref: '#/components/parameters/OperationsID'
+      - $ref: '#/components/parameters/OccurrenceDate'
+    put:
+      operationId: putMeetingOccurrenceOverride
+      summary: Create or replace a meeting occurrence override
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      x-hhc-required-headers: [Dapr-Caller-App-Id, dapr-api-token, X-HHC-User-ID, X-HHC-Auth-Provider, X-HHC-Scopes, If-Match]
+      x-hhc-cache: 'private, no-store'
+      x-required-scopes: ['cms:write']
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
+      parameters: [{ $ref: '#/components/parameters/IfMatch' }]
+      requestBody: { $ref: '#/components/requestBodies/MeetingOccurrenceOverrideInput' }
+      responses:
+        '200': { $ref: '#/components/responses/MeetingOccurrenceOverride' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
+        '404': { $ref: '#/components/responses/Error' }
+        '412': { $ref: '#/components/responses/Error' }
+        '428': { $ref: '#/components/responses/Error' }
+        '500': { $ref: '#/components/responses/Error' }
+    delete:
+      operationId: deleteMeetingOccurrenceOverride
+      summary: Delete a meeting occurrence override
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      x-hhc-required-headers: [Dapr-Caller-App-Id, dapr-api-token, X-HHC-User-ID, X-HHC-Auth-Provider, X-HHC-Scopes, If-Match]
+      x-hhc-cache: 'private, no-store'
+      x-required-scopes: ['cms:write']
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
+      parameters: [{ $ref: '#/components/parameters/IfMatch' }]
+      responses:
+        '200': { $ref: '#/components/responses/Meeting' }
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
+        '404': { $ref: '#/components/responses/Error' }
+        '412': { $ref: '#/components/responses/Error' }
+        '428': { $ref: '#/components/responses/Error' }
+        '500': { $ref: '#/components/responses/Error' }
+  /admin/operations/meetings/{id}/collections:
+    parameters: [{ $ref: '#/components/parameters/OperationsID' }]
+    put:
+      operationId: replaceMeetingCollectionBindings
+      summary: Replace meeting collection bindings
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      x-hhc-required-headers: [Dapr-Caller-App-Id, dapr-api-token, X-HHC-User-ID, X-HHC-Auth-Provider, X-HHC-Scopes, If-Match]
+      x-hhc-cache: 'private, no-store'
+      x-required-scopes: ['cms:write']
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
+      parameters: [{ $ref: '#/components/parameters/IfMatch' }]
+      requestBody: { $ref: '#/components/requestBodies/MeetingCollectionBindings' }
+      responses:
+        '200': { $ref: '#/components/responses/Meeting' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
+        '404': { $ref: '#/components/responses/Error' }
+        '412': { $ref: '#/components/responses/Error' }
+        '428': { $ref: '#/components/responses/Error' }
+        '500': { $ref: '#/components/responses/Error' }
+  /priv/meeting-occurrences:
+    get:
+      operationId: listPrivateMeetingOccurrences
+      summary: List internal meeting occurrences
+      tags: [Private]
+      x-hhc-visibility: private
+      x-hhc-callers: [asset-api, hhc-line-function-bot]
+      x-hhc-required-headers: [Dapr-Caller-App-Id, dapr-api-token]
+      x-hhc-cache: 'private, no-store'
+      security: [{ daprApiToken: [], daprCallerAppId: [] }]
+      servers: [{ url: / }]
+      parameters:
+        - $ref: '#/components/parameters/RangeFrom'
+        - $ref: '#/components/parameters/RangeTo'
+      responses:
+        '200': { $ref: '#/components/responses/MeetingOccurrenceList' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '500': { $ref: '#/components/responses/Error' }
+  /priv/meeting-sync-windows:
+    get:
+      operationId: listPrivateMeetingSyncWindows
+      summary: List internal meeting media sync windows
+      tags: [Private]
+      x-hhc-visibility: private
+      x-hhc-callers: [asset-api, hhc-line-function-bot]
+      x-hhc-required-headers: [Dapr-Caller-App-Id, dapr-api-token]
+      x-hhc-cache: 'private, no-store'
+      security: [{ daprApiToken: [], daprCallerAppId: [] }]
+      servers: [{ url: / }]
+      parameters:
+        - $ref: '#/components/parameters/RangeFrom'
+        - $ref: '#/components/parameters/RangeTo'
+      responses:
+        '200': { $ref: '#/components/responses/MediaSyncWindowList' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '500': { $ref: '#/components/responses/Error' }
   /admin/campaigns:
     get:
       operationId: listCampaigns
@@ -1497,7 +1990,29 @@ components:
     BulletinTranslationTargetEdition: { name: targetLocale, in: path, required: true, schema: { $ref: '#/components/schemas/BulletinTranslationTargetEdition' } }
     CampaignTranslationTargetLocale: { name: targetLocale, in: path, required: true, schema: { $ref: '#/components/schemas/CampaignTranslationTargetLocale' } }
     Revision: { name: revision, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    MeetingKey: { name: meetingKey, in: path, required: true, schema: { type: string, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$' } }
+    OperationsID: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    StatusAction: { name: action, in: path, required: true, schema: { type: string, enum: [pause, resume, archive, restore] } }
+    OccurrenceDate: { name: occurrenceDate, in: path, required: true, schema: { type: string, format: date } }
+    IncludeArchived: { name: includeArchived, in: query, schema: { type: boolean, default: false } }
+    RangeFrom: { name: from, in: query, schema: { type: string, format: date-time }, description: Inclusive range start; defaults to now. }
+    RangeTo: { name: to, in: query, schema: { type: string, format: date-time }, description: Exclusive range end; defaults to 30 days after from and cannot exceed 90 days. }
   requestBodies:
+    ChurchUnitInput:
+      required: true
+      content: { application/json: { schema: { $ref: '#/components/schemas/ChurchUnitInput' } } }
+    OperationsResourceInput:
+      required: true
+      content: { application/json: { schema: { $ref: '#/components/schemas/OperationsResourceInput' } } }
+    MeetingInput:
+      required: true
+      content: { application/json: { schema: { $ref: '#/components/schemas/MeetingInput' } } }
+    MeetingOccurrenceOverrideInput:
+      required: true
+      content: { application/json: { schema: { $ref: '#/components/schemas/MeetingOccurrenceOverrideInput' } } }
+    MeetingCollectionBindings:
+      required: true
+      content: { application/json: { schema: { $ref: '#/components/schemas/MeetingCollectionBindings' } } }
     PublicationInput:
       required: true
       content:
@@ -1517,6 +2032,58 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/TranslationPreviewInput' }
   responses:
+    PublicMeetingList:
+      description: Public meeting list; no internal IDs, bindings, or audit fields.
+      headers: { ETag: { schema: { type: string } }, Cache-Control: { schema: { type: string, const: 'public, max-age=30' } } }
+      content: { application/json: { schema: { $ref: '#/components/schemas/PublicMeetingListEnvelope' } } }
+    PublicMeeting:
+      description: Public meeting; no internal IDs, bindings, or audit fields.
+      headers: { ETag: { schema: { type: string } }, Cache-Control: { schema: { type: string, const: 'public, max-age=30' } } }
+      content: { application/json: { schema: { $ref: '#/components/schemas/PublicMeetingEnvelope' } } }
+    PublicMeetingOccurrenceList:
+      description: Public meeting occurrences including cancelled occurrences.
+      headers: { ETag: { schema: { type: string } }, Cache-Control: { schema: { type: string, const: 'public, max-age=30' } } }
+      content: { application/json: { schema: { $ref: '#/components/schemas/PublicMeetingOccurrenceListEnvelope' } } }
+    MeetingNotModified:
+      description: The public meeting projection has not changed.
+      headers: { ETag: { schema: { type: string } }, Cache-Control: { schema: { type: string, const: 'public, max-age=30' } } }
+    MediaSyncWindowList:
+      description: Redacted media sync windows.
+      headers: { Cache-Control: { schema: { type: string, const: 'private, no-store' } } }
+      content: { application/json: { schema: { $ref: '#/components/schemas/MediaSyncWindowListEnvelope' } } }
+    MeetingOccurrenceList:
+      description: Internal meeting occurrences without collection bindings.
+      headers: { Cache-Control: { schema: { type: string, const: 'private, no-store' } } }
+      content: { application/json: { schema: { $ref: '#/components/schemas/MeetingOccurrenceListEnvelope' } } }
+    ChurchUnitList:
+      description: Church unit list.
+      content: { application/json: { schema: { $ref: '#/components/schemas/ChurchUnitListEnvelope' } } }
+    ChurchUnit:
+      description: Church unit.
+      headers: { ETag: { schema: { type: string } } }
+      content: { application/json: { schema: { $ref: '#/components/schemas/ChurchUnitEnvelope' } } }
+    OperationsResourceList:
+      description: Operations resource list.
+      content: { application/json: { schema: { $ref: '#/components/schemas/OperationsResourceListEnvelope' } } }
+    OperationsResource:
+      description: Operations resource.
+      headers: { ETag: { schema: { type: string } } }
+      content: { application/json: { schema: { $ref: '#/components/schemas/OperationsResourceEnvelope' } } }
+    MeetingList:
+      description: Administrative meeting list.
+      content: { application/json: { schema: { $ref: '#/components/schemas/MeetingListEnvelope' } } }
+    Meeting:
+      description: Meeting mutation result.
+      headers: { ETag: { schema: { type: string } } }
+      content: { application/json: { schema: { $ref: '#/components/schemas/MeetingMutationEnvelope' } } }
+    MeetingDetail:
+      description: Administrative meeting detail with overrides and collection bindings.
+      headers: { ETag: { schema: { type: string } } }
+      content: { application/json: { schema: { $ref: '#/components/schemas/MeetingDetailEnvelope' } } }
+    MeetingOccurrenceOverride:
+      description: Meeting occurrence override.
+      headers: { ETag: { schema: { type: string } } }
+      content: { application/json: { schema: { $ref: '#/components/schemas/MeetingOccurrenceOverrideEnvelope' } } }
     Health:
       description: Service process is healthy or ready.
       content:
@@ -1711,6 +2278,176 @@ components:
       description: Public revalidation policy for Site Layout projections.
       schema: { type: string, const: 'public, max-age=30, must-revalidate' }
   schemas:
+    OperationsStatus: { type: string, enum: [active, paused, archived] }
+    OperationsVisibility: { type: string, enum: [public, internal] }
+    MeetingSchedule:
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type: { type: string, enum: [weekly, once] }
+        daysOfWeek: { type: array, uniqueItems: true, items: { type: integer, minimum: 0, maximum: 6 } }
+        startTime: { type: string, pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$' }
+        startsAt: { type: string, format: date-time }
+    ChurchUnitInput:
+      type: object
+      required: [key, name]
+      properties:
+        key: { type: string, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$' }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string, maxLength: 2000 }
+        parentId: { type: string, format: uuid }
+    ChurchUnit:
+      allOf:
+        - $ref: '#/components/schemas/ChurchUnitInput'
+        - type: object
+          required: [id, status, version]
+          properties:
+            id: { type: string, format: uuid }
+            status: { $ref: '#/components/schemas/OperationsStatus' }
+            version: { type: integer, format: int64, minimum: 1 }
+      unevaluatedProperties: false
+    OperationsResourceInput:
+      type: object
+      required: [key, name, kind, churchUnitId, timezone, visibility]
+      properties:
+        key: { type: string, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$' }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string, maxLength: 2000 }
+        kind: { type: string, enum: [venue] }
+        churchUnitId: { type: string, format: uuid }
+        locationContentId: { type: string, format: uuid }
+        timezone: { type: string, minLength: 1, maxLength: 100 }
+        visibility: { $ref: '#/components/schemas/OperationsVisibility' }
+    OperationsResource:
+      allOf:
+        - $ref: '#/components/schemas/OperationsResourceInput'
+        - type: object
+          required: [id, reservationEnabled, status, version]
+          properties:
+            id: { type: string, format: uuid }
+            reservationEnabled: { type: boolean, const: false }
+            status: { $ref: '#/components/schemas/OperationsStatus' }
+            version: { type: integer, format: int64, minimum: 1 }
+      unevaluatedProperties: false
+    MeetingInput:
+      type: object
+      required: [key, name, churchUnitId, venueResourceId, timezone, schedule, durationMinutes, visibility]
+      properties:
+        key: { type: string, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$' }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string, maxLength: 2000 }
+        churchUnitId: { type: string, format: uuid }
+        venueResourceId: { type: string, format: uuid }
+        timezone: { type: string, minLength: 1, maxLength: 100 }
+        schedule: { $ref: '#/components/schemas/MeetingSchedule' }
+        durationMinutes: { type: integer, minimum: 1, maximum: 1440 }
+        visibility: { $ref: '#/components/schemas/OperationsVisibility' }
+    Meeting:
+      allOf:
+        - $ref: '#/components/schemas/MeetingInput'
+        - type: object
+          required: [id, status, version]
+          properties:
+            id: { type: string, format: uuid }
+            status: { $ref: '#/components/schemas/OperationsStatus' }
+            version: { type: integer, format: int64, minimum: 1 }
+    PublicMeeting:
+      type: object
+      additionalProperties: false
+      required: [key, name, timezone, schedule, durationMinutes]
+      properties:
+        key: { type: string }
+        name: { type: string }
+        description: { type: string }
+        timezone: { type: string }
+        schedule: { $ref: '#/components/schemas/MeetingSchedule' }
+        durationMinutes: { type: integer, minimum: 1, maximum: 1440 }
+        nextOccurrence: { $ref: '#/components/schemas/PublicMeetingOccurrence' }
+    PublicMeetingOccurrence:
+      type: object
+      additionalProperties: false
+      required: [occurrenceId, meetingKey, startsAt, endsAt, status]
+      properties:
+        occurrenceId: { type: string, format: uuid }
+        meetingKey: { type: string }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        status: { type: string, enum: [scheduled, cancelled] }
+    MeetingOccurrence:
+      type: object
+      additionalProperties: false
+      required: [occurrenceId, meetingId, meetingKey, churchUnitId, venueResourceId, startsAt, endsAt, status, version]
+      properties:
+        occurrenceId: { type: string, format: uuid }
+        meetingId: { type: string, format: uuid }
+        meetingKey: { type: string }
+        churchUnitId: { type: string, format: uuid }
+        venueResourceId: { type: string, format: uuid }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        status: { type: string, enum: [scheduled, cancelled] }
+        version: { type: integer, format: int64, minimum: 1 }
+    MeetingOccurrenceOverrideInput:
+      type: object
+      properties:
+        cancelled: { type: boolean }
+        startsAt: { type: string, format: date-time }
+        durationMinutes: { type: integer, minimum: 1, maximum: 1440 }
+        venueResourceId: { type: string, format: uuid }
+        reason: { type: string, maxLength: 500 }
+    MeetingOccurrenceOverride:
+      allOf:
+        - $ref: '#/components/schemas/MeetingOccurrenceOverrideInput'
+        - type: object
+          required: [meetingId, occurrenceDate, cancelled, version]
+          properties:
+            meetingId: { type: string, format: uuid }
+            occurrenceDate: { type: string, format: date }
+            version: { type: integer, format: int64, minimum: 1 }
+      unevaluatedProperties: false
+    MediaSyncWindow:
+      type: object
+      additionalProperties: false
+      required: [startsAt, endsAt]
+      properties:
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+    MeetingCollectionBindings:
+      type: object
+      additionalProperties: false
+      required: [collectionIds]
+      properties:
+        collectionIds: { type: array, uniqueItems: true, maxItems: 1000, items: { type: string, format: uuid } }
+    MeetingMutation:
+      allOf:
+        - $ref: '#/components/schemas/Meeting'
+        - type: object
+          properties:
+            nextOccurrence: { $ref: '#/components/schemas/MeetingOccurrence' }
+      unevaluatedProperties: false
+    MeetingDetail:
+      allOf:
+        - $ref: '#/components/schemas/Meeting'
+        - type: object
+          required: [overrides, collectionIds]
+          properties:
+            overrides: { type: array, items: { $ref: '#/components/schemas/MeetingOccurrenceOverride' } }
+            collectionIds: { type: array, items: { type: string, format: uuid } }
+      unevaluatedProperties: false
+    PublicMeetingListEnvelope: { type: object, required: [data], properties: { data: { type: array, items: { $ref: '#/components/schemas/PublicMeeting' } } } }
+    PublicMeetingEnvelope: { type: object, required: [data], properties: { data: { $ref: '#/components/schemas/PublicMeeting' } } }
+    PublicMeetingOccurrenceListEnvelope: { type: object, required: [data], properties: { data: { type: array, items: { $ref: '#/components/schemas/PublicMeetingOccurrence' } } } }
+    MediaSyncWindowListEnvelope: { type: object, required: [data], properties: { data: { type: array, items: { $ref: '#/components/schemas/MediaSyncWindow' } } } }
+    MeetingOccurrenceListEnvelope: { type: object, required: [data], properties: { data: { type: array, items: { $ref: '#/components/schemas/MeetingOccurrence' } } } }
+    ChurchUnitListEnvelope: { type: object, required: [data], properties: { data: { type: array, items: { $ref: '#/components/schemas/ChurchUnit' } } } }
+    ChurchUnitEnvelope: { type: object, required: [data], properties: { data: { $ref: '#/components/schemas/ChurchUnit' } } }
+    OperationsResourceListEnvelope: { type: object, required: [data], properties: { data: { type: array, items: { $ref: '#/components/schemas/OperationsResource' } } } }
+    OperationsResourceEnvelope: { type: object, required: [data], properties: { data: { $ref: '#/components/schemas/OperationsResource' } } }
+    MeetingListEnvelope: { type: object, required: [data], properties: { data: { type: array, items: { $ref: '#/components/schemas/Meeting' } } } }
+    MeetingMutationEnvelope: { type: object, required: [data], properties: { data: { $ref: '#/components/schemas/MeetingMutation' } } }
+    MeetingDetailEnvelope: { type: object, required: [data], properties: { data: { $ref: '#/components/schemas/MeetingDetail' } } }
+    MeetingOccurrenceOverrideEnvelope: { type: object, required: [data], properties: { data: { $ref: '#/components/schemas/MeetingOccurrenceOverride' } } }
     CampaignTranslation:
       type: object
       additionalProperties: false

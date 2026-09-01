@@ -42,6 +42,25 @@ func TestEngagementUsesDaprInvocationByDefault(t *testing.T) {
 	}
 }
 
+func TestOperationsAllowedCallerAppIDs(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://example")
+	t.Setenv("OPERATIONS_ALLOWED_CALLER_APP_IDS", " asset-api, hhc-line-function-bot,asset-api ")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"asset-api", "hhc-line-function-bot"}
+	if len(cfg.OperationsAllowedCallerAppIDs) != len(want) {
+		t.Fatalf("allowed callers = %#v, want %#v", cfg.OperationsAllowedCallerAppIDs, want)
+	}
+	for i := range want {
+		if cfg.OperationsAllowedCallerAppIDs[i] != want[i] {
+			t.Fatalf("allowed callers = %#v, want %#v", cfg.OperationsAllowedCallerAppIDs, want)
+		}
+	}
+}
+
 func TestFiveLocaleBulletinNotificationsRequireExplicitFluentReviewEnablement(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://example")
 	t.Setenv("ENABLE_FIVE_LOCALE_BULLETIN_NOTIFICATIONS_AFTER_FLUENT_REVIEW", "")

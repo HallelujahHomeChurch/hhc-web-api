@@ -34,6 +34,21 @@ func requireTrusted(caller, daprAPIToken string, allowDevCaller bool, next http.
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), principalKey{}, p)))
 	})
 }
+
+func requireServiceCaller(allowed map[string]bool, daprAPIToken string, allowDevCaller bool, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		caller := strings.TrimSpace(r.Header.Get("Dapr-Caller-App-Id"))
+		if caller == "" && allowDevCaller {
+			caller = strings.TrimSpace(r.Header.Get("X-Internal-Caller-App-Id"))
+		}
+		tokenValid := daprAPIToken == "" || subtle.ConstantTimeCompare([]byte(r.Header.Get("dapr-api-token")), []byte(daprAPIToken)) == 1
+		if !tokenValid || !allowed[caller] {
+			writeError(w, http.StatusUnauthorized, "unauthorized", "Trusted service identity is required.")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
 func requireScope(scope string, next http.HandlerFunc) http.HandlerFunc {
 	return requireScopes([]string{scope}, next)
 }
