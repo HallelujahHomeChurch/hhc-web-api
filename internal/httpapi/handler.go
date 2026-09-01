@@ -49,7 +49,7 @@ type Handler struct {
 	operations               operationsHTTPService
 	operationsNow            func() time.Time
 	operationsAllowedCallers map[string]bool
-	operationsWorkloadAuth   ServiceWorkloadAuth
+	operationsWorkloadAuth   []ServiceWorkloadAuth
 	trustedCaller            string
 	daprAPIToken             string
 	allowDevCaller           bool
@@ -70,7 +70,7 @@ func (h *Handler) WithOperations(service operationsHTTPService, allowedCallers m
 	h.operationsAllowedCallers = allowedCallers
 	return h
 }
-func (h *Handler) WithOperationsWorkloadAuth(config ServiceWorkloadAuth) *Handler {
+func (h *Handler) WithOperationsWorkloadAuth(config ...ServiceWorkloadAuth) *Handler {
 	h.operationsWorkloadAuth = config
 	return h
 }

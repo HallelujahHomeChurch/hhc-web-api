@@ -122,14 +122,16 @@ func TestPrivateMeetingRoutesRequireAllowedServiceCaller(t *testing.T) {
 }
 
 func TestPrivateMeetingSyncWindowsAcceptsOnlyConfiguredWorkloadIdentity(t *testing.T) {
-	handler := operationsTestHandler(&operationsHandlerStub{}, ServiceWorkloadAuth{
-		TenantID: "tenant", Issuer: "https://sts.windows.net/tenant/", Audience: "api://meeting", ClientID: "warmer-client", ObjectID: "warmer-object", Caller: "asset-api",
-	})
+	handler := operationsTestHandler(&operationsHandlerStub{},
+		ServiceWorkloadAuth{TenantID: "tenant", Issuer: "https://sts.windows.net/tenant/", Audience: "api://meeting", ClientID: "warmer-client", ObjectID: "warmer-object", Caller: "asset-api"},
+		ServiceWorkloadAuth{TenantID: "tenant", Issuer: "https://sts.windows.net/tenant/", Audience: "api://meeting", ClientID: "line-client", ObjectID: "line-object", Caller: "hhc-line-function-bot"},
+	)
 	for _, test := range []struct {
 		path, clientID, objectID string
 		want                     int
 	}{
 		{"/priv/meeting-sync-windows", "warmer-client", "warmer-object", http.StatusOK},
+		{"/priv/meeting-sync-windows", "line-client", "line-object", http.StatusOK},
 		{"/priv/meeting-sync-windows", "other-client", "warmer-object", http.StatusUnauthorized},
 		{"/priv/meeting-sync-windows", "warmer-client", "other-object", http.StatusUnauthorized},
 		{"/priv/meeting-occurrences", "warmer-client", "warmer-object", http.StatusUnauthorized},
@@ -191,7 +193,7 @@ func operationsTestHandler(service operationsHTTPService, workload ...ServiceWor
 	handler := NewWithContent(nil, nil, nil, nil, "api-gateway", "token", false).
 		WithOperations(service, map[string]bool{"asset-api": true, "hhc-line-function-bot": true})
 	if len(workload) > 0 {
-		handler.WithOperationsWorkloadAuth(workload[0])
+		handler.WithOperationsWorkloadAuth(workload...)
 	}
 	return handler.Routes()
 }

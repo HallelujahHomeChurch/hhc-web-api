@@ -46,6 +46,8 @@ type Config struct {
 	OperationsWorkloadAudience                             string
 	OperationsWorkloadClientID                             string
 	OperationsWorkloadObjectID                             string
+	OperationsSecondaryWorkloadClientID                    string
+	OperationsSecondaryWorkloadObjectID                    string
 	DaprAPIToken                                           string
 	AllowDevCaller                                         bool
 	EnableFiveLocaleBulletinNotificationsAfterFluentReview bool
@@ -67,6 +69,8 @@ func Load() (Config, error) {
 		OperationsWorkloadAudience:                             strings.TrimSpace(os.Getenv("OPERATIONS_WORKLOAD_AUDIENCE")),
 		OperationsWorkloadClientID:                             strings.TrimSpace(os.Getenv("OPERATIONS_WORKLOAD_CLIENT_ID")),
 		OperationsWorkloadObjectID:                             strings.TrimSpace(os.Getenv("OPERATIONS_WORKLOAD_OBJECT_ID")),
+		OperationsSecondaryWorkloadClientID:                    strings.TrimSpace(os.Getenv("OPERATIONS_SECONDARY_WORKLOAD_CLIENT_ID")),
+		OperationsSecondaryWorkloadObjectID:                    strings.TrimSpace(os.Getenv("OPERATIONS_SECONDARY_WORKLOAD_OBJECT_ID")),
 		DaprAPIToken:                                           strings.TrimSpace(os.Getenv("APP_API_TOKEN")),
 		AllowDevCaller:                                         strings.EqualFold(strings.TrimSpace(os.Getenv("ALLOW_DEV_CALLER_HEADER")), "true"),
 		EnableFiveLocaleBulletinNotificationsAfterFluentReview: strings.EqualFold(strings.TrimSpace(os.Getenv("ENABLE_FIVE_LOCALE_BULLETIN_NOTIFICATIONS_AFTER_FLUENT_REVIEW")), "true"),
@@ -104,6 +108,10 @@ func Load() (Config, error) {
 	}
 	if configured != 0 && configured != len(workloadValues) {
 		return Config{}, fmt.Errorf("operations workload authentication configuration is incomplete")
+	}
+	secondaryConfigured := cfg.OperationsSecondaryWorkloadClientID != "" || cfg.OperationsSecondaryWorkloadObjectID != ""
+	if secondaryConfigured && (configured != len(workloadValues) || cfg.OperationsSecondaryWorkloadClientID == "" || cfg.OperationsSecondaryWorkloadObjectID == "") {
+		return Config{}, fmt.Errorf("operations secondary workload authentication configuration is incomplete")
 	}
 	if err := cfg.Translation.validate(); err != nil {
 		return Config{}, err
