@@ -363,3 +363,34 @@ func TestPageGroupPublicationMigrationAddsPendingRemovalAndManifest(t *testing.T
 		}
 	}
 }
+
+func TestOperationsMeetingMigrationAddsKernelTablesAndIndexes(t *testing.T) {
+	contents, err := files.ReadFile("sql/032_operations_meetings.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := string(contents)
+	for _, expected := range []string{
+		"CREATE TABLE hhc_web.church_unit",
+		"CREATE TABLE hhc_web.resource",
+		"CREATE TABLE hhc_web.meeting",
+		"CREATE TABLE hhc_web.meeting_occurrence_override",
+		"CREATE TABLE hhc_web.meeting_collection_binding",
+		"CREATE TABLE hhc_web.operations_audit",
+		"church_unit_stable_key_uq",
+		"resource_stable_key_uq",
+		"meeting_stable_key_uq",
+		"church_unit_status_parent_idx",
+		"resource_status_unit_idx",
+		"meeting_status_venue_idx",
+		"meeting_occurrence_override_date_idx",
+		"meeting_collection_binding_collection_idx",
+	} {
+		if !strings.Contains(sql, expected) {
+			t.Fatalf("migration missing %q", expected)
+		}
+	}
+	if strings.Contains(sql, "CREATE TABLE hhc_web.resource_reservation") || strings.Contains(sql, "CREATE TABLE hhc_web.resource_maintenance") {
+		t.Fatal("Phase 1 migration must not add reservation tables")
+	}
+}
