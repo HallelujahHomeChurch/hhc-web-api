@@ -40,6 +40,7 @@ type Config struct {
 	EngagementAPIBaseURL                                   string
 	InternalCallerAppID                                    string
 	AdminAllowedCaller                                     string
+	OperationsAllowedCallerAppIDs                          []string
 	DaprAPIToken                                           string
 	AllowDevCaller                                         bool
 	EnableFiveLocaleBulletinNotificationsAfterFluentReview bool
@@ -55,8 +56,9 @@ func Load() (Config, error) {
 		Environment: value("ENVIRONMENT", "development"), ShutdownTimeout: 10 * time.Second, AssetAPIBaseURL: value("ASSET_API_BASE_URL", "http://127.0.0.1:8083"),
 		EngagementAPIBaseURL: value("ENGAGEMENT_API_BASE_URL", "http://127.0.0.1:3500/v1.0/invoke/engagement-api/method"),
 		InternalCallerAppID:  value("INTERNAL_CALLER_APP_ID", "hhc-web-api"), AdminAllowedCaller: value("ADMIN_ALLOWED_CALLER_APP_ID", "api-gateway"),
-		DaprAPIToken:   strings.TrimSpace(os.Getenv("APP_API_TOKEN")),
-		AllowDevCaller: strings.EqualFold(strings.TrimSpace(os.Getenv("ALLOW_DEV_CALLER_HEADER")), "true"),
+		OperationsAllowedCallerAppIDs: commaSeparated("OPERATIONS_ALLOWED_CALLER_APP_IDS", "asset-api,hhc-line-function-bot"),
+		DaprAPIToken:                  strings.TrimSpace(os.Getenv("APP_API_TOKEN")),
+		AllowDevCaller:                strings.EqualFold(strings.TrimSpace(os.Getenv("ALLOW_DEV_CALLER_HEADER")), "true"),
 		EnableFiveLocaleBulletinNotificationsAfterFluentReview: strings.EqualFold(strings.TrimSpace(os.Getenv("ENABLE_FIVE_LOCALE_BULLETIN_NOTIFICATIONS_AFTER_FLUENT_REVIEW")), "true"),
 		PublicBaseURL:     value("PUBLIC_BASE_URL", "http://127.0.0.1:8082/assets"),
 		OutboxMaxAttempts: 20,
@@ -147,6 +149,19 @@ func value(key, fallback string) string {
 		return current
 	}
 	return fallback
+}
+
+func commaSeparated(key, fallback string) []string {
+	seen := map[string]bool{}
+	values := make([]string, 0)
+	for _, item := range strings.Split(value(key, fallback), ",") {
+		item = strings.TrimSpace(item)
+		if item != "" && !seen[item] {
+			seen[item] = true
+			values = append(values, item)
+		}
+	}
+	return values
 }
 
 func positiveInt(key string, fallback int) (int, error) {

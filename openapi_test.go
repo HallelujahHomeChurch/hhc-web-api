@@ -777,7 +777,7 @@ func TestOpenAPICatalogContract(t *testing.T) {
 
 func TestOpenAPITagDefinitionsMatchOperations(t *testing.T) {
 	document := readOpenAPI(t)
-	want := []string{"Admin", "Operations", "Public"}
+	want := []string{"Admin", "Authenticated", "Operations", "Private", "Public"}
 	if got := topLevelTagNames(document); !reflect.DeepEqual(got, want) {
 		t.Fatalf("top-level tags = %v, want %v", got, want)
 	}
@@ -862,6 +862,59 @@ func TestOpenAPIDocumentsGatewayTrustAndServiceBoundaries(t *testing.T) {
 	}
 }
 
+func TestOpenAPIDocumentsMeetingOperationsVisibilityAndDataBoundaries(t *testing.T) {
+	document := readOpenAPI(t)
+	wantVisibility := map[string]string{
+		"listPublicMeetings": "public", "listMeetingSyncWindows": "authenticated",
+		"listMeetings": "admin", "listPrivateMeetingOccurrences": "private",
+	}
+	for operationID, visibility := range wantVisibility {
+		operation := operationByID(t, document, operationID)
+		for _, expected := range []string{
+			"x-hhc-visibility: " + visibility,
+			"x-hhc-callers:",
+			"x-hhc-required-headers:",
+			"x-hhc-cache:",
+			"security:",
+		} {
+			if !strings.Contains(operation, expected) {
+				t.Errorf("%s missing %q:\n%s", operationID, expected, operation)
+			}
+		}
+	}
+	for _, operationID := range []string{
+		"listPublicMeetings", "getPublicMeeting", "listPublicMeetingOccurrences", "listMeetingSyncWindows",
+		"listChurchUnits", "createChurchUnit", "getChurchUnit", "updateChurchUnit", "setChurchUnitStatus",
+		"listOperationsResources", "createOperationsResource", "getOperationsResource", "updateOperationsResource", "setOperationsResourceStatus",
+		"listMeetings", "createMeeting", "getMeeting", "updateMeeting", "setMeetingStatus",
+		"putMeetingOccurrenceOverride", "deleteMeetingOccurrenceOverride", "replaceMeetingCollectionBindings",
+		"listPrivateMeetingOccurrences", "listPrivateMeetingSyncWindows",
+	} {
+		operation := operationByID(t, document, operationID)
+		for _, expected := range []string{"x-hhc-visibility:", "x-hhc-callers:", "x-hhc-required-headers:", "x-hhc-cache:", "security:", "responses:"} {
+			if !strings.Contains(operation, expected) {
+				t.Errorf("%s missing %q:\n%s", operationID, expected, operation)
+			}
+		}
+	}
+	for _, schema := range []string{"PublicMeeting", "PublicMeetingOccurrence", "MediaSyncWindow"} {
+		block := schemaBlock(document, schema)
+		if block == "" {
+			t.Fatalf("missing %s schema", schema)
+		}
+		for _, forbidden := range []string{"collectionId", "createdBy", "updatedBy", "createdAt", "updatedAt"} {
+			if strings.Contains(block, forbidden) {
+				t.Errorf("%s leaks %q:\n%s", schema, forbidden, block)
+			}
+		}
+	}
+	for _, forbidden := range []string{"meetingId", "meetingKey", "collectionId", "name", "version"} {
+		if block := schemaBlock(document, "MediaSyncWindow"); strings.Contains(block, forbidden) {
+			t.Errorf("MediaSyncWindow leaks %q:\n%s", forbidden, block)
+		}
+	}
+}
+
 func TestOpenAPIComposedSchemasRemainSatisfiable(t *testing.T) {
 	document := readOpenAPI(t)
 	tests := []struct {
@@ -872,6 +925,10 @@ func TestOpenAPIComposedSchemasRemainSatisfiable(t *testing.T) {
 		{"ContentItem", []string{"$ref: '#/components/schemas/ContentWriteFields'", "required: [id, module, status, version, translations, isPublished, createdBy, updatedBy, createdAt, updatedAt]", "$ref: '#/components/schemas/ContentTranslation'", "unevaluatedProperties: false"}},
 		{"CreateCampaignSchedule", []string{"$ref: '#/components/schemas/CampaignScheduleFields'", "unevaluatedProperties: false"}},
 		{"UpdateCampaignSchedule", []string{"$ref: '#/components/schemas/CampaignScheduleFields'", "required: [enabled]", "enabled: { type: boolean }", "unevaluatedProperties: false"}},
+		{"ChurchUnit", []string{"$ref: '#/components/schemas/ChurchUnitInput'", "unevaluatedProperties: false"}},
+		{"OperationsResource", []string{"$ref: '#/components/schemas/OperationsResourceInput'", "unevaluatedProperties: false"}},
+		{"MeetingDetail", []string{"$ref: '#/components/schemas/Meeting'", "required: [overrides, collectionIds]", "unevaluatedProperties: false"}},
+		{"MeetingMutation", []string{"$ref: '#/components/schemas/Meeting'", "nextOccurrence:", "unevaluatedProperties: false"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -883,7 +940,7 @@ func TestOpenAPIComposedSchemasRemainSatisfiable(t *testing.T) {
 			}
 		})
 	}
-	for _, fields := range []string{"ContentWriteFields", "CampaignScheduleFields"} {
+	for _, fields := range []string{"ContentWriteFields", "CampaignScheduleFields", "ChurchUnitInput", "OperationsResourceInput", "MeetingInput", "MeetingOccurrenceOverrideInput", "Meeting"} {
 		if block := schemaBlock(document, fields); strings.Contains(block, "additionalProperties: false") || strings.Contains(block, "unevaluatedProperties: false") {
 			t.Errorf("shared schema %s closes properties before composition:\n%s", fields, block)
 		}
@@ -1043,8 +1100,9 @@ func validateCatalogContract(document string) error {
 		}
 	}
 
-	visibilityTags := map[string]string{"public": "Public", "admin": "Admin", "private": "Private", "operations": "Operations"}
+	visibilityTags := map[string]string{"public": "Public", "authenticated": "Authenticated", "admin": "Admin", "private": "Private", "operations": "Operations"}
 	adminSecurity := "[{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]"
+	privateSecurity := "[{ daprApiToken: [], daprCallerAppId: [] }]"
 	for _, operation := range operations {
 		name := operation.method + " " + operation.path
 		visibility, count := operationValue(operation.block, "x-hhc-visibility")
@@ -1077,6 +1135,14 @@ func validateCatalogContract(document string) error {
 			if serverCount != 1 || servers != "[{ url: https://admin.alive.org.tw/api }]" {
 				return fmt.Errorf("%s must resolve through admin.alive.org.tw/api", name)
 			}
+		case "authenticated":
+			if serverCount != 0 {
+				return fmt.Errorf("%s must inherit the authenticated gateway server", name)
+			}
+		case "private":
+			if serverCount != 1 || servers != "[{ url: / }]" {
+				return fmt.Errorf("%s must use a contract-relative direct-service server", name)
+			}
 		case "operations":
 			if serverCount != 1 || servers != "[{ url: / }]" {
 				return fmt.Errorf("%s must use a contract-relative direct-service server", name)
@@ -1086,13 +1152,16 @@ func validateCatalogContract(document string) error {
 			}
 		}
 		security, count := operationValue(operation.block, "security")
-		if visibility == "admin" && (count != 1 || security != adminSecurity) {
+		if (visibility == "admin" || visibility == "authenticated") && (count != 1 || security != adminSecurity) {
 			return fmt.Errorf("%s must document trusted gateway security", name)
 		}
-		if visibility != "admin" && (count != 1 || security != "[]") {
+		if visibility == "private" && (count != 1 || security != privateSecurity) {
+			return fmt.Errorf("%s must document service caller security", name)
+		}
+		if visibility != "admin" && visibility != "authenticated" && visibility != "private" && (count != 1 || security != "[]") {
 			return fmt.Errorf("%s must document its unauthenticated service boundary", name)
 		}
-		if visibility == "admin" {
+		if visibility == "admin" || visibility == "authenticated" {
 			for status, response := range map[string]string{"401": "AdminUnauthorized", "403": "AdminForbidden"} {
 				if !strings.Contains(operation.block, "'"+status+"': { $ref: '#/components/responses/"+response+"' }") {
 					return fmt.Errorf("%s missing trusted Admin %s response", name, status)
@@ -1233,6 +1302,30 @@ func expectedCatalogRoutes() []string {
 		GET /pages/{}
 		GET /site-layout
 		GET /home
+		GET /meetings
+		GET /meetings/{}
+		GET /meeting-occurrences
+		GET /meeting-sync-windows
+		GET /admin/operations/church-units
+		POST /admin/operations/church-units
+		GET /admin/operations/church-units/{}
+		PUT /admin/operations/church-units/{}
+		POST /admin/operations/church-units/{}/{}
+		GET /admin/operations/resources
+		POST /admin/operations/resources
+		GET /admin/operations/resources/{}
+		PUT /admin/operations/resources/{}
+		POST /admin/operations/resources/{}/{}
+		GET /admin/operations/meetings
+		POST /admin/operations/meetings
+		GET /admin/operations/meetings/{}
+		PUT /admin/operations/meetings/{}
+		POST /admin/operations/meetings/{}/{}
+		PUT /admin/operations/meetings/{}/overrides/{}
+		DELETE /admin/operations/meetings/{}/overrides/{}
+		PUT /admin/operations/meetings/{}/collections
+		GET /priv/meeting-occurrences
+		GET /priv/meeting-sync-windows
 		GET /admin/site-settings
 		PUT /admin/site-settings
 		POST /admin/site-settings/publish

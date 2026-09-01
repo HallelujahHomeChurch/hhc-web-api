@@ -36,6 +36,10 @@ go run ./cmd/server
 - `GET /api/admin/content/{module}/{contentId}/revisions`
 - `POST /api/admin/content/{module}/{contentId}/revisions/{revision}/restore`
 - `/api/admin/campaigns*` and `/api/admin/campaign-schedules*` proxy authorized CMS operators to the private engagement service.
+- `GET /api/meetings`, `/api/meetings/{meetingKey}`, and `/api/meeting-occurrences` expose 30-second cached public meeting projections.
+- `GET /api/meeting-sync-windows` requires trusted gateway identity with `assets:read` and returns only time boundaries.
+- `/api/admin/operations/{church-units|resources|meetings}*` requires `cms:read` or `cms:write`; creates require `Idempotency-Key` and mutations require `If-Match`.
+- `/priv/meeting-{occurrences|sync-windows}` accepts only Dapr callers configured by `OPERATIONS_ALLOWED_CALLER_APP_IDS` (production: `asset-api,hhc-line-function-bot`).
 
 Admin writes require `If-Match` after creation. Publish is asynchronous and returns `202`; public visibility changes only after the asset grant workflow completes. News edits keep the previous published projection live until the replacement asset grant is ready.
 

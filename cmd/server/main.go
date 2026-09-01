@@ -17,6 +17,7 @@ import (
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/content"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/engagementclient"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/httpapi"
+	"github.com/HallelujahHomeChurch/hhc-web-api/internal/operations"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/postgres"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/publication"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/sitesettings"
@@ -68,7 +69,12 @@ func run() error {
 			ActorDailyLimit: cfg.Translation.ActorDailyLimit, DeploymentDailyLimit: cfg.Translation.DeploymentDailyLimit, Cooldown: cfg.Translation.Cooldown, Now: time.Now,
 		}, engagementClient)
 	}
-	handler := httpapi.NewWithTranslation(service, contentService, db, assetClient, cfg.AdminAllowedCaller, cfg.DaprAPIToken, cfg.AllowDevCaller, previewer, cfg.Translation.WriteDeadline, time.Now, engagementClient).WithSiteSettings(siteSettingsService)
+	operationsService := operations.NewService(postgres.NewOperationsRepository(db), time.Now)
+	operationsAllowedCallers := make(map[string]bool, len(cfg.OperationsAllowedCallerAppIDs))
+	for _, caller := range cfg.OperationsAllowedCallerAppIDs {
+		operationsAllowedCallers[caller] = true
+	}
+	handler := httpapi.NewWithTranslation(service, contentService, db, assetClient, cfg.AdminAllowedCaller, cfg.DaprAPIToken, cfg.AllowDevCaller, previewer, cfg.Translation.WriteDeadline, time.Now, engagementClient).WithSiteSettings(siteSettingsService).WithOperations(operationsService, operationsAllowedCallers)
 	assets := publication.NewAssetAdapter(assetClient)
 	worker := publication.NewWorker(repository, assets, cfg.OutboxMaxAttempts, engagementClient)
 	go func() {

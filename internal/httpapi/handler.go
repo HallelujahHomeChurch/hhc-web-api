@@ -37,29 +37,37 @@ type engagementProxy interface {
 }
 
 type Handler struct {
-	service        *bulletins.Service
-	content        *content.Service
-	siteSettings   *sitesettings.Service
-	db             *sql.DB
-	uploads        assetUploads
-	engagement     engagementProxy
-	translation    TranslationPreviewer
-	translationNow func() time.Time
-	translationTTL time.Duration
-	trustedCaller  string
-	daprAPIToken   string
-	allowDevCaller bool
+	service                  *bulletins.Service
+	content                  *content.Service
+	siteSettings             *sitesettings.Service
+	db                       *sql.DB
+	uploads                  assetUploads
+	engagement               engagementProxy
+	translation              TranslationPreviewer
+	translationNow           func() time.Time
+	translationTTL           time.Duration
+	operations               operationsHTTPService
+	operationsNow            func() time.Time
+	operationsAllowedCallers map[string]bool
+	trustedCaller            string
+	daprAPIToken             string
+	allowDevCaller           bool
 }
 
 func New(service *bulletins.Service, db *sql.DB, uploads assetUploads) *Handler {
 	return NewWithContent(service, nil, db, uploads, "api-gateway", "", false)
 }
 func NewWithContent(service *bulletins.Service, contentService *content.Service, db *sql.DB, uploads assetUploads, trustedCaller, daprAPIToken string, allowDevCaller bool, engagement ...engagementProxy) *Handler {
-	handler := &Handler{service: service, content: contentService, db: db, uploads: uploads, trustedCaller: trustedCaller, daprAPIToken: daprAPIToken, allowDevCaller: allowDevCaller, translationNow: time.Now, translationTTL: 50 * time.Second}
+	handler := &Handler{service: service, content: contentService, db: db, uploads: uploads, trustedCaller: trustedCaller, daprAPIToken: daprAPIToken, allowDevCaller: allowDevCaller, translationNow: time.Now, translationTTL: 50 * time.Second, operationsNow: time.Now}
 	if len(engagement) > 0 {
 		handler.engagement = engagement[0]
 	}
 	return handler
+}
+func (h *Handler) WithOperations(service operationsHTTPService, allowedCallers map[string]bool) *Handler {
+	h.operations = service
+	h.operationsAllowedCallers = allowedCallers
+	return h
 }
 func (h *Handler) WithSiteSettings(service *sitesettings.Service) *Handler {
 	h.siteSettings = service
@@ -111,6 +119,9 @@ func (h *Handler) Routes() http.Handler {
 	if h.siteSettings != nil {
 		h.siteSettingsRoutes(mux, admin)
 	}
+	if h.operations != nil {
+		h.operationsRoutes(mux, admin)
+	}
 	if h.engagement != nil {
 		campaignRead := []string{"campaigns:read", "cms:read"}
 		campaignWrite := []string{"campaigns:write", "cms:write"}
@@ -130,6 +141,12 @@ func (h *Handler) Routes() http.Handler {
 		admin.HandleFunc("DELETE /api/admin/campaign-schedules/{scheduleID}", requireAnyScope(campaignWrite, h.forwardEngagement))
 	}
 	mux.Handle("/api/admin/", privateNoStore(requireTrusted(h.trustedCaller, h.daprAPIToken, h.allowDevCaller, admin)))
+	if h.operations != nil {
+		private := http.NewServeMux()
+		private.HandleFunc("GET /priv/meeting-occurrences", h.privateMeetingOccurrences)
+		private.HandleFunc("GET /priv/meeting-sync-windows", h.privateMeetingSyncWindows)
+		mux.Handle("/priv/", privateNoStore(requireServiceCaller(h.operationsAllowedCallers, h.daprAPIToken, h.allowDevCaller, private)))
+	}
 	return requestID(accessLog(mux))
 }
 

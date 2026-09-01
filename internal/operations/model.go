@@ -17,10 +17,10 @@ const (
 )
 
 type Schedule struct {
-	Type       ScheduleType
-	DaysOfWeek []time.Weekday
-	StartTime  string
-	StartsAt   time.Time
+	Type       ScheduleType   `json:"type"`
+	DaysOfWeek []time.Weekday `json:"daysOfWeek,omitempty"`
+	StartTime  string         `json:"startTime,omitempty"`
+	StartsAt   time.Time      `json:"startsAt,omitzero"`
 }
 
 type Status string
@@ -43,73 +43,73 @@ type ResourceKind string
 const ResourceVenue ResourceKind = "venue"
 
 type ChurchUnit struct {
-	ID          string
-	Key         string
-	Name        string
-	Description string
-	ParentID    string
-	Status      Status
-	Version     int64
+	ID          string `json:"id"`
+	Key         string `json:"key"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	ParentID    string `json:"parentId,omitempty"`
+	Status      Status `json:"status"`
+	Version     int64  `json:"version"`
 }
 
 type ChurchUnitInput struct {
-	Key         string
-	Name        string
-	Description string
-	ParentID    string
+	Key         string `json:"key"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	ParentID    string `json:"parentId,omitempty"`
 }
 
 type Resource struct {
-	ID                 string
-	Key                string
-	Name               string
-	Description        string
-	Kind               ResourceKind
-	ChurchUnitID       string
-	LocationContentID  string
-	Timezone           string
-	Visibility         Visibility
-	ReservationEnabled bool
-	Status             Status
-	Version            int64
+	ID                 string       `json:"id"`
+	Key                string       `json:"key"`
+	Name               string       `json:"name"`
+	Description        string       `json:"description,omitempty"`
+	Kind               ResourceKind `json:"kind"`
+	ChurchUnitID       string       `json:"churchUnitId"`
+	LocationContentID  string       `json:"locationContentId,omitempty"`
+	Timezone           string       `json:"timezone"`
+	Visibility         Visibility   `json:"visibility"`
+	ReservationEnabled bool         `json:"reservationEnabled"`
+	Status             Status       `json:"status"`
+	Version            int64        `json:"version"`
 }
 
 type ResourceInput struct {
-	Key               string
-	Name              string
-	Description       string
-	Kind              ResourceKind
-	ChurchUnitID      string
-	LocationContentID string
-	Timezone          string
-	Visibility        Visibility
+	Key               string       `json:"key"`
+	Name              string       `json:"name"`
+	Description       string       `json:"description,omitempty"`
+	Kind              ResourceKind `json:"kind"`
+	ChurchUnitID      string       `json:"churchUnitId"`
+	LocationContentID string       `json:"locationContentId,omitempty"`
+	Timezone          string       `json:"timezone"`
+	Visibility        Visibility   `json:"visibility"`
 }
 
 type Meeting struct {
-	ID              string
-	Key             string
-	Name            string
-	Description     string
-	ChurchUnitID    string
-	VenueResourceID string
-	Timezone        string
-	Schedule        Schedule
-	DurationMinutes int
-	Visibility      Visibility
-	Status          Status
-	Version         int64
+	ID              string     `json:"id"`
+	Key             string     `json:"key"`
+	Name            string     `json:"name"`
+	Description     string     `json:"description,omitempty"`
+	ChurchUnitID    string     `json:"churchUnitId"`
+	VenueResourceID string     `json:"venueResourceId"`
+	Timezone        string     `json:"timezone"`
+	Schedule        Schedule   `json:"schedule"`
+	DurationMinutes int        `json:"durationMinutes"`
+	Visibility      Visibility `json:"visibility"`
+	Status          Status     `json:"status"`
+	Version         int64      `json:"version"`
 }
 
 type MeetingInput struct {
-	Key             string
-	Name            string
-	Description     string
-	ChurchUnitID    string
-	VenueResourceID string
-	Timezone        string
-	Schedule        Schedule
-	DurationMinutes int
-	Visibility      Visibility
+	Key             string     `json:"key"`
+	Name            string     `json:"name"`
+	Description     string     `json:"description,omitempty"`
+	ChurchUnitID    string     `json:"churchUnitId"`
+	VenueResourceID string     `json:"venueResourceId"`
+	Timezone        string     `json:"timezone"`
+	Schedule        Schedule   `json:"schedule"`
+	DurationMinutes int        `json:"durationMinutes"`
+	Visibility      Visibility `json:"visibility"`
 }
 
 func (input MeetingInput) Meeting(id string, version int64) Meeting {
@@ -123,27 +123,27 @@ func (input MeetingInput) Meeting(id string, version int64) Meeting {
 
 type MeetingMutation struct {
 	Meeting
-	NextOccurrence *Occurrence
+	NextOccurrence *Occurrence `json:"nextOccurrence,omitempty"`
 }
 
 type OccurrenceOverride struct {
-	MeetingID       string
-	OccurrenceDate  string
-	Cancelled       bool
-	StartsAt        *time.Time
-	DurationMinutes *int
-	VenueResourceID *string
-	Reason          string
-	Version         int64
+	MeetingID       string     `json:"meetingId"`
+	OccurrenceDate  string     `json:"occurrenceDate"`
+	Cancelled       bool       `json:"cancelled"`
+	StartsAt        *time.Time `json:"startsAt,omitempty"`
+	DurationMinutes *int       `json:"durationMinutes,omitempty"`
+	VenueResourceID *string    `json:"venueResourceId,omitempty"`
+	Reason          string     `json:"reason,omitempty"`
+	Version         int64      `json:"version"`
 }
 
 type OccurrenceOverrideInput struct {
-	OccurrenceDate  string
-	Cancelled       bool
-	StartsAt        *time.Time
-	DurationMinutes *int
-	VenueResourceID *string
-	Reason          string
+	OccurrenceDate  string     `json:"occurrenceDate,omitempty"`
+	Cancelled       bool       `json:"cancelled"`
+	StartsAt        *time.Time `json:"startsAt,omitempty"`
+	DurationMinutes *int       `json:"durationMinutes,omitempty"`
+	VenueResourceID *string    `json:"venueResourceId,omitempty"`
+	Reason          string     `json:"reason,omitempty"`
 }
 
 func (input OccurrenceOverrideInput) Override(meetingID string, version int64) OccurrenceOverride {
@@ -155,15 +155,15 @@ func (input OccurrenceOverrideInput) Override(meetingID string, version int64) O
 }
 
 type Occurrence struct {
-	ID              string
-	MeetingID       string
-	MeetingKey      string
-	ChurchUnitID    string
-	VenueResourceID string
-	StartsAt        time.Time
-	EndsAt          time.Time
-	Status          OccurrenceStatus
-	Version         int64
+	ID              string           `json:"occurrenceId"`
+	MeetingID       string           `json:"meetingId"`
+	MeetingKey      string           `json:"meetingKey"`
+	ChurchUnitID    string           `json:"churchUnitId"`
+	VenueResourceID string           `json:"venueResourceId"`
+	StartsAt        time.Time        `json:"startsAt"`
+	EndsAt          time.Time        `json:"endsAt"`
+	Status          OccurrenceStatus `json:"status"`
+	Version         int64            `json:"version"`
 }
 
 type OccurrenceQuery struct {
@@ -173,6 +173,6 @@ type OccurrenceQuery struct {
 }
 
 type MediaSyncWindow struct {
-	StartsAt time.Time
-	EndsAt   time.Time
+	StartsAt time.Time `json:"startsAt"`
+	EndsAt   time.Time `json:"endsAt"`
 }
