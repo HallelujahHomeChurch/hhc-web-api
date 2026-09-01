@@ -6,6 +6,7 @@ CREATE TABLE hhc_web.church_unit (
   parent_id uuid REFERENCES hhc_web.church_unit(id),
   status text NOT NULL DEFAULT 'active' CHECK (status IN ('active','paused','archived')),
   version bigint NOT NULL DEFAULT 1 CHECK (version > 0),
+  idempotency_key text NOT NULL,
   created_by text NOT NULL,
   updated_by text NOT NULL,
   created_at timestamptz NOT NULL,
@@ -13,6 +14,7 @@ CREATE TABLE hhc_web.church_unit (
 );
 
 CREATE UNIQUE INDEX church_unit_stable_key_uq ON hhc_web.church_unit(stable_key);
+CREATE UNIQUE INDEX church_unit_idempotency_key_uq ON hhc_web.church_unit(idempotency_key);
 CREATE INDEX church_unit_status_parent_idx ON hhc_web.church_unit(status,parent_id);
 
 CREATE TABLE hhc_web.resource (
@@ -28,6 +30,7 @@ CREATE TABLE hhc_web.resource (
   reservation_enabled boolean NOT NULL DEFAULT false CHECK (reservation_enabled = false),
   status text NOT NULL DEFAULT 'active' CHECK (status IN ('active','paused','archived')),
   version bigint NOT NULL DEFAULT 1 CHECK (version > 0),
+  idempotency_key text NOT NULL,
   created_by text NOT NULL,
   updated_by text NOT NULL,
   created_at timestamptz NOT NULL,
@@ -35,6 +38,7 @@ CREATE TABLE hhc_web.resource (
 );
 
 CREATE UNIQUE INDEX resource_stable_key_uq ON hhc_web.resource(stable_key);
+CREATE UNIQUE INDEX resource_idempotency_key_uq ON hhc_web.resource(idempotency_key);
 CREATE INDEX resource_status_unit_idx ON hhc_web.resource(status,church_unit_id);
 
 CREATE TABLE hhc_web.meeting (
@@ -53,6 +57,7 @@ CREATE TABLE hhc_web.meeting (
   visibility text NOT NULL CHECK (visibility IN ('public','internal')),
   status text NOT NULL DEFAULT 'active' CHECK (status IN ('active','paused','archived')),
   version bigint NOT NULL DEFAULT 1 CHECK (version > 0),
+  idempotency_key text NOT NULL,
   created_by text NOT NULL,
   updated_by text NOT NULL,
   created_at timestamptz NOT NULL,
@@ -65,6 +70,7 @@ CREATE TABLE hhc_web.meeting (
 );
 
 CREATE UNIQUE INDEX meeting_stable_key_uq ON hhc_web.meeting(stable_key);
+CREATE UNIQUE INDEX meeting_idempotency_key_uq ON hhc_web.meeting(idempotency_key);
 CREATE INDEX meeting_status_unit_idx ON hhc_web.meeting(status,church_unit_id);
 CREATE INDEX meeting_status_venue_idx ON hhc_web.meeting(status,venue_resource_id);
 
