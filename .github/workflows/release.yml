@@ -108,6 +108,8 @@ jobs:
       OPERATIONS_WORKLOAD_AUDIENCE: ${{ vars.OPERATIONS_WORKLOAD_AUDIENCE }}
       OPERATIONS_WORKLOAD_CLIENT_ID: ${{ vars.OPERATIONS_WORKLOAD_CLIENT_ID }}
       OPERATIONS_WORKLOAD_OBJECT_ID: ${{ vars.OPERATIONS_WORKLOAD_OBJECT_ID }}
+      OPERATIONS_SECONDARY_WORKLOAD_CLIENT_ID: ${{ vars.OPERATIONS_SECONDARY_WORKLOAD_CLIENT_ID }}
+      OPERATIONS_SECONDARY_WORKLOAD_OBJECT_ID: ${{ vars.OPERATIONS_SECONDARY_WORKLOAD_OBJECT_ID }}
       CMS_TRANSLATION_ENABLED: "true"
       AZURE_OPENAI_ENDPOINT: ${{ vars.AZURE_OPENAI_ENDPOINT }}
       AZURE_OPENAI_DEPLOYMENT: ${{ vars.AZURE_OPENAI_DEPLOYMENT }}
@@ -120,7 +122,7 @@ jobs:
         run: |
           [[ "$GITHUB_REF" == "refs/heads/main" ]]
           [[ "$RELEASE_CONFIRMATION" == "deploy-hhc-web-api-production" ]]
-          for name in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID OPERATIONS_WORKLOAD_AUDIENCE OPERATIONS_WORKLOAD_CLIENT_ID OPERATIONS_WORKLOAD_OBJECT_ID; do
+          for name in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID OPERATIONS_WORKLOAD_AUDIENCE OPERATIONS_WORKLOAD_CLIENT_ID OPERATIONS_WORKLOAD_OBJECT_ID OPERATIONS_SECONDARY_WORKLOAD_CLIENT_ID OPERATIONS_SECONDARY_WORKLOAD_OBJECT_ID; do
             test -n "${!name:-}" || { echo "Missing repository variable: ${name}" >&2; exit 1; }
           done
           translation_configured=false
@@ -261,7 +263,7 @@ jobs:
           az deployment group what-if \
             --resource-group "$RESOURCE_GROUP" \
             --template-file infra/main.bicep \
-            --parameters migrationImage="$IMAGE_REF" runtimeImage="$IMAGE_REF" runtimeCpu="$RUNTIME_CPU" runtimeMemory="$RUNTIME_MEMORY" release="$GITHUB_SHA" deployRuntime=true provisionPermissions=false retainLegacyRuntimeSecret=false cmsTranslationEnabled="$CMS_TRANSLATION_ENABLED" azureOpenAIEndpoint="$AZURE_OPENAI_ENDPOINT" azureOpenAIDeployment="$AZURE_OPENAI_DEPLOYMENT" operationsWorkloadAudience="$OPERATIONS_WORKLOAD_AUDIENCE" operationsWorkloadClientId="$OPERATIONS_WORKLOAD_CLIENT_ID" operationsWorkloadObjectId="$OPERATIONS_WORKLOAD_OBJECT_ID" \
+            --parameters migrationImage="$IMAGE_REF" runtimeImage="$IMAGE_REF" runtimeCpu="$RUNTIME_CPU" runtimeMemory="$RUNTIME_MEMORY" release="$GITHUB_SHA" deployRuntime=true provisionPermissions=false retainLegacyRuntimeSecret=false cmsTranslationEnabled="$CMS_TRANSLATION_ENABLED" azureOpenAIEndpoint="$AZURE_OPENAI_ENDPOINT" azureOpenAIDeployment="$AZURE_OPENAI_DEPLOYMENT" operationsWorkloadAudience="$OPERATIONS_WORKLOAD_AUDIENCE" operationsWorkloadClientId="$OPERATIONS_WORKLOAD_CLIENT_ID" operationsWorkloadObjectId="$OPERATIONS_WORKLOAD_OBJECT_ID" operationsSecondaryWorkloadClientId="$OPERATIONS_SECONDARY_WORKLOAD_CLIENT_ID" operationsSecondaryWorkloadObjectId="$OPERATIONS_SECONDARY_WORKLOAD_OBJECT_ID" \
             --validation-level Provider \
             --result-format FullResourcePayloads \
             --no-pretty-print \
@@ -304,7 +306,7 @@ jobs:
             --name "hhc-web-runtime-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
             --resource-group "$RESOURCE_GROUP" \
             --template-file infra/main.bicep \
-            --parameters migrationImage="$IMAGE_REF" runtimeImage="$IMAGE_REF" runtimeCpu="$RUNTIME_CPU" runtimeMemory="$RUNTIME_MEMORY" release="$GITHUB_SHA" deployRuntime=true provisionPermissions=false retainLegacyRuntimeSecret=false cmsTranslationEnabled="$CMS_TRANSLATION_ENABLED" azureOpenAIEndpoint="$AZURE_OPENAI_ENDPOINT" azureOpenAIDeployment="$AZURE_OPENAI_DEPLOYMENT" operationsWorkloadAudience="$OPERATIONS_WORKLOAD_AUDIENCE" operationsWorkloadClientId="$OPERATIONS_WORKLOAD_CLIENT_ID" operationsWorkloadObjectId="$OPERATIONS_WORKLOAD_OBJECT_ID" \
+            --parameters migrationImage="$IMAGE_REF" runtimeImage="$IMAGE_REF" runtimeCpu="$RUNTIME_CPU" runtimeMemory="$RUNTIME_MEMORY" release="$GITHUB_SHA" deployRuntime=true provisionPermissions=false retainLegacyRuntimeSecret=false cmsTranslationEnabled="$CMS_TRANSLATION_ENABLED" azureOpenAIEndpoint="$AZURE_OPENAI_ENDPOINT" azureOpenAIDeployment="$AZURE_OPENAI_DEPLOYMENT" operationsWorkloadAudience="$OPERATIONS_WORKLOAD_AUDIENCE" operationsWorkloadClientId="$OPERATIONS_WORKLOAD_CLIENT_ID" operationsWorkloadObjectId="$OPERATIONS_WORKLOAD_OBJECT_ID" operationsSecondaryWorkloadClientId="$OPERATIONS_SECONDARY_WORKLOAD_CLIENT_ID" operationsSecondaryWorkloadObjectId="$OPERATIONS_SECONDARY_WORKLOAD_OBJECT_ID" \
             --only-show-errors --output none
       - name: Verify content import job image
         run: |

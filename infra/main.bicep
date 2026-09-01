@@ -25,6 +25,8 @@ param azureOpenAIDeployment string = ''
 param operationsWorkloadAudience string = ''
 param operationsWorkloadClientId string = ''
 param operationsWorkloadObjectId string = ''
+param operationsSecondaryWorkloadClientId string = ''
+param operationsSecondaryWorkloadObjectId string = ''
 
 var acrPullRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
 var keyVaultSecretsUserRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')
@@ -32,6 +34,9 @@ var azureOpenAIAccountName = 'bible-text-embedding-resource'
 var azureOpenAIRaiPolicyName = 'hhc-cms-translation-v1'
 var translationConfigured = !empty(azureOpenAIEndpoint) && !empty(azureOpenAIDeployment)
 var operationsWorkloadConfigured = !empty(operationsWorkloadAudience) && !empty(operationsWorkloadClientId) && !empty(operationsWorkloadObjectId)
+var operationsSecondaryWorkloadConfigured = operationsWorkloadConfigured && !empty(operationsSecondaryWorkloadClientId) && !empty(operationsSecondaryWorkloadObjectId)
+var operationsWorkloadClientIds = operationsSecondaryWorkloadConfigured ? [operationsWorkloadClientId, operationsSecondaryWorkloadClientId] : [operationsWorkloadClientId]
+var operationsWorkloadObjectIds = operationsSecondaryWorkloadConfigured ? [operationsWorkloadObjectId, operationsSecondaryWorkloadObjectId] : [operationsWorkloadObjectId]
 var commonEnvironment = [
   { name: 'PORT', value: '8082' }
   { name: 'ENVIRONMENT', value: 'production' }
@@ -49,6 +54,8 @@ var commonEnvironment = [
   { name: 'OPERATIONS_WORKLOAD_AUDIENCE', value: operationsWorkloadConfigured ? operationsWorkloadAudience : '' }
   { name: 'OPERATIONS_WORKLOAD_CLIENT_ID', value: operationsWorkloadConfigured ? operationsWorkloadClientId : '' }
   { name: 'OPERATIONS_WORKLOAD_OBJECT_ID', value: operationsWorkloadConfigured ? operationsWorkloadObjectId : '' }
+  { name: 'OPERATIONS_SECONDARY_WORKLOAD_CLIENT_ID', value: operationsSecondaryWorkloadConfigured ? operationsSecondaryWorkloadClientId : '' }
+  { name: 'OPERATIONS_SECONDARY_WORKLOAD_OBJECT_ID', value: operationsSecondaryWorkloadConfigured ? operationsSecondaryWorkloadObjectId : '' }
   { name: 'ALLOW_DEV_CALLER_HEADER', value: 'false' }
   { name: 'ENABLE_FIVE_LOCALE_BULLETIN_NOTIFICATIONS_AFTER_FLUENT_REVIEW', value: 'false' }
   { name: 'CMS_TRANSLATION_ENABLED', value: cmsTranslationEnabled ? 'true' : 'false' }
@@ -317,8 +324,8 @@ resource operationsWorkloadAuth 'Microsoft.App/containerApps/authConfigs@2025-01
         validation: {
           allowedAudiences: [operationsWorkloadAudience]
           defaultAuthorizationPolicy: {
-            allowedApplications: [operationsWorkloadClientId]
-            allowedPrincipals: { identities: [operationsWorkloadObjectId] }
+            allowedApplications: operationsWorkloadClientIds
+            allowedPrincipals: { identities: operationsWorkloadObjectIds }
           }
         }
       }

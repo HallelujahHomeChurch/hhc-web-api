@@ -80,6 +80,9 @@ func run() error {
 		WithOperationsWorkloadAuth(httpapi.ServiceWorkloadAuth{
 			TenantID: cfg.OperationsWorkloadTenantID, Issuer: cfg.OperationsWorkloadIssuer, Audience: cfg.OperationsWorkloadAudience,
 			ClientID: cfg.OperationsWorkloadClientID, ObjectID: cfg.OperationsWorkloadObjectID, Caller: "asset-api",
+		}, httpapi.ServiceWorkloadAuth{
+			TenantID: cfg.OperationsWorkloadTenantID, Issuer: cfg.OperationsWorkloadIssuer, Audience: cfg.OperationsWorkloadAudience,
+			ClientID: cfg.OperationsSecondaryWorkloadClientID, ObjectID: cfg.OperationsSecondaryWorkloadObjectID, Caller: "hhc-line-function-bot",
 		})
 	assets := publication.NewAssetAdapter(assetClient)
 	worker := publication.NewWorker(repository, assets, cfg.OutboxMaxAttempts, engagementClient)

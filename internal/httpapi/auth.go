@@ -60,11 +60,13 @@ func requireServiceCaller(allowed map[string]bool, daprAPIToken string, allowDev
 	})
 }
 
-func requireServiceCallerOrWorkload(allowed map[string]bool, daprAPIToken string, allowDevCaller bool, workload ServiceWorkloadAuth, next http.Handler) http.Handler {
+func requireServiceCallerOrWorkload(allowed map[string]bool, daprAPIToken string, allowDevCaller bool, workloads []ServiceWorkloadAuth, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if caller := workloadCaller(r.Header.Get("X-MS-CLIENT-PRINCIPAL"), workload); caller != "" && allowed[caller] {
-			next.ServeHTTP(w, r)
-			return
+		for _, workload := range workloads {
+			if caller := workloadCaller(r.Header.Get("X-MS-CLIENT-PRINCIPAL"), workload); caller != "" && allowed[caller] {
+				next.ServeHTTP(w, r)
+				return
+			}
 		}
 		requireServiceCaller(allowed, daprAPIToken, allowDevCaller, next).ServeHTTP(w, r)
 	})

@@ -77,6 +77,15 @@ func TestOperationsWorkloadAuthRequiresCompleteConfiguration(t *testing.T) {
 	if err != nil || cfg.OperationsWorkloadClientID != "client" || cfg.OperationsWorkloadObjectID != "object" {
 		t.Fatalf("cfg=%+v err=%v", cfg, err)
 	}
+	t.Setenv("OPERATIONS_SECONDARY_WORKLOAD_CLIENT_ID", "line-client")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected incomplete secondary workload auth error")
+	}
+	t.Setenv("OPERATIONS_SECONDARY_WORKLOAD_OBJECT_ID", "line-object")
+	cfg, err = Load()
+	if err != nil || cfg.OperationsSecondaryWorkloadClientID != "line-client" || cfg.OperationsSecondaryWorkloadObjectID != "line-object" {
+		t.Fatalf("secondary cfg=%+v err=%v", cfg, err)
+	}
 }
 
 func TestFiveLocaleBulletinNotificationsRequireExplicitFluentReviewEnablement(t *testing.T) {
