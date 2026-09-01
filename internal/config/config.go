@@ -41,6 +41,11 @@ type Config struct {
 	InternalCallerAppID                                    string
 	AdminAllowedCaller                                     string
 	OperationsAllowedCallerAppIDs                          []string
+	OperationsWorkloadTenantID                             string
+	OperationsWorkloadIssuer                               string
+	OperationsWorkloadAudience                             string
+	OperationsWorkloadClientID                             string
+	OperationsWorkloadObjectID                             string
 	DaprAPIToken                                           string
 	AllowDevCaller                                         bool
 	EnableFiveLocaleBulletinNotificationsAfterFluentReview bool
@@ -56,12 +61,17 @@ func Load() (Config, error) {
 		Environment: value("ENVIRONMENT", "development"), ShutdownTimeout: 10 * time.Second, AssetAPIBaseURL: value("ASSET_API_BASE_URL", "http://127.0.0.1:8083"),
 		EngagementAPIBaseURL: value("ENGAGEMENT_API_BASE_URL", "http://127.0.0.1:3500/v1.0/invoke/engagement-api/method"),
 		InternalCallerAppID:  value("INTERNAL_CALLER_APP_ID", "hhc-web-api"), AdminAllowedCaller: value("ADMIN_ALLOWED_CALLER_APP_ID", "api-gateway"),
-		OperationsAllowedCallerAppIDs: commaSeparated("OPERATIONS_ALLOWED_CALLER_APP_IDS", "asset-api,hhc-line-function-bot"),
-		DaprAPIToken:                  strings.TrimSpace(os.Getenv("APP_API_TOKEN")),
-		AllowDevCaller:                strings.EqualFold(strings.TrimSpace(os.Getenv("ALLOW_DEV_CALLER_HEADER")), "true"),
+		OperationsAllowedCallerAppIDs:                          commaSeparated("OPERATIONS_ALLOWED_CALLER_APP_IDS", "asset-api,hhc-line-function-bot"),
+		OperationsWorkloadTenantID:                             strings.TrimSpace(os.Getenv("OPERATIONS_WORKLOAD_TENANT_ID")),
+		OperationsWorkloadIssuer:                               strings.TrimSpace(os.Getenv("OPERATIONS_WORKLOAD_ISSUER")),
+		OperationsWorkloadAudience:                             strings.TrimSpace(os.Getenv("OPERATIONS_WORKLOAD_AUDIENCE")),
+		OperationsWorkloadClientID:                             strings.TrimSpace(os.Getenv("OPERATIONS_WORKLOAD_CLIENT_ID")),
+		OperationsWorkloadObjectID:                             strings.TrimSpace(os.Getenv("OPERATIONS_WORKLOAD_OBJECT_ID")),
+		DaprAPIToken:                                           strings.TrimSpace(os.Getenv("APP_API_TOKEN")),
+		AllowDevCaller:                                         strings.EqualFold(strings.TrimSpace(os.Getenv("ALLOW_DEV_CALLER_HEADER")), "true"),
 		EnableFiveLocaleBulletinNotificationsAfterFluentReview: strings.EqualFold(strings.TrimSpace(os.Getenv("ENABLE_FIVE_LOCALE_BULLETIN_NOTIFICATIONS_AFTER_FLUENT_REVIEW")), "true"),
-		PublicBaseURL:     value("PUBLIC_BASE_URL", "http://127.0.0.1:8082/assets"),
-		OutboxMaxAttempts: 20,
+		PublicBaseURL:                                          value("PUBLIC_BASE_URL", "http://127.0.0.1:8082/assets"),
+		OutboxMaxAttempts:                                      20,
 		Translation: TranslationConfig{
 			Enabled:              strings.EqualFold(strings.TrimSpace(os.Getenv("CMS_TRANSLATION_ENABLED")), "true"),
 			AzureEndpoint:        strings.TrimSpace(os.Getenv("AZURE_OPENAI_ENDPOINT")),
@@ -84,6 +94,16 @@ func Load() (Config, error) {
 	}
 	if strings.EqualFold(cfg.Environment, "production") && cfg.DaprAPIToken == "" {
 		return Config{}, fmt.Errorf("APP_API_TOKEN is required in production")
+	}
+	workloadValues := []string{cfg.OperationsWorkloadTenantID, cfg.OperationsWorkloadIssuer, cfg.OperationsWorkloadAudience, cfg.OperationsWorkloadClientID, cfg.OperationsWorkloadObjectID}
+	configured := 0
+	for _, value := range workloadValues {
+		if value != "" {
+			configured++
+		}
+	}
+	if configured != 0 && configured != len(workloadValues) {
+		return Config{}, fmt.Errorf("operations workload authentication configuration is incomplete")
 	}
 	if err := cfg.Translation.validate(); err != nil {
 		return Config{}, err

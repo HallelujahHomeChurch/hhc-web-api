@@ -2,6 +2,8 @@ package httpapi
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -119,6 +121,42 @@ func TestPrivateMeetingRoutesRequireAllowedServiceCaller(t *testing.T) {
 	}
 }
 
+func TestPrivateMeetingSyncWindowsAcceptsOnlyConfiguredWorkloadIdentity(t *testing.T) {
+	handler := operationsTestHandler(&operationsHandlerStub{}, ServiceWorkloadAuth{
+		TenantID: "tenant", Issuer: "https://sts.windows.net/tenant/", Audience: "api://meeting", ClientID: "warmer-client", ObjectID: "warmer-object", Caller: "asset-api",
+	})
+	for _, test := range []struct {
+		path, clientID, objectID string
+		want                     int
+	}{
+		{"/priv/meeting-sync-windows", "warmer-client", "warmer-object", http.StatusOK},
+		{"/priv/meeting-sync-windows", "other-client", "warmer-object", http.StatusUnauthorized},
+		{"/priv/meeting-sync-windows", "warmer-client", "other-object", http.StatusUnauthorized},
+		{"/priv/meeting-occurrences", "warmer-client", "warmer-object", http.StatusUnauthorized},
+	} {
+		request := httptest.NewRequest(http.MethodGet, test.path+"?from=2026-09-01T00:00:00Z&to=2026-09-30T00:00:00Z", nil)
+		request.Header.Set("X-MS-CLIENT-PRINCIPAL", workloadPrincipal(t, test.clientID, test.objectID))
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != test.want {
+			t.Fatalf("path=%s client=%s object=%s status=%d body=%s", test.path, test.clientID, test.objectID, response.Code, response.Body.String())
+		}
+	}
+}
+
+func workloadPrincipal(t *testing.T, clientID, objectID string) string {
+	t.Helper()
+	claims := map[string]any{"auth_typ": "aad", "claims": []map[string]string{
+		{"typ": "tid", "val": "tenant"}, {"typ": "iss", "val": "https://sts.windows.net/tenant/"}, {"typ": "aud", "val": "api://meeting"},
+		{"typ": "appid", "val": clientID}, {"typ": "oid", "val": objectID},
+	}}
+	raw, err := json.Marshal(claims)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return base64.StdEncoding.EncodeToString(raw)
+}
+
 func TestAdminMeetingOperationsRequireScopeIdempotencyAndIfMatch(t *testing.T) {
 	handler := operationsTestHandler(&operationsHandlerStub{})
 	for _, test := range []struct {
@@ -149,9 +187,13 @@ func TestAdminMeetingOperationsRequireScopeIdempotencyAndIfMatch(t *testing.T) {
 	}
 }
 
-func operationsTestHandler(service operationsHTTPService) http.Handler {
-	return NewWithContent(nil, nil, nil, nil, "api-gateway", "token", false).
-		WithOperations(service, map[string]bool{"asset-api": true, "hhc-line-function-bot": true}).Routes()
+func operationsTestHandler(service operationsHTTPService, workload ...ServiceWorkloadAuth) http.Handler {
+	handler := NewWithContent(nil, nil, nil, nil, "api-gateway", "token", false).
+		WithOperations(service, map[string]bool{"asset-api": true, "hhc-line-function-bot": true})
+	if len(workload) > 0 {
+		handler.WithOperationsWorkloadAuth(workload[0])
+	}
+	return handler.Routes()
 }
 
 func trustedHeaders(request *http.Request, scopes string) {

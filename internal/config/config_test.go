@@ -61,6 +61,24 @@ func TestOperationsAllowedCallerAppIDs(t *testing.T) {
 	}
 }
 
+func TestOperationsWorkloadAuthRequiresCompleteConfiguration(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://example")
+	t.Setenv("OPERATIONS_WORKLOAD_TENANT_ID", "tenant")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected incomplete workload auth error")
+	}
+	for name, value := range map[string]string{
+		"OPERATIONS_WORKLOAD_ISSUER": "https://sts.windows.net/tenant/", "OPERATIONS_WORKLOAD_AUDIENCE": "api://meeting",
+		"OPERATIONS_WORKLOAD_CLIENT_ID": "client", "OPERATIONS_WORKLOAD_OBJECT_ID": "object",
+	} {
+		t.Setenv(name, value)
+	}
+	cfg, err := Load()
+	if err != nil || cfg.OperationsWorkloadClientID != "client" || cfg.OperationsWorkloadObjectID != "object" {
+		t.Fatalf("cfg=%+v err=%v", cfg, err)
+	}
+}
+
 func TestFiveLocaleBulletinNotificationsRequireExplicitFluentReviewEnablement(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://example")
 	t.Setenv("ENABLE_FIVE_LOCALE_BULLETIN_NOTIFICATIONS_AFTER_FLUENT_REVIEW", "")

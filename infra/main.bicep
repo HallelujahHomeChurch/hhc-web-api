@@ -22,12 +22,16 @@ param retainLegacyRuntimeSecret bool = false
 param cmsTranslationEnabled bool = false
 param azureOpenAIEndpoint string = ''
 param azureOpenAIDeployment string = ''
+param operationsWorkloadAudience string = ''
+param operationsWorkloadClientId string = ''
+param operationsWorkloadObjectId string = ''
 
 var acrPullRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
 var keyVaultSecretsUserRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')
 var azureOpenAIAccountName = 'bible-text-embedding-resource'
 var azureOpenAIRaiPolicyName = 'hhc-cms-translation-v1'
 var translationConfigured = !empty(azureOpenAIEndpoint) && !empty(azureOpenAIDeployment)
+var operationsWorkloadConfigured = !empty(operationsWorkloadAudience) && !empty(operationsWorkloadClientId) && !empty(operationsWorkloadObjectId)
 var commonEnvironment = [
   { name: 'PORT', value: '8082' }
   { name: 'ENVIRONMENT', value: 'production' }
@@ -40,6 +44,11 @@ var commonEnvironment = [
   { name: 'INTERNAL_CALLER_APP_ID', value: 'hhc-web-api' }
   { name: 'ADMIN_ALLOWED_CALLER_APP_ID', value: 'api-gateway' }
   { name: 'OPERATIONS_ALLOWED_CALLER_APP_IDS', value: 'asset-api,hhc-line-function-bot' }
+  { name: 'OPERATIONS_WORKLOAD_TENANT_ID', value: operationsWorkloadConfigured ? subscription().tenantId : '' }
+  { name: 'OPERATIONS_WORKLOAD_ISSUER', value: operationsWorkloadConfigured ? 'https://sts.windows.net/${subscription().tenantId}/' : '' }
+  { name: 'OPERATIONS_WORKLOAD_AUDIENCE', value: operationsWorkloadConfigured ? operationsWorkloadAudience : '' }
+  { name: 'OPERATIONS_WORKLOAD_CLIENT_ID', value: operationsWorkloadConfigured ? operationsWorkloadClientId : '' }
+  { name: 'OPERATIONS_WORKLOAD_OBJECT_ID', value: operationsWorkloadConfigured ? operationsWorkloadObjectId : '' }
   { name: 'ALLOW_DEV_CALLER_HEADER', value: 'false' }
   { name: 'ENABLE_FIVE_LOCALE_BULLETIN_NOTIFICATIONS_AFTER_FLUENT_REVIEW', value: 'false' }
   { name: 'CMS_TRANSLATION_ENABLED', value: cmsTranslationEnabled ? 'true' : 'false' }
@@ -196,6 +205,19 @@ resource api 'Microsoft.App/containerApps@2025-01-01' = if (deployRuntime) {
         appProtocol: 'http'
         logLevel: 'warn'
       }
+      ingress: {
+        external: false
+        allowInsecure: false
+        targetPort: 8082
+        exposedPort: 0
+        transport: 'auto'
+        traffic: [
+          {
+            latestRevision: true
+            weight: 100
+          }
+        ]
+      }
       registries: [
         {
           server: registry.properties.loginServer
@@ -275,6 +297,33 @@ resource api 'Microsoft.App/containerApps@2025-01-01' = if (deployRuntime) {
     runtimeSecretAccess
     translationRAIPolicy
   ]
+}
+
+resource operationsWorkloadAuth 'Microsoft.App/containerApps/authConfigs@2025-01-01' = if (deployRuntime && operationsWorkloadConfigured) {
+  parent: api
+  name: 'current'
+  properties: {
+    platform: { enabled: true }
+    httpSettings: { requireHttps: true }
+    globalValidation: { unauthenticatedClientAction: 'AllowAnonymous' }
+    identityProviders: {
+      azureActiveDirectory: {
+        enabled: true
+        isAutoProvisioned: false
+        registration: {
+          clientId: replace(operationsWorkloadAudience, 'api://', '')
+          openIdIssuer: 'https://sts.windows.net/${subscription().tenantId}/'
+        }
+        validation: {
+          allowedAudiences: [operationsWorkloadAudience]
+          defaultAuthorizationPolicy: {
+            allowedApplications: [operationsWorkloadClientId]
+            allowedPrincipals: { identities: [operationsWorkloadObjectId] }
+          }
+        }
+      }
+    }
+  }
 }
 
 resource migrate 'Microsoft.App/jobs@2024-03-01' = if (deployMigrationJob) {

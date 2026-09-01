@@ -2,6 +2,8 @@
 
 `hhc-web-api` is private to the Container Apps environment and is invoked through Dapr by `api-gateway`.
 
+The internal ingress additionally accepts the dedicated Asset scan-warmer managed identity through Container Apps authentication. Only `GET /priv/meeting-sync-windows` accepts that verified workload principal; all other private routes retain Dapr caller and app-channel-token authentication. The warmer requests a token for `OPERATIONS_WORKLOAD_AUDIENCE`; no Dapr app-channel token is copied or persisted.
+
 Azure Container Apps injects the revision-scoped `APP_API_TOKEN` used to verify inbound Dapr requests. Do not persist it in Key Vault, declare it in Bicep, or reuse it as an outbound `DAPR_API_TOKEN`.
 
 Initial bootstrap:
