@@ -128,9 +128,8 @@ paths:
       tags: [Authenticated]
       x-hhc-visibility: authenticated
       x-hhc-callers: [api-gateway]
-      x-hhc-required-headers: [Dapr-Caller-App-Id, dapr-api-token, X-HHC-User-ID, X-HHC-Auth-Provider, X-HHC-Scopes]
+      x-hhc-required-headers: [Dapr-Caller-App-Id, dapr-api-token, X-HHC-User-ID, X-HHC-Auth-Provider]
       x-hhc-cache: 'private, no-store'
-      x-required-scopes: ['assets:read']
       security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
       parameters:
         - $ref: '#/components/parameters/RangeFrom'

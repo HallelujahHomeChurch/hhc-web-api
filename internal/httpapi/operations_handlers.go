@@ -66,7 +66,7 @@ func (h *Handler) operationsRoutes(mux, admin *http.ServeMux) {
 	mux.HandleFunc("GET /api/meetings", h.publicMeetings)
 	mux.HandleFunc("GET /api/meetings/{meetingKey}", h.publicMeeting)
 	mux.HandleFunc("GET /api/meeting-occurrences", h.publicMeetingOccurrences)
-	mux.Handle("GET /api/meeting-sync-windows", privateNoStore(requireTrusted(h.trustedCaller, h.daprAPIToken, h.allowDevCaller, http.HandlerFunc(requireScope("assets:read", h.authenticatedMeetingSyncWindows)))))
+	mux.Handle("GET /api/meeting-sync-windows", privateNoStore(requireTrusted(h.trustedCaller, h.daprAPIToken, h.allowDevCaller, http.HandlerFunc(h.authenticatedMeetingSyncWindows))))
 
 	admin.HandleFunc("GET /api/admin/operations/church-units", requireScope("cms:read", h.adminListChurchUnits))
 	admin.HandleFunc("POST /api/admin/operations/church-units", requireScope("cms:write", h.adminCreateChurchUnit))

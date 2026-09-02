@@ -80,26 +80,19 @@ func TestPublicMeetingOccurrencesDefaultsToThirtyDaysAndIncludesCancelled(t *tes
 	}
 }
 
-func TestAuthenticatedMeetingSyncWindowsRequiresAssetsReadAndRedacts(t *testing.T) {
+func TestAuthenticatedMeetingSyncWindowsRequiresTrustedIdentityAndRedacts(t *testing.T) {
 	stub := &operationsHandlerStub{windows: []operations.MediaSyncWindow{{StartsAt: time.Date(2026, 9, 6, 1, 0, 0, 0, time.UTC), EndsAt: time.Date(2026, 9, 6, 3, 0, 0, 0, time.UTC)}}}
 	handler := operationsTestHandler(stub)
-	for _, test := range []struct {
-		scopes string
-		want   int
-	}{{"cms:read", http.StatusForbidden}, {"assets:read", http.StatusOK}} {
-		request := httptest.NewRequest(http.MethodGet, "/api/meeting-sync-windows?from=2026-09-01T00:00:00Z&to=2026-09-30T00:00:00Z", nil)
-		trustedHeaders(request, test.scopes)
-		response := httptest.NewRecorder()
-		handler.ServeHTTP(response, request)
-		if response.Code != test.want {
-			t.Fatalf("scope=%q status=%d body=%s", test.scopes, response.Code, response.Body.String())
-		}
-		if test.want == http.StatusOK {
-			for _, forbidden := range []string{"meetingId", "meetingKey", "collectionId", "name"} {
-				if strings.Contains(response.Body.String(), forbidden) {
-					t.Fatalf("redacted body leaked %s: %s", forbidden, response.Body.String())
-				}
-			}
+	request := httptest.NewRequest(http.MethodGet, "/api/meeting-sync-windows?from=2026-09-01T00:00:00Z&to=2026-09-30T00:00:00Z", nil)
+	trustedHeaders(request, "")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	for _, forbidden := range []string{"meetingId", "meetingKey", "collectionId", "name"} {
+		if strings.Contains(response.Body.String(), forbidden) {
+			t.Fatalf("redacted body leaked %s: %s", forbidden, response.Body.String())
 		}
 	}
 }
