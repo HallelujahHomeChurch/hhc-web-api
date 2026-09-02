@@ -37,7 +37,7 @@ go run ./cmd/server
 - `POST /api/admin/content/{module}/{contentId}/revisions/{revision}/restore`
 - `/api/admin/campaigns*` and `/api/admin/campaign-schedules*` proxy authorized CMS operators to the private engagement service.
 - `GET /api/meetings`, `/api/meetings/{meetingKey}`, and `/api/meeting-occurrences` expose 30-second cached public meeting projections.
-- `GET /api/meeting-sync-windows` requires trusted gateway identity with `assets:read` and returns only time boundaries.
+- `GET /api/meeting-sync-windows` requires trusted gateway identity and returns only time boundaries; collection access remains authorized by Asset API ACLs.
 - `/api/admin/operations/{church-units|resources|meetings}*` requires `cms:read` or `cms:write`; creates require `Idempotency-Key` and mutations require `If-Match`.
 - `/priv/meeting-{occurrences|sync-windows}` accepts Dapr callers configured by `OPERATIONS_ALLOWED_CALLER_APP_IDS` (production: `asset-api,hhc-line-function-bot`). The sync-window read also accepts the one configured Asset scan-warmer managed identity through verified internal-ingress workload authentication.
 
