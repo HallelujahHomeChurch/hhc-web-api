@@ -106,6 +106,9 @@ func ResolveOccurrences(meeting Meeting, overrides []OccurrenceOverride, from, t
 		endsAt := startsAt.Add(time.Duration(duration) * time.Minute)
 		if startsAt.Before(to) && endsAt.After(from) {
 			result = append(result, Occurrence{
+				MeetingName:     meeting.Name,
+				OccurrenceDate:  localDate,
+				Timezone:        meeting.Timezone,
 				ID:              occurrenceID(meeting.ID, localDate),
 				MeetingID:       meeting.ID,
 				MeetingKey:      meeting.Key,

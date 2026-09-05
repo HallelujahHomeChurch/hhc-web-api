@@ -56,8 +56,13 @@ type publicOccurrence struct {
 	Status       operations.OccurrenceStatus `json:"status"`
 }
 
-type meetingDetail struct {
+type adminMeeting struct {
 	operations.Meeting
+	NextOccurrence *operations.Occurrence `json:"nextOccurrence"`
+}
+
+type meetingDetail struct {
+	adminMeeting
 	Overrides     []operations.OccurrenceOverride `json:"overrides"`
 	CollectionIDs []string                        `json:"collectionIds"`
 }
@@ -305,7 +310,43 @@ func (h *Handler) adminResourceStatus(w http.ResponseWriter, r *http.Request, st
 
 func (h *Handler) adminListMeetings(w http.ResponseWriter, r *http.Request) {
 	values, err := h.operations.ListMeetings(r.Context(), includeArchived(r))
-	writeOperationsResult(w, values, err)
+	if err != nil {
+		handleOperationsError(w, err)
+		return
+	}
+	next, err := h.nextAdminOccurrences(r.Context())
+	if err != nil {
+		handleOperationsError(w, err)
+		return
+	}
+	result := make([]adminMeeting, 0, len(values))
+	for _, value := range values {
+		item := adminMeeting{Meeting: value}
+		if value.Status == operations.StatusActive {
+			item.NextOccurrence = next[value.ID]
+		}
+		result = append(result, item)
+	}
+	writeOperationsResult(w, result, nil)
+}
+
+func (h *Handler) nextAdminOccurrences(ctx context.Context) (map[string]*operations.Occurrence, error) {
+	now := h.operationsNow().UTC()
+	values, err := h.operations.ListOccurrences(ctx, operations.OccurrenceQuery{From: now, To: now.AddDate(0, 0, 90)})
+	if err != nil {
+		return nil, err
+	}
+	next := make(map[string]*operations.Occurrence)
+	for _, value := range values {
+		if value.Status != operations.OccurrenceScheduled || !value.EndsAt.After(now) {
+			continue
+		}
+		previous := next[value.MeetingID]
+		if previous == nil || value.StartsAt.Before(previous.StartsAt) {
+			next[value.MeetingID] = &value
+		}
+	}
+	return next, nil
 }
 
 func (h *Handler) adminGetMeeting(w http.ResponseWriter, r *http.Request) {
@@ -320,7 +361,20 @@ func (h *Handler) adminGetMeeting(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	bindings, err := h.operations.ListMeetingBindings(r.Context(), value.ID)
-	writeOperationsEntity(w, meetingDetail{Meeting: value, Overrides: overrides, CollectionIDs: bindings}, value.Version, err, http.StatusOK)
+	if err != nil {
+		handleOperationsError(w, err)
+		return
+	}
+	item := adminMeeting{Meeting: value}
+	if value.Status == operations.StatusActive {
+		next, err := h.nextAdminOccurrences(r.Context())
+		if err != nil {
+			handleOperationsError(w, err)
+			return
+		}
+		item.NextOccurrence = next[value.ID]
+	}
+	writeOperationsEntity(w, meetingDetail{adminMeeting: item, Overrides: overrides, CollectionIDs: bindings}, value.Version, nil, http.StatusOK)
 }
 
 func (h *Handler) adminCreateMeeting(w http.ResponseWriter, r *http.Request) {
