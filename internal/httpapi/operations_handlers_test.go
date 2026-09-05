@@ -182,6 +182,47 @@ func TestAdminMeetingOperationsRequireScopeIdempotencyAndIfMatch(t *testing.T) {
 	}
 }
 
+func TestAdminMeetingReadsIncludeInternalNextOccurrence(t *testing.T) {
+	now := time.Now().UTC()
+	for _, path := range []string{"/api/admin/operations/meetings", "/api/admin/operations/meetings/internal"} {
+		t.Run(path, func(t *testing.T) {
+			stub := &operationsHandlerStub{
+				meetings: []operations.Meeting{{ID: "internal", Key: "prayer", Name: "Internal prayer", Status: operations.StatusActive, Visibility: operations.VisibilityInternal}},
+				occurrences: []operations.Occurrence{
+					{ID: "cancelled", MeetingID: "internal", StartsAt: now.Add(time.Hour), EndsAt: now.Add(2 * time.Hour), Status: operations.OccurrenceCancelled},
+					{ID: "next", MeetingID: "internal", StartsAt: now.Add(24 * time.Hour), EndsAt: now.Add(25 * time.Hour), Status: operations.OccurrenceScheduled},
+				},
+			}
+			request := httptest.NewRequest(http.MethodGet, path, nil)
+			trustedHeaders(request, "cms:read")
+			response := httptest.NewRecorder()
+			operationsTestHandler(stub).ServeHTTP(response, request)
+			if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"nextOccurrence":{`) || !strings.Contains(response.Body.String(), `"occurrenceId":"next"`) {
+				t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+			}
+			if stub.occurrenceQuery.PublicOnly {
+				t.Fatal("admin read used public occurrence filter")
+			}
+			public := httptest.NewRecorder()
+			operationsTestHandler(stub).ServeHTTP(public, httptest.NewRequest(http.MethodGet, "/api/meetings", nil))
+			if strings.Contains(public.Body.String(), "Internal prayer") {
+				t.Fatal("internal meeting leaked")
+			}
+		})
+	}
+}
+
+func TestAdminPausedMeetingHasNoNextOccurrence(t *testing.T) {
+	stub := &operationsHandlerStub{meetings: []operations.Meeting{{ID: "paused", Status: operations.StatusPaused}}, occurrences: []operations.Occurrence{{MeetingID: "paused", ID: "wrong", Status: operations.OccurrenceScheduled, EndsAt: time.Now().Add(time.Hour)}}}
+	request := httptest.NewRequest(http.MethodGet, "/api/admin/operations/meetings", nil)
+	trustedHeaders(request, "cms:read")
+	response := httptest.NewRecorder()
+	operationsTestHandler(stub).ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"nextOccurrence":null`) {
+		t.Fatalf("body=%s", response.Body.String())
+	}
+}
+
 func operationsTestHandler(service operationsHTTPService, workload ...ServiceWorkloadAuth) http.Handler {
 	handler := NewWithContent(nil, nil, nil, nil, "api-gateway", "token", false).
 		WithOperations(service, map[string]bool{"asset-api": true, "hhc-line-function-bot": true})
@@ -240,6 +281,9 @@ func (s *operationsHandlerStub) ListMeetings(context.Context, bool) ([]operation
 	return s.meetings, nil
 }
 func (s *operationsHandlerStub) GetMeeting(context.Context, string) (operations.Meeting, error) {
+	if len(s.meetings) > 0 {
+		return s.meetings[0], nil
+	}
 	return operations.Meeting{}, nil
 }
 func (s *operationsHandlerStub) CreateMeeting(context.Context, operations.MeetingInput, string, string, string) (operations.MeetingMutation, error) {

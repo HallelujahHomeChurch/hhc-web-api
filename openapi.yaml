@@ -2351,6 +2351,12 @@ components:
             id: { type: string, format: uuid }
             status: { $ref: '#/components/schemas/OperationsStatus' }
             version: { type: integer, format: int64, minimum: 1 }
+            nextOccurrence:
+              description: Next scheduled or ongoing occurrence within 90 days for Admin reads, including internal meetings. Null when none or inactive.
+              readOnly: true
+              anyOf:
+                - $ref: '#/components/schemas/MeetingOccurrence'
+                - type: 'null'
     PublicMeeting:
       type: object
       additionalProperties: false
@@ -2378,6 +2384,9 @@ components:
       additionalProperties: false
       required: [occurrenceId, meetingId, meetingKey, churchUnitId, venueResourceId, startsAt, endsAt, status, version]
       properties:
+        meetingName: { type: string, description: Canonical meeting name for authorized consumers. }
+        occurrenceDate: { type: string, format: date, description: Original recurrence date in the meeting timezone; retained when an occurrence is moved. }
+        timezone: { type: string, description: IANA timezone owned by the meeting. }
         occurrenceId: { type: string, format: uuid }
         meetingId: { type: string, format: uuid }
         meetingKey: { type: string }

@@ -1,6 +1,7 @@
 package operations
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 )
@@ -152,5 +153,27 @@ func TestOccurrenceIDsAndSortingAreDeterministic(t *testing.T) {
 	}
 	if first[0].ID >= first[1].ID {
 		t.Fatalf("tie must sort by ID: %+v", first)
+	}
+}
+
+func TestResolvedOccurrenceCarriesCanonicalMeetingIdentityAndOriginalDate(t *testing.T) {
+	meeting := Meeting{ID: "meeting-1", Key: "morning-prayer", Name: "Morning prayer", Timezone: "Asia/Taipei", Schedule: Schedule{Type: ScheduleOnce, StartsAt: time.Date(2026, 9, 5, 0, 0, 0, 0, time.UTC)}, DurationMinutes: 60}
+	moved := time.Date(2026, 9, 6, 0, 0, 0, 0, time.UTC)
+	values, err := ResolveOccurrences(meeting, []OccurrenceOverride{{OccurrenceDate: "2026-09-05", StartsAt: &moved}}, moved.Add(-time.Hour), moved.Add(2*time.Hour))
+	if err != nil || len(values) != 1 {
+		t.Fatalf("values=%+v err=%v", values, err)
+	}
+	data, err := json.Marshal(values[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(data, &fields); err != nil {
+		t.Fatal(err)
+	}
+	for key, expected := range map[string]string{"meetingName": "Morning prayer", "occurrenceDate": "2026-09-05", "timezone": "Asia/Taipei"} {
+		if fields[key] != expected {
+			t.Fatalf("%s=%v expected=%s", key, fields[key], expected)
+		}
 	}
 }

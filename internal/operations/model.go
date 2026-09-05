@@ -155,6 +155,9 @@ func (input OccurrenceOverrideInput) Override(meetingID string, version int64) O
 }
 
 type Occurrence struct {
+	MeetingName     string           `json:"meetingName"`
+	OccurrenceDate  string           `json:"occurrenceDate"`
+	Timezone        string           `json:"timezone"`
 	ID              string           `json:"occurrenceId"`
 	MeetingID       string           `json:"meetingId"`
 	MeetingKey      string           `json:"meetingKey"`
