@@ -148,6 +148,24 @@ func TestRecordingPageBatchRechecksExpiryAfterHTTPAndKeepsCursor(t *testing.T) {
 	}
 }
 
+func TestRecordingPageBatchUsesAuthoritativeExpiryWhenRetentionExtendsDuringHTTP(t *testing.T) {
+	now := time.Now().UTC()
+	values, packages := pageBatchFixture(2, now)
+	oldExpiry := now.Add(time.Second)
+	values[0].ExpiresAt = &oldExpiry
+	repo := &batchProjectionRepo{pageRepo: pageRepo{values: values}}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		now = oldExpiry.Add(time.Second)
+		writeReadyFixture(t, w, r, packages[values[0].PackageID])
+	}))
+	defer server.Close()
+	svc := NewService(repo, "", nil, func() time.Time { return now }).WithPackages(assetclient.New(server.URL, "hhc-web-api", ""))
+	items, next, err := svc.ListPage(context.Background(), "", 1, "")
+	if err != nil || len(items) != 1 || next == "" || repo.projects != 1 {
+		t.Fatalf("authoritative extension lost to stale SQL expiry: items=%d projects=%d next=%q err=%v", len(items), repo.projects, next, err)
+	}
+}
+
 type batchLifecycleRepo struct {
 	pageRepo
 	synced bool

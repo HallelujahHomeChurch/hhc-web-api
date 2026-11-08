@@ -84,9 +84,10 @@ func (s *Service) ListPage(ctx context.Context, cursor string, limit int, query 
 		}
 	}
 	for i, value := range candidates {
-		if ready[i].Status != "ready" || !value.Visible(s.now()) {
+		if ready[i].Status != "ready" {
 			continue
 		}
+		// SQL expiry can predate an extension; applyReadyPackage checks Asset's current expiry.
 		pkg := *ready[i].Package
 		err := s.applyReadyPackage(ctx, value, pkg)
 		if errors.Is(err, assetclient.ErrNotFound) || errors.Is(err, assetclient.ErrForbidden) || errors.Is(err, ErrConflict) {
