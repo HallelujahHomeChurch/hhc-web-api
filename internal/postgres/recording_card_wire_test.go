@@ -60,6 +60,23 @@ func TestCardAuthorityHTTPPostgresReadOnlyAndAccountFence(t *testing.T) {
 			json.NewEncoder(w).Encode(out)
 			return
 		}
+		if r.Method == http.MethodPost && r.URL.Path == "/priv/recording-packages/ready-batch" {
+			var input struct {
+				Items []assetclient.RecordingLifecycleBinding
+			}
+			if json.NewDecoder(r.Body).Decode(&input) != nil || len(input.Items) < 1 || len(input.Items) > 100 {
+				t.Error("invalid ready batch")
+				w.WriteHeader(400)
+				return
+			}
+			var out []assetclient.RecordingReadyResult
+			for _, binding := range input.Items {
+				p := status(binding.RecordingID, binding.PackageID)
+				out = append(out, assetclient.RecordingReadyResult{RecordingLifecycleBinding: binding, Status: "ready", Package: &p})
+			}
+			json.NewEncoder(w).Encode(map[string]any{"items": out})
+			return
+		}
 		if r.Method != http.MethodGet || !strings.HasSuffix(r.URL.Path, "/ready") {
 			t.Errorf("unexpected Asset operation: %s %s", r.Method, r.URL.Path)
 			w.WriteHeader(http.StatusNotFound)

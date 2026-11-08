@@ -115,10 +115,29 @@ def producer_evidence(pin=None):
         return None
 
 
+def non_image_release(run):
+    if (run.get('conclusion') != 'success' or run.get('status') != 'completed'
+            or run.get('path') != '.github/workflows/release.yml'
+            or run.get('head_repository', {}).get('full_name') != REPO
+            or run.get('event') not in ('push', 'workflow_dispatch') or run.get('head_branch') != 'main'):
+        return False
+    page = api(REPO, f"actions/runs/{run['id']}/attempts/{run['run_attempt']}/jobs?per_page=100")
+    jobs = {job['name']: job for job in page['jobs']}
+    assert page['total_count'] == len(jobs) == len(page['jobs'])
+    assert all(job['status'] == 'completed' and job['head_sha'] == run['head_sha'] for job in jobs.values())
+    required = {'agent_docs', 'runtime_env', 'deploy', 'public_acceptance', 'seal_extractor_evidence'}
+    return (required <= jobs.keys() and jobs['agent_docs']['conclusion'] == 'success'
+            and jobs['runtime_env']['conclusion'] in ('success', 'skipped')
+            and all(job['conclusion'] == 'skipped' for name, job in jobs.items() if name not in ('agent_docs', 'runtime_env')))
+
+
 def restore():
     try:
         candidates = [r for r in runs(REPO) if str(r['id']) != os.environ['GITHUB_RUN_ID']]
-        run = max(candidates, key=lambda r: r['updated_at'])
+        # Successful env/docs runs do not deploy an image or replace its checkpoint.
+        run = next((r for r in sorted(candidates, key=lambda r: r['updated_at'], reverse=True) if not non_image_release(r)), None)
+        if run is None:
+            raise ValueError('no image release')
         proof = evidence(REPO, run, 'extractor-release-evidence')
         assert set(proof['full']) == {'v'+str(i) for i in range(1,12)}
         origins = {}

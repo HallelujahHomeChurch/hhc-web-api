@@ -352,6 +352,18 @@ func (c *Client) request(ctx context.Context, method, path string, body any, ide
 	if destination == nil || response.StatusCode == http.StatusNoContent {
 		return nil
 	}
+	if path == "/priv/recording-packages/ready-batch" {
+		payload, err := io.ReadAll(io.LimitReader(response.Body, (1<<20)+1))
+		if err != nil || len(payload) > 1<<20 {
+			return ErrUnavailable
+		}
+		decoder := json.NewDecoder(bytes.NewReader(payload))
+		decoder.DisallowUnknownFields()
+		if decoder.Decode(destination) != nil || decoder.Decode(&struct{}{}) != io.EOF {
+			return ErrUnavailable
+		}
+		return nil
+	}
 	limit := int64(1 << 20)
 	if path == "/priv/recording-packages" || strings.HasPrefix(path, "/priv/recording-packages/") && strings.HasSuffix(path, "/complete") {
 		limit = 9 << 20 // Inventory is bounded to 8MiB, plus the package envelope.

@@ -41,6 +41,9 @@ func recordingRequestDiagnostics(ctx context.Context, method, path string) (cont
 			}
 		}
 	}
+	if method == http.MethodPost && path == "/priv/recording-packages/ready-batch" {
+		operation = "package_ready_batch"
+	}
 	var mu sync.Mutex
 	phase := "dispatch"
 	setPhase := func(value string) { mu.Lock(); phase = value; mu.Unlock() }

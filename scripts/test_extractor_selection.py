@@ -39,6 +39,22 @@ class SelectionTests(unittest.TestCase):
         for command in ('server', 'migrate', 'content-import', 'home-v2-migrate'):
             self.assertFalse(ci_required([('M', 'cmd/'+command+'/main.go', True)]))
         self.assertFalse(ci_required([('A','cmd/server/extra.go',True),('M','README.md',True)]))
+
+    def test_runtime_overrides_do_not_invalidate_native_inputs(self):
+        from extractor_selection import ci_required
+        change = [('M', 'infra/runtime-env.json', True)]
+        self.assertFalse(ci_required(change))
+        self.assertEqual(affected(change), set())
+        self.assertTrue(ci_required(change+[('M', 'internal/recordings/page.go', True)]))
+        self.assertEqual(affected(change+[('M', 'internal/recordings/page.go', True)]), set(VERSIONS))
+        self.assertTrue(ci_required([('D', 'infra/runtime-env.json', True)]))
+        checkpoint = {'full': {v: {'runtime': HASH, 'verification': VERIFY[v]} for v in VERSIONS}}
+        self.assertTrue(all(e['tier'] == 'smoke' for e in plan('release', change, checkpoint)['entries']))
+        checkpoint['full']['v1']['runtime'] = 'c'*64
+        self.assertEqual(plan('release', change, checkpoint)['entries'][0]['tier'], 'full')
+
+    def test_ci_independent_input_mapping_remains_closed(self):
+        from extractor_selection import ci_required
         self.assertFalse(ci_required([('M','cmd/server/main.go',True),('M','docs/contracts/api.md',True)]))
         for diff in (None, [], [('D','cmd/server/main.go',True)], [('M','cmd/server/main.go',False)],
                      [('M','internal/content/service.go',True)], [('M','internal/recordings/service.go',True)],
@@ -275,6 +291,36 @@ for name in names:
     @patch('extractor_evidence.runs', return_value=[])
     def test_first_release_requires_full(self, _):
         with patch.dict(os.environ,GITHUB_RUN_ID='123'):self.assertIsNone(restore())
+
+    def test_successful_non_image_release_does_not_hide_trusted_checkpoint(self):
+        image_run = dict(id=12, updated_at='2026-11-08T00:00:00Z', status='completed', conclusion='success',
+                         path='.github/workflows/release.yml', head_repository={'full_name': REPO},
+                         event='push', head_branch='main', head_sha=HEAD, run_attempt=1)
+        env_run = {**image_run, 'id': 13, 'updated_at': '2026-11-09T00:00:00Z'}
+        proof = {'head': HEAD, 'full': {v: {'runtime': HASH, 'verification': HASH, 'runId': '12', 'runAttempt': '1'} for v in VERSIONS}}
+        def get_api(repo, path):
+            if path == 'actions/runs/12': return image_run
+            statuses = {'agent_docs': 'success', 'runtime_env': 'success', 'deploy': 'skipped', 'public_acceptance': 'skipped', 'seal_extractor_evidence': 'skipped'}
+            if '/12/' in path: statuses['deploy'] = 'success'
+            jobs = [dict(name=name, conclusion=status, status='completed', head_sha=HEAD) for name, status in statuses.items()]
+            return {'total_count': len(jobs), 'jobs': jobs}
+        def get_evidence(repo, run, prefix):
+            self.assertEqual(run['id'], 12, 'non-image run cannot supply deployment evidence')
+            return proof
+        with patch.dict(os.environ, GITHUB_RUN_ID='123'), patch('extractor_evidence.runs', return_value=[env_run, image_run]), \
+                patch('extractor_evidence.api', side_effect=get_api), patch('extractor_evidence.evidence', side_effect=get_evidence), \
+                patch('extractor_evidence.subprocess.run'):
+            self.assertEqual(restore(), proof)
+        for broken in ('failed', 'incomplete', 'wrong_head'):
+            bad_run = {**env_run, 'conclusion': 'failure'} if broken == 'failed' else env_run
+            def bad_api(repo, path):
+                value = get_api(repo, path)
+                if broken == 'incomplete': value['total_count'] += 1
+                if broken == 'wrong_head': value['jobs'][0]['head_sha'] = 'd'*40
+                return value
+            with patch.dict(os.environ, GITHUB_RUN_ID='123'), patch('extractor_evidence.runs', return_value=[bad_run, image_run]), \
+                    patch('extractor_evidence.api', side_effect=bad_api), patch('extractor_evidence.evidence', side_effect=AssertionError('untrusted latest release')):
+                self.assertIsNone(restore(), broken)
 
     def test_expired_failed_and_non_forward_release_require_full(self):
         with patch.dict(os.environ,GITHUB_RUN_ID='123'),patch('extractor_evidence.runs',return_value=[{'id':12,'updated_at':'2026-10-25'}]),patch('extractor_evidence.evidence',side_effect=AssertionError('expired/failed')):

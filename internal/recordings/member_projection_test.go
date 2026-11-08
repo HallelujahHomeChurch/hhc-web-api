@@ -40,7 +40,7 @@ func TestMemberVODWaitsForAppliedPublicationAuthority(t *testing.T) {
 	recording := Recording{ID: id, PackageID: pkg, Status: "published", UploadedAt: &uploaded, ReadyAt: &uploaded, ExpiresAt: &expiry, Broadcast: true}
 	ready := Broadcast{Epoch: 1, MemberState: "vod", RangeApplied: 5, View: BroadcastView{Announced: true, Phase: "archived", Boundaries: BroadcastBoundaries{Revision: 5, StartSequence: &start, EndSequenceExclusive: &end}}, Projection: &assetclient.BroadcastProjection{Epoch: 1, RangeRevision: 5, State: "ready", StartSequence: &start, EndSequenceExclusive: &end, DurationSeconds: &duration}}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(assetclient.RecordingPackageStatus{PackageID: pkg, SessionID: pkg, RecordingID: id, State: "ready", ReadyAt: &uploaded, MediaExpiresAt: &expiry})
+		writeReadyFixture(t, w, r, assetclient.RecordingPackageStatus{PackageID: pkg, SessionID: pkg, RecordingID: id, State: "ready", ReadyAt: &uploaded, MediaExpiresAt: &expiry})
 	}))
 	defer server.Close()
 	for _, tc := range []struct {
@@ -92,7 +92,7 @@ func TestMemberRecordingDurationUsesPublicBroadcastRange(t *testing.T) {
 		t.Run(map[bool]string{true: "broadcast", false: "standalone"}[broadcast], func(t *testing.T) {
 			repo := &memberProjectionRepo{pageRepo: pageRepo{values: []Recording{{ID: id, PackageID: pkg, Status: "published", UploadedAt: &uploaded, ReadyAt: &uploaded, ExpiresAt: &expiry, Broadcast: broadcast}}}, broadcast: Broadcast{Epoch: 1, MemberState: "vod", RangeApplied: 5, View: BroadcastView{Announced: true, Phase: "archived", Boundaries: BroadcastBoundaries{Revision: 5, StartSequence: &start, EndSequenceExclusive: &end}}, Projection: &assetclient.BroadcastProjection{Epoch: 1, RangeRevision: 5, StartSequence: &start, EndSequenceExclusive: &end, State: "ready", DurationSeconds: &duration}}}
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				json.NewEncoder(w).Encode(assetclient.RecordingPackageStatus{PackageID: pkg, SessionID: pkg, RecordingID: id, State: "ready", ReadyAt: &uploaded, MediaExpiresAt: &expiry, Renditions: []assetclient.RecordingRendition{{Name: "480p", DurationSeconds: 1785.3836}}})
+				writeReadyFixture(t, w, r, assetclient.RecordingPackageStatus{PackageID: pkg, SessionID: pkg, RecordingID: id, State: "ready", ReadyAt: &uploaded, MediaExpiresAt: &expiry, Renditions: []assetclient.RecordingRendition{{Name: "480p", DurationSeconds: 1785.3836}}})
 			}))
 			defer server.Close()
 			svc := NewService(repo, "", nil, func() time.Time { return now }).WithPackages(assetclient.New(server.URL, "hhc-web-api", ""))

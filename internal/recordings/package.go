@@ -25,11 +25,15 @@ func (s *Service) readyPackage(ctx context.Context, value Recording) (assetclien
 	if err != nil {
 		return pkg, err
 	}
+	return pkg, s.applyReadyPackage(ctx, value, pkg)
+}
+
+func (s *Service) applyReadyPackage(ctx context.Context, value Recording, pkg assetclient.RecordingPackageStatus) error {
 	if pkg.State != "ready" || pkg.MediaExpiresAt == nil || !s.now().Before(*pkg.MediaExpiresAt) {
-		return pkg, ErrConflict
+		return ErrConflict
 	}
-	_, err = s.projectPackageReady(ctx, value.ID, value.PackageID, pkg)
-	return pkg, err
+	_, err := s.projectPackageReady(ctx, value.ID, value.PackageID, pkg)
+	return err
 }
 
 func (s *Service) packagePlayback(ctx context.Context, value Recording, scope, expected, user string) (Playback, error) {

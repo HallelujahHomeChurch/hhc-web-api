@@ -46,10 +46,10 @@ func TestRecordingPageAdvancesPastMissingMediaWithoutCheckingLookahead(t *testin
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
 		if missing {
-			w.WriteHeader(404)
+			json.NewEncoder(w).Encode(map[string]any{"items": []assetclient.RecordingReadyResult{{RecordingLifecycleBinding: assetclient.RecordingLifecycleBinding{RecordingID: first, PackageID: strings.Repeat("a", 32)}, Status: "not_found"}}})
 			return
 		}
-		json.NewEncoder(w).Encode(assetclient.RecordingPackageStatus{PackageID: strings.Repeat("a", 32), SessionID: strings.Repeat("a", 32), RecordingID: first, State: "ready", ReadyAt: &uploaded, MediaExpiresAt: &expiry})
+		writeReadyFixture(t, w, r, assetclient.RecordingPackageStatus{PackageID: strings.Repeat("a", 32), SessionID: strings.Repeat("a", 32), RecordingID: first, State: "ready", ReadyAt: &uploaded, MediaExpiresAt: &expiry})
 	}))
 	defer server.Close()
 	svc := NewService(repo, "", nil, func() time.Time { return now }).WithPackages(assetclient.New(server.URL, "hhc-web-api", ""))
@@ -74,6 +74,23 @@ func TestRecordingPageAdvancesPastMissingMediaWithoutCheckingLookahead(t *testin
 	if err != nil || len(items) != 1 || items[0].ID != first {
 		t.Fatalf("ready not listed: %+v %v", items, err)
 	}
+}
+
+func writeReadyFixture(t *testing.T, w http.ResponseWriter, r *http.Request, pkg assetclient.RecordingPackageStatus) {
+	t.Helper()
+	if r.Method == "POST" && r.URL.Path == "/priv/recording-packages/ready-batch" {
+		var input struct {
+			Items []assetclient.RecordingLifecycleBinding
+		}
+		if json.NewDecoder(r.Body).Decode(&input) != nil || len(input.Items) != 1 || input.Items[0].PackageID != pkg.PackageID || input.Items[0].RecordingID != pkg.RecordingID {
+			t.Error("wrong ready fixture binding")
+			w.WriteHeader(500)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{"items": []assetclient.RecordingReadyResult{{RecordingLifecycleBinding: input.Items[0], Status: "ready", Package: &pkg}}})
+		return
+	}
+	json.NewEncoder(w).Encode(pkg)
 }
 
 func TestRecordingSearchCursorBindsNormalizedQueryAndKeepsLegacyEmptyQuery(t *testing.T) {
