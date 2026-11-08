@@ -1,0 +1,368 @@
+package translation
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"net"
+	"net/http"
+	"sort"
+	"strings"
+	"time"
+	"unicode/utf8"
+)
+
+const maxResponseBytes = 1 << 20
+
+var (
+	ErrProvider        = errors.New("translation provider error")
+	ErrTimeout         = errors.New("translation provider timeout")
+	ErrContentFiltered = errors.New("translation content filtered")
+)
+
+type AzureOpenAI struct {
+	endpoint   string
+	deployment string
+	apiKey     string
+	policyName string
+	httpClient *http.Client
+	timeout    time.Duration
+}
+
+func NewAzureOpenAI(endpoint, deployment, apiKey string, httpClient *http.Client, timeout time.Duration, policyName string) *AzureOpenAI {
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
+	privateClient := *httpClient
+	privateClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	if timeout <= 0 {
+		timeout = 40 * time.Second
+	}
+	return &AzureOpenAI{endpoint: strings.TrimRight(endpoint, "/"), deployment: deployment, apiKey: apiKey, policyName: strings.TrimSpace(policyName), httpClient: &privateClient, timeout: timeout}
+}
+
+func (c *AzureOpenAI) Generate(ctx context.Context, request Request) (Result, error) {
+	body, err := c.requestBody(request)
+	if err != nil {
+		return Result{}, ErrProvider
+	}
+	requestContext, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	httpRequest, err := http.NewRequestWithContext(requestContext, http.MethodPost, c.endpoint+"/openai/v1/responses", bytes.NewReader(body))
+	if err != nil {
+		return Result{}, ErrProvider
+	}
+	httpRequest.Header.Set("Content-Type", "application/json")
+	httpRequest.Header.Set("api-key", c.apiKey)
+	if c.policyName != "" {
+		httpRequest.Header.Set("x-policy-id", c.policyName)
+	}
+
+	response, err := c.httpClient.Do(httpRequest)
+	if err != nil {
+		var netError net.Error
+		if requestContext.Err() != nil || errors.As(err, &netError) && netError.Timeout() {
+			return Result{}, ErrTimeout
+		}
+		return Result{}, ErrProvider
+	}
+	defer response.Body.Close()
+	responseBody, readErr := readBounded(response.Body)
+	if readErr != nil {
+		return Result{}, ErrProvider
+	}
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		if isContentFiltered(responseBody) {
+			return Result{}, ErrContentFiltered
+		}
+		return Result{}, ErrProvider
+	}
+	return parseResponse(responseBody, request)
+}
+
+func (c *AzureOpenAI) requestBody(request Request) ([]byte, error) {
+	if request.ReasoningEffort != "" && request.ReasoningEffort != "none" {
+		return nil, ErrProvider
+	}
+	keys := make([]string, 0, len(request.Fields))
+	properties := make(map[string]any, len(request.Fields)+1)
+	for key := range request.Fields {
+		keys = append(keys, key)
+		properties[key] = map[string]any{"type": "string"}
+	}
+	sort.Strings(keys)
+	if request.Purpose == "summary" {
+		keys = []string{"summary"}
+		properties = map[string]any{"summary": map[string]any{"type": "string"}}
+	}
+	if usesJapaneseNewsTitleRule(request) {
+		keys = append(keys, "titleRule")
+		properties["titleRule"] = japaneseNewsTitleRuleSchema()
+	}
+	source, err := json.Marshal(struct {
+		Module       string            `json:"module"`
+		SourceLocale string            `json:"sourceLocale"`
+		TargetLocale string            `json:"targetLocale"`
+		Fields       map[string]string `json:"fields"`
+	}{request.Module, request.SourceLocale, request.TargetLocale, request.Fields})
+	if err != nil {
+		return nil, err
+	}
+	payload := struct {
+		Reasoning *struct {
+			Effort string `json:"effort"`
+		} `json:"reasoning,omitempty"`
+		Model        string `json:"model"`
+		Store        bool   `json:"store"`
+		Background   bool   `json:"background"`
+		Instructions string `json:"instructions"`
+		Input        []struct {
+			Role    string `json:"role"`
+			Content []struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"input"`
+		Text struct {
+			Format struct {
+				Type   string `json:"type"`
+				Name   string `json:"name"`
+				Strict bool   `json:"strict"`
+				Schema struct {
+					Type                 string         `json:"type"`
+					Properties           map[string]any `json:"properties"`
+					Required             []string       `json:"required"`
+					AdditionalProperties bool           `json:"additionalProperties"`
+				} `json:"schema"`
+			} `json:"format"`
+		} `json:"text"`
+	}{Model: c.deployment, Store: false, Background: false, Instructions: translationInstructions(request.Module, request.TargetLocale)}
+	if request.ReasoningEffort != "" {
+		payload.Reasoning = &struct {
+			Effort string `json:"effort"`
+		}{request.ReasoningEffort}
+	}
+	if request.Purpose == "summary" {
+		payload.Instructions = summaryInstructions
+	}
+	payload.Input = make([]struct {
+		Role    string `json:"role"`
+		Content []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"content"`
+	}, 1)
+	payload.Input[0].Role = "user"
+	payload.Input[0].Content = make([]struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}, 1)
+	payload.Input[0].Content[0].Type = "input_text"
+	payload.Input[0].Content[0].Text = "SOURCE DATA:\n" + string(source)
+	payload.Text.Format.Type = "json_schema"
+	payload.Text.Format.Name = "cms_translation"
+	payload.Text.Format.Strict = true
+	payload.Text.Format.Schema.Type = "object"
+	payload.Text.Format.Schema.Properties = properties
+	payload.Text.Format.Schema.Required = keys
+	payload.Text.Format.Schema.AdditionalProperties = false
+	return json.Marshal(payload)
+}
+
+func japaneseNewsTitleRuleSchema() map[string]any {
+	properties := map[string]any{
+		"kind":               map[string]any{"type": "string", "enum": []string{"none", "gospel_dinner"}},
+		"sequence":           map[string]any{"type": "string"},
+		"sourceQualifier":    map[string]any{"type": "string"},
+		"localizedQualifier": map[string]any{"type": "string"},
+		"sourceEventName":    map[string]any{"type": "string"},
+		"localizedEventName": map[string]any{"type": "string"},
+	}
+	return map[string]any{
+		"type":                 "object",
+		"properties":           properties,
+		"required":             []string{"kind", "sequence", "sourceQualifier", "localizedQualifier", "sourceEventName", "localizedEventName"},
+		"additionalProperties": false,
+	}
+}
+
+func readBounded(reader io.Reader) ([]byte, error) {
+	body, err := io.ReadAll(io.LimitReader(reader, maxResponseBytes+1))
+	if err != nil || len(body) > maxResponseBytes {
+		return nil, ErrProvider
+	}
+	return body, nil
+}
+
+func parseResponse(body []byte, request Request) (Result, error) {
+	var response struct {
+		Status            string          `json:"status"`
+		Error             json.RawMessage `json:"error"`
+		IncompleteDetails json.RawMessage `json:"incomplete_details"`
+		ContentFilters    []struct {
+			Blocked bool `json:"blocked"`
+		} `json:"content_filters"`
+		Output []struct {
+			Status  string `json:"status"`
+			Content []struct {
+				Type    string  `json:"type"`
+				Text    *string `json:"text"`
+				Refusal string  `json:"refusal"`
+			} `json:"content"`
+		} `json:"output"`
+		OutputText *string `json:"output_text"`
+	}
+	if err := json.Unmarshal(body, &response); err != nil {
+		return Result{}, ErrProvider
+	}
+	if isContentFiltered(response.Error) || isContentFiltered(response.IncompleteDetails) {
+		return Result{}, ErrContentFiltered
+	}
+	if response.Status != "completed" || hasJSONValue(response.Error) || hasJSONValue(response.IncompleteDetails) {
+		return Result{}, ErrProvider
+	}
+	for _, filter := range response.ContentFilters {
+		if filter.Blocked {
+			return Result{}, ErrContentFiltered
+		}
+	}
+	var output strings.Builder
+	foundOutput := false
+	for _, item := range response.Output {
+		if item.Status != "" && item.Status != "completed" {
+			return Result{}, ErrProvider
+		}
+		for _, content := range item.Content {
+			switch content.Type {
+			case "output_text":
+				if content.Text == nil {
+					return Result{}, ErrProvider
+				}
+				foundOutput = true
+				output.WriteString(*content.Text)
+			case "refusal":
+				return Result{}, ErrProvider
+			default:
+				return Result{}, ErrProvider
+			}
+		}
+	}
+	outputText := output.String()
+	if !foundOutput && response.OutputText != nil {
+		outputText = *response.OutputText
+	}
+	result, err := decodeResult(outputText, request)
+	if err != nil {
+		return Result{}, ErrProvider
+	}
+	return result, nil
+}
+
+func isContentFiltered(body []byte) bool {
+	var value struct {
+		Code       string `json:"code"`
+		Reason     string `json:"reason"`
+		InnerError struct {
+			Code string `json:"code"`
+		} `json:"innererror"`
+		Error *struct {
+			Code       string `json:"code"`
+			InnerError struct {
+				Code string `json:"code"`
+			} `json:"innererror"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(body, &value) != nil {
+		return false
+	}
+	return value.Code == "content_filter" || value.InnerError.Code == "ContentFiltered" || value.Reason == "content_filter" || value.Error != nil && (value.Error.Code == "content_filter" || value.Error.InnerError.Code == "ContentFiltered")
+}
+
+func hasJSONValue(value json.RawMessage) bool {
+	value = bytes.TrimSpace(value)
+	return len(value) > 0 && !bytes.Equal(value, []byte("null"))
+}
+
+func decodeResult(output string, request Request) (Result, error) {
+	if request.Purpose == "summary" {
+		decoder := json.NewDecoder(strings.NewReader(output))
+		open, err := decoder.Token()
+		if !utf8.ValidString(output) || err != nil || open != json.Delim('{') {
+			return Result{}, ErrProvider
+		}
+		key, err := decoder.Token()
+		if err != nil || key != "summary" {
+			return Result{}, ErrProvider
+		}
+		var value string
+		if decoder.Decode(&value) != nil {
+			return Result{}, ErrProvider
+		}
+		close, err := decoder.Token()
+		if err != nil || close != json.Delim('}') {
+			return Result{}, ErrProvider
+		}
+		if _, err = decoder.Token(); err != io.EOF {
+			return Result{}, ErrProvider
+		}
+		fields := map[string]string{"summary": value}
+		if !validSummary(fields) {
+			return Result{}, ErrProvider
+		}
+		return Result{Fields: fields}, nil
+	}
+	var raw map[string]json.RawMessage
+	wantsTitleRule := usesJapaneseNewsTitleRule(request)
+	wantLength := len(request.Fields)
+	if wantsTitleRule {
+		wantLength++
+	}
+	if err := json.Unmarshal([]byte(output), &raw); err != nil || len(raw) != wantLength {
+		return Result{}, ErrProvider
+	}
+	result := Result{Fields: make(map[string]string, len(request.Fields))}
+	for key := range request.Fields {
+		value, ok := raw[key]
+		if !ok {
+			return Result{}, ErrProvider
+		}
+		var text string
+		if err := json.Unmarshal(value, &text); err != nil {
+			return Result{}, ErrProvider
+		}
+		result.Fields[key] = text
+	}
+	if wantsTitleRule {
+		value, ok := raw["titleRule"]
+		if !ok {
+			return Result{}, ErrProvider
+		}
+		rule, err := decodeTitleRule(value)
+		if err != nil {
+			return Result{}, ErrProvider
+		}
+		result.TitleRule = &rule
+	}
+	return result, nil
+}
+
+func decodeTitleRule(value json.RawMessage) (TitleRuleResult, error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(value, &fields); err != nil || len(fields) != 6 {
+		return TitleRuleResult{}, ErrProvider
+	}
+	for _, key := range []string{"kind", "sequence", "sourceQualifier", "localizedQualifier", "sourceEventName", "localizedEventName"} {
+		if _, ok := fields[key]; !ok {
+			return TitleRuleResult{}, ErrProvider
+		}
+	}
+	decoder := json.NewDecoder(bytes.NewReader(value))
+	decoder.DisallowUnknownFields()
+	var rule TitleRuleResult
+	if err := decoder.Decode(&rule); err != nil {
+		return TitleRuleResult{}, ErrProvider
+	}
+	return rule, nil
+}

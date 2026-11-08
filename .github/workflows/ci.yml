@@ -1,0 +1,544 @@
+name: CI
+
+on:
+  pull_request:
+    paths-ignore:
+      - '**/*.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+# Only newer commits in the same PR supersede verification. Manual runs are unique.
+concurrency:
+  group: hhc-web-api-ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      docs_only: ${{ steps.diff.outputs.docs_only }}
+      config_only: ${{ steps.diff.outputs.config_only }}
+      extractor_required: ${{ steps.extractor.outputs.extractor_required }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Classify proven documentation changes
+        id: diff
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          python3 .github/scripts/ci-agent-docs.py "$EVENT_NAME" "$BASE_SHA" "$HEAD_SHA" >> "$GITHUB_OUTPUT"
+          python3 .github/scripts/ci-runtime-env.py "$EVENT_NAME" "$BASE_SHA" "$HEAD_SHA" >> "$GITHUB_OUTPUT"
+      - name: Test configuration routing
+        if: steps.diff.outputs.config_only != 'true'
+        run: |
+          python3 .github/scripts/test-ci-agent-docs.py
+          python3 .github/scripts/test-ci-doc-triggers.py
+          python3 scripts/test-runtime-env.py
+          python3 scripts/test-restore-runtime-template.py
+      - name: Route extractor verification
+        id: extractor
+        if: steps.diff.outputs.docs_only != 'true' && steps.diff.outputs.config_only != 'true'
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.sha }}
+          EXTRACTOR_FORCE_FULL: ${{ vars.EXTRACTOR_FORCE_FULL }}
+        run: python3 scripts/extractor_selection.py route-ci "$EVENT_NAME" "$BASE_SHA" "$HEAD_SHA" >> "$GITHUB_OUTPUT"
+
+  verify_policy:
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.config_only != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: '24.22.1'
+      - name: Test offline watermark manifest contract
+        run: python3 -m unittest discover -s tools/bulletin_watermark -p 'test_*.py'
+      - name: Test isolated V4 resource preview policy
+        run: python3 -m unittest discover -s tools/bulletin_v4 -p 'test_*.py'
+      - name: Test bulletin geometry preflight
+        run: |
+          # The image runs the complete suite with the hash-locked PDF parser.
+          docker build --target geometry-probe -f Dockerfile.extractor -t bulletin-geometry:verify .
+          docker run --rm --network none --entrypoint pdftohtml bulletin-geometry:verify -v
+          docker run --rm --network none --memory 512m --cpus 1 \
+            -v "$PWD/internal/onlinebulletins/testdata:/fixtures:ro" \
+            --entrypoint python bulletin-geometry:verify fixtures.py /fixtures
+      - name: Scan dependencies
+        run: |
+          trivy_cache="$RUNNER_TEMP/trivy-cache"
+          mkdir -p "$trivy_cache"
+          docker run --rm \
+            -v "$PWD:/workspace:ro" \
+            -v "$trivy_cache:/root/.cache/trivy" \
+            ghcr.io/aquasecurity/trivy@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 \
+            fs --db-repository ghcr.io/aquasecurity/trivy-db:2 --db-repository public.ecr.aws/aquasecurity/trivy-db:2 --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 \
+            --skip-dirs /workspace/.git --skip-dirs /workspace/node_modules /workspace
+      - name: Validate OpenAPI
+        run: |
+          npx --yes @redocly/cli@2.47.0 lint openapi.yaml
+          npx --yes @redocly/cli@2.47.0 lint docs/obs-capture/live-control-v1/openapi.snapshot.yaml docs/obs-capture/live-control-v1/asset.openapi.snapshot.yaml
+      - name: Scan complete Git history
+        run: ./scripts/test-gitleaks.sh
+      - name: Test migration and deployment policies
+        run: |
+          ./scripts/test-ci-concurrency.sh
+          python3 scripts/test-ci-renderer-reuse.py
+          ./scripts/test-ci-extractor.sh
+          python3 scripts/test-ci-extractor-artifact.py
+          python3 -m unittest discover -s scripts -p test_extractor_selection.py
+          ./scripts/test-build-cache-policy.sh
+          python3 scripts/test-ci-cache-cleanup.py
+          python3 scripts/test-ci-docs-only.py
+          ./scripts/test-migration-policy-test.sh
+          ./scripts/test-migration-policy.sh internal/migrations/sql/*.sql
+          ./scripts/test-what-if-policy.sh
+          ./scripts/test-cms-locations-release.sh
+          ./scripts/test-release-policy.sh
+          python3 scripts/test-wait-bulletin-extractor-rollout.py
+          python3 scripts/test-verify-rollout.py
+          ./scripts/test-rollback-bulletin-extractor.sh
+
+  verify_go:
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.config_only != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+        env:
+          POSTGRES_DB: hhc_web_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d hhc_web_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      HHW_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/hhc_web_core_test?sslmode=disable
+      HHW_TEST_STORAGE_DATABASE_URL: postgres://postgres:postgres@localhost:5432/hhc_web_test?sslmode=disable
+      TEST_POSTGRES_DSN: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
+      DB_PHASE_TEST_DSN: postgres://postgres:postgres@localhost:5432/db_phase_test?sslmode=disable
+      HHC_WEB_ALLOW_DESTRUCTIVE_TEST: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Cache Go modules
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ~/go/pkg/mod
+          key: hhc-go-mod-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ hashFiles('go.mod', 'go.sum') }}
+      - name: Cache incremental Go builds
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ~/.cache/go-build
+          key: hhc-go-build-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ hashFiles('go.mod', 'go.sum') }}-race-core-${{ hashFiles('**/*.go', 'internal/migrations/sql/*.sql', 'seeds/content/manifest.json', 'internal/auditclient/hhc-web-producer-fixture.json', 'internal/recordings/assets/*.jpg') }}
+          restore-keys: hhc-go-build-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ hashFiles('go.mod', 'go.sum') }}-race-core-
+      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: '24.22.1'
+      - name: Install and test deterministic bulletin converter
+        working-directory: tools/bulletin-conversion
+        run: npm ci --ignore-scripts --no-audit --no-fund && npm test
+      - name: Bootstrap migration role
+        run: ./scripts/bootstrap-migration-role.test.sh
+      - name: Test Go packages
+        run: |
+          python3 scripts/test-go-lanes_test.py
+          psql "$TEST_POSTGRES_DSN" --set=ON_ERROR_STOP=1 --command='CREATE DATABASE hhc_web_core_test'
+          psql "$TEST_POSTGRES_DSN" --set=ON_ERROR_STOP=1 --command='CREATE DATABASE db_phase_test'
+          python3 scripts/test-go-lanes.py
+      - name: Vet Go
+        run: go vet ./...
+
+  prepare_extractor:
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.config_only != 'true' && needs.changes.outputs.extractor_required != 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      matrix: ${{ steps.selection.outputs.matrix }}
+      selection_id: ${{ steps.selection_archive.outputs.artifact-id }}
+      selection_name: extractor-selection-${{ github.sha }}-${{ github.run_attempt }}
+      release_check: ${{ steps.selection.outputs.release_check }}
+      artifact_id: ${{ steps.archive.outputs.artifact-id }}
+      artifact_name: extractor-ci-${{ github.run_id }}-${{ github.run_attempt }}
+      commit: ${{ steps.image.outputs.commit }}
+      run_id: ${{ steps.image.outputs.run_id }}
+      image_id: ${{ steps.image.outputs.image_id }}
+      archive_sha256: ${{ steps.image.outputs.archive_sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Validate immutable producer pin
+        id: producer
+        run: |
+          python3 - <<'PYCODE'
+          import json,os,re
+          from pathlib import Path
+          pin=json.loads(Path('scripts/extractor-producer.json').read_text())
+          assert re.fullmatch(r'[a-f0-9]{40}',pin['commit'])
+          with open(os.environ['GITHUB_OUTPUT'],'a') as out: out.write('commit='+pin['commit']+'\n')
+          PYCODE
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          version: v0.38.0
+          driver-opts: image=moby/buildkit@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
+      - name: Select authenticated renderer image or exact source
+        id: renderer
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/select-ci-renderer.py
+      - name: Checkout exact shared renderer source
+        if: steps.renderer.outputs.reuse != 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: HallelujahHomeChurch/frontend-platform
+          ref: ${{ steps.producer.outputs.commit }}
+          path: .renderer-source
+      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        if: steps.renderer.outputs.reuse != 'true'
+        with:
+          node-version: '24.22.1'
+      - name: Build exact shared renderer for integration
+        if: steps.renderer.outputs.reuse != 'true'
+        working-directory: .renderer-source
+        run: |
+          corepack enable
+          corepack pnpm install --frozen-lockfile
+          corepack pnpm --filter @hallelujahhomechurch/ui build
+          node scripts/verify-bulletin-renderer-v9.mjs
+          node scripts/verify-bulletin-renderer-v10.mjs
+          node scripts/verify-bulletin-renderer-v11.mjs
+          node scripts/fetch-bulletin-template-assets.mjs "$RUNNER_TEMP/bulletin-assets"
+          node scripts/package-bulletin-renderer.mjs artifacts/renderer "$RUNNER_TEMP/bulletin-assets"
+      - name: Set native package refresh date
+        id: build_date
+        run: echo "date=$(date -u +%F)" >> "$GITHUB_OUTPUT"
+      - name: Build cached renderer image
+        if: steps.renderer.outputs.reuse != 'true'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: false
+        with:
+          context: .renderer-source/artifacts/renderer
+          file: .renderer-source/tools/bulletin-renderer/Dockerfile
+          platforms: linux/amd64
+          push: false
+          provenance: false
+          outputs: type=oci,dest=${{ runner.temp }}/renderer.tar
+          cache-from: type=gha,scope=hhc-renderer-ci-${{ github.event.pull_request.number || github.ref_name }}-${{ steps.build_date.outputs.date }}
+          cache-to: type=gha,mode=max,scope=hhc-renderer-ci-${{ github.event.pull_request.number || github.ref_name }}-${{ steps.build_date.outputs.date }}
+      - name: Unpack renderer OCI layout
+        if: steps.renderer.outputs.reuse != 'true'
+        run: |
+          mkdir -p "$RUNNER_TEMP/renderer-layout"
+          tar -xf "$RUNNER_TEMP/renderer.tar" -C "$RUNNER_TEMP/renderer-layout"
+      - name: Build cached extractor image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: false
+        with:
+          context: .
+          file: Dockerfile.extractor
+          target: extractor
+          platforms: linux/amd64
+          load: true
+          push: false
+          provenance: false
+          tags: bulletin-extractor:verify
+          build-contexts: bulletin-renderer=${{ steps.renderer.outputs.context }}
+          build-args: |
+            BULLETIN_RENDERER_IMAGE=bulletin-renderer
+            BULLETIN_RENDERER_ARTIFACT_SHA256=50cb71b21129cb5296f8fa849da743d3553048d9ebacee27d013ad1552d087a1
+            APT_CACHE_DATE=${{ steps.build_date.outputs.date }}
+          cache-from: type=gha,scope=hhc-extractor-ci-${{ github.event.pull_request.number || github.ref_name }}-${{ steps.build_date.outputs.date }}
+          cache-to: type=gha,mode=max,scope=hhc-extractor-ci-${{ github.event.pull_request.number || github.ref_name }}-${{ steps.build_date.outputs.date }}
+      - name: Export extractor image for verification
+        id: image
+        shell: bash
+        run: |
+          [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]] || exit 1
+          image_id="$(docker image inspect bulletin-extractor:verify --format '{{.Id}}')"
+          [[ "$image_id" =~ ^sha256:[0-9a-f]{64}$ ]] || exit 1
+          docker save bulletin-extractor:verify | gzip -1 > "$RUNNER_TEMP/extractor-image.tar.gz"
+          archive_sha256="$(sha256sum "$RUNNER_TEMP/extractor-image.tar.gz" | cut -d ' ' -f 1)"
+          {
+            echo "commit=$GITHUB_SHA"
+            echo "run_id=$GITHUB_RUN_ID"
+            echo "image_id=$image_id"
+            echo "archive_sha256=$archive_sha256"
+          } >> "$GITHUB_OUTPUT"
+          echo "Extractor archive bytes: $(wc -c < "$RUNNER_TEMP/extractor-image.tar.gz")" >> "$GITHUB_STEP_SUMMARY"
+      - name: Store extractor verification image
+        id: archive
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: extractor-ci-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/extractor-image.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Prepare common parser and immutable selection
+        id: selection
+        env:
+          EXTRACTOR_IMAGE_REF: bulletin-extractor:verify
+          CI_RENDERER_IMAGE: ${{ steps.renderer.outputs.image }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          EXTRACTOR_FORCE_FULL: ${{ vars.EXTRACTOR_FORCE_FULL }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ./scripts/prepare_extractor_tests.sh
+          python3 scripts/extractor_selection.py prepare ci
+      - name: Store selection and same-run test binaries
+        id: selection_archive
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: extractor-selection-${{ github.sha }}-${{ github.run_attempt }}
+          path: artifacts/extractor-selection
+          if-no-files-found: error
+          retention-days: 1
+
+  verify_extractor:
+    needs: [changes, prepare_extractor]
+    if: needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.config_only != 'true' && needs.changes.outputs.extractor_required != 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare_extractor.outputs.matrix) }}
+    services:
+      postgres:
+        image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+        env:
+          POSTGRES_DB: hhc_web_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d hhc_web_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      EXTRACTOR_IMAGE_REF: bulletin-extractor:verify
+      PREPARED_COMMIT: ${{ needs.prepare_extractor.outputs.commit }}
+      PREPARED_RUN_ID: ${{ needs.prepare_extractor.outputs.run_id }}
+      ARTIFACT_ID: ${{ needs.prepare_extractor.outputs.artifact_id }}
+      SELECTION_ID: ${{ needs.prepare_extractor.outputs.selection_id }}
+      IMAGE_ARTIFACT_NAME: ${{ needs.prepare_extractor.outputs.artifact_name }}
+      SELECTION_ARTIFACT_NAME: ${{ needs.prepare_extractor.outputs.selection_name }}
+      ARCHIVE_SHA256: ${{ needs.prepare_extractor.outputs.archive_sha256 }}
+      IMAGE_ID: ${{ needs.prepare_extractor.outputs.image_id }}
+      HHW_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/hhc_web_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Validate prepared extractor artifact
+        shell: bash
+        run: |
+          [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]] || exit 1
+          [[ "$PREPARED_COMMIT" == "$GITHUB_SHA" && "$PREPARED_RUN_ID" == "$GITHUB_RUN_ID" ]] || exit 1
+          [[ "$ARTIFACT_ID" =~ ^[1-9][0-9]*$ && "$SELECTION_ID" =~ ^[1-9][0-9]*$ ]] || exit 1
+          [[ "$IMAGE_ARTIFACT_NAME" =~ ^extractor-ci-${GITHUB_RUN_ID}-[1-9][0-9]*$ ]] || exit 1
+          [[ "$SELECTION_ARTIFACT_NAME" =~ ^extractor-selection-${GITHUB_SHA}-[1-9][0-9]*$ ]] || exit 1
+          [[ "$ARCHIVE_SHA256" =~ ^[0-9a-f]{64}$ && "$IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]] || exit 1
+      - name: Download prepared extractor inputs
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.prepare_extractor.outputs.artifact_id }},${{ needs.prepare_extractor.outputs.selection_id }}
+          path: ${{ runner.temp }}/extractor-inputs
+          merge-multiple: false
+          digest-mismatch: error
+      - name: Load prepared extractor image
+        shell: bash
+        run: |
+          image_archive="$RUNNER_TEMP/extractor-inputs/$IMAGE_ARTIFACT_NAME/extractor-image.tar.gz"
+          selection_dir="$RUNNER_TEMP/extractor-inputs/$SELECTION_ARTIFACT_NAME"
+          [[ -f "$image_archive" && -f "$selection_dir/ci.json" && -f "$selection_dir/release-check.json" ]] || exit 1
+          [[ "$(sha256sum "$image_archive" | cut -d ' ' -f 1)" == "$ARCHIVE_SHA256" ]] || exit 1
+          docker load --input "$image_archive"
+          [[ "$(docker image inspect bulletin-extractor:verify --format '{{.Id}}')" == "$IMAGE_ID" ]] || exit 1
+          mkdir -p artifacts
+          [[ ! -e artifacts/extractor-selection ]] || exit 1
+          mv "$selection_dir" artifacts/extractor-selection
+      - name: Verify isolated bulletin extractor runtime
+        timeout-minutes: 10
+        env:
+          EXTRACTOR_GROUP: ${{ matrix.group }}
+          CHECK_RELEASE_MODE: ${{ needs.prepare_extractor.outputs.release_check }}
+        run: |
+          chmod +x artifacts/extractor-selection/*.test
+          release_args=()
+          if [[ "$CHECK_RELEASE_MODE" == true ]]; then
+            release_args=(artifacts/extractor-selection/release-check.json artifacts/extractor-results-release)
+          fi
+          python3 scripts/run_extractor_selection.py ci artifacts/extractor-selection/ci.json "$EXTRACTOR_GROUP" artifacts/extractor-results-ci "${release_args[@]}"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: extractor-result-ci-${{ matrix.group }}-${{ github.sha }}-${{ github.run_id }}
+          overwrite: true
+          path: artifacts/extractor-results-ci
+          if-no-files-found: error
+          retention-days: 1
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: needs.prepare_extractor.outputs.release_check == 'true'
+        with:
+          name: extractor-result-release-${{ matrix.group }}-${{ github.sha }}-${{ github.run_id }}
+          overwrite: true
+          path: artifacts/extractor-results-release
+          if-no-files-found: error
+          retention-days: 1
+
+  verify_image:
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.config_only != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          version: v0.38.0
+          driver-opts: image=moby/buildkit@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
+      - name: Set package refresh date
+        id: build_date
+        run: echo "date=$(date -u +%F)" >> "$GITHUB_OUTPUT"
+      - name: Build cached watermark worker image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: false
+        with:
+          context: .
+          file: Dockerfile
+          target: watermark
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: hhc-web-watermark:verify
+          build-args: APT_CACHE_DATE=${{ steps.build_date.outputs.date }}
+          cache-from: type=gha,scope=hhc-web-api-ci-${{ github.event.pull_request.number || github.ref_name }}
+          cache-to: type=gha,mode=max,scope=hhc-web-api-ci-${{ github.event.pull_request.number || github.ref_name }}
+      - name: Build cached lean API image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: false
+        with:
+          context: .
+          file: Dockerfile
+          target: api
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: hhc-web-api:verify
+          cache-from: type=gha,scope=hhc-web-api-lean-ci-${{ github.event.pull_request.number || github.ref_name }}
+          cache-to: type=gha,mode=max,scope=hhc-web-api-lean-ci-${{ github.event.pull_request.number || github.ref_name }}
+      - name: Verify runtime image boundaries
+        run: python3 scripts/test-runtime-images.py hhc-web-api:verify hhc-web-watermark:verify
+      - name: Test image
+        run: |
+          docker run --rm --network none --memory 2g --cpus 1 \
+            --entrypoint /opt/watermark/bin/python \
+            -e HHC_WATERMARK_INTEGRATION=1 -e HHC_WATERMARK_PDF_TESTS=1 -e HHC_WATERMARK_PDFTOPPM=/usr/bin/pdftoppm \
+            -v "$PWD:/workspace:ro" -w /workspace hhc-web-watermark:verify \
+            -m unittest discover -s tools/bulletin_watermark -p 'test_*.py'
+      - name: Scan image
+        run: |
+          trivy_cache="$RUNNER_TEMP/trivy-cache"
+          mkdir -p "$trivy_cache"
+          for image in hhc-web-api:verify hhc-web-watermark:verify; do
+            docker run --rm \
+              -v /var/run/docker.sock:/var/run/docker.sock \
+              -v "$PWD/.vex:/vex:ro" \
+              -v "$trivy_cache:/root/.cache/trivy" \
+              ghcr.io/aquasecurity/trivy@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 \
+              image --db-repository ghcr.io/aquasecurity/trivy-db:2 --db-repository public.ecr.aws/aquasecurity/trivy-db:2 --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 --vex /vex/lightning-2.6.6.openvex.json --show-suppressed "$image"
+          done
+
+  verify:
+    if: ${{ always() && needs.changes.outputs.config_only != 'true' }}
+    needs: [changes, verify_policy, verify_go, prepare_extractor, verify_extractor, verify_image]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every verification job
+        run: |
+          test "${{ needs.changes.result }}" = success
+          if [ "${{ needs.changes.outputs.docs_only }}" = true ]; then
+            test "${{ needs.verify_policy.result }}" = skipped
+            test "${{ needs.verify_go.result }}" = skipped
+            test "${{ needs.prepare_extractor.result }}" = skipped
+            test "${{ needs.verify_extractor.result }}" = skipped
+            test "${{ needs.verify_image.result }}" = skipped
+          else
+            test "${{ needs.verify_policy.result }}" = success
+            test "${{ needs.verify_go.result }}" = success
+            if [ "${{ needs.changes.outputs.extractor_required }}" = false ]; then
+              test "${{ needs.prepare_extractor.result }}" = skipped
+              test "${{ needs.verify_extractor.result }}" = skipped
+            else
+              test "${{ needs.prepare_extractor.result }}" = success
+              test "${{ needs.verify_extractor.result }}" = success
+            fi
+            test "${{ needs.verify_image.result }}" = success
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        if: needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.config_only != 'true' && needs.changes.outputs.extractor_required != 'false'
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        if: needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.config_only != 'true' && needs.changes.outputs.extractor_required != 'false'
+        with:
+          artifact-ids: ${{ needs.prepare_extractor.outputs.selection_id }}
+          path: artifacts/extractor-selection
+          digest-mismatch: error
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        if: needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.config_only != 'true' && needs.changes.outputs.extractor_required != 'false'
+        with:
+          pattern: extractor-result-ci-*-${{ github.sha }}-${{ github.run_id }}
+          path: extractor-results-ci
+      - name: Require exact selected CI coverage
+        if: needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.config_only != 'true' && needs.changes.outputs.extractor_required != 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/extractor_selection.py verify ci artifacts/extractor-selection/ci.json extractor-results-ci
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        if: needs.prepare_extractor.outputs.release_check == 'true'
+        with:
+          pattern: extractor-result-release-*-${{ github.sha }}-${{ github.run_id }}
+          path: extractor-results-release
+      - name: Require exact shared release-mode coverage
+        if: needs.prepare_extractor.outputs.release_check == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/extractor_selection.py verify release artifacts/extractor-selection/release-check.json extractor-results-release

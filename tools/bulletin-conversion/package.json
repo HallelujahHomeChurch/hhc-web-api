@@ -1,0 +1,7 @@
+{
+  "name": "hhc-bulletin-conversion",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test convert.test.mjs" },
+  "dependencies": { "opencc-js": "1.4.1" }
+}

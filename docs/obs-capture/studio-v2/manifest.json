@@ -1,0 +1,22 @@
+{
+  "version": "k4-2026-10-15.rc1",
+  "stage": "consumer-contract-not-deployed",
+  "files": {
+    "docs/obs-capture/studio-v2/contract.md": "3083a56e25f53c95530fdb219c9781271ca4942f2adb81783560898911b1ee2d",
+    "docs/obs-capture/studio-v2/openapi.snapshot.yaml": "6c1cd5519d16823fe92bccaffd1d0d78cda3c1abfd08ab82d89bcc51b1b7060b",
+    "docs/obs-capture/studio-v2/wire-fixtures.json": "5986a11895fc35f74f793054c2b17bcdd36bf6b48d3f6c006fd50278406d5432",
+    "docs/obs-capture/studio-v2/acceptance.json": "810c6173c7f47acba5e2b1160c8c87a632a73279b1b609c9682b0a8d82d2cab0",
+    "docs/obs-capture/studio-v2/windows-handoff.md": "d63a5d3b5d6e2e7835e0e1f162fed3a2050f510a94d44759bfd4fdc30d064c2e",
+    "docs/obs-capture/studio-v2/identity-fixtures.json": "022f0d62f34aad02a4c377f57f355b06ec967aa3fbd297a9e327225c6bc88248"
+  },
+  "frozenContracts": {
+    "docs/obs-capture/key-only-ingest-v1/contract.md": "9b4706092921fd96a37c0b616da7858e325a03340e112d8dc81514106dbdf423",
+    "docs/obs-capture/key-only-ingest-v1/openapi.snapshot.yaml": "f85eb10aee6c88676113454c9f7e61792309a60005eb27736049bc306bd196b6",
+    "docs/obs-capture/key-only-ingest-v1/wire-fixtures.json": "e46f1df639956e54fc0fd165b194f0bef53eb52641b8df1b498a1d8f2940961f",
+    "docs/obs-capture/live-control-v1/contract.md": "32daa074710676f4889c94e95736337dd0c5be45517d94ffb340806fd49cfc06",
+    "docs/obs-capture/live-control-v1/openapi.snapshot.yaml": "4f24c92a06d5d51d1d28b4246d42f5e4e81a4d009c4b6d47cc97ab65c6be8d56",
+    "docs/obs-capture/live-control-v1/wire-fixtures.json": "bbd056e6e3bb7546caadd4a2ff913ca760341ca61cb6bdfb4e94425be9c82bcc",
+    "docs/obs-capture/c1-manifest.json": "f702477236ba184853c119ffa9c4da0cc9f6d44cf7911785f85f3aa6d94e8be9",
+    "docs/obs-capture/fixtures.json": "84d4074550e24f93a747a67b60e3ce3e49894fd2e409d23367a3e2d285c5f794"
+  }
+}

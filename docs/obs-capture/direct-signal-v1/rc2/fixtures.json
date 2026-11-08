@@ -1,0 +1,599 @@
+[
+  {
+    "name": "preview",
+    "schema": "BroadcastControlD1",
+    "valid": true,
+    "value": {
+      "revision": 4,
+      "phase": "preview",
+      "pendingCommand": null,
+      "controlVersion": "d1-2026-10-17.rc2",
+      "recordingId": "11111111-1111-4111-8111-111111111111",
+      "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "epoch": 1,
+      "boundaries": {
+        "startSequence": null,
+        "endSequenceExclusive": null,
+        "revision": 3
+      }
+    }
+  },
+  {
+    "name": "live",
+    "schema": "BroadcastControlD1",
+    "valid": true,
+    "value": {
+      "revision": 4,
+      "phase": "live",
+      "pendingCommand": null,
+      "controlVersion": "d1-2026-10-17.rc2",
+      "recordingId": "11111111-1111-4111-8111-111111111111",
+      "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "epoch": 1,
+      "boundaries": {
+        "startSequence": 0,
+        "endSequenceExclusive": null,
+        "revision": 3
+      }
+    }
+  },
+  {
+    "name": "end_pending",
+    "schema": "BroadcastControlD1",
+    "valid": true,
+    "value": {
+      "revision": 4,
+      "phase": "end_pending",
+      "pendingCommand": null,
+      "controlVersion": "d1-2026-10-17.rc2",
+      "recordingId": "11111111-1111-4111-8111-111111111111",
+      "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "epoch": 1,
+      "boundaries": {
+        "startSequence": 0,
+        "endSequenceExclusive": 3,
+        "revision": 3
+      }
+    }
+  },
+  {
+    "name": "processing",
+    "schema": "BroadcastControlD1",
+    "valid": true,
+    "value": {
+      "revision": 4,
+      "phase": "processing",
+      "pendingCommand": null,
+      "controlVersion": "d1-2026-10-17.rc2",
+      "recordingId": "11111111-1111-4111-8111-111111111111",
+      "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "epoch": 1,
+      "boundaries": {
+        "startSequence": 0,
+        "endSequenceExclusive": 3,
+        "revision": 3
+      }
+    }
+  },
+  {
+    "name": "archived",
+    "schema": "BroadcastControlD1",
+    "valid": true,
+    "value": {
+      "revision": 4,
+      "phase": "archived",
+      "pendingCommand": null,
+      "controlVersion": "d1-2026-10-17.rc2",
+      "recordingId": "11111111-1111-4111-8111-111111111111",
+      "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "epoch": 1,
+      "boundaries": {
+        "startSequence": 0,
+        "endSequenceExclusive": 3,
+        "revision": 3
+      }
+    }
+  },
+  {
+    "name": "failed",
+    "schema": "BroadcastControlD1",
+    "valid": true,
+    "value": {
+      "revision": 4,
+      "phase": "failed",
+      "pendingCommand": null,
+      "controlVersion": "d1-2026-10-17.rc2",
+      "recordingId": "11111111-1111-4111-8111-111111111111",
+      "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "epoch": 1,
+      "boundaries": {
+        "startSequence": 0,
+        "endSequenceExclusive": 3,
+        "revision": 3
+      }
+    }
+  },
+  {
+    "name": "cancelled",
+    "schema": "BroadcastControlD1",
+    "valid": true,
+    "value": {
+      "revision": 4,
+      "phase": "cancelled",
+      "pendingCommand": null,
+      "controlVersion": "d1-2026-10-17.rc2",
+      "recordingId": "11111111-1111-4111-8111-111111111111",
+      "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "epoch": 1,
+      "boundaries": {
+        "startSequence": 0,
+        "endSequenceExclusive": 3,
+        "revision": 3
+      }
+    }
+  },
+  {
+    "name": "missing-revision",
+    "schema": "BroadcastControlD1",
+    "valid": false,
+    "value": {
+      "phase": "end_pending",
+      "pendingCommand": null,
+      "controlVersion": "d1-2026-10-17.rc2",
+      "recordingId": "11111111-1111-4111-8111-111111111111",
+      "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "epoch": 1,
+      "boundaries": {
+        "startSequence": 0,
+        "endSequenceExclusive": 3,
+        "revision": 3
+      }
+    }
+  },
+  {
+    "name": "missing-phase",
+    "schema": "BroadcastControlD1",
+    "valid": false,
+    "value": {
+      "revision": 4,
+      "pendingCommand": null,
+      "controlVersion": "d1-2026-10-17.rc2",
+      "recordingId": "11111111-1111-4111-8111-111111111111",
+      "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "epoch": 1,
+      "boundaries": {
+        "startSequence": 0,
+        "endSequenceExclusive": 3,
+        "revision": 3
+      }
+    }
+  },
+  {
+    "name": "missing-pendingCommand",
+    "schema": "BroadcastControlD1",
+    "valid": false,
+    "value": {
+      "revision": 4,
+      "phase": "end_pending",
+      "controlVersion": "d1-2026-10-17.rc2",
+      "recordingId": "11111111-1111-4111-8111-111111111111",
+      "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "epoch": 1,
+      "boundaries": {
+        "startSequence": 0,
+        "endSequenceExclusive": 3,
+        "revision": 3
+      }
+    }
+  },
+  {
+    "name": "missing-controlVersion",
+    "schema": "BroadcastControlD1",
+    "valid": false,
+    "value": {
+      "revision": 4,
+      "phase": "end_pending",
+      "pendingCommand": null,
+      "recordingId": "11111111-1111-4111-8111-111111111111",
+      "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "epoch": 1,
+      "boundaries": {
+        "startSequence": 0,
+        "endSequenceExclusive": 3,
+        "revision": 3
+      }
+    }
+  },
+  {
+    "name": "missing-recordingId",
+    "schema": "BroadcastControlD1",
+    "valid": false,
+    "value": {
+      "revision": 4,
+      "phase": "end_pending",
+      "pendingCommand": null,
+      "controlVersion": "d1-2026-10-17.rc2",
+      "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "epoch": 1,
+      "boundaries": {
+        "startSequence": 0,
+        "endSequenceExclusive": 3,
+        "revision": 3
+      }
+    }
+  },
+  {
+    "name": "missing-captureId",
+    "schema": "BroadcastControlD1",
+    "valid": false,
+    "value": {
+      "revision": 4,
+      "phase": "end_pending",
+      "pendingCommand": null,
+      "controlVersion": "d1-2026-10-17.rc2",
+      "recordingId": "11111111-1111-4111-8111-111111111111",
+      "epoch": 1,
+      "boundaries": {
+        "startSequence": 0,
+        "endSequenceExclusive": 3,
+        "revision": 3
+      }
+    }
+  },
+  {
+    "name": "missing-epoch",
+    "schema": "BroadcastControlD1",
+    "valid": false,
+    "value": {
+      "revision": 4,
+      "phase": "end_pending",
+      "pendingCommand": null,
+      "controlVersion": "d1-2026-10-17.rc2",
+      "recordingId": "11111111-1111-4111-8111-111111111111",
+      "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "boundaries": {
+        "startSequence": 0,
+        "endSequenceExclusive": 3,
+        "revision": 3
+      }
+    }
+  },
+  {
+    "name": "missing-boundaries",
+    "schema": "BroadcastControlD1",
+    "valid": false,
+    "value": {
+      "revision": 4,
+      "phase": "end_pending",
+      "pendingCommand": null,
+      "controlVersion": "d1-2026-10-17.rc2",
+      "recordingId": "11111111-1111-4111-8111-111111111111",
+      "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "epoch": 1
+    }
+  },
+  {
+    "name": "invalid-controlVersion-d1-2026-10-17.rc1",
+    "schema": "BroadcastControlD1",
+    "valid": false,
+    "value": {
+      "revision": 4,
+      "phase": "end_pending",
+      "pendingCommand": null,
+      "controlVersion": "d1-2026-10-17.rc1",
+      "recordingId": "11111111-1111-4111-8111-111111111111",
+      "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "epoch": 1,
+      "boundaries": {
+        "startSequence": 0,
+        "endSequenceExclusive": 3,
+        "revision": 3
+      }
+    }
+  },
+  {
+    "name": "invalid-captureId-None",
+    "schema": "BroadcastControlD1",
+    "valid": false,
+    "value": {
+      "revision": 4,
+      "phase": "end_pending",
+      "pendingCommand": null,
+      "controlVersion": "d1-2026-10-17.rc2",
+      "recordingId": "11111111-1111-4111-8111-111111111111",
+      "captureId": null,
+      "epoch": 1,
+      "boundaries": {
+        "startSequence": 0,
+        "endSequenceExclusive": 3,
+        "revision": 3
+      }
+    }
+  },
+  {
+    "name": "invalid-captureId-invalid",
+    "schema": "BroadcastControlD1",
+    "valid": false,
+    "value": {
+      "revision": 4,
+      "phase": "end_pending",
+      "pendingCommand": null,
+      "controlVersion": "d1-2026-10-17.rc2",
+      "recordingId": "11111111-1111-4111-8111-111111111111",
+      "captureId": "invalid",
+      "epoch": 1,
+      "boundaries": {
+        "startSequence": 0,
+        "endSequenceExclusive": 3,
+        "revision": 3
+      }
+    }
+  },
+  {
+    "name": "invalid-epoch-0",
+    "schema": "BroadcastControlD1",
+    "valid": false,
+    "value": {
+      "revision": 4,
+      "phase": "end_pending",
+      "pendingCommand": null,
+      "controlVersion": "d1-2026-10-17.rc2",
+      "recordingId": "11111111-1111-4111-8111-111111111111",
+      "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "epoch": 0,
+      "boundaries": {
+        "startSequence": 0,
+        "endSequenceExclusive": 3,
+        "revision": 3
+      }
+    }
+  },
+  {
+    "name": "invalid-epoch-1.5",
+    "schema": "BroadcastControlD1",
+    "valid": false,
+    "value": {
+      "revision": 4,
+      "phase": "end_pending",
+      "pendingCommand": null,
+      "controlVersion": "d1-2026-10-17.rc2",
+      "recordingId": "11111111-1111-4111-8111-111111111111",
+      "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "epoch": 1.5,
+      "boundaries": {
+        "startSequence": 0,
+        "endSequenceExclusive": 3,
+        "revision": 3
+      }
+    }
+  },
+  {
+    "name": "invalid-recordingId-invalid",
+    "schema": "BroadcastControlD1",
+    "valid": false,
+    "value": {
+      "revision": 4,
+      "phase": "end_pending",
+      "pendingCommand": null,
+      "controlVersion": "d1-2026-10-17.rc2",
+      "recordingId": "invalid",
+      "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "epoch": 1,
+      "boundaries": {
+        "startSequence": 0,
+        "endSequenceExclusive": 3,
+        "revision": 3
+      }
+    }
+  },
+  {
+    "name": "invalid-unexpected-True",
+    "schema": "BroadcastControlD1",
+    "valid": false,
+    "value": {
+      "revision": 4,
+      "phase": "end_pending",
+      "pendingCommand": null,
+      "controlVersion": "d1-2026-10-17.rc2",
+      "recordingId": "11111111-1111-4111-8111-111111111111",
+      "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "epoch": 1,
+      "boundaries": {
+        "startSequence": 0,
+        "endSequenceExclusive": 3,
+        "revision": 3
+      },
+      "unexpected": true
+    }
+  },
+  {
+    "name": "missing-boundary-startSequence",
+    "schema": "BroadcastControlD1",
+    "valid": false,
+    "value": {
+      "revision": 4,
+      "phase": "end_pending",
+      "pendingCommand": null,
+      "controlVersion": "d1-2026-10-17.rc2",
+      "recordingId": "11111111-1111-4111-8111-111111111111",
+      "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "epoch": 1,
+      "boundaries": {
+        "endSequenceExclusive": 3,
+        "revision": 3
+      }
+    }
+  },
+  {
+    "name": "missing-boundary-endSequenceExclusive",
+    "schema": "BroadcastControlD1",
+    "valid": false,
+    "value": {
+      "revision": 4,
+      "phase": "end_pending",
+      "pendingCommand": null,
+      "controlVersion": "d1-2026-10-17.rc2",
+      "recordingId": "11111111-1111-4111-8111-111111111111",
+      "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "epoch": 1,
+      "boundaries": {
+        "startSequence": 0,
+        "revision": 3
+      }
+    }
+  },
+  {
+    "name": "missing-boundary-revision",
+    "schema": "BroadcastControlD1",
+    "valid": false,
+    "value": {
+      "revision": 4,
+      "phase": "end_pending",
+      "pendingCommand": null,
+      "controlVersion": "d1-2026-10-17.rc2",
+      "recordingId": "11111111-1111-4111-8111-111111111111",
+      "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "epoch": 1,
+      "boundaries": {
+        "startSequence": 0,
+        "endSequenceExclusive": 3
+      }
+    }
+  },
+  {
+    "name": "invalid-cutoff--1",
+    "schema": "BroadcastControlD1",
+    "valid": false,
+    "value": {
+      "revision": 4,
+      "phase": "end_pending",
+      "pendingCommand": null,
+      "controlVersion": "d1-2026-10-17.rc2",
+      "recordingId": "11111111-1111-4111-8111-111111111111",
+      "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "epoch": 1,
+      "boundaries": {
+        "startSequence": 0,
+        "endSequenceExclusive": -1,
+        "revision": 3
+      }
+    }
+  },
+  {
+    "name": "invalid-cutoff-3.5",
+    "schema": "BroadcastControlD1",
+    "valid": false,
+    "value": {
+      "revision": 4,
+      "phase": "end_pending",
+      "pendingCommand": null,
+      "controlVersion": "d1-2026-10-17.rc2",
+      "recordingId": "11111111-1111-4111-8111-111111111111",
+      "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "epoch": 1,
+      "boundaries": {
+        "startSequence": 0,
+        "endSequenceExclusive": 3.5,
+        "revision": 3
+      }
+    }
+  },
+  {
+    "name": "legacy",
+    "schema": "BroadcastControl",
+    "valid": true,
+    "value": {
+      "revision": 4,
+      "phase": "end_pending",
+      "pendingCommand": null
+    }
+  },
+  {
+    "name": "legacy-rejects-extension",
+    "schema": "BroadcastControl",
+    "valid": false,
+    "value": {
+      "revision": 4,
+      "phase": "end_pending",
+      "pendingCommand": null,
+      "controlVersion": "d1-2026-10-17.rc2",
+      "recordingId": "11111111-1111-4111-8111-111111111111",
+      "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "epoch": 1,
+      "boundaries": {
+        "startSequence": 0,
+        "endSequenceExclusive": 3,
+        "revision": 3
+      }
+    }
+  },
+  {
+    "name": "d1-envelope",
+    "schema": "BroadcastControlD1Envelope",
+    "valid": true,
+    "value": {
+      "data": {
+        "revision": 4,
+        "phase": "end_pending",
+        "pendingCommand": null,
+        "controlVersion": "d1-2026-10-17.rc2",
+        "recordingId": "11111111-1111-4111-8111-111111111111",
+        "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "epoch": 1,
+        "boundaries": {
+          "startSequence": 0,
+          "endSequenceExclusive": 3,
+          "revision": 3
+        }
+      },
+      "meta": {},
+      "error": null
+    }
+  },
+  {
+    "name": "pending-end-still-needs-ack",
+    "schema": "BroadcastControlD1",
+    "valid": true,
+    "value": {
+      "revision": 4,
+      "phase": "end_pending",
+      "pendingCommand": {
+        "commandId": "22222222-2222-4222-8222-222222222222",
+        "kind": "end",
+        "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "epoch": 1,
+        "requestedAt": "2026-10-17T12:00:00Z",
+        "status": "pending",
+        "boundarySequence": null
+      },
+      "controlVersion": "d1-2026-10-17.rc2",
+      "recordingId": "11111111-1111-4111-8111-111111111111",
+      "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "epoch": 1,
+      "boundaries": {
+        "startSequence": 0,
+        "endSequenceExclusive": null,
+        "revision": 3
+      }
+    }
+  },
+  {
+    "name": "never-public-terminal",
+    "schema": "BroadcastControlD1",
+    "valid": true,
+    "value": {
+      "revision": 4,
+      "phase": "cancelled",
+      "pendingCommand": null,
+      "controlVersion": "d1-2026-10-17.rc2",
+      "recordingId": "11111111-1111-4111-8111-111111111111",
+      "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "epoch": 1,
+      "boundaries": {
+        "startSequence": null,
+        "endSequenceExclusive": null,
+        "revision": 3
+      }
+    }
+  }
+]

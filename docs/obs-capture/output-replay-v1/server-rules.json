@@ -1,0 +1,76 @@
+{
+  "version": "k5-2026-10-20.rc1",
+  "status": "EXACT_PREVIEW_PENDING_ROOT_REVIEW_NO_SOURCE_PR",
+  "method": "POST",
+  "gatewayPath": "/api/ingest/streams/replay",
+  "canonicalPath": "/ingest/streams/replay",
+  "responseStatus": 200,
+  "requestIdentityRequired": [
+    "protocolVersion",
+    "outputSessionId",
+    "sourceId",
+    "recordingId",
+    "captureId",
+    "epoch",
+    "receipt"
+  ],
+  "mediaProfile": "Exact optional S10 value; absence is legacy900 on both sides, mismatch is unknown. Never infer/upgrade/default a different profile.",
+  "authentication": "Authenticate provided body streamKey against explicit ORIGINAL sourceId before ledger classification; wrong key/source, unavailable original credential proof or authorization failure is generic denied/unknown, never terminal. No raw keys/tokens in durable metadata/logs. Plugin owns per-output pinned credential reference.",
+  "ledger": "Hard require exact source_id+output_id row; then actor/generation and original recording/capture_intent/epoch/profile plus stable bind receipt. No target/direct fallback. No provider/client client-check can substitute server preconditions.",
+  "receipt": "Must equal original operationKey=outputSessionId+.bind, operation=bind and completed K4 wire receipt, including any present commandId. Existing repository bind receipt is persisted accepted, while K4 OpenBroadcastOutput explicitly renders State=completed after successful binding. Derive exactly this completed wire receipt ONLY after verifying existing fully-bound ledger/capture/binding; do not update stored receipt or invent completion for an incomplete intent.",
+  "active": "200 data.state=active only after all original auth/ledger/pins/profile/receipt exact AND same durable original capture.input_active=true AND no deleted/revoked/terminal/generation-retired conflict; echo same identity/profile/receipt and issue session only. A conflicting terminal label while input remains active is UNKNOWN, never active/terminal by guess.",
+  "terminal": "200 data.state=terminal ONLY after original source authentication AND exact existing original(source,output) ledger AND complete verifiable original recording/capture-intent/capture/epoch/profile/stable completed wire receipt match AND the SAME existing original capture row durably has input_active=false. Deletion/revocation/terminal/generation-retired labels ALONE are insufficient. Missing capture/ledger/nullable or unprovable occupancy remains UNKNOWN. This is output-input lifecycle retirement, not media deletion/completion. Echo exact pins/receipt, NEVER session, retire only original local output, preserve media/journal/receipt; explicit new user Start still passes global server guard.",
+  "unknown": "Missing/incomplete ledger, mismatch, unavailable proof, timeout or any non-200/malformed/unsupported response is UNKNOWN. Recommended server409 code broadcast_output_replay_unknown after auth for ledger/pin uncertainty. Generic401/403/404, any409 error including broadcast_output_terminal, and rollback404 are NEVER terminal in K5.",
+  "crossFieldValidation": [
+    "receipt.operationKey==outputSessionId+.bind and exact original stable receipt",
+    "all outer identity/profile fields exactly original durable ledger/binding",
+    "active session.recordingId/captureId/epoch exactly outer pins",
+    "a source credential must authenticate the explicitly supplied original sourceId; no current global-key source retarget",
+    "terminal additionally requires same existing original capture.input_active=false; active requires true and no conflicting authority"
+  ],
+  "noSideEffects": [
+    "No retainAuthenticatedStreamKey",
+    "No source target/direct resolution or ensureDirectTx",
+    "No reserveBroadcastBinding/completeBroadcastBinding/Asset create/rebind",
+    "No queue/media deletion/cleanup or publication/notification/outbox writes",
+    "No input_active/prepared mutation; original global new-output capacity guard unchanged"
+  ],
+  "HTTPBoundary": "Existing trusted gateway Dapr caller requirement, no account/JWT spoofing; new exact admin-host POST4KiB/no query/no cookies/strip Authorization/no upstream retry/private-no-store. Invalid payload400, protocol422, auth401/403, missing route404, authenticated unknown409, throttle429 RetryAfter, dependency503; all errors UNKNOWN.",
+  "oldServerAndRollback": "New route absent returns404 through old CMS/Gateway; plugin stays conservative and never falls back. CMS\u2192Gateway\u2192plugin order. K4/S10 frozen files/schemas unchanged.",
+  "testsRequiredBeforeImplementationClaim": [
+    "Wire fixtures/schema parity/hash validation",
+    "Service+PG hard original ledger/no writes on missing/incomplete/mismatch/changed global key",
+    "Fully bound active exact response and terminal proof after deletion/key generation/input inactive; no provider/outbox calls",
+    "Concurrent creation vs replay uses existing source/recording lock order and leaves global input guard intact",
+    "Plugin original profile/receipt/key references, malformed success/error/rollback404 never retire/create; only matched terminal retires original output, no media/oldqueue deletion",
+    "Deleted/revoked/terminal/generation-retired while input_active=true must be UNKNOWN; missing capture/ledger or incomplete seal proof UNKNOWN; false only on exact original capture may terminal; never release another source/capture"
+  ],
+  "fixtureData": "All UUIDs/key/session values are synthetic schema examples, not production credentials or identifiers.",
+  "inputReleasePredicate": "Read existing generated hhc_web.member_recording_capture.input_active on the exact capture-intent row linked by original ledger; require row exists and value=false for terminal. Do NOT update flags, call abort, finish intents, delete queues, mutate source or create captures to obtain this proof. Capture.Terminal/recording.deleted_at/b.Revoked/key generation are not substitutes.",
+  "sourceReleaseTransactions": [
+    {
+      "source": "internal/migrations/sql/091_broadcast_source.sql:3-20",
+      "proof": "input_active is GENERATED ALWAYS from capture_input_active(active,payload_json,broadcast_epoch). It is false when active=false, or fully evidenced B1 normal seal (NormalEnd+StopAcceptedAt+positiveSealedEndSequence+freezing/validating+nonpending matching accepted seal receipt). No new SQL/migration is needed."
+    },
+    {
+      "source": "internal/postgres/recording_deletion.go:41-52 -> recording_capture.go:215-254 -> saveCapture:27-33",
+      "transaction": "RecordingRepository.Delete sourceTransaction",
+      "proof": "Same transaction sets recording.deleted_at, calls closeCapturePublicationTx(...,now) which Terminate(aborted,recording_deleted) then saveCapture writes active=false/payload; generated input_active=false before source target clearing and commit. Raw historical deleted_at-only does NOT establish release; existing TestBroadcastSourceCleanupOfHistoricalDeletionKeepsInputOccupied proves this."
+    },
+    {
+      "source": "internal/recordings/broadcast.go:483-490 -> postgres/recording_broadcast.go UpdateBroadcast",
+      "transaction": "cancel mutation UpdateBroadcast transaction",
+      "proof": "Cancel refuses c.Active() or existing start boundary; sets revoked/blocked/cancelled but does not itself terminate/release active input. cancel-command/emergency-close/ClosePublication also do NOT prove release; replay must inspect exact durable input_active row."
+    },
+    {
+      "source": "internal/recordings/capture.go:637-686 -> postgres/recording_capture.go UpdateCapture/saveCapture",
+      "transaction": "deliverCaptureOperation seal acknowledgement UpdateCapture transaction",
+      "proof": "After trusted provider seal response, stores NormalEnd, positive SealedEndSequence, merged freezing/validating status and matching accepted receipt with Pending=false, then saveCapture/commit atomically derives input_active=false. Local stop alone or pending/missing receipt remains occupied."
+    },
+    {
+      "source": "internal/recordings/capture.go:390-406,84-109 -> postgres/recording_capture.go UpdateCapture/saveCapture",
+      "transaction": "existing explicit abort/expiry/terminal lifecycle UpdateCapture transaction",
+      "proof": "Terminate sets terminal state, existing saveCapture writes active=false, generated input_active=false. K5 replay NEVER invokes these transitions; it only reads their already committed result. ready state likewise Active=false when saved."
+    }
+  ]
+}

@@ -1,0 +1,1648 @@
+[
+  {
+    "name": "create",
+    "schema": "RecordingCaptureCreateInput",
+    "valid": true,
+    "value": {
+      "operationKey": "create-1",
+      "expectedVersion": 1,
+      "autoPublish": true,
+      "liveEnabled": true
+    }
+  },
+  {
+    "name": "create_requires_explicit_intent",
+    "schema": "RecordingCaptureCreateInput",
+    "valid": false,
+    "value": {
+      "operationKey": "create-1",
+      "expectedVersion": 1
+    }
+  },
+  {
+    "name": "status",
+    "schema": "RecordingCaptureStatus",
+    "valid": true,
+    "value": {
+      "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "recordingId": "018f0c1f-18d0-7e81-9f6f-69c456db7003",
+      "recordingVersion": 1,
+      "state": "uploading",
+      "liveState": "starting",
+      "liveEnabled": true,
+      "autoPublish": "pending",
+      "createdAt": "2026-10-07T00:00:00Z",
+      "expiresAt": "2026-10-08T00:00:00Z",
+      "serverNow": "2026-10-07T00:00:00Z",
+      "stopAcceptedAt": null,
+      "replayUntil": null,
+      "terminalAt": null,
+      "terminalReason": null,
+      "packageId": null,
+      "declaredBytes": 0,
+      "declaredObjects": 0,
+      "objects": [],
+      "nextCursor": "",
+      "progress": {
+        "revision": 0,
+        "firstSequence": 0,
+        "lastSequence": -1,
+        "mediaEndSeconds": 0,
+        "lastAdvancedAt": null,
+        "endedAt": null,
+        "ended": false
+      }
+    }
+  },
+  {
+    "name": "declare",
+    "schema": "RecordingCaptureDeclareInput",
+    "valid": true,
+    "value": {
+      "operationKey": "declare-1",
+      "objects": [
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      ]
+    }
+  },
+  {
+    "name": "reject_traversal",
+    "schema": "RecordingCaptureDeclareInput",
+    "valid": false,
+    "value": {
+      "operationKey": "declare-1",
+      "objects": [
+        {
+          "path": "../secret",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      ]
+    }
+  },
+  {
+    "name": "reject_oversized_object",
+    "schema": "RecordingCaptureDeclareInput",
+    "valid": false,
+    "value": {
+      "operationKey": "declare-1",
+      "objects": [
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 134217729,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      ]
+    }
+  },
+  {
+    "name": "reject_batch_overflow",
+    "schema": "RecordingCaptureDeclareInput",
+    "valid": false,
+    "value": {
+      "operationKey": "declare-1",
+      "objects": [
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "path": "720p/seg-000000.m4s",
+          "sizeBytes": 100,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      ]
+    }
+  },
+  {
+    "name": "sign",
+    "schema": "RecordingCaptureSignInput",
+    "valid": true,
+    "value": {
+      "paths": [
+        "720p/seg-000000.m4s"
+      ]
+    }
+  },
+  {
+    "name": "confirm",
+    "schema": "RecordingCaptureConfirmInput",
+    "valid": true,
+    "value": {
+      "operationKey": "confirm-1",
+      "paths": [
+        "720p/seg-000000.m4s"
+      ]
+    }
+  },
+  {
+    "name": "stop",
+    "schema": "RecordingCaptureOperationInput",
+    "valid": true,
+    "value": {
+      "operationKey": "stop-1"
+    }
+  },
+  {
+    "name": "abort",
+    "schema": "RecordingCaptureAbortInput",
+    "valid": true,
+    "value": {
+      "operationKey": "abort-1",
+      "reasonCode": "encoder_failure"
+    }
+  },
+  {
+    "name": "operation_rejects_extra_fields",
+    "schema": "RecordingCaptureOperationInput",
+    "valid": false,
+    "value": {
+      "operationKey": "stop-1",
+      "normalEnd": true
+    }
+  },
+  {
+    "name": "missing_objects",
+    "schema": "RecordingCaptureErrorEnvelope",
+    "valid": true,
+    "value": {
+      "data": null,
+      "meta": {},
+      "error": {
+        "code": "capture_missing_objects",
+        "message": "missing_objects"
+      }
+    }
+  },
+  {
+    "name": "conflicting_key",
+    "schema": "RecordingCaptureErrorEnvelope",
+    "valid": true,
+    "value": {
+      "data": null,
+      "meta": {},
+      "error": {
+        "code": "capture_conflict",
+        "message": "conflicting_key"
+      }
+    }
+  },
+  {
+    "name": "expired",
+    "schema": "RecordingCaptureErrorEnvelope",
+    "valid": true,
+    "value": {
+      "data": null,
+      "meta": {},
+      "error": {
+        "code": "capture_expired",
+        "message": "expired"
+      }
+    }
+  },
+  {
+    "name": "forbidden",
+    "schema": "RecordingCaptureErrorEnvelope",
+    "valid": true,
+    "value": {
+      "data": null,
+      "meta": {},
+      "error": {
+        "code": "capture_forbidden",
+        "message": "forbidden"
+      }
+    }
+  },
+  {
+    "name": "temporary_failure",
+    "schema": "RecordingCaptureErrorEnvelope",
+    "valid": true,
+    "value": {
+      "data": null,
+      "meta": {},
+      "error": {
+        "code": "capture_unavailable",
+        "message": "temporary_failure"
+      }
+    }
+  },
+  {
+    "name": "create_receipt",
+    "schema": "RecordingCaptureResultEnvelope",
+    "valid": true,
+    "value": {
+      "data": {
+        "capture": {
+          "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "recordingId": "018f0c1f-18d0-7e81-9f6f-69c456db7003",
+          "recordingVersion": 1,
+          "state": "uploading",
+          "liveState": "starting",
+          "liveEnabled": true,
+          "autoPublish": "pending",
+          "createdAt": "2026-10-07T00:00:00Z",
+          "expiresAt": "2026-10-08T00:00:00Z",
+          "serverNow": "2026-10-07T00:00:00Z",
+          "stopAcceptedAt": null,
+          "replayUntil": null,
+          "terminalAt": null,
+          "terminalReason": null,
+          "packageId": null,
+          "declaredBytes": 0,
+          "declaredObjects": 0,
+          "objects": [],
+          "nextCursor": "",
+          "progress": {
+            "revision": 0,
+            "firstSequence": 0,
+            "lastSequence": -1,
+            "mediaEndSeconds": 0,
+            "lastAdvancedAt": null,
+            "endedAt": null,
+            "ended": false
+          }
+        },
+        "receipt": {
+          "operationKey": "create-1",
+          "operation": "create",
+          "acceptedAt": "2026-10-07T00:00:00Z",
+          "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "meta": {},
+      "error": null
+    }
+  },
+  {
+    "name": "declare_receipt",
+    "schema": "RecordingCaptureResultEnvelope",
+    "valid": true,
+    "value": {
+      "data": {
+        "capture": {
+          "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "recordingId": "018f0c1f-18d0-7e81-9f6f-69c456db7003",
+          "recordingVersion": 1,
+          "state": "uploading",
+          "liveState": "starting",
+          "liveEnabled": true,
+          "autoPublish": "pending",
+          "createdAt": "2026-10-07T00:00:00Z",
+          "expiresAt": "2026-10-08T00:00:00Z",
+          "serverNow": "2026-10-07T00:00:00Z",
+          "stopAcceptedAt": null,
+          "replayUntil": null,
+          "terminalAt": null,
+          "terminalReason": null,
+          "packageId": null,
+          "declaredBytes": 0,
+          "declaredObjects": 0,
+          "objects": [],
+          "nextCursor": "",
+          "progress": {
+            "revision": 0,
+            "firstSequence": 0,
+            "lastSequence": -1,
+            "mediaEndSeconds": 0,
+            "lastAdvancedAt": null,
+            "endedAt": null,
+            "ended": false
+          }
+        },
+        "receipt": {
+          "operationKey": "declare-1",
+          "operation": "declare",
+          "acceptedAt": "2026-10-07T00:00:00Z",
+          "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "meta": {},
+      "error": null
+    }
+  },
+  {
+    "name": "confirm_receipt",
+    "schema": "RecordingCaptureResultEnvelope",
+    "valid": true,
+    "value": {
+      "data": {
+        "capture": {
+          "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "recordingId": "018f0c1f-18d0-7e81-9f6f-69c456db7003",
+          "recordingVersion": 1,
+          "state": "uploading",
+          "liveState": "starting",
+          "liveEnabled": true,
+          "autoPublish": "pending",
+          "createdAt": "2026-10-07T00:00:00Z",
+          "expiresAt": "2026-10-08T00:00:00Z",
+          "serverNow": "2026-10-07T00:00:00Z",
+          "stopAcceptedAt": null,
+          "replayUntil": null,
+          "terminalAt": null,
+          "terminalReason": null,
+          "packageId": null,
+          "declaredBytes": 0,
+          "declaredObjects": 0,
+          "objects": [],
+          "nextCursor": "",
+          "progress": {
+            "revision": 0,
+            "firstSequence": 0,
+            "lastSequence": -1,
+            "mediaEndSeconds": 0,
+            "lastAdvancedAt": null,
+            "endedAt": null,
+            "ended": false
+          }
+        },
+        "receipt": {
+          "operationKey": "confirm-1",
+          "operation": "confirm",
+          "acceptedAt": "2026-10-07T00:00:00Z",
+          "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "meta": {},
+      "error": null
+    }
+  },
+  {
+    "name": "stop_receipt",
+    "schema": "RecordingCaptureResultEnvelope",
+    "valid": true,
+    "value": {
+      "data": {
+        "capture": {
+          "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "recordingId": "018f0c1f-18d0-7e81-9f6f-69c456db7003",
+          "recordingVersion": 1,
+          "state": "uploading",
+          "liveState": "ending",
+          "liveEnabled": true,
+          "autoPublish": "pending",
+          "createdAt": "2026-10-07T00:00:00Z",
+          "expiresAt": "2026-10-08T00:00:00Z",
+          "serverNow": "2026-10-07T00:00:00Z",
+          "stopAcceptedAt": "2026-10-07T00:00:00Z",
+          "replayUntil": null,
+          "terminalAt": null,
+          "terminalReason": null,
+          "packageId": null,
+          "declaredBytes": 0,
+          "declaredObjects": 0,
+          "objects": [],
+          "nextCursor": "",
+          "progress": {
+            "revision": 0,
+            "firstSequence": 0,
+            "lastSequence": -1,
+            "mediaEndSeconds": 0,
+            "lastAdvancedAt": null,
+            "endedAt": null,
+            "ended": false
+          }
+        },
+        "receipt": {
+          "operationKey": "stop-1",
+          "operation": "stop",
+          "acceptedAt": "2026-10-07T00:00:00Z",
+          "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "meta": {},
+      "error": null
+    }
+  },
+  {
+    "name": "seal_receipt",
+    "schema": "RecordingCaptureResultEnvelope",
+    "valid": true,
+    "value": {
+      "data": {
+        "capture": {
+          "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "recordingId": "018f0c1f-18d0-7e81-9f6f-69c456db7003",
+          "recordingVersion": 1,
+          "state": "freezing",
+          "liveState": "ending",
+          "liveEnabled": true,
+          "autoPublish": "pending",
+          "createdAt": "2026-10-07T00:00:00Z",
+          "expiresAt": "2026-10-08T00:00:00Z",
+          "serverNow": "2026-10-07T00:00:00Z",
+          "stopAcceptedAt": "2026-10-07T00:00:00Z",
+          "replayUntil": null,
+          "terminalAt": null,
+          "terminalReason": null,
+          "packageId": "cccccccccccccccccccccccccccccccc",
+          "declaredBytes": 0,
+          "declaredObjects": 0,
+          "objects": [],
+          "nextCursor": "",
+          "progress": {
+            "revision": 0,
+            "firstSequence": 0,
+            "lastSequence": -1,
+            "mediaEndSeconds": 0,
+            "lastAdvancedAt": null,
+            "endedAt": null,
+            "ended": false
+          }
+        },
+        "receipt": {
+          "operationKey": "seal-1",
+          "operation": "seal",
+          "acceptedAt": "2026-10-07T00:00:00Z",
+          "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "meta": {},
+      "error": null
+    }
+  },
+  {
+    "name": "abort_receipt",
+    "schema": "RecordingCaptureResultEnvelope",
+    "valid": true,
+    "value": {
+      "data": {
+        "capture": {
+          "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "recordingId": "018f0c1f-18d0-7e81-9f6f-69c456db7003",
+          "recordingVersion": 1,
+          "state": "aborted",
+          "liveState": "aborted",
+          "liveEnabled": true,
+          "autoPublish": "cancelled",
+          "createdAt": "2026-10-07T00:00:00Z",
+          "expiresAt": "2026-10-08T00:00:00Z",
+          "serverNow": "2026-10-07T00:00:00Z",
+          "stopAcceptedAt": null,
+          "replayUntil": null,
+          "terminalAt": "2026-10-07T00:00:00Z",
+          "terminalReason": "encoder_failure",
+          "packageId": null,
+          "declaredBytes": 0,
+          "declaredObjects": 0,
+          "objects": [],
+          "nextCursor": "",
+          "progress": {
+            "revision": 0,
+            "firstSequence": 0,
+            "lastSequence": -1,
+            "mediaEndSeconds": 0,
+            "lastAdvancedAt": null,
+            "endedAt": null,
+            "ended": false
+          }
+        },
+        "receipt": {
+          "operationKey": "abort-1",
+          "operation": "abort",
+          "acceptedAt": "2026-10-07T00:00:00Z",
+          "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "meta": {},
+      "error": null
+    }
+  },
+  {
+    "name": "cancel_auto_publish_receipt",
+    "schema": "RecordingCaptureResultEnvelope",
+    "valid": true,
+    "value": {
+      "data": {
+        "capture": {
+          "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "recordingId": "018f0c1f-18d0-7e81-9f6f-69c456db7003",
+          "recordingVersion": 1,
+          "state": "uploading",
+          "liveState": "starting",
+          "liveEnabled": true,
+          "autoPublish": "cancelled",
+          "createdAt": "2026-10-07T00:00:00Z",
+          "expiresAt": "2026-10-08T00:00:00Z",
+          "serverNow": "2026-10-07T00:00:00Z",
+          "stopAcceptedAt": null,
+          "replayUntil": null,
+          "terminalAt": null,
+          "terminalReason": null,
+          "packageId": null,
+          "declaredBytes": 0,
+          "declaredObjects": 0,
+          "objects": [],
+          "nextCursor": "",
+          "progress": {
+            "revision": 0,
+            "firstSequence": 0,
+            "lastSequence": -1,
+            "mediaEndSeconds": 0,
+            "lastAdvancedAt": null,
+            "endedAt": null,
+            "ended": false
+          }
+        },
+        "receipt": {
+          "operationKey": "cancel_auto_publish-1",
+          "operation": "cancel_auto_publish",
+          "acceptedAt": "2026-10-07T00:00:00Z",
+          "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "meta": {},
+      "error": null
+    }
+  },
+  {
+    "name": "close_live_receipt",
+    "schema": "RecordingCaptureResultEnvelope",
+    "valid": true,
+    "value": {
+      "data": {
+        "capture": {
+          "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "recordingId": "018f0c1f-18d0-7e81-9f6f-69c456db7003",
+          "recordingVersion": 1,
+          "state": "uploading",
+          "liveState": "starting",
+          "liveEnabled": false,
+          "autoPublish": "pending",
+          "createdAt": "2026-10-07T00:00:00Z",
+          "expiresAt": "2026-10-08T00:00:00Z",
+          "serverNow": "2026-10-07T00:00:00Z",
+          "stopAcceptedAt": null,
+          "replayUntil": null,
+          "terminalAt": null,
+          "terminalReason": null,
+          "packageId": null,
+          "declaredBytes": 0,
+          "declaredObjects": 0,
+          "objects": [],
+          "nextCursor": "",
+          "progress": {
+            "revision": 0,
+            "firstSequence": 0,
+            "lastSequence": -1,
+            "mediaEndSeconds": 0,
+            "lastAdvancedAt": null,
+            "endedAt": null,
+            "ended": false
+          }
+        },
+        "receipt": {
+          "operationKey": "close_live-1",
+          "operation": "close_live",
+          "acceptedAt": "2026-10-07T00:00:00Z",
+          "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "meta": {},
+      "error": null
+    }
+  },
+  {
+    "name": "poll",
+    "schema": "RecordingCaptureEnvelope",
+    "valid": true,
+    "value": {
+      "data": {
+        "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "recordingId": "018f0c1f-18d0-7e81-9f6f-69c456db7003",
+        "recordingVersion": 1,
+        "state": "uploading",
+        "liveState": "starting",
+        "liveEnabled": true,
+        "autoPublish": "pending",
+        "createdAt": "2026-10-07T00:00:00Z",
+        "expiresAt": "2026-10-08T00:00:00Z",
+        "serverNow": "2026-10-07T00:00:00Z",
+        "stopAcceptedAt": null,
+        "replayUntil": null,
+        "terminalAt": null,
+        "terminalReason": null,
+        "packageId": null,
+        "declaredBytes": 0,
+        "declaredObjects": 0,
+        "objects": [],
+        "nextCursor": "",
+        "progress": {
+          "revision": 0,
+          "firstSequence": 0,
+          "lastSequence": -1,
+          "mediaEndSeconds": 0,
+          "lastAdvancedAt": null,
+          "endedAt": null,
+          "ended": false
+        }
+      },
+      "meta": {},
+      "error": null
+    }
+  },
+  {
+    "name": "signed",
+    "schema": "RecordingCaptureSignedEnvelope",
+    "valid": true,
+    "value": {
+      "data": [
+        {
+          "path": "720p/seg-000000.m4s",
+          "url": "https://upload.invalid/mock-object",
+          "method": "PUT",
+          "headers": {}
+        }
+      ],
+      "meta": {},
+      "error": null
+    }
+  },
+  {
+    "name": "invalid",
+    "schema": "RecordingCaptureErrorEnvelope",
+    "valid": true,
+    "value": {
+      "data": null,
+      "meta": {},
+      "error": {
+        "code": "capture_invalid",
+        "message": "invalid"
+      }
+    }
+  },
+  {
+    "name": "rate_limited",
+    "schema": "RecordingCaptureErrorEnvelope",
+    "valid": true,
+    "value": {
+      "data": null,
+      "meta": {},
+      "error": {
+        "code": "capture_rate_limited",
+        "message": "rate_limited"
+      }
+    }
+  },
+  {
+    "name": "seal",
+    "schema": "RecordingCaptureSealInput",
+    "valid": true,
+    "value": {
+      "operationKey": "seal-1",
+      "normalEnd": true,
+      "inventory": {
+        "schemaVersion": 1,
+        "presetVersion": "hhc-obs-v1",
+        "objects": [
+          {
+            "path": "master.m3u8",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "480p/index.m3u8",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "480p/init.mp4",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "480p/seg-000000.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "720p/index.m3u8",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "720p/init.mp4",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "720p/seg-000000.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "1080p/index.m3u8",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "1080p/init.mp4",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "1080p/seg-000000.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        ],
+        "renditions": [
+          {
+            "name": "480p",
+            "width": 854,
+            "height": 480,
+            "frameRate": 30,
+            "videoBitrate": 800000,
+            "audioBitrate": 128000,
+            "durationSeconds": 30,
+            "segmentCount": 1
+          },
+          {
+            "name": "720p",
+            "width": 1280,
+            "height": 720,
+            "frameRate": 30,
+            "videoBitrate": 1500000,
+            "audioBitrate": 128000,
+            "durationSeconds": 30,
+            "segmentCount": 1
+          },
+          {
+            "name": "1080p",
+            "width": 1920,
+            "height": 1080,
+            "frameRate": 30,
+            "videoBitrate": 3000000,
+            "audioBitrate": 128000,
+            "durationSeconds": 30,
+            "segmentCount": 1
+          }
+        ],
+        "inventoryDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    }
+  },
+  {
+    "name": "seal_requires_normal_end",
+    "schema": "RecordingCaptureSealInput",
+    "valid": false,
+    "value": {
+      "operationKey": "seal-1",
+      "normalEnd": false,
+      "inventory": {
+        "schemaVersion": 1,
+        "presetVersion": "hhc-obs-v1",
+        "objects": [
+          {
+            "path": "master.m3u8",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "480p/index.m3u8",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "480p/init.mp4",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "480p/seg-000000.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "720p/index.m3u8",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "720p/init.mp4",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "720p/seg-000000.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "1080p/index.m3u8",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "1080p/init.mp4",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "1080p/seg-000000.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        ],
+        "renditions": [
+          {
+            "name": "480p",
+            "width": 854,
+            "height": 480,
+            "frameRate": 30,
+            "videoBitrate": 800000,
+            "audioBitrate": 128000,
+            "durationSeconds": 30,
+            "segmentCount": 1
+          },
+          {
+            "name": "720p",
+            "width": 1280,
+            "height": 720,
+            "frameRate": 30,
+            "videoBitrate": 1500000,
+            "audioBitrate": 128000,
+            "durationSeconds": 30,
+            "segmentCount": 1
+          },
+          {
+            "name": "1080p",
+            "width": 1920,
+            "height": 1080,
+            "frameRate": 30,
+            "videoBitrate": 3000000,
+            "audioBitrate": 128000,
+            "durationSeconds": 30,
+            "segmentCount": 1
+          }
+        ],
+        "inventoryDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    }
+  },
+  {
+    "name": "live_playback_request",
+    "schema": "RecordingLivePlaybackInput",
+    "valid": true,
+    "value": {
+      "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "playbackScopeId": "018f0c1f-18d0-7e81-9f6f-69c456db7004"
+    }
+  },
+  {
+    "name": "reject_malformed_playback_scope_uuid",
+    "schema": "RecordingLivePlaybackInput",
+    "valid": false,
+    "value": {
+      "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "playbackScopeId": "not-a-uuid"
+    }
+  },
+  {
+    "name": "live_playback",
+    "schema": "MemberLivePlaybackEnvelope",
+    "valid": true,
+    "value": {
+      "data": {
+        "recordingId": "018f0c1f-18d0-7e81-9f6f-69c456db7003",
+        "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "playbackScopeId": "018f0c1f-18d0-7e81-9f6f-69c456db7004",
+        "mediaUrl": "https://media.example.invalid/videos/018f0c1f-18d0-7e81-9f6f-69c456db7003/captures/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/sessions/018f0c1f-18d0-7e81-9f6f-69c456db7004/master.m3u8",
+        "exchangeCredential": "synthetic-not-a-credential",
+        "issuedAt": "2026-10-07T00:00:00Z",
+        "expiresAt": "2026-10-07T00:05:00Z",
+        "serverNow": "2026-10-07T00:00:00Z",
+        "captureExpiresAt": "2026-10-08T00:00:00Z",
+        "stopAcceptedAt": null,
+        "replayUntil": null,
+        "terminalReason": null,
+        "liveState": "starting",
+        "progress": {
+          "revision": 0,
+          "firstSequence": 0,
+          "lastSequence": -1,
+          "mediaEndSeconds": 0,
+          "lastAdvancedAt": null,
+          "endedAt": null,
+          "ended": false
+        },
+        "watermarkCode": "TESTONLY"
+      },
+      "meta": {},
+      "error": null
+    }
+  },
+  {
+    "name": "live_list",
+    "schema": "MemberLiveRecordingsEnvelope",
+    "valid": true,
+    "value": {
+      "data": [],
+      "meta": {},
+      "error": null
+    }
+  },
+  {
+    "name": "seal_2997_eight_actual_segments",
+    "schema": "RecordingCaptureSealInput",
+    "valid": true,
+    "value": {
+      "operationKey": "seal-2997-eight",
+      "normalEnd": true,
+      "inventory": {
+        "schemaVersion": 1,
+        "presetVersion": "hhc-obs-v1",
+        "objects": [
+          {
+            "path": "1080p/index.m3u8",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "1080p/init.mp4",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "1080p/seg-000000.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "1080p/seg-000001.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "1080p/seg-000002.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "1080p/seg-000003.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "1080p/seg-000004.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "1080p/seg-000005.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "1080p/seg-000006.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "1080p/seg-000007.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "480p/index.m3u8",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "480p/init.mp4",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "480p/seg-000000.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "480p/seg-000001.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "480p/seg-000002.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "480p/seg-000003.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "480p/seg-000004.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "480p/seg-000005.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "480p/seg-000006.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "480p/seg-000007.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "720p/index.m3u8",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "720p/init.mp4",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "720p/seg-000000.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "720p/seg-000001.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "720p/seg-000002.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "720p/seg-000003.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "720p/seg-000004.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "720p/seg-000005.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "720p/seg-000006.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "720p/seg-000007.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "master.m3u8",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        ],
+        "renditions": [
+          {
+            "name": "1080p",
+            "width": 1920,
+            "height": 1080,
+            "frameRate": 29.97002997002997,
+            "videoBitrate": 3000000,
+            "audioBitrate": 128000,
+            "durationSeconds": 240.206633,
+            "segmentCount": 8
+          },
+          {
+            "name": "480p",
+            "width": 854,
+            "height": 480,
+            "frameRate": 29.97002997002997,
+            "videoBitrate": 800000,
+            "audioBitrate": 128000,
+            "durationSeconds": 240.206633,
+            "segmentCount": 8
+          },
+          {
+            "name": "720p",
+            "width": 1280,
+            "height": 720,
+            "frameRate": 29.97002997002997,
+            "videoBitrate": 1500000,
+            "audioBitrate": 128000,
+            "durationSeconds": 240.206633,
+            "segmentCount": 8
+          }
+        ],
+        "inventoryDigest": "6888ef86061374a0f5fdb7b305e3b062d637fccab9175a55b8ee99f17ab5beda"
+      }
+    }
+  }
+]

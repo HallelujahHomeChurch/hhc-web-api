@@ -1,0 +1,98 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Fixed synthetic Account subject UUID in LINE member authorization tests"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+regexes = ['''\blineAccessSubject = "01995fd2-6f6c-7b40-8707-6503edc362c8"''']
+paths = ['''^internal/httpapi/line_member_access_test\.go$''']
+
+[[allowlists]]
+description = "Deterministic content-key hashes in planner test fixtures"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+regexes = ['''\bKeySetSHA256:\s*"[0-9a-f]{64}"''']
+paths = ['''^internal/contentseed/planner_test\.go$''']
+
+[[allowlists]]
+description = "Synthetic release commit hash in the immutable workflow test fixture"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+regexes = ['''\bRELEASE_COMMIT=[0-9a-f]{40}\b''']
+paths = ['''^scripts/test-release-policy\.sh$''']
+
+[[allowlists]]
+description = "Literal non-secret operation key in the synthetic OBS seal fixture"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+regexes = ['''^\s*"operationKey": "seal-2997-eight",?\s*$''']
+paths = ['''^docs/obs-capture/fixtures\.json$''']
+
+[[allowlists]]
+description = "Git source revisions in the fixed B1 implementation manifest"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+regexes = ['''^\s*"(hhc-web-api|asset-api|api-gateway)": "[0-9a-f]{40}",?\s*$''']
+paths = ['''^docs/obs-capture/live-control-v1/rc2/implementation-manifest\.json$''']
+
+[[allowlists]]
+description = "Public B1 implementation OpenAPI snapshot checksums"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+regexes = ['''^\s*"docs/obs-capture/live-control-v1/rc2/(asset\.)?openapi\.snapshot\.yaml": "[0-9a-f]{64}",?\s*$''']
+paths = ['''^docs/obs-capture/live-control-v1/rc2/implementation-manifest\.json$''']
+
+[[allowlists]]
+description = "Verified SHA256 artifact checksums in the K4 bootstrap manifest"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+regexes = ['''^\s*"docs/obs-capture/(studio-v2|key-only-ingest-v1|live-control-v1)/openapi\.snapshot\.yaml": "[0-9a-f]{64}",?\s*$''']
+paths = ['''^docs/obs-capture/studio-v2/manifest\.json$''']
+
+[[allowlists]]
+description = "Verified public S10 OpenAPI snapshot SHA256 checksums"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+regexes = ['''^\s*"(asset|cms)\.openapi\.snapshot\.yaml": "[0-9a-f]{64}",?\s*$''']
+paths = ['''^docs/obs-capture/ten-second-v1/manifest\.json$''']
+
+[[allowlists]]
+description = "Verified public S10 rc2 and frozen base OpenAPI SHA256 checksums"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+regexes = [
+  '''^\s*"openapiSHA256": "[0-9a-f]{64}",?\s*$''',
+  '''^\s*"docs/obs-capture/ten-second-v1/(rc2/)?(asset|cms)\.openapi\.snapshot\.yaml": "[0-9a-f]{64}",?\s*$''',
+  '''^\s*"docs/obs-capture/direct-signal-v1/rc2/openapi\.snapshot\.yaml": "[0-9a-f]{64}",?\s*$''',
+]
+paths = ['''^docs/obs-capture/ten-second-v1/rc2/manifest\.json$''']
+
+[[allowlists]]
+description = "Literal schema file paths in the S10 contract validation loop"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+regexes = ['''^\s*for _, path := range \[\]string\{"openapi\.yaml", s10ContractDir \+ "/cms\.openapi\.snapshot\.yaml", s10ContractDir \+ "/asset\.openapi\.snapshot\.yaml"\} \{\s*$''']
+paths = ['''^recording_s10_contract_test\.go$''']
+
+[[allowlists]]
+description = "Verified public K5 and frozen K4/S10 OpenAPI snapshot SHA256 checksums"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+regexes = [
+  '''^\s*"docs/obs-capture/output-replay-v1/openapi\.snapshot\.yaml": "[0-9a-f]{64}",?\s*$''',
+  '''^\s*"docs/obs-capture/studio-v2/openapi\.snapshot\.yaml": "[0-9a-f]{64}",?\s*$''',
+  '''^\s*"docs/obs-capture/ten-second-v1/(rc2/)?(asset|cms)\.openapi\.snapshot\.yaml": "[0-9a-f]{64}",?\s*$''',
+]
+paths = ['''^docs/obs-capture/output-replay-v1/manifest\.json$''']

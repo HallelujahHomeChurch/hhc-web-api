@@ -1,0 +1,32 @@
+CREATE TABLE hhc_web.online_bulletin_conversion_job (
+  id uuid PRIMARY KEY,
+  issue_id uuid NOT NULL REFERENCES hhc_web.bulletin_issue(id),
+  document_id uuid NOT NULL REFERENCES hhc_web.online_bulletin_document(id),
+  source_document_id uuid NOT NULL,
+  source_revision bigint NOT NULL,
+  source_online_version bigint NOT NULL CHECK (source_online_version > 0),
+  source_content_hash text NOT NULL CHECK (source_content_hash ~ '^[0-9a-f]{64}$'),
+  source_metadata jsonb NOT NULL CHECK (jsonb_typeof(source_metadata)='object'),
+  requested_canonical_version bigint NOT NULL CHECK (requested_canonical_version > 0),
+  canonical_version bigint NOT NULL CHECK (canonical_version > 0),
+  target_online_version bigint NOT NULL CHECK (target_online_version > 0),
+  target_metadata jsonb NOT NULL CHECK (jsonb_typeof(target_metadata)='object'),
+  initializes_metadata boolean NOT NULL DEFAULT false,
+  converter_version text NOT NULL,
+  converted_metadata jsonb CHECK (jsonb_typeof(converted_metadata)='object'),
+  result_revision bigint,
+  status text NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','converting','review_ready','failed','superseded')),
+  attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  available_at timestamptz NOT NULL,
+  lease_until timestamptz,
+  lease_token uuid,
+  last_error_code text NOT NULL DEFAULT '' CHECK (last_error_code ~ '^[a-z0-9_]{0,64}$'),
+  created_by text NOT NULL,
+  created_at timestamptz NOT NULL,
+  updated_at timestamptz NOT NULL,
+  FOREIGN KEY (source_document_id,source_revision) REFERENCES hhc_web.online_bulletin_revision(document_id,revision),
+  FOREIGN KEY (document_id,result_revision) REFERENCES hhc_web.online_bulletin_revision(document_id,revision),
+  UNIQUE (document_id,source_document_id,source_revision,requested_canonical_version,converter_version)
+);
+CREATE INDEX online_bulletin_conversion_claim_idx ON hhc_web.online_bulletin_conversion_job(available_at,created_at)
+  WHERE status IN ('queued','converting');

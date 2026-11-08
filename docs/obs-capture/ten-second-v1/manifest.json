@@ -1,0 +1,15 @@
+{
+  "version": "s10-2026-10-17.rc1",
+  "status": "implementation-candidate-not-deployed",
+  "baseContracts": {
+    "K4": "k4-2026-10-15.rc1",
+    "B1": "b1-2026-10-10.rc1",
+    "C1": "c1-2026-10-08.2",
+    "inventorySchema": 1
+  },
+  "files": {
+    "asset.openapi.snapshot.yaml": "72a268564e6f8d27d0e8bcff5231b1df9f6ba54432eecc67b412702dd66927f7",
+    "cms.openapi.snapshot.yaml": "7ef0410f3bb064c8bc755748b47536cf99d1a07dec0db5a87d9e0785251e67c7",
+    "contract.md": "e2c1bbd8cb1ff0db6803bed1ae83471f621e2de67f78e64205e939cc3ed1b70f"
+  }
+}

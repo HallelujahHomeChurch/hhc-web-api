@@ -1,0 +1,425 @@
+# Watermark-owned dataset inventory; metadata only, no legal approval or runtime activation.
+schema_version: 1
+service: hhc-web-api
+datasets:
+  - id: "hhc-web.recording-live-cover-defaults"
+    owner: "hhc-web-api"
+    purpose: "Maintain immutable live thumbnail settings, actor-bound retry receipts and independent Asset reference protection before and after VOD promotion."
+    necessity: "required"
+    storage: {"kind": "postgres", "resource": "hhc_web.member_recording_live_cover_default", "sources": [{"path": "internal/postgres/recording_live_cover.go", "symbol": "RecordingRepository.CommitLiveCoverOperation"}]}
+    subject_keys: []
+    data_classes: ["identity","activity","security"]
+    fields:
+      - {"name": "singleton", "purpose": "Bind settings and immutable retry/reference lifecycle; no private image bytes or bearer URLs.", "necessity": "required", "data_classes": ["activity", "security"]}
+      - {"name": "payload_json", "purpose": "Bind settings and immutable retry/reference lifecycle; no private image bytes or bearer URLs.", "necessity": "required", "data_classes": ["activity", "security"]}
+      - {"name": "updated_at", "purpose": "Bind settings and immutable retry/reference lifecycle; no private image bytes or bearer URLs.", "necessity": "required", "data_classes": ["activity", "security"]}
+    attribution: {"mode":"direct","explanation":"Staff account UUIDs identify operators only; selected Asset IDs can refer to images depicting people. Capture snapshots are private aggregate metadata in the existing recording capture table."}
+    legal_basis: {"status":"pending_legal","reference":null}
+    retention: {"status":"pending_legal","rule":null,"action":"none"}
+    cleanup: {"mode":"none","implementation":[],"evidence":[]}
+  - id: "hhc-web.recording-live-cover-operations"
+    owner: "hhc-web-api"
+    purpose: "Maintain immutable live thumbnail settings, actor-bound retry receipts and independent Asset reference protection before and after VOD promotion."
+    necessity: "required"
+    storage: {"kind": "postgres", "resource": "hhc_web.member_recording_live_cover_operation", "sources": [{"path": "internal/postgres/recording_live_cover.go", "symbol": "RecordingRepository.PrepareLiveCoverOperation"}]}
+    subject_keys: [{"kind": "user_id", "field": "actor_id", "evidence": [{"path": "internal/postgres/recording_live_cover.go", "symbol": "RecordingRepository.PrepareLiveCoverOperation"}]}]
+    data_classes: ["identity","activity","security"]
+    fields:
+      - {"name": "id", "purpose": "Bind settings and immutable retry/reference lifecycle; no private image bytes or bearer URLs.", "necessity": "required", "data_classes": ["activity", "security"]}
+      - {"name": "target", "purpose": "Bind settings and immutable retry/reference lifecycle; no private image bytes or bearer URLs.", "necessity": "required", "data_classes": ["activity", "security"]}
+      - {"name": "actor_id", "purpose": "Bind settings and immutable retry/reference lifecycle; no private image bytes or bearer URLs.", "necessity": "required", "data_classes": ["identity"]}
+      - {"name": "operation_key", "purpose": "Bind settings and immutable retry/reference lifecycle; no private image bytes or bearer URLs.", "necessity": "required", "data_classes": ["activity", "security"]}
+      - {"name": "expected_revision", "purpose": "Bind settings and immutable retry/reference lifecycle; no private image bytes or bearer URLs.", "necessity": "required", "data_classes": ["activity", "security"]}
+      - {"name": "selection_json", "purpose": "Bind settings and immutable retry/reference lifecycle; no private image bytes or bearer URLs.", "necessity": "required", "data_classes": ["activity", "security"]}
+      - {"name": "receipt_json", "purpose": "Bind settings and immutable retry/reference lifecycle; no private image bytes or bearer URLs.", "necessity": "required", "data_classes": ["activity", "security"]}
+      - {"name": "created_at", "purpose": "Bind settings and immutable retry/reference lifecycle; no private image bytes or bearer URLs.", "necessity": "required", "data_classes": ["activity", "security"]}
+    attribution: {"mode":"direct","explanation":"Staff account UUIDs identify operators only; selected Asset IDs can refer to images depicting people. Capture snapshots are private aggregate metadata in the existing recording capture table."}
+    legal_basis: {"status":"pending_legal","reference":null}
+    retention: {"status":"pending_legal","rule":null,"action":"none"}
+    cleanup: {"mode":"none","implementation":[],"evidence":[]}
+  - id: "hhc-web.recording-live-cover-references"
+    owner: "hhc-web-api"
+    purpose: "Maintain immutable live thumbnail settings, actor-bound retry receipts and independent Asset reference protection before and after VOD promotion."
+    necessity: "required"
+    storage: {"kind": "postgres", "resource": "hhc_web.member_recording_live_cover_reference", "sources": [{"path": "internal/postgres/recording_live_cover.go", "symbol": "RecordingRepository.ReconcileLiveCoverReferences"}]}
+    subject_keys: []
+    data_classes: ["identity","activity","security"]
+    fields:
+      - {"name": "id", "purpose": "Bind settings and immutable retry/reference lifecycle; no private image bytes or bearer URLs.", "necessity": "required", "data_classes": ["activity", "security"]}
+      - {"name": "target", "purpose": "Bind settings and immutable retry/reference lifecycle; no private image bytes or bearer URLs.", "necessity": "required", "data_classes": ["activity", "security"]}
+      - {"name": "cover_id", "purpose": "Bind settings and immutable retry/reference lifecycle; no private image bytes or bearer URLs.", "necessity": "required", "data_classes": ["activity", "security"]}
+      - {"name": "scope", "purpose": "Bind settings and immutable retry/reference lifecycle; no private image bytes or bearer URLs.", "necessity": "required", "data_classes": ["activity", "security"]}
+      - {"name": "recording_id", "purpose": "Bind settings and immutable retry/reference lifecycle; no private image bytes or bearer URLs.", "necessity": "required", "data_classes": ["activity", "security"]}
+      - {"name": "wanted", "purpose": "Bind settings and immutable retry/reference lifecycle; no private image bytes or bearer URLs.", "necessity": "required", "data_classes": ["activity", "security"]}
+      - {"name": "applied", "purpose": "Bind settings and immutable retry/reference lifecycle; no private image bytes or bearer URLs.", "necessity": "required", "data_classes": ["activity", "security"]}
+      - {"name": "released_at", "purpose": "Bind settings and immutable retry/reference lifecycle; no private image bytes or bearer URLs.", "necessity": "required", "data_classes": ["activity", "security"]}
+      - {"name": "created_at", "purpose": "Bind settings and immutable retry/reference lifecycle; no private image bytes or bearer URLs.", "necessity": "required", "data_classes": ["activity", "security"]}
+      - {"name": "checked_at", "purpose": "Bind settings and immutable retry/reference lifecycle; no private image bytes or bearer URLs.", "necessity": "required", "data_classes": ["activity", "security"]}
+    attribution: {"mode":"direct","explanation":"Staff account UUIDs identify operators only; selected Asset IDs can refer to images depicting people. Capture snapshots are private aggregate metadata in the existing recording capture table."}
+    legal_basis: {"status":"pending_legal","reference":null}
+    retention: {"status":"pending_legal","rule":null,"action":"none"}
+    cleanup: {"mode":"none","implementation":[],"evidence":[]}
+  - id: "hhc-web.bulletin-reader-highlight"
+    owner: "hhc-web-api"
+    purpose: "Persist member-selected fluorescent sentence colors and inactive source quotes. Ordinary account cleanup erases this dataset; existing subject fences prevent further writes."
+    necessity: "required"
+    storage: {"kind":"postgres","resource":"hhc_web.bulletin_reader_highlight","sources":[{"path":"internal/postgres/bulletin_reader.go","symbol":"Repository.MutateReader"}]}
+    subject_keys: [{"kind":"user_id","field":"account_id","evidence":[{"path":"internal/postgres/bulletin_reader.go","symbol":"Repository.MutateReader"}]}]
+    data_classes: ["identity","activity","content"]
+    fields:
+      - {"name":"account_id, document_id","purpose":"Bind private reader data to its Account subject and bulletin.","necessity":"required","data_classes":["identity","activity"]}
+      - {"name":"sentence_id, color, quote, active, version, updated_at","purpose":"Persist member-selected fluorescent sentence colors and inactive source quotes.","necessity":"required","data_classes":["activity","content"]}
+    attribution: {"mode":"direct","explanation":"Account UUID identifies the owner; CMS and watermark trace APIs cannot read these private records."}
+    legal_basis: {"status":"pending_legal","reference":null}
+    retention: {"status":"pending_legal","rule":null,"action":"none"}
+    cleanup: {"mode":"none","implementation":[],"evidence":[]}
+  - id: "hhc-web.bulletin-reader-note"
+    owner: "hhc-web-api"
+    purpose: "Persist private plaintext notes with active and inactive sentence anchors and optimistic versions. Ordinary account cleanup erases this dataset; existing subject fences prevent further writes."
+    necessity: "required"
+    storage: {"kind":"postgres","resource":"hhc_web.bulletin_reader_note","sources":[{"path":"internal/postgres/bulletin_reader.go","symbol":"Repository.MutateReader"}]}
+    subject_keys: [{"kind":"user_id","field":"account_id","evidence":[{"path":"internal/postgres/bulletin_reader.go","symbol":"Repository.MutateReader"}]}]
+    data_classes: ["identity","activity","content"]
+    fields:
+      - {"name":"account_id, document_id","purpose":"Bind private reader data to its Account subject and bulletin.","necessity":"required","data_classes":["identity","activity"]}
+      - {"name":"id, body, sentence_ids, inactive_anchors, quote, deleted, version, created_at, updated_at","purpose":"Persist private plaintext notes with active and inactive sentence anchors and optimistic versions.","necessity":"required","data_classes":["activity","content"]}
+    attribution: {"mode":"direct","explanation":"Account UUID identifies the owner; CMS and watermark trace APIs cannot read these private records."}
+    legal_basis: {"status":"pending_legal","reference":null}
+    retention: {"status":"pending_legal","rule":null,"action":"none"}
+    cleanup: {"mode":"none","implementation":[],"evidence":[]}
+  - id: "hhc-web.bulletin-reader-progress"
+    owner: "hhc-web-api"
+    purpose: "Resume reading from the latest user navigation without collecting browsing telemetry. Ordinary account cleanup erases this dataset; existing subject fences prevent further writes."
+    necessity: "required"
+    storage: {"kind":"postgres","resource":"hhc_web.bulletin_reader_progress","sources":[{"path":"internal/postgres/bulletin_reader.go","symbol":"Repository.MutateReader"}]}
+    subject_keys: [{"kind":"user_id","field":"account_id","evidence":[{"path":"internal/postgres/bulletin_reader.go","symbol":"Repository.MutateReader"}]}]
+    data_classes: ["identity","activity","content"]
+    fields:
+      - {"name":"account_id, document_id","purpose":"Bind private reader data to its Account subject and bulletin.","necessity":"required","data_classes":["identity","activity"]}
+      - {"name":"page_id, sentence_id, recorded_at, updated_at","purpose":"Resume reading from the latest user navigation without collecting browsing telemetry.","necessity":"required","data_classes":["activity","content"]}
+    attribution: {"mode":"direct","explanation":"Account UUID identifies the owner; CMS and watermark trace APIs cannot read these private records."}
+    legal_basis: {"status":"pending_legal","reference":null}
+    retention: {"status":"pending_legal","rule":null,"action":"none"}
+    cleanup: {"mode":"none","implementation":[],"evidence":[]}
+  - id: "hhc-web.bulletin-reader-migration-state"
+    owner: "hhc-web-api"
+    purpose: "Track published-revision migration and unresolved private highlight conflicts. Ordinary account cleanup erases this dataset; existing subject fences prevent further writes."
+    necessity: "required"
+    storage: {"kind":"postgres","resource":"hhc_web.bulletin_reader_migration_state","sources":[{"path":"internal/postgres/bulletin_reader.go","symbol":"Repository.MutateReader"}]}
+    subject_keys: [{"kind":"user_id","field":"account_id","evidence":[{"path":"internal/postgres/bulletin_reader.go","symbol":"Repository.MutateReader"}]}]
+    data_classes: ["identity","activity","content"]
+    fields:
+      - {"name":"account_id, document_id","purpose":"Bind private reader data to its Account subject and bulletin.","necessity":"required","data_classes":["identity","activity"]}
+      - {"name":"applied_revision, conflicts","purpose":"Track published-revision migration and unresolved private highlight conflicts.","necessity":"required","data_classes":["activity","content"]}
+    attribution: {"mode":"direct","explanation":"Account UUID identifies the owner; CMS and watermark trace APIs cannot read these private records."}
+    legal_basis: {"status":"pending_legal","reference":null}
+    retention: {"status":"pending_legal","rule":null,"action":"none"}
+    cleanup: {"mode":"none","implementation":[],"evidence":[]}
+  - id: "hhc-web.bulletin-reader-processed-mutation"
+    owner: "hhc-web-api"
+    purpose: "Deduplicate offline retries for 91 days without logging private operation content. Ordinary account cleanup erases this dataset; existing subject fences prevent further writes."
+    necessity: "required"
+    storage: {"kind":"postgres","resource":"hhc_web.bulletin_reader_processed_mutation","sources":[{"path":"internal/postgres/bulletin_reader.go","symbol":"Repository.MutateReader"}]}
+    subject_keys: [{"kind":"user_id","field":"account_id","evidence":[{"path":"internal/postgres/bulletin_reader.go","symbol":"Repository.MutateReader"}]}]
+    data_classes: ["identity","activity","content"]
+    fields:
+      - {"name":"account_id, document_id","purpose":"Bind private reader data to its Account subject and bulletin.","necessity":"required","data_classes":["identity","activity"]}
+      - {"name":"mutation_id, request_hash, result_json, created_at, expires_at","purpose":"Deduplicate offline retries for 91 days without logging private operation content.","necessity":"required","data_classes":["activity","content"]}
+    attribution: {"mode":"direct","explanation":"Account UUID identifies the owner; CMS and watermark trace APIs cannot read these private records."}
+    legal_basis: {"status":"pending_legal","reference":null}
+    retention: {"status":"enforced","rule":{"trigger":"expires_at","field":"expires_at","source":{"path":"internal/postgres/bulletin_watermark.go","symbol":"Repository.PurgeWatermarkRecords"},"duration_source":null,"predicate":"expires_at <= now","description":"Terminal mutation receipts expire after 91 times 24 hours. Existing publication worker deletes expired rows even for inactive accounts; ordinary account cleanup removes them immediately. Backup erasure is not claimed."},"action":"delete"}
+    cleanup: {"mode":"existing_worker","implementation":[{"path":"internal/postgres/bulletin_watermark.go","symbol":"Repository.PurgeWatermarkRecords"}],"evidence":[{"kind":"go_test","path":"internal/postgres/bulletin_reader_cleanup_test.go","test_name":"TestPrivateReaderMutationRetentionWithoutFurtherWrites"}]}
+  - id: "hhc-web.online-reader-receipts"
+    owner: "hhc-web-api"
+    purpose: "Issue member-only Online content with traceable authorization and bounded offline validation; retain existing ordinary account cleanup and subject fences."
+    necessity: "required"
+    storage: {"kind":"postgres","resource":"hhc_web.online_bulletin_reader_receipt","sources":[{"path":"internal/postgres/online_bulletin_reader.go","symbol":"Repository.OpenOnlineBulletin"},{"path":"internal/postgres/bulletin_watermark.go","symbol":"Repository.PurgeWatermarkRecords"}]}
+    subject_keys: [{"kind":"user_id","field":"account_id","evidence":[{"path":"internal/postgres/online_bulletin_reader.go","symbol":"Repository.OpenOnlineBulletin"}]}]
+    data_classes: ["identity","activity","security","consent"]
+    fields:
+      - {"name":"id, account_id, document_id, revision","purpose":"Bind issuance to the authorized account and immutable published revision.","necessity":"required","data_classes":["identity","activity","security"]}
+      - {"name":"trace_code","purpose":"Support existing privileged exact-code investigations without PDF fingerprint evidence.","necessity":"required","data_classes":["identity","activity","security"]}
+      - {"name":"privacy_notice_version","purpose":"Record the configured privacy notice version.","necessity":"required","data_classes":["identity","activity","security"]}
+      - {"name":"issued_at, expires_at","purpose":"Enforce fixed 365-day receipt retention.","necessity":"required","data_classes":["identity","activity","security"]}
+    attribution: {"mode":"direct","explanation":"The persisted account_id identifies the authorized Account subject. Issuance does not prove subsequent distribution or reading."}
+    legal_basis: {"status":"pending_legal","reference":null}
+    retention: {"status":"enforced","rule":{"trigger":"expires_at","field":"expires_at","source":{"path":"internal/postgres/bulletin_watermark.go","symbol":"Repository.PurgeWatermarkRecords"},"duration_source":null,"predicate":"expires_at <= now","description":"Receipt expiry is exactly 365 times 24 hours after issuance. Revalidation never extends receipt retention. Lookup and export exclude expired rows. Existing publication worker deletes expired receipts and cascades request deletion. Erasure deletes them immediately; restriction prevents issuance and lookup. Backup deletion and legal approval are not claimed."},"action":"delete"}
+    cleanup: {"mode":"existing_worker","implementation":[{"path":"internal/postgres/bulletin_watermark.go","symbol":"Repository.PurgeWatermarkRecords"},{"path":"internal/publication/worker.go","symbol":"Worker.Run"}],"evidence":[{"kind":"go_test","path":"internal/postgres/online_bulletin_reader_test.go","test_name":"TestReaderTraceLookupExportErasureAndRetention"}]}
+  - id: "hhc-web.online-reader-validations"
+    owner: "hhc-web-api"
+    purpose: "Issue member-only Online content with traceable authorization and bounded offline validation; retain existing ordinary account cleanup and subject fences."
+    necessity: "required"
+    storage: {"kind":"postgres","resource":"hhc_web.online_bulletin_reader_request","sources":[{"path":"internal/postgres/online_bulletin_reader.go","symbol":"Repository.OpenOnlineBulletin"},{"path":"internal/postgres/bulletin_watermark.go","symbol":"Repository.PurgeWatermarkRecords"}]}
+    subject_keys: [{"kind":"user_id","field":"account_id","evidence":[{"path":"internal/postgres/online_bulletin_reader.go","symbol":"Repository.OpenOnlineBulletin"}]}]
+    data_classes: ["identity","activity","security","consent"]
+    fields:
+      - {"name":"account_id, client_request_id, receipt_id","purpose":"Bind an idempotent access request to one account and receipt.","necessity":"required","data_classes":["identity","activity","security"]}
+      - {"name":"request_hash","purpose":"Reject reuse of a client request identifier with different selectors.","necessity":"required","data_classes":["identity","activity","security"]}
+      - {"name":"validated_at, offline_valid_until","purpose":"Replay the original seven-day offline window without silently extending it.","necessity":"required","data_classes":["identity","activity","security"]}
+    attribution: {"mode":"direct","explanation":"The persisted account_id identifies the authorized Account subject. Issuance does not prove subsequent distribution or reading."}
+    legal_basis: {"status":"pending_legal","reference":null}
+    retention: {"status":"enforced","rule":{"trigger":"expires_at","field":"receipt.expires_at","source":{"path":"internal/postgres/bulletin_watermark.go","symbol":"Repository.PurgeWatermarkRecords"},"duration_source":null,"predicate":"receipt.expires_at <= now","description":"Validation rows cascade-delete with their parent receipt at its fixed 365-day expiry or account erasure. The seven-day offline window is not an independent server retention extension. Restricted subjects cannot issue content. No tokens, IP addresses, browser identifiers or reading telemetry are retained."},"action":"delete"}
+    cleanup: {"mode":"existing_worker","implementation":[{"path":"internal/postgres/bulletin_watermark.go","symbol":"Repository.PurgeWatermarkRecords"},{"path":"internal/publication/worker.go","symbol":"Worker.Run"}],"evidence":[{"kind":"go_test","path":"internal/postgres/online_bulletin_reader_test.go","test_name":"TestReaderTraceLookupExportErasureAndRetention"}]}
+  - id: hhc-web.recording-watermark-receipts
+    owner: hhc-web-api
+    purpose: Record exact member recording issuance for authorized investigation and website_watermark data-rights processing.
+    necessity: required
+    storage: {kind: postgres, resource: hhc_web.recording_watermark_receipt, sources: [{path: internal/postgres/recording_watermark.go, symbol: RecordingRepository.EnsureRecordingWatermark}]}
+    subject_keys: [{kind: user_id, field: user_id, evidence: [{path: internal/postgres/recording_watermark.go, symbol: RecordingRepository.EnsureRecordingWatermark}]}]
+    data_classes: [identity, activity, security]
+    fields:
+      - {name: id, purpose: Identify the receipt., necessity: required, data_classes: [security]}
+      - {name: trace_code, purpose: Resolve the displayed code exactly., necessity: required, data_classes: [identity, security]}
+      - {name: user_id, purpose: Identify the issued account., necessity: required, data_classes: [identity]}
+      - {name: recording_id, purpose: Bind the recording even after media deletion., necessity: required, data_classes: [activity]}
+      - {name: package_id, purpose: Bind immutable media ownership., necessity: required, data_classes: [security]}
+      - {name: format_version, purpose: Identify the issuance format., necessity: required, data_classes: [security]}
+      - {name: issued_at, purpose: Record initial issuance time., necessity: required, data_classes: [activity]}
+      - {name: expires_at, purpose: Enforce fixed receipt expiry., necessity: required, data_classes: [security]}
+    attribution: {mode: direct, explanation: An issuance UUID association does not prove who leaked content. No name or email snapshot is stored.}
+    legal_basis: {status: pending_legal, reference: null}
+    retention: {status: enforced, rule: {trigger: expires_at, field: expires_at, source: {path: internal/postgres/bulletin_watermark.go, symbol: Repository.PurgeWatermarkRecords}, duration_source: null, predicate: 'expires_at <= now', description: Exactly 365 times 24 hours after issuance; renewal does not extend expiry. The existing publication worker purges expired rows. Online table cleanup is not backup deletion.}, action: delete}
+    cleanup: {mode: existing_worker, implementation: [{path: internal/postgres/bulletin_watermark.go, symbol: Repository.PurgeWatermarkRecords}], evidence: [{kind: go_test, path: internal/postgres/recording_watermark_test.go, test_name: TestRecordingWatermarkCleanupAndMediaDeletionAreIndependent}]}
+  - id: hhc-web.recording-watermark-lookups
+    owner: hhc-web-api
+    purpose: Audit recording lookup attempts without copying recipient identity or submitted codes.
+    necessity: required
+    storage: {kind: postgres, resource: hhc_web.cms_audit_event, sources: [{path: internal/postgres/recording_watermark.go, symbol: RecordingRepository.LookupRecordingWatermark}]}
+    subject_keys: [{kind: user_id, field: actor, evidence: [{path: internal/postgres/recording_watermark.go, symbol: RecordingRepository.LookupRecordingWatermark}]}]
+    data_classes: [identity, activity, security]
+    fields:
+      - {name: id, purpose: Identify the audit event., necessity: required, data_classes: [security]}
+      - {name: action, purpose: Select recording_watermark.lookup only., necessity: required, data_classes: [security]}
+      - {name: resource_type, purpose: Identify the recording resource category., necessity: required, data_classes: [activity]}
+      - {name: resource_id, purpose: Bind recording UUID or an unrelated UUID for malformed input., necessity: required, data_classes: [activity]}
+      - {name: actor, purpose: Identify the investigator rather than the recipient., necessity: required, data_classes: [identity]}
+      - {name: payload_json, purpose: Retain only an enumerated lookup result., necessity: required, data_classes: [security]}
+      - {name: created_at, purpose: Bound audit retention., necessity: required, data_classes: [activity]}
+    attribution: {mode: direct, explanation: Actor identifies the investigator only. No code or recipient UUID is copied. Actor audit export follows existing manual review.}
+    legal_basis: {status: pending_legal, reference: null}
+    retention: {status: enforced, rule: {trigger: age_since, field: created_at, source: {path: internal/postgres/bulletin_watermark.go, symbol: Repository.PurgeWatermarkRecords}, duration_source: {path: internal/postgres/bulletin_watermark.go, symbol: Repository.PurgeWatermarkRecords}, predicate: "action = 'recording_watermark.lookup' AND created_at <= now - interval '8760 hours'", description: Local lookup audits are deleted after 365 times 24 hours or actor erasure. Central operator audits retain their own existing policy.}, action: delete}
+    cleanup: {mode: existing_worker, implementation: [{path: internal/postgres/bulletin_watermark.go, symbol: Repository.PurgeWatermarkRecords}], evidence: [{kind: go_test, path: internal/postgres/recording_watermark_test.go, test_name: TestRecordingWatermarkInvalidLookupsConsumeBudget}]}
+  - id: hhc-web.recording-watermark-rate
+    owner: hhc-web-api
+    purpose: Enforce an independent ten-attempt per-minute recording lookup budget.
+    necessity: required
+    storage: {kind: postgres, resource: hhc_web.recording_watermark_lookup_rate, sources: [{path: internal/postgres/recording_watermark.go, symbol: RecordingRepository.LookupRecordingWatermark}]}
+    subject_keys: []
+    data_classes: [identity, security]
+    fields:
+      - {name: subject_hash, purpose: Pseudonymously key the authenticated actor., necessity: required, data_classes: [identity, security]}
+      - {name: window_start, purpose: Bound the minute budget., necessity: required, data_classes: [security]}
+      - {name: count, purpose: Count attempts including misses and invalid input., necessity: required, data_classes: [security]}
+    attribution: {mode: manual, explanation: Domain-separated account UUID hashes are pseudonymous; no anonymous-data claim.}
+    legal_basis: {status: pending_legal, reference: null}
+    retention: {status: enforced, rule: {trigger: age_since, field: window_start, source: {path: internal/postgres/bulletin_watermark.go, symbol: Repository.PurgeWatermarkRecords}, duration_source: {path: internal/postgres/bulletin_watermark.go, symbol: Repository.PurgeWatermarkRecords}, predicate: "window_start < now - interval '2 days'", description: Hashed counters are retained for at most two days plus worker cleanup lag.}, action: delete}
+    cleanup: {mode: existing_worker, implementation: [{path: internal/postgres/bulletin_watermark.go, symbol: Repository.PurgeWatermarkRecords}], evidence: [{kind: go_test, path: internal/postgres/recording_watermark_test.go, test_name: TestRecordingWatermarkCleanupAndMediaDeletionAreIndependent}]}
+  - id: "hhc-web.recording-cover-selection"
+    owner: "hhc-web-api"
+    purpose: "Own the selected private recording cover and reliable owner-bound reference release without extending recording expiry."
+    necessity: "required"
+    storage: {"kind":"postgres","resource":"hhc_web.member_recording_cover_operation","sources":[{"path":"internal/postgres/recording_cover.go","symbol":"RecordingRepository.PrepareCoverOperation"}]}
+    subject_keys: [{"kind":"user_id","field":"actor_id","evidence":[{"path":"internal/postgres/recording_cover.go","symbol":"RecordingRepository.PrepareCoverOperation"}]}]
+    data_classes: ["identity","activity","security"]
+    fields:
+      - {"name":"id","purpose":"Identify the unique owner-bound Asset reference and cleanup intent.","necessity":"required","data_classes":["security"]}
+      - {"name":"actor_type","purpose":"Distinguish human and service attribution.","necessity":"required","data_classes":["identity"]}
+      - {"name":"actor_id","purpose":"Bind the accepted operation to its authenticated actor, not the depicted subject.","necessity":"required","data_classes":["identity"]}
+      - {"name":"credential_id","purpose":"Identify the issuing service credential without storing any secret.","necessity":"required","data_classes":["identity","security"]}
+      - {"name":"request_id","purpose":"Correlate trusted request provenance.","necessity":"required","data_classes":["activity","security"]}
+      - {"name":"operation_key","purpose":"Deduplicate actor-bound retries.","necessity":"required","data_classes":["security"]}
+      - {"name":"recording_id","purpose":"Bind the intent to the CMS owner.","necessity":"required","data_classes":["activity"]}
+      - {"name":"package_id","purpose":"Bind private byte ownership.","necessity":"required","data_classes":["security"]}
+      - {"name":"cover_id","purpose":"Identify the private selected derivative.","necessity":"required","data_classes":["activity"]}
+      - {"name":"expected_version","purpose":"Fence concurrent changes.","necessity":"required","data_classes":["security"]}
+      - {"name":"selection_json","purpose":"Bind immutable retry payload.","necessity":"required","data_classes":["security"]}
+      - {"name":"selected_version","purpose":"Preserve the historical accepted receipt.","necessity":"required","data_classes":["activity","security"]}
+      - {"name":"state","purpose":"Drive durable retain/release recovery.","necessity":"required","data_classes":["security"]}
+      - {"name":"created_at","purpose":"Fence abandoned pending intents.","necessity":"required","data_classes":["activity"]}
+      - {"name":"checked_at","purpose":"Back off failed cleanup retries.","necessity":"required","data_classes":["activity"]}
+    attribution: {"mode":"direct","explanation":"Actor type distinguishes user IDs from service principal IDs; credential IDs contain no secret. Covers may depict people, but CMS stores only Asset references, never image bytes or bearer URLs."}
+    legal_basis: {"status":"pending_legal","reference":null}
+    retention: {"status":"pending_legal","rule":null,"action":"none"}
+    cleanup: {"mode":"none","implementation":[],"evidence":[]}
+  - id: "hhc-web.bulletin-watermark-receipts"
+    owner: "hhc-web-api"
+    purpose: "Record restricted-document issuance provenance for authorized security investigation; ordinary account cleanup erases this subject-linked data."
+    necessity: "required"
+    storage: {"kind":"postgres","resource":"hhc_web.bulletin_watermark_receipt","sources":[{"path":"internal/postgres/bulletin_watermark.go","symbol":"Repository.InsertWatermarkReceipt"},{"path":"internal/postgres/bulletin_watermark.go","symbol":"Repository.PurgeWatermarkRecords"}]}
+    subject_keys: [{"kind":"user_id","field":"user_id","evidence":[{"path":"internal/postgres/bulletin_watermark.go","symbol":"Repository.InsertWatermarkReceipt"}]}]
+    data_classes: ["activity","security","identity","consent"]
+    fields:
+      - {"name":"id","purpose":"Identify the issuance receipt.","necessity":"required","data_classes":["activity","security"]}
+      - {"name":"trace_code","purpose":"Resolve the visible random document code to its issuance receipt.","necessity":"required","data_classes":["identity","security"]}
+      - {"name":"user_id","purpose":"Identify the Account subject to whom the document was issued.","necessity":"required","data_classes":["identity"]}
+      - {"name":"issue_id","purpose":"Identify the issued bulletin.","necessity":"required","data_classes":["activity"]}
+      - {"name":"locale","purpose":"Record the language issued.","necessity":"required","data_classes":["activity"]}
+      - {"name":"revision","purpose":"Record the published revision issued.","necessity":"required","data_classes":["activity"]}
+      - {"name":"source_asset_id","purpose":"Identify the source PDF asset.","necessity":"required","data_classes":["activity","security"]}
+      - {"name":"source_sha256","purpose":"Verify the source document bytes.","necessity":"required","data_classes":["security"]}
+      - {"name":"output_sha256","purpose":"Verify the personalized document bytes.","necessity":"required","data_classes":["security"]}
+      - {"name":"renderer_version","purpose":"Record which rendering behavior produced the document.","necessity":"required","data_classes":["security"]}
+      - {"name":"privacy_notice_version","purpose":"Record the configured privacy notice version.","necessity":"required","data_classes":["consent"]}
+      - {"name":"issued_at","purpose":"Record issuance time.","necessity":"required","data_classes":["activity"]}
+      - {"name":"expires_at","purpose":"Enforce the fixed receipt expiry.","necessity":"required","data_classes":["activity","security"]}
+    attribution: {"mode":"direct","explanation":"The persisted Account user UUID explicitly binds the receipt to its subject. A receipt proves issuance only; it does not prove who subsequently distributed the file."}
+    legal_basis: {"status":"pending_legal","reference":null}
+    retention: {"status":"enforced","rule":{"trigger":"expires_at","field":"expires_at","source":{"path":"internal/postgres/bulletin_watermark.go","symbol":"Repository.PurgeWatermarkRecords"},"duration_source":null,"predicate":"expires_at <= now","description":"Expiry is exactly 365 times 24 hours after issued_at, enforced by the receipt table constraint. Lookup and export exclude expired receipts; lookup never extends expiry. The existing publication worker runs at startup, drains nonempty batches on subsequent ticks, schedules an empty pass after 24 hours, and retries failures after one minute. This describes implemented online-table cleanup, not deployment acceptance or backup deletion."},"action":"delete"}
+    cleanup: {"mode":"existing_worker","implementation":[{"path":"internal/postgres/bulletin_watermark.go","symbol":"Repository.PurgeWatermarkRecords"},{"path":"internal/publication/worker.go","symbol":"Worker.Run"}],"evidence":[{"kind":"go_test","path":"internal/postgres/bulletin_watermark_test.go","test_name":"TestWatermarkReceiptLifecycle"}]}
+  - id: "hhc-web.bulletin-watermark-lookups"
+    owner: "hhc-web-api"
+    purpose: "Account for authorized trace lookup operations, limited to action=bulletin_watermark.lookup; unrelated CMS audit records are outside this dataset."
+    necessity: "required"
+    storage: {"kind":"postgres","resource":"hhc_web.cms_audit_event","sources":[{"path":"internal/postgres/bulletin_watermark.go","symbol":"Repository.LookupWatermarkReceipt"},{"path":"internal/postgres/bulletin_watermark.go","symbol":"Repository.PurgeWatermarkRecords"}]}
+    subject_keys: [{"kind":"user_id","field":"actor","evidence":[{"path":"internal/postgres/bulletin_watermark.go","symbol":"Repository.LookupWatermarkReceipt"}]}]
+    data_classes: ["activity","security","identity","content"]
+    fields:
+      - {"name":"id","purpose":"Identify the lookup audit event.","necessity":"required","data_classes":["activity"]}
+      - {"name":"action","purpose":"Identify the watermark lookup operation.","necessity":"required","data_classes":["security","activity"]}
+      - {"name":"resource_type","purpose":"Identify the receipt resource category.","necessity":"required","data_classes":["activity"]}
+      - {"name":"resource_id","purpose":"Associate a hit with a receipt UUID; a miss uses an unrelated random UUID.","necessity":"required","data_classes":["activity","security"]}
+      - {"name":"actor","purpose":"Identify the Account operator performing the lookup.","necessity":"required","data_classes":["identity","security"]}
+      - {"name":"payload_json","purpose":"Record whether the investigation matched; no complete trace code or target Account UUID is copied.","necessity":"required","data_classes":["activity","security","content"]}
+      - {"name":"created_at","purpose":"Record when the operator performed the lookup.","necessity":"required","data_classes":["activity"]}
+    attribution: {"mode":"direct","explanation":"The actor column stores the explicit Account UUID of the operator, not the Account subject returned by a successful lookup. Receipt association is not an additional permanent copy of the recipient identity."}
+    legal_basis: {"status":"pending_legal","reference":null}
+    retention: {"status":"enforced","rule":{"trigger":"age_since","field":"created_at","source":{"path":"internal/postgres/bulletin_watermark.go","symbol":"Repository.PurgeWatermarkRecords"},"duration_source":{"path":"internal/postgres/bulletin_watermark.go","symbol":"Repository.PurgeWatermarkRecords"},"predicate":"action = 'bulletin_watermark.lookup' AND created_at <= now - interval '365 days'","description":"Lookup audits expire 365 days after creation. Erasure also removes watermark lookup audits whose actor is the supplied Account UUID; actor audit export remains manual. The existing publication worker runs at startup, drains nonempty batches on subsequent ticks, schedules an empty pass after 24 hours, and retries failures after one minute. This describes implemented online-table cleanup, not deployment acceptance or backup deletion."},"action":"delete"}
+    cleanup: {"mode":"existing_worker","implementation":[{"path":"internal/postgres/bulletin_watermark.go","symbol":"Repository.PurgeWatermarkRecords"},{"path":"internal/publication/worker.go","symbol":"Worker.Run"}],"evidence":[{"kind":"go_test","path":"internal/postgres/bulletin_watermark_test.go","test_name":"TestWatermarkReceiptLifecycle"},{"kind":"go_test","path":"internal/postgres/bulletin_watermark_test.go","test_name":"TestWatermarkCleanupRateAndLookupActorFence"}]}
+  - id: "hhc-web.bulletin-watermark-subject-fences"
+    owner: "hhc-web-api"
+    purpose: "Fence late receipt insertion and operator audit creation after ordinary account erasure."
+    necessity: "required"
+    storage: {"kind":"postgres","resource":"hhc_web.bulletin_watermark_subject","sources":[{"path":"internal/postgres/bulletin_watermark.go","symbol":"Repository.CleanupWatermarkAccount"},{"path":"internal/postgres/bulletin_watermark.go","symbol":"Repository.PurgeWatermarkRecords"}]}
+    subject_keys: []
+    data_classes: ["identity","security","activity"]
+    fields:
+      - {"name":"subject_hash","purpose":"Store the domain-separated SHA-256 of the supplied Account UUID for in-flight request fencing.","necessity":"required","data_classes":["identity","security"]}
+      - {"name":"erased","purpose":"Retain the ordinary account-erasure fence state.","necessity":"required","data_classes":["security"]}
+      - {"name":"updated_at","purpose":"Record the latest fence mutation and start the erased-fence retention clock.","necessity":"required","data_classes":["activity"]}
+    attribution: {"mode":"manual","explanation":"This table stores a derived subject hash without an explicit UUID subject key. Attribution is manual under the canonical manifest schema; the hash is not anonymous data and no general identity-reconstruction join is claimed."}
+    legal_basis: {"status":"pending_legal","reference":null}
+    retention: {"status":"enforced","rule":{"trigger":"age_since","field":"updated_at","source":{"path":"internal/postgres/bulletin_watermark.go","symbol":"Repository.PurgeWatermarkRecords"},"duration_source":{"path":"internal/postgres/bulletin_watermark.go","symbol":"Repository.PurgeWatermarkRecords"},"predicate":"erased = TRUE AND updated_at <= now - interval '365 days'","description":"Only erased fences are automatically purged 365 days after their latest fence update. Migration101 requires all legacy restricted-only rows to be removed by reviewed exact cleanup before retiring the exclusive DSR schema. Ordinary erased fences and this existing retention rule remain unchanged. Legal review remains pending. The existing publication worker runs at startup, drains nonempty batches on subsequent ticks, schedules an empty pass after 24 hours, and retries failures after one minute. This describes implemented online-table cleanup, not deployment acceptance or backup deletion."},"action":"delete"}
+    cleanup: {"mode":"existing_worker","implementation":[{"path":"internal/postgres/bulletin_watermark.go","symbol":"Repository.PurgeWatermarkRecords"},{"path":"internal/publication/worker.go","symbol":"Worker.Run"}],"evidence":[{"kind":"go_test","path":"internal/postgres/bulletin_watermark_test.go","test_name":"TestWatermarkReceiptLifecycle"},{"kind":"go_test","path":"internal/postgres/bulletin_watermark_test.go","test_name":"TestWatermarkCleanupRateAndLookupActorFence"}]}
+  - id: "hhc-web.bulletin-watermark-dsr-actions"
+    owner: "hhc-web-api"
+    purpose: "Preserve historical Account erasure callback receipts without raw idempotency keys under the existing retention rule. Migration101 refuses any restriction receipt and preserves this mixed table, including request_id and withdrawn_at metadata."
+    necessity: "required"
+    storage: {"kind":"postgres","resource":"hhc_web.bulletin_watermark_dsr_action","sources":[{"path":"internal/migrations/sql/039_bulletin_watermark_dsr.sql","symbol":"bulletin_watermark_dsr_action"},{"path":"internal/postgres/bulletin_watermark.go","symbol":"Repository.PurgeWatermarkRecords"}]}
+    subject_keys: []
+    data_classes: ["security","identity","activity"]
+    fields:
+      - {"name":"key_hash","purpose":"Identify the callback by the SHA-256 of its idempotency key.","necessity":"required","data_classes":["security"]}
+      - {"name":"subject_hash","purpose":"Bind a replay to the same derived subject hash.","necessity":"required","data_classes":["identity","security"]}
+      - {"name":"action","purpose":"Distinguish erase from restrict_processing.","necessity":"required","data_classes":["security"]}
+      - {"name":"record_count","purpose":"Replay the original affected receipt count.","necessity":"required","data_classes":["activity"]}
+      - {"name":"created_at","purpose":"Record the first callback completion time for expiry.","necessity":"required","data_classes":["activity"]}
+      - {"name": "request_id", "purpose": "Bind current callbacks to their original Account request; legacy NULL is not reconstructed.", "necessity": "required", "data_classes": ["security", "activity"]}
+      - {"name": "withdrawn_at", "purpose": "Record explicit withdrawal without rewriting the original callback result.", "necessity": "required", "data_classes": ["security", "activity"]}
+    attribution: {"mode":"manual","explanation":"Only a derived subject hash is retained; the canonical direct UUID or verified-email attribution contract is not asserted for this table. Historical restriction actions computed the comparison hash from the supplied subject; those endpoints are retired."}
+    legal_basis: {"status":"pending_legal","reference":null}
+    retention: {"status":"enforced","rule":{"trigger":"age_since","field":"created_at","source":{"path":"internal/postgres/bulletin_watermark.go","symbol":"Repository.PurgeWatermarkRecords"},"duration_source":{"path":"internal/postgres/bulletin_watermark.go","symbol":"Repository.PurgeWatermarkRecords"},"predicate":"created_at <= now - interval '365 days'","description":"Completed callback receipts are deleted 365 days after creation. An idempotent replay does not change their creation timestamp. The existing publication worker runs at startup, drains nonempty batches on subsequent ticks, schedules an empty pass after 24 hours, and retries failures after one minute. This describes implemented online-table cleanup, not deployment acceptance or backup deletion."},"action":"delete"}
+    cleanup: {"mode":"existing_worker","implementation":[{"path":"internal/postgres/bulletin_watermark.go","symbol":"Repository.PurgeWatermarkRecords"},{"path":"internal/publication/worker.go","symbol":"Worker.Run"}],"evidence":[{"kind":"go_test","path":"internal/postgres/bulletin_watermark_test.go","test_name":"TestWatermarkReceiptLifecycle"},{"kind":"go_test","path":"internal/postgres/bulletin_watermark_test.go","test_name":"TestWatermarkCleanupRateAndLookupActorFence"}]}
+  - id: "hhc-web.bulletin-watermark-lookup-limits"
+    owner: "hhc-web-api"
+    purpose: "Enforce a per-operator minute-window lookup limit across replicas."
+    necessity: "required"
+    storage: {"kind":"postgres","resource":"hhc_web.bulletin_watermark_lookup_rate","sources":[{"path":"internal/postgres/bulletin_watermark.go","symbol":"Repository.LookupWatermarkReceipt"},{"path":"internal/postgres/bulletin_watermark.go","symbol":"Repository.PurgeWatermarkRecords"}]}
+    subject_keys: []
+    data_classes: ["identity","security","activity"]
+    fields:
+      - {"name":"subject_hash","purpose":"Identify the operator bucket using a domain-separated Account UUID hash.","necessity":"required","data_classes":["identity","security"]}
+      - {"name":"window_start","purpose":"Identify the UTC minute bucket.","necessity":"required","data_classes":["activity","security"]}
+      - {"name":"count","purpose":"Enforce the lookup count limit within that minute.","necessity":"required","data_classes":["activity","security"]}
+    attribution: {"mode":"manual","explanation":"The operator is represented only by a derived hash in this table. Attribution remains manual rather than claiming a persisted Account UUID or verified canonical email key."}
+    legal_basis: {"status":"pending_legal","reference":null}
+    retention: {"status":"enforced","rule":{"trigger":"age_since","field":"window_start","source":{"path":"internal/postgres/bulletin_watermark.go","symbol":"Repository.PurgeWatermarkRecords"},"duration_source":{"path":"internal/postgres/bulletin_watermark.go","symbol":"Repository.PurgeWatermarkRecords"},"predicate":"window_start < now - interval '2 days'","description":"Minute counters older than two days are deleted, with the existing daily scheduling lag; these rows are not retained for a year. The existing publication worker runs at startup, drains nonempty batches on subsequent ticks, schedules an empty pass after 24 hours, and retries failures after one minute. This describes implemented online-table cleanup, not deployment acceptance or backup deletion."},"action":"delete"}
+    cleanup: {"mode":"existing_worker","implementation":[{"path":"internal/postgres/bulletin_watermark.go","symbol":"Repository.PurgeWatermarkRecords"},{"path":"internal/publication/worker.go","symbol":"Worker.Run"}],"evidence":[{"kind":"go_test","path":"internal/postgres/bulletin_watermark_test.go","test_name":"TestWatermarkReceiptLifecycle"},{"kind":"go_test","path":"internal/postgres/bulletin_watermark_test.go","test_name":"TestWatermarkCleanupRateAndLookupActorFence"}]}
+  - id: "hhc-web.bulletin-download-jobs"
+    owner: "hhc-web-api"
+    purpose: "Prepare and temporarily cache one traceable member bulletin copy without recording transfer count or client network data."
+    necessity: "required"
+    storage: {"kind":"postgres","resource":"hhc_web.bulletin_download_job","sources":[{"path":"internal/postgres/bulletin_download_jobs.go","symbol":"Repository.CreateDownloadJob"},{"path":"internal/postgres/bulletin_watermark.go","symbol":"Repository.PurgeWatermarkRecords"}]}
+    subject_keys: [{"kind":"user_id","field":"account_id","evidence":[{"path":"internal/postgres/bulletin_download_jobs.go","symbol":"Repository.CreateDownloadJob"}]}]
+    data_classes: ["identity","activity","security","content"]
+    fields:
+      - {"name":"account_id","purpose":"Bind the prepared copy to the qualified Account UUID.","necessity":"required","data_classes":["identity","security"]}
+      - {"name":"issue_id, locale, revision","purpose":"Bind work to the exact published bulletin version.","necessity":"required","data_classes":["activity","content"]}
+      - {"name":"fingerprint_payload, trace_code","purpose":"Reconstruct and investigate the issued fingerprint.","necessity":"required","data_classes":["security"]}
+      - {"name":"derived_asset_id, receipt_id","purpose":"Retrieve the ready private copy and its issuance receipt.","necessity":"required","data_classes":["activity","security"]}
+      - {"name":"status, error_code, attempts","purpose":"Drive the durable asynchronous lifecycle.","necessity":"required","data_classes":["activity"]}
+      - {"name":"created_at, updated_at, cache_expires_at, expires_at","purpose":"Enforce cache and metadata expiry.","necessity":"required","data_classes":["activity"]}
+    attribution: {"mode":"direct","explanation":"The account_id explicitly identifies the Account for whom this copy was prepared; no IP address, transfer count or completed-download event is stored."}
+    legal_basis: {"status":"pending_legal","reference":null}
+    retention: {"status":"enforced","rule":{"trigger":"expires_at","field":"expires_at","source":{"path":"internal/postgres/bulletin_watermark.go","symbol":"Repository.PurgeWatermarkRecords"},"duration_source":null,"predicate":"expires_at <= now","description":"Cached private bytes are deleted after seven days and job metadata after 365 times 24 hours. Account erasure deletes the row immediately; processing restriction denies and removes ready bytes."},"action":"delete"}
+    cleanup: {"mode":"existing_worker","implementation":[{"path":"internal/postgres/bulletin_watermark.go","symbol":"Repository.PurgeWatermarkRecords"},{"path":"internal/publication/worker.go","symbol":"Worker.Run"}],"evidence":[{"kind":"go_test","path":"internal/postgres/bulletin_watermark_test.go","test_name":"TestWatermarkReceiptLifecycle"}]}
+  - id: "hhc-web.bulletin-watermark-investigations"
+    owner: "hhc-web-api"
+    purpose: "Retain authorized issue-scoped screenshot investigations and their stable result for operational review."
+    necessity: "required"
+    storage: {"kind":"postgres","resource":"hhc_web.bulletin_watermark_investigation","sources":[{"path":"internal/postgres/bulletin_investigations.go","symbol":"Repository.CreateWatermarkInvestigation"},{"path":"internal/postgres/bulletin_investigations.go","symbol":"Repository.ListWatermarkInvestigations"}]}
+    subject_keys: [{"kind":"user_id","field":"actor_id","evidence":[{"path":"internal/postgres/bulletin_investigations.go","symbol":"Repository.CreateWatermarkInvestigation"}]}]
+    data_classes: ["identity","activity","security","content"]
+    fields:
+      - {"name":"actor_id","purpose":"Identify the authorized operator who submitted the investigation.","necessity":"required","data_classes":["identity","security"]}
+      - {"name":"issue_id, locale, revision","purpose":"Constrain attribution to the selected bulletin version.","necessity":"required","data_classes":["activity","content"]}
+      - {"name":"evidence","purpose":"Hold the submitted PNG or JPEG only while processing is permitted.","necessity":"required","data_classes":["content","security"]}
+      - {"name":"status, result, receipt_id, error_code","purpose":"Expose a stable matched, inconclusive or failed outcome.","necessity":"required","data_classes":["activity","security"]}
+      - {"name":"created_at, expires_at, evidence_expires_at","purpose":"Enforce evidence and history expiry.","necessity":"required","data_classes":["activity"]}
+    attribution: {"mode":"direct","explanation":"actor_id identifies the submitting operator. A matched receipt resolves the issued Account only while that receipt remains valid and unrestricted."}
+    legal_basis: {"status":"pending_legal","reference":null}
+    retention: {"status":"enforced","rule":{"trigger":"expires_at","field":"expires_at","source":{"path":"internal/postgres/bulletin_watermark.go","symbol":"Repository.PurgeWatermarkRecords"},"duration_source":null,"predicate":"expires_at <= now","description":"Screenshot bytes expire within 24 hours and are cleared at terminal processing; investigation metadata expires after 365 times 24 hours."},"action":"delete"}
+    cleanup: {"mode":"existing_worker","implementation":[{"path":"internal/postgres/bulletin_watermark.go","symbol":"Repository.PurgeWatermarkRecords"},{"path":"internal/publication/worker.go","symbol":"Worker.Run"}],"evidence":[{"kind":"go_test","path":"internal/postgres/bulletin_watermark_test.go","test_name":"TestWatermarkReceiptLifecycle"}]}
+
+  - id: "hhc-web.legal-mutation-provenance"
+    owner: "hhc-web-api"
+    purpose: "Preserve transactional provenance for legal drafts and publication; private content and document hashes are not analytics."
+    necessity: "required"
+    storage: {"kind":"postgres","resource":"hhc_web.legal_change","sources":[{"path":"internal/postgres/legal_repository.go","symbol":"recordLegalChange"}]}
+    subject_keys: [{"kind":"user_id","field":"actor_id","evidence":[{"path":"internal/postgres/legal_repository.go","symbol":"recordLegalChange"}]}]
+    data_classes: ["identity","activity","security"]
+    fields:
+      - {"name": "id", "purpose": "Identify the legal mutation.", "necessity": "required", "data_classes": ["activity", "security"]}
+      - {"name": "scope", "purpose": "Identify the fixed legal scope.", "necessity": "required", "data_classes": ["activity", "security"]}
+      - {"name": "action", "purpose": "Record draft or publication.", "necessity": "required", "data_classes": ["activity", "security"]}
+      - {"name": "draft_version", "purpose": "Identify the edited revision.", "necessity": "required", "data_classes": ["activity", "security"]}
+      - {"name": "actor_id", "purpose": "Bind the mutation to its authenticated staff actor.", "necessity": "required", "data_classes": ["identity"]}
+      - {"name": "request_id", "purpose": "Correlate trusted request provenance.", "necessity": "required", "data_classes": ["activity", "security"]}
+      - {"name": "occurred_at", "purpose": "Record server time.", "necessity": "required", "data_classes": ["activity", "security"]}
+    attribution: {"mode":"direct","explanation":"Trusted authenticated staff actor and request context are captured in the same transaction as the legal mutation."}
+    legal_basis: {"status":"pending_legal","reference":null}
+    retention: {"status":"pending_legal","rule":null,"action":"none"}
+    cleanup: {"mode":"none","implementation":[],"evidence":[]}
+  - id: "hhc-web.recording-live-scope"
+    owner: "hhc-web-api"
+    purpose: "Preserve an account-bound live DVR scope across grant expiry until the fixed capture deadline. Ordinary account cleanup and preserved subject fences cover this dataset."
+    necessity: "required"
+    storage: {"kind":"postgres","resource":"hhc_web.member_recording_capture_scope","sources":[{"path":"internal/postgres/recording_live.go","symbol":"RecordingRepository.WithCaptureScope"}]}
+    subject_keys: [{"kind":"user_id","field":"user_id","evidence":[{"path":"internal/postgres/recording_live.go","symbol":"RecordingRepository.WithCaptureScope"}]}]
+    data_classes: ["identity","activity","security"]
+    fields:
+      - {"name":"user_id","purpose":"Bind the registered viewing scope to its Account owner.","necessity":"required","data_classes":["identity"]}
+      - {"name":"capture_intent_id, scope_id, registered_at","purpose":"Fence new viewers after stop while permitting existing account scopes to resume.","necessity":"required","data_classes":["activity","security"]}
+    attribution: {"mode":"direct","explanation":"Trusted Account UUID owns the scope; ordinary account cleanup erases only that subject's bounded scope metadata."}
+    legal_basis: {"status":"pending_legal","reference":null}
+    retention: {"status":"enforced","rule":{"trigger":"expires_at","field":"member_recording_capture.payload_json.Status.expiresAt","source":{"path":"internal/postgres/bulletin_watermark.go","symbol":"Repository.PurgeWatermarkRecords"},"duration_source":null,"predicate":"capture expiresAt <= now","description":"Scope rows expire at the fixed server capture deadline, at most 24 hours after capture creation; the existing purge worker deletes expired rows. Grant renewals never extend it."},"action":"delete"}
+    cleanup: {"mode":"existing_worker","implementation":[{"path":"internal/postgres/bulletin_watermark.go","symbol":"Repository.PurgeWatermarkRecords"}],"evidence":[{"kind":"go_test","path":"internal/postgres/recording_live_test.go","test_name":"TestLiveScopeAccountCleanup"}]}
+  - id: "hhc-web.recording-playback-progress"
+    owner: "hhc-web-api"
+    purpose: "Resume member video playback across devices and fence stale progress writers."
+    necessity: "optional"
+    storage: {"kind":"postgres","resource":"hhc_web.member_recording_progress","sources":[{"path":"internal/postgres/recording_playback_progress.go","symbol":"RecordingRepository.ClaimPlaybackProgress"}]}
+    subject_keys: [{"kind":"user_id","field":"account_id","evidence":[{"path":"internal/postgres/recording_playback_progress.go","symbol":"RecordingRepository.ClaimPlaybackProgress"}]}]
+    data_classes: ["identity","activity"]
+    fields:
+      - {"name":"account_id","purpose":"Scope progress to the authenticated member.","necessity":"required","data_classes":["identity"]}
+      - {"name":"recording_id, media_version, position_seconds, completed, owner_session_id, owner_generation, claim_id, last_sequence, claimed_at, updated_at","purpose":"Persist the resume position and enforce progress ownership.","necessity":"required","data_classes":["activity"]}
+    attribution: {"mode":"direct","explanation":"Trusted Account UUID owns the recording progress."}
+    legal_basis: {"status":"pending_legal","reference":null}
+    retention: {"status":"enforced","rule":{"trigger":"expires_at","field":"expires_at","source":{"path":"internal/postgres/bulletin_watermark.go","symbol":"Repository.PurgeWatermarkRecords"},"duration_source":null,"predicate":"expires_at <= now","description":"Expire after 30 days without an accepted write or at media expiry, whichever comes first."},"action":"delete"}
+    cleanup: {"mode":"existing_worker","implementation":[{"path":"internal/postgres/bulletin_watermark.go","symbol":"Repository.PurgeWatermarkRecords"}],"evidence":[{"kind":"go_test","path":"internal/postgres/recording_playback_progress_test.go","test_name":"TestProgressFirstClaimAndLateWrites"}]}
+  - {"id": "hhc-web.recording-like", "owner": "hhc-web-api", "purpose": "Member video interaction or viewing measurement; ordinary account cleanup and preserved subject fences apply.", "necessity": "optional", "storage": {"kind": "postgres", "resource": "hhc_web.member_recording_like", "sources": [{"path": "internal/postgres/recording_interaction.go", "symbol": "RecordingRepository.SetRecordingLike"}]}, "subject_keys": [{"kind": "user_id", "field": "account_id", "evidence": [{"path": "internal/postgres/recording_interaction.go", "symbol": "RecordingRepository.SetRecordingLike"}]}], "data_classes": ["identity", "activity"], "fields": [{"name": "account_id", "purpose": "Account-scoped deduplication and subject erasure; never returned in member comment DTOs.", "necessity": "required", "data_classes": ["identity"]}], "attribution": {"mode": "direct", "explanation": "Trusted Account UUID; no anonymous-data claim."}, "legal_basis": {"status": "pending_legal", "reference": null}, "retention": {"status": "pending_legal", "rule": null, "action": "none"}, "cleanup": {"mode": "manual", "implementation": [], "evidence": []}}
+  - {"id": "hhc-web.recording-comment", "owner": "hhc-web-api", "purpose": "Member video interaction or viewing measurement; ordinary account cleanup and preserved subject fences apply.", "necessity": "optional", "storage": {"kind": "postgres", "resource": "hhc_web.member_recording_comment", "sources": [{"path": "internal/postgres/recording_interaction.go", "symbol": "RecordingRepository.CreateRecordingComment"}]}, "subject_keys": [{"kind": "user_id", "field": "account_id", "evidence": [{"path": "internal/postgres/recording_interaction.go", "symbol": "RecordingRepository.CreateRecordingComment"}]}], "data_classes": ["identity", "activity"], "fields": [{"name": "account_id", "purpose": "Account-scoped deduplication and subject erasure; never returned in member comment DTOs.", "necessity": "required", "data_classes": ["identity"]}], "attribution": {"mode": "direct", "explanation": "Trusted Account UUID; no anonymous-data claim."}, "legal_basis": {"status": "pending_legal", "reference": null}, "retention": {"status": "pending_legal", "rule": null, "action": "none"}, "cleanup": {"mode": "manual", "implementation": [], "evidence": []}}
+  - {"id": "hhc-web.recording-report", "owner": "hhc-web-api", "purpose": "Member video interaction or viewing measurement; ordinary account cleanup and preserved subject fences apply.", "necessity": "optional", "storage": {"kind": "postgres", "resource": "hhc_web.member_recording_comment_report", "sources": [{"path": "internal/postgres/recording_comment_moderation.go", "symbol": "RecordingRepository.ReportRecordingComment"}]}, "subject_keys": [{"kind": "user_id", "field": "account_id", "evidence": [{"path": "internal/postgres/recording_comment_moderation.go", "symbol": "RecordingRepository.ReportRecordingComment"}]}], "data_classes": ["identity", "activity"], "fields": [{"name": "account_id", "purpose": "Account-scoped deduplication and subject erasure; never returned in member comment DTOs.", "necessity": "required", "data_classes": ["identity"]}], "attribution": {"mode": "direct", "explanation": "Trusted Account UUID; no anonymous-data claim."}, "legal_basis": {"status": "pending_legal", "reference": null}, "retention": {"status": "pending_legal", "rule": null, "action": "none"}, "cleanup": {"mode": "manual", "implementation": [], "evidence": []}}
+  - {"id": "hhc-web.recording-playback-session", "owner": "hhc-web-api", "purpose": "Member video interaction or viewing measurement; ordinary account cleanup and preserved subject fences apply.", "necessity": "optional", "storage": {"kind": "postgres", "resource": "hhc_web.member_recording_playback_session", "sources": [{"path": "internal/postgres/recording_playback_metrics.go", "symbol": "RecordingRepository.RecordPlaybackHeartbeat"}]}, "subject_keys": [{"kind": "user_id", "field": "account_id", "evidence": [{"path": "internal/postgres/recording_playback_metrics.go", "symbol": "RecordingRepository.RecordPlaybackHeartbeat"}]}], "data_classes": ["identity", "activity"], "fields": [{"name": "account_id", "purpose": "Account-scoped deduplication and subject erasure; never returned in member comment DTOs.", "necessity": "required", "data_classes": ["identity"]}], "attribution": {"mode": "direct", "explanation": "Trusted Account UUID; no anonymous-data claim."}, "legal_basis": {"status": "pending_legal", "reference": null}, "retention": {"status": "pending_legal", "rule": null, "action": "none"}, "cleanup": {"mode": "manual", "implementation": [], "evidence": []}}
+  - {"id": "hhc-web.recording-playback-visit", "owner": "hhc-web-api", "purpose": "Member video interaction or viewing measurement; ordinary account cleanup and preserved subject fences apply.", "necessity": "optional", "storage": {"kind": "postgres", "resource": "hhc_web.member_recording_playback_visit", "sources": [{"path": "internal/postgres/recording_playback_metrics.go", "symbol": "RecordingRepository.RecordPlaybackHeartbeat"}]}, "subject_keys": [{"kind": "user_id", "field": "account_id", "evidence": [{"path": "internal/postgres/recording_playback_metrics.go", "symbol": "RecordingRepository.RecordPlaybackHeartbeat"}]}], "data_classes": ["identity", "activity"], "fields": [{"name": "account_id", "purpose": "Account-scoped deduplication and subject erasure; never returned in member comment DTOs.", "necessity": "required", "data_classes": ["identity"]}], "attribution": {"mode": "direct", "explanation": "Trusted Account UUID; no anonymous-data claim."}, "legal_basis": {"status": "pending_legal", "reference": null}, "retention": {"status": "pending_legal", "rule": null, "action": "none"}, "cleanup": {"mode": "manual", "implementation": [], "evidence": []}}
+  - {"id": "hhc-web.recording-viewer", "owner": "hhc-web-api", "purpose": "Member video interaction or viewing measurement; ordinary account cleanup and preserved subject fences apply.", "necessity": "optional", "storage": {"kind": "postgres", "resource": "hhc_web.member_recording_viewer", "sources": [{"path": "internal/postgres/recording_playback_metrics.go", "symbol": "RecordingRepository.RecordPlaybackHeartbeat"}]}, "subject_keys": [{"kind": "user_id", "field": "account_id", "evidence": [{"path": "internal/postgres/recording_playback_metrics.go", "symbol": "RecordingRepository.RecordPlaybackHeartbeat"}]}], "data_classes": ["identity", "activity"], "fields": [{"name": "account_id", "purpose": "Account-scoped deduplication and subject erasure; never returned in member comment DTOs.", "necessity": "required", "data_classes": ["identity"]}], "attribution": {"mode": "direct", "explanation": "Trusted Account UUID; no anonymous-data claim."}, "legal_basis": {"status": "pending_legal", "reference": null}, "retention": {"status": "pending_legal", "rule": null, "action": "none"}, "cleanup": {"mode": "manual", "implementation": [], "evidence": []}}

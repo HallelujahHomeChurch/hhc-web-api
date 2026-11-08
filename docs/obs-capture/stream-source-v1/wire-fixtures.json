@@ -1,0 +1,78 @@
+{
+  "version": "k2-2026-10-14.rc1",
+  "snapshotSha256": "c421d5dc1cf9173b89add6dc020478615bef124a72870e5ddd85a02a56c7180a",
+  "note": "Synthetic all-zero bytes are schema fixtures only; clients generate CSPRNG keys.",
+  "fixtures": [
+    {
+      "name": "idle",
+      "schema": "BroadcastSource",
+      "value": {
+        "revision": 1,
+        "configured": false,
+        "canRotate": true,
+        "inputBusy": false,
+        "suffix": null,
+        "targetRecordingId": null
+      }
+    },
+    {
+      "name": "prepared",
+      "schema": "BroadcastSource",
+      "value": {
+        "revision": 3,
+        "configured": true,
+        "canRotate": true,
+        "inputBusy": false,
+        "suffix": "AAAA",
+        "targetRecordingId": "0199a000-0000-4000-8000-000000000003"
+      }
+    },
+    {
+      "name": "set-key",
+      "schema": "BroadcastSourceStreamKeyInput",
+      "value": {
+        "operationKey": "k2-key-1",
+        "expectedSourceRevision": 1,
+        "streamKey": "hhc_stream_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    {
+      "name": "prepare",
+      "schema": "BroadcastSourceTargetInput",
+      "value": {
+        "operationKey": "k2-target-1",
+        "expectedSourceRevision": 2,
+        "recordingId": "0199a000-0000-4000-8000-000000000003",
+        "expectedRevision": 1
+      }
+    },
+    {
+      "name": "resolve",
+      "schema": "BroadcastSourceResolveInput",
+      "value": {
+        "streamKey": "hhc_stream_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    {
+      "name": "resolved",
+      "schema": "BroadcastSourceResolved",
+      "value": {
+        "sourceRevision": 3,
+        "recordingId": "0199a000-0000-4000-8000-000000000003",
+        "broadcastRevision": 2
+      }
+    },
+    {
+      "name": "bind",
+      "schema": "BroadcastSourceBindInput",
+      "value": {
+        "operationKey": "k2-bind-1",
+        "expectedSourceRevision": 3,
+        "recordingId": "0199a000-0000-4000-8000-000000000003",
+        "expectedRevision": 2,
+        "protocolVersion": "b1-2026-10-10.rc1",
+        "streamKey": "hhc_stream_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    }
+  ]
+}

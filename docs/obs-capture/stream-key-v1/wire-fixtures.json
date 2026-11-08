@@ -1,0 +1,110 @@
+[
+  {
+    "name": "unconfigured metadata",
+    "schema": "BroadcastStreamKey",
+    "valid": true,
+    "value": {
+      "configured": false,
+      "canRotate": true,
+      "revision": 1,
+      "suffix": null
+    }
+  },
+  {
+    "name": "configured metadata",
+    "schema": "BroadcastStreamKey",
+    "valid": true,
+    "value": {
+      "configured": true,
+      "canRotate": true,
+      "revision": 2,
+      "suffix": "AAAA"
+    }
+  },
+  {
+    "name": "set input",
+    "schema": "BroadcastStreamKeySetInput",
+    "valid": true,
+    "value": {
+      "operationKey": "set-key-1",
+      "expectedRevision": 1,
+      "streamKey": "hhc_live_0199a000-0000-4000-8000-000000000003_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    }
+  },
+  {
+    "name": "bind input",
+    "schema": "BroadcastStreamKeyBindInput",
+    "valid": true,
+    "value": {
+      "operationKey": "bind-key-1",
+      "expectedRevision": 1,
+      "streamKey": "hhc_live_0199a000-0000-4000-8000-000000000003_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "protocolVersion": "b1-2026-10-10.rc1"
+    }
+  },
+  {
+    "name": "invalid padding",
+    "schema": "BroadcastStreamKeySetInput",
+    "valid": false,
+    "value": {
+      "operationKey": "set-key-1",
+      "expectedRevision": 1,
+      "streamKey": "hhc_live_0199a000-0000-4000-8000-000000000003_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+    }
+  },
+  {
+    "name": "noncanonical unused bits",
+    "schema": "BroadcastStreamKeySetInput",
+    "valid": false,
+    "value": {
+      "operationKey": "set-key-1",
+      "expectedRevision": 1,
+      "streamKey": "hhc_live_0199a000-0000-4000-8000-000000000003_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB"
+    }
+  },
+  {
+    "name": "missing key",
+    "schema": "BroadcastStreamKeyBindInput",
+    "valid": false,
+    "value": {
+      "operationKey": "bind-key-1",
+      "expectedRevision": 1,
+      "protocolVersion": "b1-2026-10-10.rc1"
+    }
+  },
+  {
+    "name": "unsafe revision",
+    "schema": "BroadcastStreamKeySetInput",
+    "valid": false,
+    "value": {
+      "operationKey": "set-key-1",
+      "expectedRevision": 9007199254740992,
+      "streamKey": "hhc_live_0199a000-0000-4000-8000-000000000003_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    }
+  },
+  {
+    "name": "metadata cannot expose raw key",
+    "schema": "BroadcastStreamKey",
+    "valid": false,
+    "value": {
+      "configured": true,
+      "canRotate": true,
+      "revision": 2,
+      "suffix": "AAAA",
+      "streamKey": "hhc_live_0199a000-0000-4000-8000-000000000003_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    }
+  },
+  {
+    "name": "wrong key error",
+    "schema": "BroadcastStreamKeyErrorEnvelope",
+    "valid": true,
+    "value": {
+      "data": null,
+      "meta": {},
+      "error": {
+        "code": "broadcast_stream_key_invalid",
+        "message": "broadcast_stream_key_invalid"
+      }
+    }
+  }
+]

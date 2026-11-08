@@ -1,0 +1,62 @@
+# Keep Poppler aligned with the existing watermark runtime.
+ARG BULLETIN_RENDERER_IMAGE=scratch
+FROM node:24.22.1-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea AS conversion-build
+WORKDIR /opt/bulletin-conversion
+COPY tools/bulletin-conversion/package*.json ./
+RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+COPY tools/bulletin-conversion/*.mjs ./
+RUN node --test convert.test.mjs
+COPY tools/bulletin-layout/ /opt/bulletin-layout/
+RUN node --test /opt/bulletin-layout/compose.test.mjs
+
+FROM python@sha256:2fe5997d249a808b8eeea52c58a1dbffbba28754dc11699ef5c029f2d818ce79 AS geometry-probe
+ARG APT_CACHE_DATE
+RUN apt-get update && apt-get install -y --no-install-recommends poppler-utils=25.03.0-5+deb13u4 libpoppler-private-dev=25.03.0-5+deb13u4 g++ pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /probe
+COPY tools/bulletin_watermark/requirements-linux.lock.txt /tmp/watermark-requirements.txt
+# Reuse the security-patched, hash-locked PDF parser; no watermark ML runtime.
+RUN grep '^pypdf==' /tmp/watermark-requirements.txt > /tmp/font-requirements.txt \
+    && pip install --require-hashes --no-deps --target /opt/bulletin-fonts -r /tmp/font-requirements.txt
+COPY tools/bulletin_geometry/ ./
+RUN g++ -std=c++20 -O2 -Wall -Wextra -Werror -isystem /usr/include/poppler glyphs.cc $(pkg-config --libs poppler) -o glyphs \
+    && PYTHONPATH=/opt/bulletin-fonts python -m unittest discover -p 'test_*.py' \
+    && cp fonts.py glyphs /opt/bulletin-fonts/
+USER 65532:65532
+ENTRYPOINT ["python", "probe.py"]
+
+FROM golang:1.26.10-bookworm@sha256:632dff7351799a5a9954a48dc06670ade72ee44e8c351cdc0e5a57af2fea21af AS extractor-build
+ARG BULLETIN_RENDERER_ARTIFACT_SHA256
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY internal/ ./internal/
+COPY cmd/extractor/ ./cmd/extractor/
+RUN test "${#BULLETIN_RENDERER_ARTIFACT_SHA256}" -eq 64 \
+    && case "$BULLETIN_RENDERER_ARTIFACT_SHA256" in *[!0-9a-f]*) exit 1;; esac \
+    && CGO_ENABLED=0 GOOS=linux go build -trimpath \
+       -ldflags="-s -w -X main.rendererArtifactSHA256=$BULLETIN_RENDERER_ARTIFACT_SHA256" \
+       -o /bulletin-extractor ./cmd/extractor
+
+FROM ${BULLETIN_RENDERER_IMAGE} AS extractor
+ARG BULLETIN_RENDERER_ARTIFACT_SHA256
+USER 0:0
+ARG APT_CACHE_DATE
+# The release caller pins the shared runtime by registry digest. Compare the
+# linked identity to its actual bundled renderer before accepting the image.
+RUN node scripts/verify-bulletin-renderer-v11.mjs \
+    && node --input-type=module -e "import {BULLETIN_RENDERER_V10_DIGEST as digest} from './packages/ui/dist/bulletin-reader/v10/artifact.js'; if (digest !== process.env.BULLETIN_RENDERER_ARTIFACT_SHA256) process.exit(1)" \
+    && apt-get -o Acquire::Retries=0 update \
+    && apt-get -o Acquire::Retries=0 install -y --no-install-recommends apt=3.0.4 libapt-pkg7.0=3.0.4 \
+    && apt-get update && apt-get install -y --no-install-recommends ca-certificates poppler-utils=25.03.0-5+deb13u4 python3=3.13.5-1 libexpat1=2.9.0-1~deb13u1 libbrotli1=1.1.0-2+deb13u1 zlib1g=1:1.3.dfsg+really1.3.1-1+deb13u1 \
+    && test -s /etc/ssl/certs/ca-certificates.crt \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=extractor-build /bulletin-extractor /bulletin-extractor
+COPY --from=geometry-probe /opt/bulletin-fonts/ /opt/bulletin-fonts/
+RUN /bulletin-extractor -verify-assets \
+    && node scripts/verify-bulletin-renderer.mjs --v2 \
+    && node --input-type=module -e "import {execFileSync} from 'node:child_process'; import {BULLETIN_RENDERER_V2_DIGEST as digest} from './packages/ui/dist/bulletin-reader/v2/artifact.js'; const pins=JSON.parse(execFileSync('/bulletin-extractor',['-version'])); if(digest!==pins.rendererV2ArtifactSha256)process.exit(1)"
+COPY --from=conversion-build /opt/bulletin-conversion/ /opt/bulletin-conversion/
+COPY --from=conversion-build /opt/bulletin-layout/ /opt/bulletin-layout/
+USER 65532:65532
+ENTRYPOINT ["/bulletin-extractor"]

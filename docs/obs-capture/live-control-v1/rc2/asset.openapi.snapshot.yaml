@@ -1,0 +1,776 @@
+openapi: 3.1.0
+info:
+  title: HHC B1 private Asset producer snapshot
+  version: b1-mac-2026-10-10.rc2
+servers:
+- url: http://asset-api
+  description: Internal service address; public requests enter through API Gateway.
+paths:
+  /priv/recording-captures:
+    post:
+      operationId: createRecordingCapture
+      summary: createRecordingCapture
+      description: Private progressive intake. CMS enforces a stop receipt before seal. Confirm queues durable validation;
+        PUT/listing evidence is not immutable hash/media verification. Progress exposes only the published three-rendition
+        common waterline. Live grants require three verified segments and are bounded by five minutes and capture/replay
+        expiry.
+      tags:
+      - Private
+      x-hhc-visibility: private
+      x-hhc-callers:
+      - hhc-web-api
+      x-hhc-cache: private, no-store
+      security:
+      - daprCaller: []
+      - workloadPrincipal: []
+      parameters:
+      - $ref: '#/components/parameters/RecordingActorID'
+      responses:
+        '201':
+          description: Accepted operation result; acceptance is not verified media readiness.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordingCaptureResult'
+        '400':
+          description: Rejected request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordingCaptureErrorResponse'
+        '401':
+          description: Rejected request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordingCaptureErrorResponse'
+        '403':
+          description: Rejected request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordingCaptureErrorResponse'
+        '404':
+          description: Rejected request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordingCaptureErrorResponse'
+        '409':
+          description: State/key conflict or missing objects; poll and reconcile before retry.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordingCaptureErrorResponse'
+        '410':
+          description: Fixed capture deadline passed; preserve local media.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordingCaptureErrorResponse'
+        '413':
+          description: Rejected request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordingCaptureErrorResponse'
+        '429':
+          description: Retry after the Retry-After delay.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordingCaptureErrorResponse'
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+                minimum: 1
+              description: Seconds until retry.
+        '503':
+          description: Temporary dependency failure; capped backoff with jitter.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordingCaptureErrorResponse'
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+                minimum: 1
+              description: Seconds until retry.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordingCaptureCreateInput'
+  /priv/recording-captures/{captureId}/broadcast-range:
+    put:
+      operationId: setRecordingBroadcastRange
+      summary: setRecordingBroadcastRange
+      description: CMS-only B1 producer. Capture create with broadcastEpoch initializes denied member range atomically.
+        Range CAS and R2 conditional authority writes finish before acknowledgement. Projection confirms current
+        Worker authority and published verified media. Legacy C1 captures are unchanged.
+      tags:
+      - Private
+      x-hhc-visibility: private
+      x-hhc-callers:
+      - hhc-web-api
+      x-hhc-cache: private, no-store
+      security:
+      - daprCaller: []
+      parameters:
+      - name: captureId
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: ^[a-f0-9]{32}$
+      responses:
+        '200':
+          description: Accepted durable range
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastRangeInput'
+        '400':
+          description: Rejected or unavailable; state must not be inferred from failed reads.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Rejected or unavailable; state must not be inferred from failed reads.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Rejected or unavailable; state must not be inferred from failed reads.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Rejected or unavailable; state must not be inferred from failed reads.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Rejected or unavailable; state must not be inferred from failed reads.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Rejected or unavailable; state must not be inferred from failed reads.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BroadcastRangeInput'
+  /priv/recording-captures/{captureId}/broadcast-projection:
+    get:
+      operationId: getRecordingBroadcastProjection
+      summary: getRecordingBroadcastProjection
+      description: CMS-only B1 producer. Capture create with broadcastEpoch initializes denied member range atomically.
+        Range CAS and R2 conditional authority writes finish before acknowledgement. Projection confirms current
+        Worker authority and published verified media. Legacy C1 captures are unchanged.
+      tags:
+      - Private
+      x-hhc-visibility: private
+      x-hhc-callers:
+      - hhc-web-api
+      x-hhc-cache: private, no-store
+      security:
+      - daprCaller: []
+      parameters:
+      - name: captureId
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: ^[a-f0-9]{32}$
+      responses:
+        '200':
+          description: Projection status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastProjection'
+        '400':
+          description: Rejected or unavailable; state must not be inferred from failed reads.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Rejected or unavailable; state must not be inferred from failed reads.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Rejected or unavailable; state must not be inferred from failed reads.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Rejected or unavailable; state must not be inferred from failed reads.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Rejected or unavailable; state must not be inferred from failed reads.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Rejected or unavailable; state must not be inferred from failed reads.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /priv/recording-captures/{captureId}/preview-grant:
+    post:
+      operationId: grantRecordingBroadcastPreview
+      summary: Issue isolated staff preview playback
+      tags:
+      - Private
+      x-hhc-visibility: private
+      x-hhc-callers:
+      - hhc-web-api
+      security:
+      - daprCaller: []
+      parameters:
+      - name: captureId
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: ^[a-f0-9]{32}$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BroadcastPreviewGrantInput'
+      responses:
+        '200':
+          description: Isolated staff preview grant
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastPreviewGrant'
+        '400':
+          description: Request rejected or preview unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Request rejected or preview unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Request rejected or preview unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Request rejected or preview unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Request rejected or preview unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Request rejected or preview unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+components:
+  securitySchemes:
+    daprCaller:
+      type: apiKey
+      in: header
+      name: dapr-api-token
+      description: Dapr app-channel token with the authenticated Dapr caller identity.
+    workloadPrincipal:
+      type: apiKey
+      in: header
+      name: X-MS-CLIENT-PRINCIPAL
+      description: Validated Azure workload principal. The configured LINE workload principal maps to `hhc-line-function-bot`.
+    gatewayDaprCaller:
+      type: apiKey
+      in: header
+      name: dapr-api-token
+      description: Valid Dapr app-channel token and Dapr-Caller-App-Id exactly `api-gateway`.
+    gatewayTrustedIdentity:
+      type: apiKey
+      in: header
+      name: X-HHC-User-ID
+      description: Gateway-injected identity. X-HHC-User-ID and X-HHC-Token-Expires-At are required; X-HHC-Role-IDs
+        optionally carries deduplicated immutable Account role UUIDs. X-HHC-Token-ID, X-HHC-Session-ID, and X-HHC-Auth-Provider
+        remain optional trusted context. Reader authorization is active collection ACL only.
+  parameters:
+    RecordingActorID:
+      name: X-HHC-Actor-ID
+      in: header
+      required: true
+      schema:
+        type: string
+        format: uuid
+  schemas:
+    BroadcastPreviewGrant:
+      type: object
+      additionalProperties: false
+      required:
+      - recordingId
+      - captureId
+      - epoch
+      - purpose
+      - scope
+      - mediaPath
+      - exchangeCredential
+      - issuedAt
+      - expiresAt
+      properties:
+        recordingId:
+          type: string
+          format: uuid
+        captureId:
+          type: string
+          pattern: ^[a-f0-9]{32}$
+        epoch:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        purpose:
+          type: string
+          enum:
+          - staff-preview
+        scope:
+          type: string
+          format: uuid
+        mediaPath:
+          type: string
+          description: Only /videos/{recordingId}/captures/{captureId}/previews/{scope}/master.m3u8; cookie sibling.
+            Cannot exchange or read a member sessions URL.
+        exchangeCredential:
+          type: string
+        issuedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+    BroadcastPreviewGrantInput:
+      type: object
+      additionalProperties: false
+      required:
+      - recordingId
+      - epoch
+      - userId
+      - playbackScopeId
+      - expiresAt
+      properties:
+        recordingId:
+          type: string
+          format: uuid
+        epoch:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        userId:
+          type: string
+          format: uuid
+          description: Authenticated staff user; CMS enforces current staff authorization.
+        playbackScopeId:
+          type: string
+          format: uuid
+        expiresAt:
+          type: string
+          format: date-time
+    BroadcastProjection:
+      type: object
+      additionalProperties: false
+      required:
+      - epoch
+      - rangeRevision
+      - state
+      - startSequence
+      - endSequenceExclusive
+      - mediaStartSeconds
+      - durationSeconds
+      - revision
+      properties:
+        epoch:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        rangeRevision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        state:
+          type: string
+          enum:
+          - pending
+          - ready
+          - failed
+        startSequence:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+          maximum: 2147483647
+        endSequenceExclusive:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+          maximum: 2147483647
+        mediaStartSeconds:
+          type:
+          - number
+          - 'null'
+          minimum: 0
+        durationSeconds:
+          type:
+          - number
+          - 'null'
+          minimum: 0
+        revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+    BroadcastRangeInput:
+      type: object
+      additionalProperties: false
+      required:
+      - recordingId
+      - epoch
+      - rangeRevision
+      - startSequence
+      - endSequenceExclusive
+      - revoked
+      properties:
+        recordingId:
+          type: string
+          format: uuid
+        epoch:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        rangeRevision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        startSequence:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+          maximum: 2147483647
+        endSequenceExclusive:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+          maximum: 2147483647
+        revoked:
+          type: boolean
+        memberState:
+          type: string
+          enum:
+          - live
+          - blocked
+          - vod
+          default: blocked
+          description: CMS-owned member admission; absent denies member bytes. Live permits the verified range intersection;
+            vod additionally permits published package playback.
+    ErrorResponse:
+      type: object
+      required:
+      - error
+      properties:
+        error:
+          type: object
+          required:
+          - code
+          - message
+          properties:
+            code:
+              type: string
+              enum:
+              - AST_INVALID_REQUEST
+              - AST_INVALID_RANGE
+              - AST_INVALID_TICKET
+              - AST_UNAUTHORIZED
+              - AST_FORBIDDEN
+              - AST_NOT_FOUND
+              - AST_CONFLICT
+              - AST_NOT_READY
+              - AST_INTERNAL
+              - asset-not-ready
+              - quota-exceeded
+            message:
+              type: string
+            data:
+              type: object
+              additionalProperties: true
+    RecordingCaptureCreateInput:
+      type: object
+      additionalProperties: false
+      required:
+      - recordingId
+      - operationKey
+      properties:
+        broadcastEpoch:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+          description: Private CMS B1 binding epoch. Omit for unchanged legacy C1 intake. Present initializes deny-all
+            range revision 1 before successful create.
+        recordingId:
+          type: string
+          format: uuid
+        operationKey:
+          type: string
+          pattern: ^[a-zA-Z0-9._:-]{1,128}$
+    RecordingCaptureErrorResponse:
+      type: object
+      additionalProperties: false
+      required:
+      - error
+      properties:
+        error:
+          $ref: '#/components/schemas/RecordingCaptureError'
+    RecordingCaptureError:
+      type: object
+      additionalProperties: false
+      required:
+      - code
+      - message
+      properties:
+        code:
+          type: string
+          enum:
+          - capture_invalid
+          - capture_unauthorized
+          - capture_forbidden
+          - capture_not_found
+          - capture_conflict
+          - capture_missing_objects
+          - capture_expired
+          - capture_too_large
+          - capture_rate_limited
+          - capture_unavailable
+        message:
+          type: string
+    RecordingCaptureResult:
+      type: object
+      additionalProperties: false
+      required:
+      - capture
+      - receipt
+      properties:
+        capture:
+          $ref: '#/components/schemas/RecordingCaptureStatus'
+        receipt:
+          $ref: '#/components/schemas/RecordingCaptureReceipt'
+    RecordingCaptureReceipt:
+      type: object
+      additionalProperties: false
+      required:
+      - operationKey
+      - operation
+      - acceptedAt
+      - captureId
+      properties:
+        operationKey:
+          type: string
+          pattern: ^[a-zA-Z0-9._:-]{1,128}$
+        operation:
+          type: string
+          enum:
+          - create
+          - declare
+          - confirm
+          - stop
+          - seal
+          - abort
+          - cancel_auto_publish
+          - close_live
+        acceptedAt:
+          type: string
+          format: date-time
+          description: UTC RFC3339 timestamp emitted with Z suffix.
+        captureId:
+          type: string
+          pattern: ^[a-f0-9]{32}$
+    RecordingCaptureStatus:
+      type: object
+      additionalProperties: false
+      required:
+      - captureId
+      - recordingId
+      - state
+      - createdAt
+      - expiresAt
+      - declaredBytes
+      - declaredObjects
+      - objects
+      - nextCursor
+      - packageId
+      - terminalAt
+      - terminalReason
+      - progress
+      properties:
+        captureId:
+          type: string
+          pattern: ^[a-f0-9]{32}$
+        recordingId:
+          type: string
+          format: uuid
+        state:
+          type: string
+          enum:
+          - uploading
+          - freezing
+          - validating
+          - ready
+          - failed
+          - expired
+          - aborted
+        createdAt:
+          type: string
+          format: date-time
+          description: UTC RFC3339 timestamp emitted with Z suffix.
+        expiresAt:
+          type: string
+          format: date-time
+          description: UTC RFC3339 timestamp emitted with Z suffix.
+        declaredBytes:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 10000000000
+        declaredObjects:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 10000
+        objects:
+          type: array
+          minItems: 0
+          maxItems: 1000
+          items:
+            $ref: '#/components/schemas/RecordingCaptureObjectStatus'
+        nextCursor:
+          type: string
+          maxLength: 128
+        packageId:
+          type:
+          - string
+          - 'null'
+          pattern: ^[a-f0-9]{32}$
+        terminalAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: UTC RFC3339 timestamp emitted with Z suffix.
+        terminalReason:
+          type:
+          - string
+          - 'null'
+          maxLength: 128
+        progress:
+          $ref: '#/components/schemas/RecordingLiveProgress'
+    RecordingCaptureObjectStatus:
+      type: object
+      additionalProperties: false
+      required:
+      - path
+      - sizeBytes
+      - sha256
+      - state
+      properties:
+        path:
+          type: string
+          pattern: ^(master\.m3u8|(480p|720p|1080p)/(index\.m3u8|init\.mp4|seg-[0-9]{6}\.m4s))$
+        sizeBytes:
+          type: integer
+          minimum: 1
+          maximum: 134217728
+        sha256:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        state:
+          type: string
+          enum:
+          - declared
+          - queued
+          - verified
+          - failed
+    RecordingLiveProgress:
+      type: object
+      additionalProperties: false
+      required:
+      - revision
+      - firstSequence
+      - lastSequence
+      - mediaEndSeconds
+      - lastAdvancedAt
+      - endedAt
+      - ended
+      properties:
+        revision:
+          type: integer
+          format: int64
+          minimum: 0
+        firstSequence:
+          type: integer
+          const: 0
+        lastSequence:
+          type: integer
+          minimum: -1
+          maximum: 1439
+        mediaEndSeconds:
+          type: number
+          minimum: 0
+          maximum: 43200
+        lastAdvancedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: UTC RFC3339 timestamp emitted with Z suffix.
+        endedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: UTC RFC3339 timestamp emitted with Z suffix.
+        ended:
+          type: boolean

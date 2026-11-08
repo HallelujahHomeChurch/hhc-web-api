@@ -1,0 +1,283 @@
+openapi: 3.1.0
+info:
+  title: HHC B1 private Asset candidate
+  version: b1-2026-10-10.rc1
+servers:
+- url: http://localhost:8080
+  description: Private development surface only
+paths:
+  /priv/recording-captures/{captureId}/broadcast-range:
+    put:
+      operationId: setRecordingBroadcastRange
+      summary: setRecordingBroadcastRange
+      description: B1 private producer candidate only. CMS caller; scope and range
+        revision changes are durable and idempotent. Acknowledgement does not prove
+        projection publication. No runtime route exists at M0.
+      tags:
+      - Private
+      x-hhc-visibility: private
+      x-hhc-callers:
+      - hhc-web-api
+      x-hhc-cache: private, no-store
+      security:
+      - daprCaller: []
+      parameters:
+      - name: captureId
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: ^[a-f0-9]{32}$
+      responses:
+        '200':
+          description: Accepted durable range
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastRangeInput'
+        '400':
+          description: Rejected or unavailable; state must not be inferred from failed
+            reads.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Rejected or unavailable; state must not be inferred from failed
+            reads.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Rejected or unavailable; state must not be inferred from failed
+            reads.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Rejected or unavailable; state must not be inferred from failed
+            reads.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Rejected or unavailable; state must not be inferred from failed
+            reads.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Rejected or unavailable; state must not be inferred from failed
+            reads.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BroadcastRangeInput'
+  /priv/recording-captures/{captureId}/broadcast-projection:
+    get:
+      operationId: getRecordingBroadcastProjection
+      summary: getRecordingBroadcastProjection
+      description: B1 private producer candidate only. CMS caller; scope and range
+        revision changes are durable and idempotent. Acknowledgement does not prove
+        projection publication. No runtime route exists at M0.
+      tags:
+      - Private
+      x-hhc-visibility: private
+      x-hhc-callers:
+      - hhc-web-api
+      x-hhc-cache: private, no-store
+      security:
+      - daprCaller: []
+      parameters:
+      - name: captureId
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: ^[a-f0-9]{32}$
+      responses:
+        '200':
+          description: Projection status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastProjection'
+        '400':
+          description: Rejected or unavailable; state must not be inferred from failed
+            reads.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Rejected or unavailable; state must not be inferred from failed
+            reads.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Rejected or unavailable; state must not be inferred from failed
+            reads.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Rejected or unavailable; state must not be inferred from failed
+            reads.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Rejected or unavailable; state must not be inferred from failed
+            reads.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Rejected or unavailable; state must not be inferred from failed
+            reads.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+components:
+  schemas:
+    BroadcastRangeInput:
+      type: object
+      additionalProperties: false
+      required:
+      - recordingId
+      - epoch
+      - rangeRevision
+      - startSequence
+      - endSequenceExclusive
+      - revoked
+      properties:
+        recordingId:
+          type: string
+          format: uuid
+        epoch:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        rangeRevision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        startSequence:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+          maximum: 2147483647
+        endSequenceExclusive:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+          maximum: 2147483647
+        revoked:
+          type: boolean
+    BroadcastProjection:
+      type: object
+      additionalProperties: false
+      required:
+      - epoch
+      - rangeRevision
+      - state
+      - startSequence
+      - endSequenceExclusive
+      - mediaStartSeconds
+      - durationSeconds
+      - revision
+      properties:
+        epoch:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        rangeRevision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        state:
+          type: string
+          enum:
+          - pending
+          - ready
+          - failed
+        startSequence:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+          maximum: 2147483647
+        endSequenceExclusive:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+          maximum: 2147483647
+        mediaStartSeconds:
+          type:
+          - number
+          - 'null'
+          minimum: 0
+        durationSeconds:
+          type:
+          - number
+          - 'null'
+          minimum: 0
+        revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+    ErrorResponse:
+      type: object
+      required:
+      - error
+      properties:
+        error:
+          type: object
+          required:
+          - code
+          - message
+          properties:
+            code:
+              type: string
+              enum:
+              - AST_INVALID_REQUEST
+              - AST_INVALID_RANGE
+              - AST_INVALID_TICKET
+              - AST_UNAUTHORIZED
+              - AST_FORBIDDEN
+              - AST_NOT_FOUND
+              - AST_CONFLICT
+              - AST_NOT_READY
+              - AST_INTERNAL
+              - asset-not-ready
+              - quota-exceeded
+            message:
+              type: string
+            data:
+              type: object
+              additionalProperties: true
+  securitySchemes:
+    daprCaller:
+      type: apiKey
+      in: header
+      name: dapr-api-token
+      description: Dapr app-channel token with the authenticated Dapr caller identity.

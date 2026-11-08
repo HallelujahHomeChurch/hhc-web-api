@@ -1,0 +1,29 @@
+{
+  "version": "s10-2026-10-18.rc2",
+  "status": "fixed-schema-supplement; deployment evidence is reported separately",
+  "baseContracts": {
+    "K4": "k4-2026-10-15.rc1",
+    "D1": "d1-2026-10-17.rc2",
+    "B1": "b1-2026-10-10.rc1",
+    "C1": "c1-2026-10-08.2",
+    "inventorySchema": 1
+  },
+  "assetSource": {
+    "commit": "196f35e666ec50699306c39d516352b5ea23eeba",
+    "openapiSHA256": "c136800dbeb25d8a3b15ef0ad339650d3ba6195596932b20eb2dcb1a4302a0aa"
+  },
+  "files": {
+    "docs/obs-capture/ten-second-v1/rc2/asset.openapi.snapshot.yaml": "1011b00785af8da4051f529f2cb2bff04f11f12352471b20c971a3bd9f906199",
+    "docs/obs-capture/ten-second-v1/rc2/cms.openapi.snapshot.yaml": "b9ae8320535133f0d3fc92b1e3f0898e3218b45710d6d7cbfc97e2a0cd48458f",
+    "docs/obs-capture/ten-second-v1/rc2/contract.md": "05427d60479d10ece164bbd19d7f055003af5d194475c158aa04bc0f3ae8e953",
+    "docs/obs-capture/ten-second-v1/rc2/fixtures.json": "8b48000e84ac2ffafb8b73bb27deece1337e0f577de9ab6d223d1b73db2bb9b9"
+  },
+  "frozen": {
+    "docs/obs-capture/ten-second-v1/contract.md": "e2c1bbd8cb1ff0db6803bed1ae83471f621e2de67f78e64205e939cc3ed1b70f",
+    "docs/obs-capture/ten-second-v1/cms.openapi.snapshot.yaml": "7ef0410f3bb064c8bc755748b47536cf99d1a07dec0db5a87d9e0785251e67c7",
+    "docs/obs-capture/ten-second-v1/asset.openapi.snapshot.yaml": "72a268564e6f8d27d0e8bcff5231b1df9f6ba54432eecc67b412702dd66927f7",
+    "docs/obs-capture/direct-signal-v1/rc2/contract.md": "e499e4b4c7c668b16a373c2c1b5676a83472bf1bb148c5ccef6e645e4428c57d",
+    "docs/obs-capture/direct-signal-v1/rc2/openapi.snapshot.yaml": "4e090d1ea961a448112c9ffdf596b0ab837ccb7f367fc05c102d5c0e24f5021d",
+    "docs/obs-capture/direct-signal-v1/rc2/fixtures.json": "8d677562a90dfdf6731a1666d2ce9254a79a681f685a871d2bb8740ff0d6d65b"
+  }
+}

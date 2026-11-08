@@ -1,0 +1,14 @@
+.git
+.env
+.data
+coverage.out
+**/node_modules
+# Go build excludes these files; host race tests still execute every test.
+**/*_test.go
+
+# Exclude nested checkout metadata, local credentials and build-only renderer source.
+**/.git
+.renderer-source
+**/.npmrc
+**/.env
+**/.env.*

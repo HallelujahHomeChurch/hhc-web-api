@@ -1,0 +1,1 @@
+CREATE INDEX member_recording_capture_scope_subject ON hhc_web.member_recording_capture_scope(user_id,capture_intent_id,scope_id);

@@ -1,0 +1,21 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://github.com/HallelujahHomeChurch/hhc-web-api/vex/lightning-2.6.6-CVE-2026-58659",
+  "author": "HallelujahHomeChurch",
+  "timestamp": "2026-09-11T10:32:34.801602+00:00",
+  "version": 1,
+  "statements": [
+    {
+      "vulnerability": {
+        "name": "CVE-2026-58659"
+      },
+      "products": [
+        {
+          "@id": "pkg:pypi/lightning@2.6.6"
+        }
+      ],
+      "status": "fixed",
+      "status_notes": "PyPA PYSEC-2026-3624 marks 2.6.6 fixed. The pinned wheel includes the upstream d710d689510d50e800f53b3cd773cbca20b1f86f instantiator allowlist and subsequent type/class-path guards. RuntimeTests.test_lightning_fixed_checkpoint_guards validates the actual installed loader before image scanning. See .vex/README.md for evidence."
+    }
+  ]
+}

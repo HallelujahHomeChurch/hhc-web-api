@@ -1,0 +1,24 @@
+{
+  "resources": {
+    "hhc-web-api": {
+      "BULLETIN_LLM_EXTRACTION_ENABLED": {
+        "value": "true"
+      },
+      "AZURE_OPENAI_DEPLOYMENT": {
+        "value": "hhc-content-ai"
+      }
+    },
+    "hhc-web-bulletin-worker": {},
+    "hhc-web-bulletin-watermark": {},
+    "hhc-web-migrate": {},
+    "hhc-web-content-import": {},
+    "hhc-web-bulletin-extractor": {
+      "BULLETIN_LLM_EXTRACTION_ENABLED": {
+        "value": "true"
+      },
+      "AZURE_OPENAI_DEPLOYMENT": {
+        "value": "hhc-content-ai"
+      }
+    }
+  }
+}

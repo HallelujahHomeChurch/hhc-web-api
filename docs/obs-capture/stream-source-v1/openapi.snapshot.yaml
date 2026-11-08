@@ -1,0 +1,954 @@
+openapi: 3.1.0
+info:
+  title: K2 reusable broadcast source
+  version: k2-2026-10-14.rc1
+servers:
+- url: https://admin.alive.org.tw/api
+paths:
+  /admin/broadcast-source:
+    get:
+      operationId: getBroadcastSource
+      summary: getBroadcastSource
+      description: 'K2 singleton reusable source; human OAuth required. All secrets
+        stay in the request body. No schedule guessing or C1 fallback. See docs/obs-capture/stream-source-v1/contract.md.
+        Invalid credential: 403 broadcast_stream_key_invalid. No eligible target:
+        409 broadcast_source_not_prepared. Occupied input: 409 broadcast_source_busy.
+        Revision mismatch: 412 broadcast_revision_conflict. Stale replay: 409 broadcast_operation_conflict.
+        Bind requires publish permission when the locked policy has autoStart or autoPublish;
+        503 retries keep identical input and operation key.'
+      tags:
+      - Admin
+      x-hhc-visibility: admin
+      x-hhc-callers:
+      - api-gateway
+      x-hhc-cache: private, no-store
+      security:
+      - daprApiToken: []
+        daprCallerAppId: []
+        trustedUserId: []
+        trustedAuthProvider: []
+        trustedScopes: []
+      servers:
+      - url: https://admin.alive.org.tw/api
+      x-required-scopes:
+      - cms:recordings:read
+      responses:
+        '200':
+          description: Current operation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastSourceEnvelope'
+        '400':
+          $ref: '#/components/responses/BroadcastStreamKeyFailure'
+        '401':
+          $ref: '#/components/responses/AdminUnauthorized'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/BroadcastStreamKeyFailure'
+        '409':
+          $ref: '#/components/responses/BroadcastStreamKeyFailure'
+        '412':
+          $ref: '#/components/responses/BroadcastStreamKeyFailure'
+        '422':
+          $ref: '#/components/responses/BroadcastStreamKeyFailure'
+        '429':
+          $ref: '#/components/responses/BroadcastStreamKeyFailure'
+        '503':
+          $ref: '#/components/responses/BroadcastStreamKeyFailure'
+  /admin/broadcast-source/stream-key:
+    put:
+      operationId: setBroadcastSourceStreamKey
+      summary: setBroadcastSourceStreamKey
+      description: 'K2 singleton reusable source; human OAuth required. All secrets
+        stay in the request body. No schedule guessing or C1 fallback. See docs/obs-capture/stream-source-v1/contract.md.
+        Invalid credential: 403 broadcast_stream_key_invalid. No eligible target:
+        409 broadcast_source_not_prepared. Occupied input: 409 broadcast_source_busy.
+        Revision mismatch: 412 broadcast_revision_conflict. Stale replay: 409 broadcast_operation_conflict.
+        Bind requires publish permission when the locked policy has autoStart or autoPublish;
+        503 retries keep identical input and operation key.'
+      tags:
+      - Admin
+      x-hhc-visibility: admin
+      x-hhc-callers:
+      - api-gateway
+      x-hhc-cache: private, no-store
+      security:
+      - daprApiToken: []
+        daprCallerAppId: []
+        trustedUserId: []
+        trustedAuthProvider: []
+        trustedScopes: []
+      servers:
+      - url: https://admin.alive.org.tw/api
+      x-required-scopes:
+      - cms:recordings:write
+      - cms:recordings:publish
+      responses:
+        '200':
+          description: Current operation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastSourceEnvelope'
+        '400':
+          $ref: '#/components/responses/BroadcastStreamKeyFailure'
+        '401':
+          $ref: '#/components/responses/AdminUnauthorized'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/BroadcastStreamKeyFailure'
+        '409':
+          $ref: '#/components/responses/BroadcastStreamKeyFailure'
+        '412':
+          $ref: '#/components/responses/BroadcastStreamKeyFailure'
+        '422':
+          $ref: '#/components/responses/BroadcastStreamKeyFailure'
+        '429':
+          $ref: '#/components/responses/BroadcastStreamKeyFailure'
+        '503':
+          $ref: '#/components/responses/BroadcastStreamKeyFailure'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BroadcastSourceStreamKeyInput'
+  /admin/broadcast-source/target:
+    put:
+      operationId: setBroadcastSourceTarget
+      summary: setBroadcastSourceTarget
+      description: 'K2 singleton reusable source; human OAuth required. All secrets
+        stay in the request body. No schedule guessing or C1 fallback. See docs/obs-capture/stream-source-v1/contract.md.
+        Invalid credential: 403 broadcast_stream_key_invalid. No eligible target:
+        409 broadcast_source_not_prepared. Occupied input: 409 broadcast_source_busy.
+        Revision mismatch: 412 broadcast_revision_conflict. Stale replay: 409 broadcast_operation_conflict.
+        Bind requires publish permission when the locked policy has autoStart or autoPublish;
+        503 retries keep identical input and operation key.'
+      tags:
+      - Admin
+      x-hhc-visibility: admin
+      x-hhc-callers:
+      - api-gateway
+      x-hhc-cache: private, no-store
+      security:
+      - daprApiToken: []
+        daprCallerAppId: []
+        trustedUserId: []
+        trustedAuthProvider: []
+        trustedScopes: []
+      servers:
+      - url: https://admin.alive.org.tw/api
+      x-required-scopes:
+      - cms:recordings:write
+      - cms:recordings:publish
+      responses:
+        '200':
+          description: Current operation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastSourceEnvelope'
+        '400':
+          $ref: '#/components/responses/BroadcastStreamKeyFailure'
+        '401':
+          $ref: '#/components/responses/AdminUnauthorized'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/BroadcastStreamKeyFailure'
+        '409':
+          $ref: '#/components/responses/BroadcastStreamKeyFailure'
+        '412':
+          $ref: '#/components/responses/BroadcastStreamKeyFailure'
+        '422':
+          $ref: '#/components/responses/BroadcastStreamKeyFailure'
+        '429':
+          $ref: '#/components/responses/BroadcastStreamKeyFailure'
+        '503':
+          $ref: '#/components/responses/BroadcastStreamKeyFailure'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BroadcastSourceTargetInput'
+  /admin/broadcast-source/resolve:
+    post:
+      operationId: resolveBroadcastSource
+      summary: resolveBroadcastSource
+      description: 'K2 singleton reusable source; human OAuth required. All secrets
+        stay in the request body. No schedule guessing or C1 fallback. See docs/obs-capture/stream-source-v1/contract.md.
+        Invalid credential: 403 broadcast_stream_key_invalid. No eligible target:
+        409 broadcast_source_not_prepared. Occupied input: 409 broadcast_source_busy.
+        Revision mismatch: 412 broadcast_revision_conflict. Stale replay: 409 broadcast_operation_conflict.
+        Bind requires publish permission when the locked policy has autoStart or autoPublish;
+        503 retries keep identical input and operation key.'
+      tags:
+      - Admin
+      x-hhc-visibility: admin
+      x-hhc-callers:
+      - api-gateway
+      x-hhc-cache: private, no-store
+      security:
+      - daprApiToken: []
+        daprCallerAppId: []
+        trustedUserId: []
+        trustedAuthProvider: []
+        trustedScopes: []
+      servers:
+      - url: https://admin.alive.org.tw/api
+      x-required-scopes:
+      - cms:recordings:read
+      responses:
+        '200':
+          description: Current operation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastSourceResolvedEnvelope'
+        '400':
+          $ref: '#/components/responses/BroadcastStreamKeyFailure'
+        '401':
+          $ref: '#/components/responses/AdminUnauthorized'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/BroadcastStreamKeyFailure'
+        '409':
+          $ref: '#/components/responses/BroadcastStreamKeyFailure'
+        '412':
+          $ref: '#/components/responses/BroadcastStreamKeyFailure'
+        '422':
+          $ref: '#/components/responses/BroadcastStreamKeyFailure'
+        '429':
+          $ref: '#/components/responses/BroadcastStreamKeyFailure'
+        '503':
+          $ref: '#/components/responses/BroadcastStreamKeyFailure'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BroadcastSourceResolveInput'
+  /admin/broadcast-source/bindings:
+    post:
+      operationId: bindBroadcastSource
+      summary: bindBroadcastSource
+      description: 'K2 singleton reusable source; human OAuth required. All secrets
+        stay in the request body. No schedule guessing or C1 fallback. See docs/obs-capture/stream-source-v1/contract.md.
+        Invalid credential: 403 broadcast_stream_key_invalid. No eligible target:
+        409 broadcast_source_not_prepared. Occupied input: 409 broadcast_source_busy.
+        Revision mismatch: 412 broadcast_revision_conflict. Stale replay: 409 broadcast_operation_conflict.
+        Bind requires publish permission when the locked policy has autoStart or autoPublish;
+        503 retries keep identical input and operation key.'
+      tags:
+      - Admin
+      x-hhc-visibility: admin
+      x-hhc-callers:
+      - api-gateway
+      x-hhc-cache: private, no-store
+      security:
+      - daprApiToken: []
+        daprCallerAppId: []
+        trustedUserId: []
+        trustedAuthProvider: []
+        trustedScopes: []
+      servers:
+      - url: https://admin.alive.org.tw/api
+      x-required-scopes:
+      - cms:recordings:write
+      responses:
+        '200':
+          description: Current operation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastMutationResultEnvelope'
+        '400':
+          $ref: '#/components/responses/BroadcastStreamKeyFailure'
+        '401':
+          $ref: '#/components/responses/AdminUnauthorized'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/BroadcastStreamKeyFailure'
+        '409':
+          $ref: '#/components/responses/BroadcastStreamKeyFailure'
+        '412':
+          $ref: '#/components/responses/BroadcastStreamKeyFailure'
+        '422':
+          $ref: '#/components/responses/BroadcastStreamKeyFailure'
+        '429':
+          $ref: '#/components/responses/BroadcastStreamKeyFailure'
+        '503':
+          $ref: '#/components/responses/BroadcastStreamKeyFailure'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BroadcastSourceBindInput'
+components:
+  schemas:
+    BroadcastSourceEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+      - data
+      - meta
+      - error
+      properties:
+        data:
+          $ref: '#/components/schemas/BroadcastSource'
+        meta:
+          type: object
+          additionalProperties: true
+        error:
+          type: 'null'
+    BroadcastSource:
+      type: object
+      additionalProperties: false
+      required:
+      - revision
+      - configured
+      - canRotate
+      - inputBusy
+      - suffix
+      - targetRecordingId
+      properties:
+        revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        configured:
+          type: boolean
+        canRotate:
+          type: boolean
+        inputBusy:
+          type: boolean
+        suffix:
+          anyOf:
+          - type: string
+            pattern: ^[A-Za-z0-9_-]{4}$
+          - type: 'null'
+        targetRecordingId:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+    BroadcastStreamKeyErrorEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+      - data
+      - meta
+      - error
+      properties:
+        data:
+          type: 'null'
+        meta:
+          type: object
+          additionalProperties: true
+        error:
+          type: object
+          additionalProperties: false
+          required:
+          - code
+          - message
+          properties:
+            code:
+              type: string
+              enum:
+              - broadcast_stream_key_invalid
+              - broadcast_invalid
+              - broadcast_not_found
+              - broadcast_state_conflict
+              - broadcast_already_bound
+              - broadcast_active_limit
+              - broadcast_epoch_mismatch
+              - broadcast_boundary_conflict
+              - broadcast_operation_conflict
+              - broadcast_revision_conflict
+              - broadcast_protocol_unsupported
+              - unauthorized
+              - forbidden
+              - rate_limited
+              - unavailable
+            message:
+              type: string
+    ErrorEnvelope:
+      type: object
+      required:
+      - data
+      - meta
+      - error
+      properties:
+        data:
+          type:
+          - 'null'
+        meta:
+          type: object
+          additionalProperties: true
+        error:
+          $ref: '#/components/schemas/ErrorBody'
+    ErrorBody:
+      type: object
+      required:
+      - code
+      - message
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+    BroadcastSourceStreamKeyInput:
+      type: object
+      additionalProperties: false
+      required:
+      - operationKey
+      - expectedSourceRevision
+      - streamKey
+      properties:
+        operationKey:
+          type: string
+          pattern: ^[a-zA-Z0-9._:-]{1,128}$
+        expectedSourceRevision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        streamKey:
+          type: string
+          writeOnly: true
+          pattern: ^hhc_stream_[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$
+          description: Canonical 32 CSPRNG bytes. Never log or persist raw value;
+            OBS uses OS credential storage.
+    BroadcastSourceTargetInput:
+      type: object
+      additionalProperties: false
+      required:
+      - operationKey
+      - expectedSourceRevision
+      - recordingId
+      - expectedRevision
+      properties:
+        operationKey:
+          type: string
+          pattern: ^[a-zA-Z0-9._:-]{1,128}$
+        expectedSourceRevision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        recordingId:
+          type: string
+          format: uuid
+        expectedRevision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+    BroadcastSourceResolvedEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+      - data
+      - meta
+      - error
+      properties:
+        data:
+          $ref: '#/components/schemas/BroadcastSourceResolved'
+        meta:
+          type: object
+          additionalProperties: true
+        error:
+          type: 'null'
+    BroadcastSourceResolved:
+      type: object
+      additionalProperties: false
+      required:
+      - sourceRevision
+      - recordingId
+      - broadcastRevision
+      properties:
+        sourceRevision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        recordingId:
+          type: string
+          format: uuid
+        broadcastRevision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+    BroadcastSourceResolveInput:
+      type: object
+      additionalProperties: false
+      required:
+      - streamKey
+      properties:
+        streamKey:
+          type: string
+          writeOnly: true
+          pattern: ^hhc_stream_[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$
+          description: Canonical 32 CSPRNG bytes. Never log or persist raw value;
+            OBS uses OS credential storage.
+    BroadcastMutationResultEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+      - data
+      - meta
+      - error
+      properties:
+        data:
+          $ref: '#/components/schemas/BroadcastMutationResult'
+        meta:
+          type: object
+          additionalProperties: true
+        error:
+          type: 'null'
+    BroadcastMutationResult:
+      type: object
+      additionalProperties: false
+      required:
+      - broadcast
+      - receipt
+      properties:
+        broadcast:
+          $ref: '#/components/schemas/BroadcastView'
+        receipt:
+          $ref: '#/components/schemas/BroadcastReceipt'
+    BroadcastView:
+      type: object
+      additionalProperties: false
+      required:
+      - recordingId
+      - revision
+      - phase
+      - announced
+      - scheduledAt
+      - title
+      - description
+      - policy
+      - cover
+      - binding
+      - boundaries
+      - health
+      - pendingCommand
+      - archive
+      properties:
+        recordingId:
+          type: string
+          format: uuid
+        revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        phase:
+          type: string
+          enum:
+          - draft
+          - scheduled
+          - preview
+          - start_pending
+          - live
+          - end_pending
+          - processing
+          - archived
+          - cancelled
+          - failed
+        announced:
+          type: boolean
+        scheduledAt:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+        title:
+          type: string
+          minLength: 1
+          maxLength: 180
+        description:
+          $ref: '#/components/schemas/RecordingDescription'
+        policy:
+          $ref: '#/components/schemas/BroadcastPolicy'
+        cover:
+          $ref: '#/components/schemas/LiveCoverSettings'
+        binding:
+          anyOf:
+          - $ref: '#/components/schemas/BroadcastBinding'
+          - type: 'null'
+        boundaries:
+          $ref: '#/components/schemas/BroadcastBoundaries'
+        health:
+          $ref: '#/components/schemas/BroadcastHealth'
+        pendingCommand:
+          anyOf:
+          - $ref: '#/components/schemas/BroadcastCommand'
+          - type: 'null'
+        archive:
+          $ref: '#/components/schemas/BroadcastArchive'
+    RecordingDescription:
+      type: string
+      maxLength: 5000
+      pattern: ^[^\x00]*$
+      description: Optional plain-text video description; Unicode code points, no
+        HTML rendering. Omission preserves the saved value on update; an empty string
+        clears it.
+    BroadcastPolicy:
+      type: object
+      additionalProperties: false
+      required:
+      - autoStart
+      - autoEnd
+      - autoPublish
+      properties:
+        autoStart:
+          type: boolean
+        autoEnd:
+          type: boolean
+        autoPublish:
+          type: boolean
+    LiveCoverSettings:
+      type: object
+      additionalProperties: false
+      required:
+      - revision
+      - selection
+      - coverState
+      properties:
+        revision:
+          type: integer
+          minimum: 1
+          format: int64
+        selection:
+          $ref: '#/components/schemas/LiveCoverSelection'
+        coverState:
+          type: string
+          enum:
+          - none
+          - waiting
+          - pending
+          - ready
+          - failed
+        coverId:
+          type: string
+          maxLength: 128
+        contentPath:
+          type: string
+          pattern: ^/api/admin/recordings/
+        inheritedRevision:
+          type: integer
+          minimum: 1
+          format: int64
+    LiveCoverSelection:
+      oneOf:
+      - type: object
+        additionalProperties: false
+        required:
+        - mode
+        properties:
+          mode:
+            type: string
+            enum:
+            - auto
+      - type: object
+        additionalProperties: false
+        required:
+        - mode
+        - uploadId
+        properties:
+          mode:
+            type: string
+            enum:
+            - custom
+          uploadId:
+            type: string
+            pattern: ^[A-Za-z0-9-]{1,128}$
+    BroadcastBinding:
+      type: object
+      additionalProperties: false
+      required:
+      - captureId
+      - epoch
+      - actorId
+      properties:
+        captureId:
+          type: string
+          pattern: ^[a-f0-9]{32}$
+        epoch:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        actorId:
+          type: string
+          format: uuid
+    BroadcastBoundaries:
+      type: object
+      additionalProperties: false
+      required:
+      - startSequence
+      - endSequenceExclusive
+      - revision
+      properties:
+        startSequence:
+          anyOf:
+          - type: integer
+            minimum: 0
+            maximum: 2147483647
+          - type: 'null'
+        endSequenceExclusive:
+          anyOf:
+          - type: integer
+            minimum: 0
+            maximum: 2147483647
+          - type: 'null'
+        revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+    BroadcastHealth:
+      type: object
+      additionalProperties: false
+      required:
+      - state
+      - lastConfirmedAt
+      - lastPublishedAt
+      - verifiedEndSeconds
+      - queuedObjects
+      - reason
+      properties:
+        state:
+          type: string
+          enum:
+          - waiting
+          - healthy
+          - interrupted
+          - recovering
+        lastConfirmedAt:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+        lastPublishedAt:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+        verifiedEndSeconds:
+          anyOf:
+          - type: number
+            minimum: 0
+          - type: 'null'
+        queuedObjects:
+          anyOf:
+          - type: integer
+            minimum: 0
+          - type: 'null'
+        reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+    BroadcastCommand:
+      type: object
+      additionalProperties: false
+      required:
+      - commandId
+      - kind
+      - captureId
+      - epoch
+      - requestedAt
+      - status
+      - boundarySequence
+      properties:
+        commandId:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum:
+          - start
+          - end
+        captureId:
+          type: string
+          pattern: ^[a-f0-9]{32}$
+        epoch:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        requestedAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum:
+          - pending
+          - acknowledged
+          - cancelled
+          - rejected
+        boundarySequence:
+          anyOf:
+          - type: integer
+            minimum: 0
+            maximum: 2147483647
+          - type: 'null'
+    BroadcastArchive:
+      type: object
+      additionalProperties: false
+      required:
+      - state
+      - reason
+      properties:
+        state:
+          type: string
+          enum:
+          - none
+          - processing
+          - ready
+          - published
+          - failed
+        reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+    BroadcastReceipt:
+      type: object
+      additionalProperties: false
+      required:
+      - operationKey
+      - operation
+      - state
+      properties:
+        operationKey:
+          type: string
+          pattern: ^[a-zA-Z0-9._:-]{1,128}$
+        operation:
+          type: string
+          enum:
+          - create
+          - update
+          - announce
+          - cancel
+          - bind
+          - start
+          - end
+          - cancel-command
+          - ack
+          - emergency-close
+        state:
+          type: string
+          enum:
+          - accepted
+          - completed
+          - rejected
+        commandId:
+          type: string
+          format: uuid
+    BroadcastSourceBindInput:
+      type: object
+      additionalProperties: false
+      required:
+      - streamKey
+      - operationKey
+      - expectedSourceRevision
+      - recordingId
+      - expectedRevision
+      - protocolVersion
+      properties:
+        streamKey:
+          type: string
+          writeOnly: true
+          pattern: ^hhc_stream_[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$
+          description: Canonical 32 CSPRNG bytes. Never log or persist raw value;
+            OBS uses OS credential storage.
+        operationKey:
+          type: string
+          pattern: ^[a-zA-Z0-9._:-]{1,128}$
+        expectedSourceRevision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        recordingId:
+          type: string
+          format: uuid
+        expectedRevision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        protocolVersion:
+          type: string
+          minLength: 1
+          maxLength: 64
+  responses:
+    BroadcastStreamKeyFailure:
+      description: K1 failure; unauthorized or wrong key never bypasses OAuth, actor,
+        epoch or active-capture fencing.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/BroadcastStreamKeyErrorEnvelope'
+    AdminUnauthorized:
+      description: Trusted gateway identity is missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    AdminForbidden:
+      description: The trusted Account identity lacks a required scope.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+  securitySchemes:
+    daprApiToken:
+      type: apiKey
+      in: header
+      name: dapr-api-token
+      description: Dapr API token supplied by api-gateway; the value is never published
+        in this contract.
+    daprCallerAppId:
+      type: apiKey
+      in: header
+      name: Dapr-Caller-App-Id
+      description: Must identify the configured api-gateway Dapr application.
+    trustedUserId:
+      type: apiKey
+      in: header
+      name: X-HHC-User-ID
+      description: Sanitized Account user identifier injected by api-gateway.
+    trustedAuthProvider:
+      type: apiKey
+      in: header
+      name: X-HHC-Auth-Provider
+      description: Must be account-api.
+    trustedPrincipalId:
+      type: apiKey
+      in: header
+      name: X-HHC-Principal-ID
+      description: Sanitized service principal UUID injected by api-gateway; never
+        accepted directly from clients.
+    trustedPrincipalType:
+      type: apiKey
+      in: header
+      name: X-HHC-Principal-Type
+      description: Must be service for the service-principal security alternative.
+        Human identity retains trustedUserId.
+    trustedClientId:
+      type: apiKey
+      in: header
+      name: X-HHC-Client-ID
+      description: Sanitized Account client identifier injected by api-gateway.
+    trustedCredentialId:
+      type: apiKey
+      in: header
+      name: X-HHC-Credential-ID
+      description: Sanitized service credential UUID injected by api-gateway; this
+        is an identifier, never a secret.
+    trustedScopes:
+      type: apiKey
+      in: header
+      name: X-HHC-Scopes
+      description: Sanitized Account scopes injected by api-gateway and enforced per
+        operation.

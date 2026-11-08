@@ -1,0 +1,147 @@
+[
+  {
+    "name": "s10-last-sequence",
+    "schema": "RecordingLiveProgress",
+    "valid": true,
+    "value": {
+      "revision": 4320,
+      "firstSequence": 0,
+      "lastSequence": 4319,
+      "mediaEndSeconds": 43200,
+      "lastAdvancedAt": "2026-10-18T00:00:00Z",
+      "endedAt": null,
+      "ended": false
+    }
+  },
+  {
+    "name": "last-sequence-overflow",
+    "schema": "RecordingLiveProgress",
+    "valid": false,
+    "value": {
+      "revision": 4320,
+      "firstSequence": 0,
+      "lastSequence": 4320,
+      "mediaEndSeconds": 43200,
+      "lastAdvancedAt": "2026-10-18T00:00:00Z",
+      "endedAt": null,
+      "ended": false
+    }
+  },
+  {
+    "name": "legacy-last-sequence",
+    "schema": "RecordingLiveProgress",
+    "valid": true,
+    "value": {
+      "revision": 4320,
+      "firstSequence": 0,
+      "lastSequence": 1439,
+      "mediaEndSeconds": 43200,
+      "lastAdvancedAt": "2026-10-18T00:00:00Z",
+      "endedAt": null,
+      "ended": false
+    }
+  },
+  {
+    "name": "no-media-yet",
+    "schema": "RecordingLiveProgress",
+    "valid": true,
+    "value": {
+      "revision": 0,
+      "firstSequence": 0,
+      "lastSequence": -1,
+      "mediaEndSeconds": 0,
+      "lastAdvancedAt": null,
+      "endedAt": null,
+      "ended": false
+    }
+  },
+  {
+    "name": "duration-overflow",
+    "schema": "RecordingLiveProgress",
+    "valid": false,
+    "value": {
+      "revision": 4320,
+      "firstSequence": 0,
+      "lastSequence": 4319,
+      "mediaEndSeconds": 43200.001,
+      "lastAdvancedAt": "2026-10-18T00:00:00Z",
+      "endedAt": null,
+      "ended": false
+    }
+  },
+  {
+    "name": "s10-segment-ceiling",
+    "schema": "RecordingRendition",
+    "valid": true,
+    "value": {
+      "name": "720p",
+      "width": 1280,
+      "height": 720,
+      "frameRate": 29.97002997002997,
+      "videoBitrate": 1500000,
+      "audioBitrate": 128000,
+      "durationSeconds": 43200,
+      "segmentCount": 4320
+    }
+  },
+  {
+    "name": "segment-overflow",
+    "schema": "RecordingRendition",
+    "valid": false,
+    "value": {
+      "name": "720p",
+      "width": 1280,
+      "height": 720,
+      "frameRate": 29.97002997002997,
+      "videoBitrate": 1500000,
+      "audioBitrate": 128000,
+      "durationSeconds": 43200,
+      "segmentCount": 4321
+    }
+  },
+  {
+    "name": "legacy-segment-ceiling",
+    "schema": "RecordingRendition",
+    "valid": true,
+    "value": {
+      "name": "720p",
+      "width": 1280,
+      "height": 720,
+      "frameRate": 29.97002997002997,
+      "videoBitrate": 1500000,
+      "audioBitrate": 128000,
+      "durationSeconds": 43200,
+      "segmentCount": 1440
+    }
+  },
+  {
+    "name": "zero-segments",
+    "schema": "RecordingRendition",
+    "valid": false,
+    "value": {
+      "name": "720p",
+      "width": 1280,
+      "height": 720,
+      "frameRate": 29.97002997002997,
+      "videoBitrate": 1500000,
+      "audioBitrate": 128000,
+      "durationSeconds": 43200,
+      "segmentCount": 0
+    }
+  },
+  {
+    "name": "duration-overflow",
+    "schema": "RecordingRendition",
+    "valid": false,
+    "value": {
+      "name": "720p",
+      "width": 1280,
+      "height": 720,
+      "frameRate": 29.97002997002997,
+      "videoBitrate": 1500000,
+      "audioBitrate": 128000,
+      "durationSeconds": 43200.001,
+      "segmentCount": 4320
+    }
+  }
+]

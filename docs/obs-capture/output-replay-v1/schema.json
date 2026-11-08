@@ -1,0 +1,337 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.alive.org.tw/obs/output-replay-v1/k5-2026-10-20.rc1/schema.json",
+  "title": "K5 authenticated original-output replay PREVIEW; not deployed",
+  "$defs": {
+    "BroadcastOutputReplayReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operationKey",
+        "operation",
+        "state"
+      ],
+      "properties": {
+        "operationKey": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9._:-]{1,128}$"
+        },
+        "operation": {
+          "const": "bind"
+        },
+        "state": {
+          "const": "completed"
+        },
+        "commandId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          }
+        }
+      }
+    },
+    "BroadcastIngestSession": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "token",
+        "expiresAt",
+        "recordingId",
+        "captureId",
+        "epoch"
+      ],
+      "properties": {
+        "token": {
+          "type": "string",
+          "readOnly": true,
+          "maxLength": 2048,
+          "pattern": "^hhc_ingest_[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "recordingId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "captureId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{32}$"
+        },
+        "epoch": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "BroadcastOutputReplayInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protocolVersion",
+        "outputSessionId",
+        "sourceId",
+        "recordingId",
+        "captureId",
+        "epoch",
+        "receipt",
+        "streamKey"
+      ],
+      "properties": {
+        "protocolVersion": {
+          "const": "k5-2026-10-20.rc1"
+        },
+        "outputSessionId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          }
+        },
+        "sourceId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          }
+        },
+        "recordingId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          }
+        },
+        "captureId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{32}$"
+        },
+        "epoch": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "mediaProfile": {
+          "type": "string",
+          "enum": [
+            "obs-hls-10s-v1"
+          ]
+        },
+        "receipt": {
+          "$ref": "#/$defs/BroadcastOutputReplayReceipt"
+        },
+        "streamKey": {
+          "type": "string",
+          "writeOnly": true,
+          "pattern": "^hhc_stream_[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"
+        }
+      }
+    },
+    "BroadcastOutputReplayActive": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protocolVersion",
+        "outputSessionId",
+        "sourceId",
+        "recordingId",
+        "captureId",
+        "epoch",
+        "receipt",
+        "state",
+        "session"
+      ],
+      "properties": {
+        "protocolVersion": {
+          "const": "k5-2026-10-20.rc1"
+        },
+        "outputSessionId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          }
+        },
+        "sourceId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          }
+        },
+        "recordingId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          }
+        },
+        "captureId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{32}$"
+        },
+        "epoch": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "mediaProfile": {
+          "type": "string",
+          "enum": [
+            "obs-hls-10s-v1"
+          ]
+        },
+        "receipt": {
+          "$ref": "#/$defs/BroadcastOutputReplayReceipt"
+        },
+        "state": {
+          "const": "active"
+        },
+        "session": {
+          "$ref": "#/$defs/BroadcastIngestSession"
+        }
+      }
+    },
+    "BroadcastOutputReplayTerminal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protocolVersion",
+        "outputSessionId",
+        "sourceId",
+        "recordingId",
+        "captureId",
+        "epoch",
+        "receipt",
+        "state"
+      ],
+      "properties": {
+        "protocolVersion": {
+          "const": "k5-2026-10-20.rc1"
+        },
+        "outputSessionId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          }
+        },
+        "sourceId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          }
+        },
+        "recordingId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          }
+        },
+        "captureId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{32}$"
+        },
+        "epoch": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "mediaProfile": {
+          "type": "string",
+          "enum": [
+            "obs-hls-10s-v1"
+          ]
+        },
+        "receipt": {
+          "$ref": "#/$defs/BroadcastOutputReplayReceipt"
+        },
+        "state": {
+          "const": "terminal"
+        }
+      }
+    },
+    "BroadcastOutputReplayEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "data",
+        "meta",
+        "error"
+      ],
+      "properties": {
+        "data": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/BroadcastOutputReplayActive"
+            },
+            {
+              "$ref": "#/$defs/BroadcastOutputReplayTerminal"
+            }
+          ]
+        },
+        "meta": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "error": {
+          "type": "null"
+        }
+      }
+    },
+    "BroadcastOutputReplayErrorEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "data",
+        "meta",
+        "error"
+      ],
+      "properties": {
+        "data": {
+          "type": "null"
+        },
+        "meta": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "error": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "code",
+            "message"
+          ],
+          "properties": {
+            "code": {
+              "type": "string",
+              "minLength": 1
+            },
+            "message": {
+              "type": "string"
+            },
+            "details": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,12 @@
+.git
+.env
+.data
+coverage.out
+**/node_modules
+**/*_test.go
+!internal/**/*_test.go
+**/.git
+.renderer-source
+**/.npmrc
+**/.env
+**/.env.*
