@@ -113,7 +113,20 @@ func TestMemberBroadcastDurationHTTPContract(t *testing.T) {
 		broadcast: recordings.Broadcast{Epoch: 1, MemberState: "vod", RangeApplied: 5, View: recordings.BroadcastView{Announced: true, Boundaries: recordings.BroadcastBoundaries{Revision: 5, StartSequence: &start, EndSequenceExclusive: &end}}, Projection: &assetclient.BroadcastProjection{Epoch: 1, RangeRevision: 5, StartSequence: &start, EndSequenceExclusive: &end, State: "ready", DurationSeconds: &duration}},
 	}
 	asset := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(assetclient.RecordingPackageStatus{PackageID: pkg, SessionID: pkg, RecordingID: id, State: "ready", ReadyAt: &uploaded, MediaExpiresAt: &expiry, Renditions: []assetclient.RecordingRendition{{Name: "480p", DurationSeconds: 1785.3836}}})
+		p := assetclient.RecordingPackageStatus{PackageID: pkg, SessionID: pkg, RecordingID: id, State: "ready", ReadyAt: &uploaded, MediaExpiresAt: &expiry, Renditions: []assetclient.RecordingRendition{{Name: "480p", DurationSeconds: 1785.3836}}}
+		if r.Method == "POST" && r.URL.Path == "/priv/recording-packages/ready-batch" {
+			var input struct {
+				Items []assetclient.RecordingLifecycleBinding
+			}
+			if json.NewDecoder(r.Body).Decode(&input) != nil || len(input.Items) != 1 || input.Items[0].PackageID != pkg || input.Items[0].RecordingID != id {
+				t.Error("wrong ready batch binding")
+				w.WriteHeader(500)
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]any{"items": []assetclient.RecordingReadyResult{{RecordingLifecycleBinding: input.Items[0], Status: "ready", Package: &p}}})
+			return
+		}
+		json.NewEncoder(w).Encode(p)
 	}))
 	defer asset.Close()
 	handler := NewWithContent(nil, nil, nil, nil, "api-gateway", "", true).WithRecordings(recordings.NewService(repo, "", nil, func() time.Time { return now }).WithPackages(assetclient.New(asset.URL, "hhc-web-api", "")))

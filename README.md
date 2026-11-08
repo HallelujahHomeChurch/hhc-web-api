@@ -1127,6 +1127,12 @@ use schema3 with digest-only image identities. Same-SHA retries must preserve
 those digests; previous successful releases must be ancestors of the requested
 source, preventing an old release from overwriting a newer accepted deployment.
 Missing or incompatible checkpoints require full extractor verification.
+Successful environment-only or documentation-only releases do not replace the
+last image checkpoint. Their complete job metadata must prove that deployment,
+acceptance and sealing were skipped; unknown or failed releases still fail closed.
+Runtime override manifests are excluded from native inputs; reuse still requires
+matching runtime and verification fingerprints. Recording source changes retain
+full native verification through the extractor's PostgreSQL dependencies.
 
 Environment-specific deployment targets and credential-version pins are protected
 environment secrets; cross-job outputs carry digests and reconstruct exact private
@@ -1327,7 +1333,16 @@ lifecycle, list query, package calls, projection and serialization work; DB and
 Asset client operations accumulate even below individual slow thresholds. These
 are overlapping work durations, not additive wall time. Implicit SQL checkout
 and uninstrumented handler work remain unknown; global pool deltas are explicitly
-all-request counters. No batching, parallelization, caching or deadline changes.
+all-request counters.
+
+Paginated member recording lists synchronize lifecycle before SQL pagination,
+then fetch canonical ready projections for the page in one bounded Asset batch
+(at most 100 recording/package pairs). The lookahead stays outside that batch;
+per-item missing/denied media can be omitted while the cursor still advances.
+Whole-request, protocol and cancellation failures fail the page. SQL reads remain
+per item, and the existing lifecycle HTTP call remains. Legacy non-paginated
+lists, playback, watch and heartbeat keep the single ready path. No cache,
+parallelization, retention, pool or deadline changes are introduced.
 
 ## Azure bulletin conversion
 

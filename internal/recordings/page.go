@@ -56,12 +56,48 @@ func (s *Service) ListPage(ctx context.Context, cursor string, limit int, query 
 		next = base64.RawURLEncoding.EncodeToString(data)
 	}
 	items := make([]Recording, 0, len(values))
+	candidates := make([]Recording, 0, len(values))
+	bindings := make([]assetclient.RecordingLifecycleBinding, 0, len(values))
 	for _, value := range values {
 		if !value.Visible(s.now()) {
 			continue
 		}
-		duration, err := s.memberDuration(ctx, value)
+		candidates = append(candidates, value)
+		bindings = append(bindings, assetclient.RecordingLifecycleBinding{RecordingID: value.ID, PackageID: value.PackageID})
+	}
+	if len(bindings) == 0 {
+		return items, next, nil
+	}
+	if s.packages == nil {
+		return nil, "", assetclient.ErrUnavailable
+	}
+	packageDone := diagnostics.StartRequestPhase(ctx, "package_calls")
+	ready, err := s.packages.GetReadyRecordingPackages(ctx, bindings)
+	packageDone()
+	if err != nil {
+		return nil, "", err
+	}
+	// Validate the entire response before applying any package projection.
+	for _, result := range ready {
+		if result.Status == "ready" && !s.validReadyPackage(result.RecordingID, result.PackageID, *result.Package) {
+			return nil, "", assetclient.ErrUnavailable
+		}
+	}
+	for i, value := range candidates {
+		if ready[i].Status != "ready" {
+			continue
+		}
+		// SQL expiry can predate an extension; applyReadyPackage checks Asset's current expiry.
+		pkg := *ready[i].Package
+		err := s.applyReadyPackage(ctx, value, pkg)
 		if errors.Is(err, assetclient.ErrNotFound) || errors.Is(err, assetclient.ErrForbidden) || errors.Is(err, ErrConflict) {
+			continue
+		}
+		if err != nil {
+			return nil, "", err
+		}
+		duration, err := s.memberPackageDuration(ctx, value, pkg)
+		if errors.Is(err, ErrConflict) {
 			continue
 		}
 		if err != nil {
@@ -79,6 +115,10 @@ func (s *Service) memberDuration(ctx context.Context, value Recording) (float64,
 	if err != nil {
 		return 0, err
 	}
+	return s.memberPackageDuration(ctx, value, pkg)
+}
+
+func (s *Service) memberPackageDuration(ctx context.Context, value Recording, pkg assetclient.RecordingPackageStatus) (float64, error) {
 	if value.Broadcast {
 		repo, err := s.broadcastRepository()
 		if err != nil {

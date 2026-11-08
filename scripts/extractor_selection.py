@@ -58,6 +58,8 @@ def ci_required(diff):
         # Main packages are absent from both native acceptance binaries' dependency graphs.
         if re.fullmatch(r'cmd/(server|migrate|content-import|home-v2-migrate)/[a-z0-9_]+\.go', path):
             continue
+        if path == 'infra/runtime-env.json':
+            continue  # Serving overrides are absent from native build/test inputs.
         if DOCS.document(path):
             continue
         return True
