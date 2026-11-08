@@ -905,7 +905,7 @@ run_openapi_publication_case() {
       ;;
   esac
 
-  if output="$(POINTER_CASE_DIR="$case_dir" WORKFLOW_BODY="$workflow_body" GITHUB_RUN_ID="$candidate_run_id" GITHUB_SHA=0123456789abcdef0123456789abcdef01234567 GITHUB_REPOSITORY=HallelujahHomeChurch/hhc-web-api RELEASE_COMMIT=0123456789abcdef0123456789abcdef01234567 RELEASE_IMAGE_DIGEST=sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef FAIL_OPENAPI_BEFORE_POINTER="$failure_injection" bash -e -c '
+  if output="$(POINTER_CASE_DIR="$case_dir" WORKFLOW_BODY="$workflow_body" GITHUB_RUN_ID="$candidate_run_id" GITHUB_SHA=0123456789abcdef0123456789abcdef01234567 GITHUB_REPOSITORY=HallelujahHomeChurch/hhc-web-api RELEASE_COMMIT=0123456789abcdef0123456789abcdef01234567 RELEASE_IMAGE_DIGEST=sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef RELEASE_IMAGE=example.azurecr.io/example/hhc-web-api@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef FAIL_OPENAPI_BEFORE_POINTER="$failure_injection" bash -e -c '
     az() {
       command="$1 $2 $3"
       name=""
@@ -955,6 +955,15 @@ run_openapi_publication_case() {
     pointer_uploaded=true
   fi
 
+  if [ "$pointer_uploaded" = true ]; then
+    python3 - "$case_dir/pointer/current.json" <<'PYPOINTER'
+import json,sys
+record=json.load(open(sys.argv[1]))
+assert set(record)=={'schemaVersion','service','commit','image','specBlob','specSha256','releaseUrl','publishedAt'}
+assert record['schemaVersion']==1 and record['service']=='hhc-web-api'
+assert record['image']=='example.azurecr.io/example/hhc-web-api@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+PYPOINTER
+  fi
   case "$expected" in
     upload)
       test "$status" -eq 0

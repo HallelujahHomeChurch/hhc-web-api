@@ -28,6 +28,10 @@ inputs, logs or artifacts. Initial identity/vault/role provisioning is a separat
 operator task requiring an exact reviewed preview; ordinary releases never grant
 new permissions.
 
+The existing private API catalog pointer retains its exact schema1 fields and
+complete image reference. The publisher reconstructs that reference from the
+digest inside the protected job; it is never a public GitHub job output.
+
 `hhc_web` keeps DML only. `hhc_web_migrate` owns the database, schema, tables, sequences, and migration history. The two credentials and managed identities use separate Key Vaults.
 
 Keep the legacy secret and policy through the first rollback window. After cleanup, confirm the normal production `what-if` has no delete before starting a code release.

@@ -1121,6 +1121,8 @@ jobs:
       RELEASE_DEPLOYMENT_RUN: ${{ needs.public_acceptance.outputs.deployment-run }}
       RELEASE_COMMIT: ${{ needs.public_acceptance.outputs.commit }}
       RELEASE_IMAGE_DIGEST: ${{ needs.public_acceptance.outputs.image_digest }}
+      # The private catalog's fixed schema1 still requires the complete reference.
+      RELEASE_IMAGE: ${{ format('{0}/{1}@{2}', secrets.ACR_LOGIN_SERVER, secrets.IMAGE_REPOSITORY, needs.public_acceptance.outputs.image_digest) }}
       FAIL_OPENAPI_BEFORE_POINTER: ${{ inputs.fail_openapi_before_pointer && github.run_attempt == 1 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1190,12 +1192,12 @@ jobs:
           jq -n \
             --arg service hhc-web-api \
             --arg commit "$RELEASE_COMMIT" \
-            --arg image "$RELEASE_IMAGE_DIGEST" \
+            --arg image "$RELEASE_IMAGE" \
             --arg specBlob "$spec_blob" \
             --arg specSha256 "$spec_sha256" \
             --arg releaseUrl "https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
             --arg publishedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            '{schemaVersion: 1, service: $service, commit: $commit, image: $image, imageDigest: $image, specBlob: $specBlob, specSha256: $specSha256, releaseUrl: $releaseUrl, publishedAt: $publishedAt}' \
+            '{schemaVersion: 1, service: $service, commit: $commit, image: $image, specBlob: $specBlob, specSha256: $specSha256, releaseUrl: $releaseUrl, publishedAt: $publishedAt}' \
             > current.json
 
           if [[ "$FAIL_OPENAPI_BEFORE_POINTER" == "true" ]]; then
