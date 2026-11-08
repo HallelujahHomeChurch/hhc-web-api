@@ -86,8 +86,9 @@ handler timeout. PostgreSQL tests cover blocked pool checkout and a table-locked
 projection query, cancellation and successful reuse after the blocker is released.
 
 Connection budgets are per process, not per Dapr request. The release template sets
-the API pool to 20 open / 10 idle connections (the standalone configuration default
-is 10 / 5), with 1–12 replicas: up to 240 API connections per active revision. The
+the API pool to 10 open / 5 idle connections (also the standalone default),
+with 1–12 replicas: up to 120 API connections per active revision. The API rejects
+an open limit above this proposed envelope; worker limits are separate. The
 watermark worker Event Job runs up to 20 executions with a 1 / 1 pool each on the
 `hhc_web_jobs` login (the rollback-only persistent App keeps 2 / 1). Each extractor execution
 caps its pool at 2 / 1; each migration/import CLI caps it at 1 / 1. Count simultaneous

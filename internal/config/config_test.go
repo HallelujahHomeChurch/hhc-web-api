@@ -53,15 +53,15 @@ func TestWorkerConfigNeedsNoDaprTokenAndDefaultsToSmallPool(t *testing.T) {
 
 func TestDatabasePoolConfiguration(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://example")
-	t.Setenv("DB_MAX_OPEN_CONNS", "20")
-	t.Setenv("DB_MAX_IDLE_CONNS", "10")
+	t.Setenv("DB_MAX_OPEN_CONNS", "10")
+	t.Setenv("DB_MAX_IDLE_CONNS", "5")
 	t.Setenv("DB_CONN_MAX_LIFETIME", "20m")
 
 	cfg, err := Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.DBMaxOpenConns != 20 || cfg.DBMaxIdleConns != 10 || cfg.DBConnMaxLifetime.String() != "20m0s" {
+	if cfg.DBMaxOpenConns != 10 || cfg.DBMaxIdleConns != 5 || cfg.DBConnMaxLifetime.String() != "20m0s" {
 		t.Fatalf("unexpected pool config: %#v", cfg)
 	}
 }
@@ -402,5 +402,14 @@ func TestFullRecognitionProducerSwitchIsExplicit(t *testing.T) {
 				t.Fatal("producer switch not explicit", err)
 			}
 		})
+	}
+}
+
+func TestAPIPoolRejectsBudgetOverflow(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://example")
+	t.Setenv("DB_MAX_OPEN_CONNS", "11")
+	t.Setenv("DB_MAX_IDLE_CONNS", "5")
+	if _, err := Load(); err == nil {
+		t.Fatal("API pool above reviewed budget accepted")
 	}
 }
