@@ -1,0 +1,114 @@
+{
+  "version": "k4-2026-10-15.rc1",
+  "status": "required scenarios, not execution evidence",
+  "scenarios": [
+    {
+      "id": "direct_no_console",
+      "given": "authorized direct source, no Console open",
+      "when": "new output opens",
+      "expect": "one event and completed binding; valid media auto-public; no local title"
+    },
+    {
+      "id": "console_open_race",
+      "given": "same source",
+      "when": "Console ensure and OBS open race",
+      "expect": "same waiting event; one capture"
+    },
+    {
+      "id": "response_lost",
+      "given": "server committed open but response lost",
+      "when": "retry same output ID",
+      "expect": "same event/capture/epoch/receipt; newly issued session allowed"
+    },
+    {
+      "id": "partial_bind",
+      "given": "Asset response unknown after durable intent",
+      "when": "request retries",
+      "expect": "reconcile original intent; never expire slot blindly or create another capture"
+    },
+    {
+      "id": "same_key_race",
+      "given": "two distinct output IDs, same key",
+      "when": "simultaneous open",
+      "expect": "one binding; other source_busy"
+    },
+    {
+      "id": "different_key_capacity",
+      "given": "two keys, capacity 1",
+      "when": "simultaneous open",
+      "expect": "one admitted; other capacity_exhausted"
+    },
+    {
+      "id": "scheduled_precedence",
+      "given": "prepared scheduled event and direct enabled",
+      "when": "new output opens",
+      "expect": "scheduled preview; Console Start required regardless of schedule time"
+    },
+    {
+      "id": "future_schedule",
+      "given": "future event references key but not prepared",
+      "when": "new direct output opens",
+      "expect": "future event does not occupy input"
+    },
+    {
+      "id": "end_retry",
+      "given": "original output transport has settled after Stop/seal or completed abort",
+      "when": "old open retries",
+      "expect": "terminal; no new event"
+    },
+    {
+      "id": "next_start",
+      "given": "prior Stop and seal accepted, archive processing",
+      "when": "explicit fresh Start",
+      "expect": "new ID and event, prior upload/status remains pinned; existing actor processing quota still applies"
+    },
+    {
+      "id": "crash_resume",
+      "given": "saved K4 output and session",
+      "when": "process restart",
+      "expect": "same capture; no new ID or target resolution"
+    },
+    {
+      "id": "legacy_journal",
+      "given": "existing K3 journal at upgrade",
+      "when": "resume",
+      "expect": "legacy recovery unchanged; no K4 open"
+    },
+    {
+      "id": "revoked_delegate",
+      "given": "source delegate permission removed",
+      "when": "open or renew",
+      "expect": "fail closed; preserve media; no replacement event"
+    },
+    {
+      "id": "never_public",
+      "given": "preview ended before public Start",
+      "when": "archive ready",
+      "expect": "no automatic public projection"
+    },
+    {
+      "id": "deleted_original",
+      "given": "consumed output event later deleted",
+      "when": "same output opens",
+      "expect": "terminal; durable identity tombstone prevents recreation"
+    },
+    {
+      "id": "rotated_source",
+      "given": "source key rotated after release",
+      "when": "old output ID sent with new key",
+      "expect": "does not resurrect consumed output"
+    },
+    {
+      "id": "cancel_uncertain",
+      "given": "local cancellation after open timeout",
+      "when": "recover same ID",
+      "expect": "resolve original binding and clean up; never discard uncertain remote intent"
+    },
+    {
+      "id": "end_before_first_response",
+      "given": "open binding committed, response lost, Console End accepted",
+      "when": "same output ID retries before Stop/seal",
+      "expect": "original completed binding/session; sender completes original Stop/seal, no new event"
+    }
+  ]
+}

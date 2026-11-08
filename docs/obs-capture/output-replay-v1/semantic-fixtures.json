@@ -1,0 +1,271 @@
+{
+  "version": "k5-2026-10-20.rc1",
+  "scope": "Semantic contract fixtures only; no DB/producer test executed",
+  "matrix": [
+    {
+      "name": "normal fully bound input active",
+      "sourceAuthenticated": true,
+      "originalIdentityProfileReceiptMatched": true,
+      "originalLedgerExists": true,
+      "exactOriginalCaptureExists": true,
+      "inputActive": true,
+      "flags": [],
+      "expectedState": "active",
+      "expectedBusinessProviderOutboxWrites": 0,
+      "action": "read only; never clear input, abort, rebind, create or delete old queue"
+    },
+    {
+      "name": "deleted alone still owns input",
+      "sourceAuthenticated": true,
+      "originalIdentityProfileReceiptMatched": true,
+      "originalLedgerExists": true,
+      "exactOriginalCaptureExists": true,
+      "inputActive": true,
+      "flags": [
+        "deleted"
+      ],
+      "expectedState": "unknown",
+      "expectedBusinessProviderOutboxWrites": 0,
+      "action": "read only; never clear input, abort, rebind, create or delete old queue"
+    },
+    {
+      "name": "deleted plus exact durable release",
+      "sourceAuthenticated": true,
+      "originalIdentityProfileReceiptMatched": true,
+      "originalLedgerExists": true,
+      "exactOriginalCaptureExists": true,
+      "inputActive": false,
+      "flags": [
+        "deleted"
+      ],
+      "expectedState": "terminal",
+      "expectedBusinessProviderOutboxWrites": 0,
+      "action": "read only; never clear input, abort, rebind, create or delete old queue"
+    },
+    {
+      "name": "revoked alone still owns input",
+      "sourceAuthenticated": true,
+      "originalIdentityProfileReceiptMatched": true,
+      "originalLedgerExists": true,
+      "exactOriginalCaptureExists": true,
+      "inputActive": true,
+      "flags": [
+        "revoked"
+      ],
+      "expectedState": "unknown",
+      "expectedBusinessProviderOutboxWrites": 0,
+      "action": "read only; never clear input, abort, rebind, create or delete old queue"
+    },
+    {
+      "name": "revoked plus exact durable release",
+      "sourceAuthenticated": true,
+      "originalIdentityProfileReceiptMatched": true,
+      "originalLedgerExists": true,
+      "exactOriginalCaptureExists": true,
+      "inputActive": false,
+      "flags": [
+        "revoked"
+      ],
+      "expectedState": "terminal",
+      "expectedBusinessProviderOutboxWrites": 0,
+      "action": "read only; never clear input, abort, rebind, create or delete old queue"
+    },
+    {
+      "name": "capture_terminal alone still owns input",
+      "sourceAuthenticated": true,
+      "originalIdentityProfileReceiptMatched": true,
+      "originalLedgerExists": true,
+      "exactOriginalCaptureExists": true,
+      "inputActive": true,
+      "flags": [
+        "capture_terminal"
+      ],
+      "expectedState": "unknown",
+      "expectedBusinessProviderOutboxWrites": 0,
+      "action": "read only; never clear input, abort, rebind, create or delete old queue"
+    },
+    {
+      "name": "capture_terminal plus exact durable release",
+      "sourceAuthenticated": true,
+      "originalIdentityProfileReceiptMatched": true,
+      "originalLedgerExists": true,
+      "exactOriginalCaptureExists": true,
+      "inputActive": false,
+      "flags": [
+        "capture_terminal"
+      ],
+      "expectedState": "terminal",
+      "expectedBusinessProviderOutboxWrites": 0,
+      "action": "read only; never clear input, abort, rebind, create or delete old queue"
+    },
+    {
+      "name": "generation_retired alone still owns input",
+      "sourceAuthenticated": true,
+      "originalIdentityProfileReceiptMatched": true,
+      "originalLedgerExists": true,
+      "exactOriginalCaptureExists": true,
+      "inputActive": true,
+      "flags": [
+        "generation_retired"
+      ],
+      "expectedState": "unknown",
+      "expectedBusinessProviderOutboxWrites": 0,
+      "action": "read only; never clear input, abort, rebind, create or delete old queue"
+    },
+    {
+      "name": "generation_retired plus exact durable release",
+      "sourceAuthenticated": true,
+      "originalIdentityProfileReceiptMatched": true,
+      "originalLedgerExists": true,
+      "exactOriginalCaptureExists": true,
+      "inputActive": false,
+      "flags": [
+        "generation_retired"
+      ],
+      "expectedState": "terminal",
+      "expectedBusinessProviderOutboxWrites": 0,
+      "action": "read only; never clear input, abort, rebind, create or delete old queue"
+    },
+    {
+      "name": "normal sealed validating with accepted matching receipt",
+      "sourceAuthenticated": true,
+      "originalIdentityProfileReceiptMatched": true,
+      "originalLedgerExists": true,
+      "exactOriginalCaptureExists": true,
+      "inputActive": false,
+      "flags": [
+        "fully_evidenced_normal_seal"
+      ],
+      "expectedState": "terminal",
+      "expectedBusinessProviderOutboxWrites": 0,
+      "action": "read only; never clear input, abort, rebind, create or delete old queue"
+    },
+    {
+      "name": "local stop only no provider receipt",
+      "sourceAuthenticated": true,
+      "originalIdentityProfileReceiptMatched": true,
+      "originalLedgerExists": true,
+      "exactOriginalCaptureExists": true,
+      "inputActive": true,
+      "flags": [
+        "stopAcceptedAt"
+      ],
+      "expectedState": "active",
+      "expectedBusinessProviderOutboxWrites": 0,
+      "action": "read only; never clear input, abort, rebind, create or delete old queue",
+      "note": "If the original bind ledger/receipt remains fully proven and no conflicting terminal authority, continue ONLY original output; unfinished seal is not evidence to retire or allocate new input."
+    },
+    {
+      "name": "pending or missing seal receipt",
+      "sourceAuthenticated": true,
+      "originalIdentityProfileReceiptMatched": true,
+      "originalLedgerExists": true,
+      "exactOriginalCaptureExists": true,
+      "inputActive": true,
+      "flags": [
+        "NormalEnd",
+        "seal_pending_or_missing_receipt"
+      ],
+      "expectedState": "active",
+      "expectedBusinessProviderOutboxWrites": 0,
+      "action": "read only; never clear input, abort, rebind, create or delete old queue",
+      "note": "If the original bind ledger/receipt remains fully proven and no conflicting terminal authority, continue ONLY original output; unfinished seal is not evidence to retire or allocate new input."
+    },
+    {
+      "name": "historical deleted_at only still input active",
+      "sourceAuthenticated": true,
+      "originalIdentityProfileReceiptMatched": true,
+      "originalLedgerExists": true,
+      "exactOriginalCaptureExists": true,
+      "inputActive": true,
+      "flags": [
+        "deleted_at_only"
+      ],
+      "expectedState": "unknown",
+      "expectedBusinessProviderOutboxWrites": 0,
+      "action": "read only; never clear input, abort, rebind, create or delete old queue"
+    },
+    {
+      "name": "missing original capture not release proof",
+      "sourceAuthenticated": true,
+      "originalIdentityProfileReceiptMatched": true,
+      "originalLedgerExists": true,
+      "exactOriginalCaptureExists": false,
+      "inputActive": null,
+      "flags": [
+        "deleted"
+      ],
+      "expectedState": "unknown",
+      "expectedBusinessProviderOutboxWrites": 0,
+      "action": "read only; never clear input, abort, rebind, create or delete old queue"
+    },
+    {
+      "name": "missing original ledger not release proof",
+      "sourceAuthenticated": true,
+      "originalIdentityProfileReceiptMatched": true,
+      "originalLedgerExists": false,
+      "exactOriginalCaptureExists": true,
+      "inputActive": false,
+      "flags": [
+        "deleted"
+      ],
+      "expectedState": "unknown",
+      "expectedBusinessProviderOutboxWrites": 0,
+      "action": "read only; never clear input, abort, rebind, create or delete old queue"
+    },
+    {
+      "name": "input released but original pins/profile/receipt mismatch",
+      "sourceAuthenticated": false,
+      "originalIdentityProfileReceiptMatched": false,
+      "originalLedgerExists": true,
+      "exactOriginalCaptureExists": true,
+      "inputActive": false,
+      "flags": [],
+      "expectedState": "unknown",
+      "expectedBusinessProviderOutboxWrites": 0,
+      "action": "read only; never clear input, abort, rebind, create or delete old queue"
+    },
+    {
+      "name": "different capture released original still active",
+      "sourceAuthenticated": true,
+      "originalIdentityProfileReceiptMatched": true,
+      "originalLedgerExists": true,
+      "exactOriginalCaptureExists": true,
+      "inputActive": true,
+      "flags": [
+        "other_capture_input_false"
+      ],
+      "expectedState": "unknown",
+      "expectedBusinessProviderOutboxWrites": 0,
+      "action": "read only; never clear input, abort, rebind, create or delete old queue"
+    },
+    {
+      "name": "original input false while another output occupies global input",
+      "sourceAuthenticated": true,
+      "originalIdentityProfileReceiptMatched": true,
+      "originalLedgerExists": true,
+      "exactOriginalCaptureExists": true,
+      "inputActive": false,
+      "flags": [
+        "other_capture_input_true"
+      ],
+      "expectedState": "terminal",
+      "expectedBusinessProviderOutboxWrites": 0,
+      "action": "read only; never clear input, abort, rebind, create or delete old queue"
+    },
+    {
+      "name": "incomplete original bind intent or missing stable bind receipt",
+      "sourceAuthenticated": true,
+      "originalLedgerExists": true,
+      "fullyBound": false,
+      "stableOriginalBindReceiptMatched": false,
+      "exactOriginalCaptureExists": true,
+      "inputActive": false,
+      "expectedState": "unknown",
+      "expectedBusinessProviderOutboxWrites": 0,
+      "action": "Do not finish create/bind, invent receipt completion, or infer terminal; preserve original output"
+    }
+  ],
+  "terminalInvariant": "Authenticated exact original ledger/pins/profile/stable receipt AND same existing original capture.input_active == false; never infer false from row absence or terminal-looking labels",
+  "newStartInvariant": "Terminal releases only original client output; an explicit future new Start must still pass unchanged global input_active/prepared server guard. No old queue deletion."
+}

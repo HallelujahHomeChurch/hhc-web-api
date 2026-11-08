@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "minimumQuality": 0.9,
+  "retainedPayloads": {
+    "1000001100000101110110001110001100000000000010111001110010000": "receipt-a",
+    "1010100010100011110100001010001110011011111011101100000010100": "receipt-b"
+  },
+  "cases": [
+    {"id": "png", "transform": "png", "payload": "1000001100000101110110001110001100000000000010111001110010000", "expectedReceiptId": "receipt-a"},
+    {"id": "jpeg", "transform": "jpeg", "payload": "1000001100000101110110001110001100000000000010111001110010000", "expectedReceiptId": "receipt-a"},
+    {"id": "scale", "transform": "scale", "payload": "1000001100000101110110001110001100000000000010111001110010000", "expectedReceiptId": "receipt-a"},
+    {"id": "crop", "transform": "crop", "payload": "1000001100000101110110001110001100000000000010111001110010000", "expectedReceiptId": "receipt-a"},
+    {"id": "rotation", "transform": "rotation", "payload": "1000001100000101110110001110001100000000000010111001110010000", "expectedReceiptId": "receipt-a"},
+    {"id": "pdf-raster", "transform": "pdf_raster", "payload": "1000001100000101110110001110001100000000000010111001110010000", "expectedReceiptId": "receipt-a"},
+    {"id": "reader-screenshot", "transform": "screenshot", "payload": "1000001100000101110110001110001100000000000010111001110010000", "expectedReceiptId": "receipt-a"},
+    {"id": "line", "transform": "line", "payload": "1000001100000101110110001110001100000000000010111001110010000", "expectedReceiptId": "receipt-a"},
+    {"id": "first-only", "transform": "first_only", "payload": "1000001100000101110110001110001100000000000010111001110010000", "expectedReceiptId": "receipt-a"},
+    {"id": "multi-receipt", "transform": "multi_receipt", "payload": "1010100010100011110100001010001110011011111011101100000010100", "expectedReceiptId": "receipt-b"},
+    {"id": "unmarked", "transform": "unmarked", "payload": null, "expectedReceiptId": null},
+    {"id": "unrelated", "transform": "unrelated", "payload": null, "expectedReceiptId": null},
+    {"id": "damaged", "transform": "damaged", "payload": "1000001100000101110110001110001100000000000010111001110010000", "expectedReceiptId": null},
+    {"id": "unknown-payload", "transform": "unknown_payload", "payload": "1101011100111111101010111001111111111110100101000110110101101", "expectedReceiptId": null},
+    {"id": "wrong-issue", "transform": "wrong_issue", "payload": "1101011100111111101010111001111111111110100101000110110101101", "expectedReceiptId": null},
+    {"id": "copied-metadata", "transform": "copied_metadata", "payload": null, "expectedReceiptId": null}
+  ]
+}

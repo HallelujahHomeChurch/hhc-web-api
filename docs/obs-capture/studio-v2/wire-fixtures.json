@@ -1,0 +1,661 @@
+{
+  "version": "k4-2026-10-15.rc1",
+  "fixtures": [
+    {
+      "name": "open_without_console",
+      "schema": "BroadcastOutputOpenInput",
+      "valid": true,
+      "value": {
+        "protocolVersion": "k4-2026-10-15.rc1",
+        "outputSessionId": "018f0000-0000-4000-8000-000000000001",
+        "streamKey": "hhc_stream_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    {
+      "name": "missing_output",
+      "schema": "BroadcastOutputOpenInput",
+      "valid": false,
+      "value": {
+        "protocolVersion": "k4-2026-10-15.rc1",
+        "streamKey": "hhc_stream_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    {
+      "name": "not_uuid",
+      "schema": "BroadcastOutputOpenInput",
+      "valid": false,
+      "value": {
+        "protocolVersion": "k4-2026-10-15.rc1",
+        "outputSessionId": "../capture",
+        "streamKey": "hhc_stream_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    {
+      "name": "upper_uuid",
+      "schema": "BroadcastOutputOpenInput",
+      "valid": false,
+      "value": {
+        "protocolVersion": "k4-2026-10-15.rc1",
+        "outputSessionId": "AAAAAAAA-0000-4000-8000-000000000001",
+        "streamKey": "hhc_stream_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    {
+      "name": "nil_uuid",
+      "schema": "BroadcastOutputOpenInput",
+      "valid": false,
+      "value": {
+        "protocolVersion": "k4-2026-10-15.rc1",
+        "outputSessionId": "00000000-0000-0000-0000-000000000000",
+        "streamKey": "hhc_stream_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    {
+      "name": "old_protocol",
+      "schema": "BroadcastOutputOpenInput",
+      "valid": false,
+      "value": {
+        "protocolVersion": "k3-2026-10-14.rc1",
+        "outputSessionId": "018f0000-0000-4000-8000-000000000001",
+        "streamKey": "hhc_stream_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    {
+      "name": "bad_key",
+      "schema": "BroadcastOutputOpenInput",
+      "valid": false,
+      "value": {
+        "protocolVersion": "k4-2026-10-15.rc1",
+        "outputSessionId": "018f0000-0000-4000-8000-000000000001",
+        "streamKey": "bad"
+      }
+    },
+    {
+      "name": "metadata_forbidden",
+      "schema": "BroadcastOutputOpenInput",
+      "valid": false,
+      "value": {
+        "protocolVersion": "k4-2026-10-15.rc1",
+        "outputSessionId": "018f0000-0000-4000-8000-000000000001",
+        "streamKey": "hhc_stream_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "title": "test"
+      }
+    },
+    {
+      "name": "event_choice_forbidden",
+      "schema": "BroadcastOutputOpenInput",
+      "valid": false,
+      "value": {
+        "protocolVersion": "k4-2026-10-15.rc1",
+        "outputSessionId": "018f0000-0000-4000-8000-000000000001",
+        "streamKey": "hhc_stream_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "recordingId": "018f0000-0000-4000-8000-000000000002"
+      }
+    },
+    {
+      "name": "opened_direct",
+      "schema": "BroadcastOutputOpenedEnvelope",
+      "valid": true,
+      "value": {
+        "data": {
+          "protocolVersion": "k4-2026-10-15.rc1",
+          "outputSessionId": "018f0000-0000-4000-8000-000000000001",
+          "sourceId": "018f0000-0000-4000-8000-000000000004",
+          "broadcast": {
+            "recordingId": "018f0c1f-18d0-7e81-9f6f-69c456db7003",
+            "revision": 3,
+            "phase": "preview",
+            "announced": false,
+            "scheduledAt": null,
+            "title": "Sunday gathering",
+            "description": "",
+            "policy": {
+              "autoStart": true,
+              "autoEnd": true,
+              "autoPublish": true
+            },
+            "cover": {
+              "revision": 1,
+              "selection": {
+                "mode": "auto"
+              },
+              "coverState": "waiting"
+            },
+            "binding": {
+              "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "epoch": 1,
+              "actorId": "018f0000-0000-4000-8000-000000000003"
+            },
+            "boundaries": {
+              "startSequence": null,
+              "endSequenceExclusive": null,
+              "revision": 1
+            },
+            "health": {
+              "state": "waiting",
+              "lastConfirmedAt": null,
+              "lastPublishedAt": null,
+              "verifiedEndSeconds": null,
+              "queuedObjects": null,
+              "reason": null
+            },
+            "pendingCommand": null,
+            "archive": {
+              "state": "none",
+              "reason": null
+            }
+          },
+          "receipt": {
+            "operationKey": "018f0000-0000-4000-8000-000000000001.bind",
+            "operation": "bind",
+            "state": "completed"
+          },
+          "session": {
+            "token": "hhc_ingest_example.signature",
+            "expiresAt": "2026-10-15T00:15:00Z",
+            "recordingId": "018f0c1f-18d0-7e81-9f6f-69c456db7003",
+            "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "epoch": 1
+          }
+        },
+        "meta": {},
+        "error": null
+      }
+    },
+    {
+      "name": "opened_prepared_scheduled",
+      "schema": "BroadcastOutputOpenedEnvelope",
+      "valid": true,
+      "value": {
+        "data": {
+          "protocolVersion": "k4-2026-10-15.rc1",
+          "outputSessionId": "018f0000-0000-4000-8000-000000000001",
+          "sourceId": "018f0000-0000-4000-8000-000000000004",
+          "broadcast": {
+            "recordingId": "018f0c1f-18d0-7e81-9f6f-69c456db7003",
+            "revision": 3,
+            "phase": "preview",
+            "announced": false,
+            "scheduledAt": "2026-10-18T01:00:00Z",
+            "title": "Sunday gathering",
+            "description": "",
+            "policy": {
+              "autoStart": false,
+              "autoEnd": true,
+              "autoPublish": true
+            },
+            "cover": {
+              "revision": 1,
+              "selection": {
+                "mode": "auto"
+              },
+              "coverState": "waiting"
+            },
+            "binding": {
+              "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "epoch": 1,
+              "actorId": "018f0000-0000-4000-8000-000000000003"
+            },
+            "boundaries": {
+              "startSequence": null,
+              "endSequenceExclusive": null,
+              "revision": 1
+            },
+            "health": {
+              "state": "waiting",
+              "lastConfirmedAt": null,
+              "lastPublishedAt": null,
+              "verifiedEndSeconds": null,
+              "queuedObjects": null,
+              "reason": null
+            },
+            "pendingCommand": null,
+            "archive": {
+              "state": "none",
+              "reason": null
+            }
+          },
+          "receipt": {
+            "operationKey": "018f0000-0000-4000-8000-000000000001.bind",
+            "operation": "bind",
+            "state": "completed"
+          },
+          "session": {
+            "token": "hhc_ingest_example.signature",
+            "expiresAt": "2026-10-15T00:15:00Z",
+            "recordingId": "018f0c1f-18d0-7e81-9f6f-69c456db7003",
+            "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "epoch": 1
+          }
+        },
+        "meta": {},
+        "error": null
+      }
+    },
+    {
+      "name": "reply_loss_same_output",
+      "schema": "BroadcastOutputOpenedEnvelope",
+      "valid": true,
+      "value": {
+        "data": {
+          "protocolVersion": "k4-2026-10-15.rc1",
+          "outputSessionId": "018f0000-0000-4000-8000-000000000001",
+          "sourceId": "018f0000-0000-4000-8000-000000000004",
+          "broadcast": {
+            "recordingId": "018f0c1f-18d0-7e81-9f6f-69c456db7003",
+            "revision": 3,
+            "phase": "preview",
+            "announced": false,
+            "scheduledAt": null,
+            "title": "Sunday gathering",
+            "description": "",
+            "policy": {
+              "autoStart": true,
+              "autoEnd": true,
+              "autoPublish": true
+            },
+            "cover": {
+              "revision": 1,
+              "selection": {
+                "mode": "auto"
+              },
+              "coverState": "waiting"
+            },
+            "binding": {
+              "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "epoch": 1,
+              "actorId": "018f0000-0000-4000-8000-000000000003"
+            },
+            "boundaries": {
+              "startSequence": null,
+              "endSequenceExclusive": null,
+              "revision": 1
+            },
+            "health": {
+              "state": "waiting",
+              "lastConfirmedAt": null,
+              "lastPublishedAt": null,
+              "verifiedEndSeconds": null,
+              "queuedObjects": null,
+              "reason": null
+            },
+            "pendingCommand": null,
+            "archive": {
+              "state": "none",
+              "reason": null
+            }
+          },
+          "receipt": {
+            "operationKey": "018f0000-0000-4000-8000-000000000001.bind",
+            "operation": "bind",
+            "state": "completed"
+          },
+          "session": {
+            "token": "hhc_ingest_example.signature",
+            "expiresAt": "2026-10-15T00:15:00Z",
+            "recordingId": "018f0c1f-18d0-7e81-9f6f-69c456db7003",
+            "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "epoch": 1
+          }
+        },
+        "meta": {},
+        "error": null
+      }
+    },
+    {
+      "name": "null_binding_forbidden",
+      "schema": "BroadcastOutputOpenedEnvelope",
+      "valid": false,
+      "value": {
+        "data": {
+          "protocolVersion": "k4-2026-10-15.rc1",
+          "outputSessionId": "018f0000-0000-4000-8000-000000000001",
+          "sourceId": "018f0000-0000-4000-8000-000000000004",
+          "broadcast": {
+            "recordingId": "018f0c1f-18d0-7e81-9f6f-69c456db7003",
+            "revision": 3,
+            "phase": "preview",
+            "announced": false,
+            "scheduledAt": null,
+            "title": "Sunday gathering",
+            "description": "",
+            "policy": {
+              "autoStart": true,
+              "autoEnd": true,
+              "autoPublish": true
+            },
+            "cover": {
+              "revision": 1,
+              "selection": {
+                "mode": "auto"
+              },
+              "coverState": "waiting"
+            },
+            "binding": null,
+            "boundaries": {
+              "startSequence": null,
+              "endSequenceExclusive": null,
+              "revision": 1
+            },
+            "health": {
+              "state": "waiting",
+              "lastConfirmedAt": null,
+              "lastPublishedAt": null,
+              "verifiedEndSeconds": null,
+              "queuedObjects": null,
+              "reason": null
+            },
+            "pendingCommand": null,
+            "archive": {
+              "state": "none",
+              "reason": null
+            }
+          },
+          "receipt": {
+            "operationKey": "018f0000-0000-4000-8000-000000000001.bind",
+            "operation": "bind",
+            "state": "completed"
+          },
+          "session": {
+            "token": "hhc_ingest_example.signature",
+            "expiresAt": "2026-10-15T00:15:00Z",
+            "recordingId": "018f0c1f-18d0-7e81-9f6f-69c456db7003",
+            "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "epoch": 1
+          }
+        },
+        "meta": {},
+        "error": null
+      }
+    },
+    {
+      "name": "pending_binding_forbidden",
+      "schema": "BroadcastOutputOpenedEnvelope",
+      "valid": false,
+      "value": {
+        "data": {
+          "protocolVersion": "k4-2026-10-15.rc1",
+          "outputSessionId": "018f0000-0000-4000-8000-000000000001",
+          "sourceId": "018f0000-0000-4000-8000-000000000004",
+          "broadcast": {
+            "recordingId": "018f0c1f-18d0-7e81-9f6f-69c456db7003",
+            "revision": 3,
+            "phase": "preview",
+            "announced": false,
+            "scheduledAt": null,
+            "title": "Sunday gathering",
+            "description": "",
+            "policy": {
+              "autoStart": true,
+              "autoEnd": true,
+              "autoPublish": true
+            },
+            "cover": {
+              "revision": 1,
+              "selection": {
+                "mode": "auto"
+              },
+              "coverState": "waiting"
+            },
+            "binding": {
+              "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "epoch": 1,
+              "actorId": "018f0000-0000-4000-8000-000000000003"
+            },
+            "boundaries": {
+              "startSequence": null,
+              "endSequenceExclusive": null,
+              "revision": 1
+            },
+            "health": {
+              "state": "waiting",
+              "lastConfirmedAt": null,
+              "lastPublishedAt": null,
+              "verifiedEndSeconds": null,
+              "queuedObjects": null,
+              "reason": null
+            },
+            "pendingCommand": null,
+            "archive": {
+              "state": "none",
+              "reason": null
+            }
+          },
+          "receipt": {
+            "operationKey": "018f0000-0000-4000-8000-000000000001.bind",
+            "operation": "bind",
+            "state": "accepted"
+          },
+          "session": {
+            "token": "hhc_ingest_example.signature",
+            "expiresAt": "2026-10-15T00:15:00Z",
+            "recordingId": "018f0c1f-18d0-7e81-9f6f-69c456db7003",
+            "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "epoch": 1
+          }
+        },
+        "meta": {},
+        "error": null
+      }
+    },
+    {
+      "name": "missing_session",
+      "schema": "BroadcastOutputOpenedEnvelope",
+      "valid": false,
+      "value": {
+        "data": {
+          "protocolVersion": "k4-2026-10-15.rc1",
+          "outputSessionId": "018f0000-0000-4000-8000-000000000001",
+          "sourceId": "018f0000-0000-4000-8000-000000000004",
+          "broadcast": {
+            "recordingId": "018f0c1f-18d0-7e81-9f6f-69c456db7003",
+            "revision": 3,
+            "phase": "preview",
+            "announced": false,
+            "scheduledAt": null,
+            "title": "Sunday gathering",
+            "description": "",
+            "policy": {
+              "autoStart": true,
+              "autoEnd": true,
+              "autoPublish": true
+            },
+            "cover": {
+              "revision": 1,
+              "selection": {
+                "mode": "auto"
+              },
+              "coverState": "waiting"
+            },
+            "binding": {
+              "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "epoch": 1,
+              "actorId": "018f0000-0000-4000-8000-000000000003"
+            },
+            "boundaries": {
+              "startSequence": null,
+              "endSequenceExclusive": null,
+              "revision": 1
+            },
+            "health": {
+              "state": "waiting",
+              "lastConfirmedAt": null,
+              "lastPublishedAt": null,
+              "verifiedEndSeconds": null,
+              "queuedObjects": null,
+              "reason": null
+            },
+            "pendingCommand": null,
+            "archive": {
+              "state": "none",
+              "reason": null
+            }
+          },
+          "receipt": {
+            "operationKey": "018f0000-0000-4000-8000-000000000001.bind",
+            "operation": "bind",
+            "state": "completed"
+          }
+        },
+        "meta": {},
+        "error": null
+      }
+    },
+    {
+      "name": "broadcast_source_not_prepared",
+      "schema": "BroadcastIngestErrorEnvelope",
+      "valid": true,
+      "value": {
+        "data": null,
+        "meta": {},
+        "error": {
+          "code": "broadcast_source_not_prepared",
+          "message": "broadcast_source_not_prepared"
+        }
+      }
+    },
+    {
+      "name": "broadcast_source_busy",
+      "schema": "BroadcastIngestErrorEnvelope",
+      "valid": true,
+      "value": {
+        "data": null,
+        "meta": {},
+        "error": {
+          "code": "broadcast_source_busy",
+          "message": "broadcast_source_busy"
+        }
+      }
+    },
+    {
+      "name": "broadcast_output_capacity_exhausted",
+      "schema": "BroadcastIngestErrorEnvelope",
+      "valid": true,
+      "value": {
+        "data": null,
+        "meta": {},
+        "error": {
+          "code": "broadcast_output_capacity_exhausted",
+          "message": "broadcast_output_capacity_exhausted"
+        }
+      }
+    },
+    {
+      "name": "broadcast_output_terminal",
+      "schema": "BroadcastIngestErrorEnvelope",
+      "valid": true,
+      "value": {
+        "data": null,
+        "meta": {},
+        "error": {
+          "code": "broadcast_output_terminal",
+          "message": "broadcast_output_terminal"
+        }
+      }
+    },
+    {
+      "name": "broadcast_operation_conflict",
+      "schema": "BroadcastIngestErrorEnvelope",
+      "valid": true,
+      "value": {
+        "data": null,
+        "meta": {},
+        "error": {
+          "code": "broadcast_operation_conflict",
+          "message": "broadcast_operation_conflict"
+        }
+      }
+    },
+    {
+      "name": "broadcast_stream_key_invalid",
+      "schema": "BroadcastIngestErrorEnvelope",
+      "valid": true,
+      "value": {
+        "data": null,
+        "meta": {},
+        "error": {
+          "code": "broadcast_stream_key_invalid",
+          "message": "broadcast_stream_key_invalid"
+        }
+      }
+    },
+    {
+      "name": "forbidden",
+      "schema": "BroadcastIngestErrorEnvelope",
+      "valid": true,
+      "value": {
+        "data": null,
+        "meta": {},
+        "error": {
+          "code": "forbidden",
+          "message": "forbidden"
+        }
+      }
+    },
+    {
+      "name": "broadcast_protocol_unsupported",
+      "schema": "BroadcastIngestErrorEnvelope",
+      "valid": true,
+      "value": {
+        "data": null,
+        "meta": {},
+        "error": {
+          "code": "broadcast_protocol_unsupported",
+          "message": "broadcast_protocol_unsupported"
+        }
+      }
+    },
+    {
+      "name": "rate_limited",
+      "schema": "BroadcastIngestErrorEnvelope",
+      "valid": true,
+      "value": {
+        "data": null,
+        "meta": {},
+        "error": {
+          "code": "rate_limited",
+          "message": "rate_limited"
+        }
+      }
+    },
+    {
+      "name": "unavailable",
+      "schema": "BroadcastIngestErrorEnvelope",
+      "valid": true,
+      "value": {
+        "data": null,
+        "meta": {},
+        "error": {
+          "code": "unavailable",
+          "message": "unavailable"
+        }
+      }
+    },
+    {
+      "name": "broadcast_invalid",
+      "schema": "BroadcastIngestErrorEnvelope",
+      "valid": true,
+      "value": {
+        "data": null,
+        "meta": {},
+        "error": {
+          "code": "broadcast_invalid",
+          "message": "broadcast_invalid"
+        }
+      }
+    },
+    {
+      "name": "broadcast_active_limit",
+      "schema": "BroadcastIngestErrorEnvelope",
+      "valid": true,
+      "value": {
+        "data": null,
+        "meta": {},
+        "error": {
+          "code": "broadcast_active_limit",
+          "message": "broadcast_active_limit"
+        }
+      }
+    }
+  ]
+}

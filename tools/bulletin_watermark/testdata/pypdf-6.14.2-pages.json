@@ -1,0 +1,82 @@
+{
+  "pypdf_version": "6.14.2",
+  "renderer_version": "trustmark-q1-bch5-cpu-ecc1-linux-amd64-py3.12.14-runtime1-pdf-rgba3-background-1080-poppler25.03.0-rl4.4.9-pypdf6.14.2",
+  "fixtures": {
+    "matrix.pdf": [
+      {
+        "source_sha256": "538526ae6539400400c988ddc8c272261ba624eeaf04487f03e6dd331cd3a280",
+        "output_sha256": [
+          "3b9b35ee5d291b7df44ed3024f042b3d7be42b04d004081342618b160a063095",
+          "885c28005f116bc98eeb736b79353be7f0a9df32939fb9d4a0a6a43484b0ff37"
+        ],
+        "width": 1080,
+        "height": 1398
+      },
+      {
+        "source_sha256": "22fa2119461bd378e82d87d2eab2e5459830e2a21649b719f42fd17b4179560d",
+        "output_sha256": [
+          "22fa2119461bd378e82d87d2eab2e5459830e2a21649b719f42fd17b4179560d",
+          "22fa2119461bd378e82d87d2eab2e5459830e2a21649b719f42fd17b4179560d"
+        ],
+        "width": 1080,
+        "height": 1398
+      },
+      {
+        "source_sha256": "0348114823d172acc9c9353aca8a70d3c5fa5f350e469938f45ee3f0d62e6df4",
+        "output_sha256": [
+          "3de6be1d496f85aa69c19fb999189afc35d3185bb75b5744b9cf4ce4fcbb2fa6",
+          "378d2f60cb2587957b6757749a9557fb18bf226fc40a05581f65788882ef36c8"
+        ],
+        "width": 1080,
+        "height": 835
+      },
+      {
+        "source_sha256": "6d938863cff3041b58f6a4afdc47fa17e17ef010de13f71a0d72f4ace329f056",
+        "output_sha256": [
+          "54458fb29364c2ffafea341b91326d1a66b73ec409a55f5106eee7c97696f110",
+          "d5a3c55ce2175187d843523b458500cbf3b883b3345ef6b866b2b14d40c0233a"
+        ],
+        "width": 1080,
+        "height": 835
+      },
+      {
+        "source_sha256": "0b80d93ad683c748d21814bfd08abf40cf355145f9407144a4a26dd3403d778a",
+        "output_sha256": [
+          "6fe6a8b8da7e6edda3b10fb3e1fc53da2db0c90af6a8d9ca527295ecd6708889",
+          "d3dbc8a5e2f4a812af27599f602adbab5ee702b51e295785fc74c40e2f9406c3"
+        ],
+        "width": 1080,
+        "height": 1398
+      },
+      {
+        "source_sha256": "8e264828d7f5dd254fe42cb6032bb0aa74281c69dc2c6324f8b083b250a74e7b",
+        "output_sha256": [
+          "81790d0a094936becb57c3c90bdc01be44640f31e6bfd4203ad1ffff16e1efd3",
+          "f7162e01d54eac4a46577fce6f2651099751fe7af935db75ed2128330485f828"
+        ],
+        "width": 1080,
+        "height": 835
+      },
+      {
+        "source_sha256": "11273fd75f7e3a94ccb50c8f887b764e3ad9edef0bad8a660d8efee1b1587051",
+        "output_sha256": [
+          "1621c6010ce67f7fb6a145b60363b8801b1dbdd568031bda51a6960fbe2f09c2",
+          "b85c760faca1b5f42a224df150039b74531841d154cfa1e1c69d83f7cba5477a"
+        ],
+        "width": 1080,
+        "height": 1345
+      }
+    ],
+    "tagged.pdf": [
+      {
+        "source_sha256": "538526ae6539400400c988ddc8c272261ba624eeaf04487f03e6dd331cd3a280",
+        "output_sha256": [
+          "3b9b35ee5d291b7df44ed3024f042b3d7be42b04d004081342618b160a063095",
+          "885c28005f116bc98eeb736b79353be7f0a9df32939fb9d4a0a6a43484b0ff37"
+        ],
+        "width": 1080,
+        "height": 1398
+      }
+    ]
+  }
+}

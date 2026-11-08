@@ -1,0 +1,2452 @@
+openapi: 3.1.0
+info:
+  title: HHC B1 Mac implementation snapshot
+  version: b1-mac-2026-10-10.rc2
+servers:
+- url: https://www.alive.org.tw/api
+  description: Public and admin gateway surface; api-gateway validates browser JWTs and injects trusted identity
+    headers.
+paths:
+  /admin/broadcast-capabilities:
+    get:
+      operationId: getBroadcastCapabilities
+      summary: getBroadcastCapabilities
+      description: Durable B1 control with immutable operation receipts and verified media boundaries. Creation
+        and binding require BROADCAST_WRITERS_ENABLED; reads and existing controls remain available when disabled.
+      tags:
+      - Admin
+      x-hhc-visibility: admin
+      x-hhc-callers:
+      - api-gateway
+      x-hhc-cache: private, no-store
+      x-required-scopes:
+      - cms:recordings:read
+      security:
+      - daprApiToken: []
+        daprCallerAppId: []
+        trustedUserId: []
+        trustedAuthProvider: []
+        trustedScopes: []
+      servers:
+      - url: https://admin.alive.org.tw/api
+      responses:
+        '200':
+          description: BroadcastCapabilities
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastCapabilitiesEnvelope'
+        '400':
+          $ref: '#/components/responses/BroadcastFailure'
+        '401':
+          $ref: '#/components/responses/AdminUnauthorized'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/BroadcastFailure'
+        '409':
+          $ref: '#/components/responses/BroadcastFailure'
+        '412':
+          $ref: '#/components/responses/BroadcastFailure'
+        '422':
+          $ref: '#/components/responses/BroadcastFailure'
+        '429':
+          $ref: '#/components/responses/BroadcastFailure'
+        '503':
+          $ref: '#/components/responses/BroadcastFailure'
+  /admin/broadcasts:
+    post:
+      operationId: createBroadcast
+      summary: createBroadcast
+      description: Durable B1 control with immutable operation receipts and verified media boundaries. Creation
+        and binding require BROADCAST_WRITERS_ENABLED; reads and existing controls remain available when disabled.
+      tags:
+      - Admin
+      x-hhc-visibility: admin
+      x-hhc-callers:
+      - api-gateway
+      x-hhc-cache: private, no-store
+      x-required-scopes:
+      - cms:recordings:write
+      security:
+      - daprApiToken: []
+        daprCallerAppId: []
+        trustedUserId: []
+        trustedAuthProvider: []
+        trustedScopes: []
+      servers:
+      - url: https://admin.alive.org.tw/api
+      responses:
+        '201':
+          description: BroadcastMutationResult
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastMutationResultEnvelope'
+        '400':
+          $ref: '#/components/responses/BroadcastFailure'
+        '401':
+          $ref: '#/components/responses/AdminUnauthorized'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/BroadcastFailure'
+        '409':
+          $ref: '#/components/responses/BroadcastFailure'
+        '412':
+          $ref: '#/components/responses/BroadcastFailure'
+        '422':
+          $ref: '#/components/responses/BroadcastFailure'
+        '429':
+          $ref: '#/components/responses/BroadcastFailure'
+        '503':
+          $ref: '#/components/responses/BroadcastFailure'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BroadcastCreateInput'
+    get:
+      operationId: listBroadcasts
+      summary: listBroadcasts
+      description: Durable B1 control with immutable operation receipts and verified media boundaries. Creation
+        and binding require BROADCAST_WRITERS_ENABLED; reads and existing controls remain available when disabled.
+      tags:
+      - Admin
+      x-hhc-visibility: admin
+      x-hhc-callers:
+      - api-gateway
+      x-hhc-cache: private, no-store
+      x-required-scopes:
+      - cms:recordings:read
+      security:
+      - daprApiToken: []
+        daprCallerAppId: []
+        trustedUserId: []
+        trustedAuthProvider: []
+        trustedScopes: []
+      servers:
+      - url: https://admin.alive.org.tw/api
+      responses:
+        '200':
+          description: BroadcastList
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastListEnvelope'
+        '400':
+          $ref: '#/components/responses/BroadcastFailure'
+        '401':
+          $ref: '#/components/responses/AdminUnauthorized'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/BroadcastFailure'
+        '409':
+          $ref: '#/components/responses/BroadcastFailure'
+        '412':
+          $ref: '#/components/responses/BroadcastFailure'
+        '422':
+          $ref: '#/components/responses/BroadcastFailure'
+        '429':
+          $ref: '#/components/responses/BroadcastFailure'
+        '503':
+          $ref: '#/components/responses/BroadcastFailure'
+      parameters:
+      - name: cursor
+        in: query
+        schema:
+          type: string
+          maxLength: 2048
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      - name: filter
+        in: query
+        schema:
+          type: string
+          enum:
+          - selectable
+          - all
+  /admin/broadcasts/{recordingId}:
+    get:
+      operationId: getBroadcast
+      summary: getBroadcast
+      description: Durable B1 control with immutable operation receipts and verified media boundaries. Creation
+        and binding require BROADCAST_WRITERS_ENABLED; reads and existing controls remain available when disabled.
+      tags:
+      - Admin
+      x-hhc-visibility: admin
+      x-hhc-callers:
+      - api-gateway
+      x-hhc-cache: private, no-store
+      x-required-scopes:
+      - cms:recordings:read
+      security:
+      - daprApiToken: []
+        daprCallerAppId: []
+        trustedUserId: []
+        trustedAuthProvider: []
+        trustedScopes: []
+      servers:
+      - url: https://admin.alive.org.tw/api
+      responses:
+        '200':
+          description: BroadcastView
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastViewEnvelope'
+        '400':
+          $ref: '#/components/responses/BroadcastFailure'
+        '401':
+          $ref: '#/components/responses/AdminUnauthorized'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/BroadcastFailure'
+        '409':
+          $ref: '#/components/responses/BroadcastFailure'
+        '412':
+          $ref: '#/components/responses/BroadcastFailure'
+        '422':
+          $ref: '#/components/responses/BroadcastFailure'
+        '429':
+          $ref: '#/components/responses/BroadcastFailure'
+        '503':
+          $ref: '#/components/responses/BroadcastFailure'
+      parameters:
+      - name: recordingId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      operationId: updateBroadcast
+      summary: updateBroadcast
+      description: Durable B1 control with immutable operation receipts and verified media boundaries. Creation
+        and binding require BROADCAST_WRITERS_ENABLED; reads and existing controls remain available when disabled.
+      tags:
+      - Admin
+      x-hhc-visibility: admin
+      x-hhc-callers:
+      - api-gateway
+      x-hhc-cache: private, no-store
+      x-required-scopes:
+      - cms:recordings:write
+      security:
+      - daprApiToken: []
+        daprCallerAppId: []
+        trustedUserId: []
+        trustedAuthProvider: []
+        trustedScopes: []
+      servers:
+      - url: https://admin.alive.org.tw/api
+      responses:
+        '200':
+          description: BroadcastMutationResult
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastMutationResultEnvelope'
+        '400':
+          $ref: '#/components/responses/BroadcastFailure'
+        '401':
+          $ref: '#/components/responses/AdminUnauthorized'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/BroadcastFailure'
+        '409':
+          $ref: '#/components/responses/BroadcastFailure'
+        '412':
+          $ref: '#/components/responses/BroadcastFailure'
+        '422':
+          $ref: '#/components/responses/BroadcastFailure'
+        '429':
+          $ref: '#/components/responses/BroadcastFailure'
+        '503':
+          $ref: '#/components/responses/BroadcastFailure'
+      parameters:
+      - name: recordingId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BroadcastUpdateInput'
+  /admin/broadcasts/{recordingId}/announce:
+    post:
+      operationId: announceBroadcast
+      summary: announceBroadcast
+      description: Durable B1 control with immutable operation receipts and verified media boundaries. Creation
+        and binding require BROADCAST_WRITERS_ENABLED; reads and existing controls remain available when disabled.
+      tags:
+      - Admin
+      x-hhc-visibility: admin
+      x-hhc-callers:
+      - api-gateway
+      x-hhc-cache: private, no-store
+      x-required-scopes:
+      - cms:recordings:write
+      - cms:recordings:publish
+      security:
+      - daprApiToken: []
+        daprCallerAppId: []
+        trustedUserId: []
+        trustedAuthProvider: []
+        trustedScopes: []
+      servers:
+      - url: https://admin.alive.org.tw/api
+      responses:
+        '200':
+          description: BroadcastMutationResult
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastMutationResultEnvelope'
+        '400':
+          $ref: '#/components/responses/BroadcastFailure'
+        '401':
+          $ref: '#/components/responses/AdminUnauthorized'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/BroadcastFailure'
+        '409':
+          $ref: '#/components/responses/BroadcastFailure'
+        '412':
+          $ref: '#/components/responses/BroadcastFailure'
+        '422':
+          $ref: '#/components/responses/BroadcastFailure'
+        '429':
+          $ref: '#/components/responses/BroadcastFailure'
+        '503':
+          $ref: '#/components/responses/BroadcastFailure'
+      parameters:
+      - name: recordingId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BroadcastMutationInput'
+  /admin/broadcasts/{recordingId}/cancel:
+    post:
+      operationId: cancelBroadcast
+      summary: cancelBroadcast
+      description: Durable B1 control with immutable operation receipts and verified media boundaries. Creation
+        and binding require BROADCAST_WRITERS_ENABLED; reads and existing controls remain available when disabled.
+      tags:
+      - Admin
+      x-hhc-visibility: admin
+      x-hhc-callers:
+      - api-gateway
+      x-hhc-cache: private, no-store
+      x-required-scopes:
+      - cms:recordings:write
+      - cms:recordings:publish
+      security:
+      - daprApiToken: []
+        daprCallerAppId: []
+        trustedUserId: []
+        trustedAuthProvider: []
+        trustedScopes: []
+      servers:
+      - url: https://admin.alive.org.tw/api
+      responses:
+        '200':
+          description: BroadcastMutationResult
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastMutationResultEnvelope'
+        '400':
+          $ref: '#/components/responses/BroadcastFailure'
+        '401':
+          $ref: '#/components/responses/AdminUnauthorized'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/BroadcastFailure'
+        '409':
+          $ref: '#/components/responses/BroadcastFailure'
+        '412':
+          $ref: '#/components/responses/BroadcastFailure'
+        '422':
+          $ref: '#/components/responses/BroadcastFailure'
+        '429':
+          $ref: '#/components/responses/BroadcastFailure'
+        '503':
+          $ref: '#/components/responses/BroadcastFailure'
+      parameters:
+      - name: recordingId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BroadcastMutationInput'
+  /admin/broadcasts/{recordingId}/bindings:
+    post:
+      operationId: bindBroadcast
+      summary: bindBroadcast
+      description: Durable B1 control with immutable operation receipts and verified media boundaries. Creation
+        and binding require BROADCAST_WRITERS_ENABLED; reads and existing controls remain available when disabled.
+      tags:
+      - Admin
+      x-hhc-visibility: admin
+      x-hhc-callers:
+      - api-gateway
+      x-hhc-cache: private, no-store
+      x-required-scopes:
+      - cms:recordings:write
+      security:
+      - daprApiToken: []
+        daprCallerAppId: []
+        trustedUserId: []
+        trustedAuthProvider: []
+        trustedScopes: []
+      servers:
+      - url: https://admin.alive.org.tw/api
+      responses:
+        '202':
+          description: BroadcastMutationResult
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastMutationResultEnvelope'
+        '400':
+          $ref: '#/components/responses/BroadcastFailure'
+        '401':
+          $ref: '#/components/responses/AdminUnauthorized'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/BroadcastFailure'
+        '409':
+          $ref: '#/components/responses/BroadcastFailure'
+        '412':
+          $ref: '#/components/responses/BroadcastFailure'
+        '422':
+          $ref: '#/components/responses/BroadcastFailure'
+        '429':
+          $ref: '#/components/responses/BroadcastFailure'
+        '503':
+          $ref: '#/components/responses/BroadcastFailure'
+      parameters:
+      - name: recordingId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BroadcastBindInput'
+  /admin/broadcasts/{recordingId}/start:
+    post:
+      operationId: startBroadcast
+      summary: startBroadcast
+      description: Durable B1 control with immutable operation receipts and verified media boundaries. Creation
+        and binding require BROADCAST_WRITERS_ENABLED; reads and existing controls remain available when disabled.
+      tags:
+      - Admin
+      x-hhc-visibility: admin
+      x-hhc-callers:
+      - api-gateway
+      x-hhc-cache: private, no-store
+      x-required-scopes:
+      - cms:recordings:write
+      - cms:recordings:publish
+      security:
+      - daprApiToken: []
+        daprCallerAppId: []
+        trustedUserId: []
+        trustedAuthProvider: []
+        trustedScopes: []
+      servers:
+      - url: https://admin.alive.org.tw/api
+      responses:
+        '202':
+          description: BroadcastMutationResult
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastMutationResultEnvelope'
+        '400':
+          $ref: '#/components/responses/BroadcastFailure'
+        '401':
+          $ref: '#/components/responses/AdminUnauthorized'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/BroadcastFailure'
+        '409':
+          $ref: '#/components/responses/BroadcastFailure'
+        '412':
+          $ref: '#/components/responses/BroadcastFailure'
+        '422':
+          $ref: '#/components/responses/BroadcastFailure'
+        '429':
+          $ref: '#/components/responses/BroadcastFailure'
+        '503':
+          $ref: '#/components/responses/BroadcastFailure'
+      parameters:
+      - name: recordingId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BroadcastMutationInput'
+  /admin/broadcasts/{recordingId}/end:
+    post:
+      operationId: endBroadcast
+      summary: endBroadcast
+      description: Durable B1 control with immutable operation receipts and verified media boundaries. Creation
+        and binding require BROADCAST_WRITERS_ENABLED; reads and existing controls remain available when disabled.
+      tags:
+      - Admin
+      x-hhc-visibility: admin
+      x-hhc-callers:
+      - api-gateway
+      x-hhc-cache: private, no-store
+      x-required-scopes:
+      - cms:recordings:write
+      - cms:recordings:publish
+      security:
+      - daprApiToken: []
+        daprCallerAppId: []
+        trustedUserId: []
+        trustedAuthProvider: []
+        trustedScopes: []
+      servers:
+      - url: https://admin.alive.org.tw/api
+      responses:
+        '202':
+          description: BroadcastMutationResult
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastMutationResultEnvelope'
+        '400':
+          $ref: '#/components/responses/BroadcastFailure'
+        '401':
+          $ref: '#/components/responses/AdminUnauthorized'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/BroadcastFailure'
+        '409':
+          $ref: '#/components/responses/BroadcastFailure'
+        '412':
+          $ref: '#/components/responses/BroadcastFailure'
+        '422':
+          $ref: '#/components/responses/BroadcastFailure'
+        '429':
+          $ref: '#/components/responses/BroadcastFailure'
+        '503':
+          $ref: '#/components/responses/BroadcastFailure'
+      parameters:
+      - name: recordingId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BroadcastMutationInput'
+  /admin/broadcasts/{recordingId}/commands/{commandId}/cancel:
+    post:
+      operationId: cancelBroadcastCommand
+      summary: cancelBroadcastCommand
+      description: Durable B1 control with immutable operation receipts and verified media boundaries. Creation
+        and binding require BROADCAST_WRITERS_ENABLED; reads and existing controls remain available when disabled.
+      tags:
+      - Admin
+      x-hhc-visibility: admin
+      x-hhc-callers:
+      - api-gateway
+      x-hhc-cache: private, no-store
+      x-required-scopes:
+      - cms:recordings:write
+      - cms:recordings:publish
+      security:
+      - daprApiToken: []
+        daprCallerAppId: []
+        trustedUserId: []
+        trustedAuthProvider: []
+        trustedScopes: []
+      servers:
+      - url: https://admin.alive.org.tw/api
+      responses:
+        '200':
+          description: BroadcastMutationResult
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastMutationResultEnvelope'
+        '400':
+          $ref: '#/components/responses/BroadcastFailure'
+        '401':
+          $ref: '#/components/responses/AdminUnauthorized'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/BroadcastFailure'
+        '409':
+          $ref: '#/components/responses/BroadcastFailure'
+        '412':
+          $ref: '#/components/responses/BroadcastFailure'
+        '422':
+          $ref: '#/components/responses/BroadcastFailure'
+        '429':
+          $ref: '#/components/responses/BroadcastFailure'
+        '503':
+          $ref: '#/components/responses/BroadcastFailure'
+      parameters:
+      - name: recordingId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: commandId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BroadcastMutationInput'
+  /admin/broadcasts/{recordingId}/control:
+    get:
+      operationId: getBroadcastControl
+      summary: getBroadcastControl
+      description: Durable B1 control with immutable operation receipts and verified media boundaries. Creation
+        and binding require BROADCAST_WRITERS_ENABLED; reads and existing controls remain available when disabled.
+      tags:
+      - Admin
+      x-hhc-visibility: admin
+      x-hhc-callers:
+      - api-gateway
+      x-hhc-cache: private, no-store
+      x-required-scopes:
+      - cms:recordings:write
+      security:
+      - daprApiToken: []
+        daprCallerAppId: []
+        trustedUserId: []
+        trustedAuthProvider: []
+        trustedScopes: []
+      servers:
+      - url: https://admin.alive.org.tw/api
+      responses:
+        '200':
+          description: BroadcastControl
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastControlEnvelope'
+        '400':
+          $ref: '#/components/responses/BroadcastFailure'
+        '401':
+          $ref: '#/components/responses/AdminUnauthorized'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/BroadcastFailure'
+        '409':
+          $ref: '#/components/responses/BroadcastFailure'
+        '412':
+          $ref: '#/components/responses/BroadcastFailure'
+        '422':
+          $ref: '#/components/responses/BroadcastFailure'
+        '429':
+          $ref: '#/components/responses/BroadcastFailure'
+        '503':
+          $ref: '#/components/responses/BroadcastFailure'
+      parameters:
+      - name: recordingId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: captureId
+        in: query
+        required: true
+        schema:
+          type: string
+          pattern: ^[a-f0-9]{32}$
+      - name: epoch
+        in: query
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+  /admin/broadcasts/{recordingId}/commands/{commandId}/ack:
+    post:
+      operationId: acknowledgeBroadcastCommand
+      summary: acknowledgeBroadcastCommand
+      description: Durable B1 control with immutable operation receipts and verified media boundaries. Creation
+        and binding require BROADCAST_WRITERS_ENABLED; reads and existing controls remain available when disabled.
+      tags:
+      - Admin
+      x-hhc-visibility: admin
+      x-hhc-callers:
+      - api-gateway
+      x-hhc-cache: private, no-store
+      x-required-scopes:
+      - cms:recordings:write
+      security:
+      - daprApiToken: []
+        daprCallerAppId: []
+        trustedUserId: []
+        trustedAuthProvider: []
+        trustedScopes: []
+      servers:
+      - url: https://admin.alive.org.tw/api
+      responses:
+        '202':
+          description: BroadcastMutationResult
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastMutationResultEnvelope'
+        '400':
+          $ref: '#/components/responses/BroadcastFailure'
+        '401':
+          $ref: '#/components/responses/AdminUnauthorized'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/BroadcastFailure'
+        '409':
+          $ref: '#/components/responses/BroadcastFailure'
+        '412':
+          $ref: '#/components/responses/BroadcastFailure'
+        '422':
+          $ref: '#/components/responses/BroadcastFailure'
+        '429':
+          $ref: '#/components/responses/BroadcastFailure'
+        '503':
+          $ref: '#/components/responses/BroadcastFailure'
+      parameters:
+      - name: recordingId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: commandId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BroadcastMarkerAckInput'
+  /admin/broadcasts/{recordingId}/emergency-close:
+    post:
+      operationId: emergencyCloseBroadcast
+      summary: emergencyCloseBroadcast
+      description: Durable B1 control with immutable operation receipts and verified media boundaries. Creation
+        and binding require BROADCAST_WRITERS_ENABLED; reads and existing controls remain available when disabled.
+      tags:
+      - Admin
+      x-hhc-visibility: admin
+      x-hhc-callers:
+      - api-gateway
+      x-hhc-cache: private, no-store
+      x-required-scopes:
+      - cms:recordings:write
+      - cms:recordings:publish
+      security:
+      - daprApiToken: []
+        daprCallerAppId: []
+        trustedUserId: []
+        trustedAuthProvider: []
+        trustedScopes: []
+      servers:
+      - url: https://admin.alive.org.tw/api
+      responses:
+        '202':
+          description: BroadcastMutationResult
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastMutationResultEnvelope'
+        '400':
+          $ref: '#/components/responses/BroadcastFailure'
+        '401':
+          $ref: '#/components/responses/AdminUnauthorized'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/BroadcastFailure'
+        '409':
+          $ref: '#/components/responses/BroadcastFailure'
+        '412':
+          $ref: '#/components/responses/BroadcastFailure'
+        '422':
+          $ref: '#/components/responses/BroadcastFailure'
+        '429':
+          $ref: '#/components/responses/BroadcastFailure'
+        '503':
+          $ref: '#/components/responses/BroadcastFailure'
+      parameters:
+      - name: recordingId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BroadcastEmergencyCloseInput'
+  /member/recordings/{recordingId}/watch:
+    get:
+      operationId: getBroadcastWatch
+      summary: getBroadcastWatch
+      description: Durable B1 control with immutable operation receipts and verified media boundaries. Creation
+        and binding require BROADCAST_WRITERS_ENABLED; reads and existing controls remain available when disabled.
+      tags:
+      - Authenticated
+      x-hhc-visibility: authenticated
+      x-hhc-callers:
+      - api-gateway
+      x-hhc-cache: private, no-store
+      security:
+      - daprApiToken: []
+        daprCallerAppId: []
+        trustedUserId: []
+        trustedAuthProvider: []
+        trustedScopes: []
+      responses:
+        '200':
+          description: BroadcastWatch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastWatchEnvelope'
+        '400':
+          $ref: '#/components/responses/BroadcastFailure'
+        '401':
+          $ref: '#/components/responses/AdminUnauthorized'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/BroadcastFailure'
+        '409':
+          $ref: '#/components/responses/BroadcastFailure'
+        '412':
+          $ref: '#/components/responses/BroadcastFailure'
+        '422':
+          $ref: '#/components/responses/BroadcastFailure'
+        '429':
+          $ref: '#/components/responses/BroadcastFailure'
+        '503':
+          $ref: '#/components/responses/BroadcastFailure'
+      parameters:
+      - name: recordingId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /admin/broadcasts/{recordingId}/preview-access:
+    post:
+      operationId: createBroadcastPreviewAccess
+      summary: createBroadcastPreviewAccess
+      description: Durable B1 control with immutable operation receipts and verified media boundaries. Creation
+        and binding require BROADCAST_WRITERS_ENABLED; reads and existing controls remain available when disabled.
+      tags:
+      - Admin
+      x-hhc-visibility: admin
+      x-hhc-callers:
+      - api-gateway
+      x-hhc-cache: private, no-store
+      x-required-scopes:
+      - cms:recordings:read
+      security:
+      - daprApiToken: []
+        daprCallerAppId: []
+        trustedUserId: []
+        trustedAuthProvider: []
+        trustedScopes: []
+      servers:
+      - url: https://admin.alive.org.tw/api
+      responses:
+        '200':
+          description: BroadcastPreviewAccess
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastPreviewAccessEnvelope'
+        '400':
+          $ref: '#/components/responses/BroadcastFailure'
+        '401':
+          $ref: '#/components/responses/AdminUnauthorized'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/BroadcastFailure'
+        '409':
+          $ref: '#/components/responses/BroadcastFailure'
+        '412':
+          $ref: '#/components/responses/BroadcastFailure'
+        '422':
+          $ref: '#/components/responses/BroadcastFailure'
+        '429':
+          $ref: '#/components/responses/BroadcastFailure'
+        '503':
+          $ref: '#/components/responses/BroadcastFailure'
+      parameters:
+      - name: recordingId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BroadcastPreviewInput'
+  /member/broadcasts:
+    get:
+      operationId: listUpcomingBroadcasts
+      summary: List announced upcoming broadcasts
+      description: Durable B1 control with immutable operation receipts and verified media boundaries. Creation
+        and binding require BROADCAST_WRITERS_ENABLED; reads and existing controls remain available when disabled.
+      tags:
+      - Authenticated
+      x-hhc-visibility: authenticated
+      x-hhc-callers:
+      - api-gateway
+      x-hhc-cache: private, no-store
+      security:
+      - daprApiToken: []
+        daprCallerAppId: []
+        trustedUserId: []
+        trustedAuthProvider: []
+        trustedScopes: []
+      responses:
+        '200':
+          description: BroadcastWatch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastWatchListEnvelope'
+        '400':
+          $ref: '#/components/responses/BroadcastFailure'
+        '401':
+          $ref: '#/components/responses/AdminUnauthorized'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/BroadcastFailure'
+        '409':
+          $ref: '#/components/responses/BroadcastFailure'
+        '412':
+          $ref: '#/components/responses/BroadcastFailure'
+        '422':
+          $ref: '#/components/responses/BroadcastFailure'
+        '429':
+          $ref: '#/components/responses/BroadcastFailure'
+        '503':
+          $ref: '#/components/responses/BroadcastFailure'
+      parameters:
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      - name: cursor
+        in: query
+        schema:
+          type: string
+          format: uuid
+  /admin/broadcasts/{recordingId}/cover-uploads:
+    post:
+      operationId: uploadBroadcastCover
+      summary: uploadBroadcastCover
+      description: Durable B1 control with immutable operation receipts and verified media boundaries. Creation
+        and binding require BROADCAST_WRITERS_ENABLED; reads and existing controls remain available when disabled.
+      tags:
+      - Admin
+      x-hhc-visibility: admin
+      x-hhc-callers:
+      - api-gateway
+      x-hhc-cache: private, no-store
+      x-required-scopes:
+      - cms:recordings:write
+      - cms:recordings:publish
+      security:
+      - daprApiToken: []
+        daprCallerAppId: []
+        trustedUserId: []
+        trustedAuthProvider: []
+        trustedScopes: []
+      servers:
+      - url: https://admin.alive.org.tw/api
+      responses:
+        '400':
+          $ref: '#/components/responses/BroadcastFailure'
+        '401':
+          $ref: '#/components/responses/AdminUnauthorized'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/BroadcastFailure'
+        '409':
+          $ref: '#/components/responses/BroadcastFailure'
+        '412':
+          $ref: '#/components/responses/BroadcastFailure'
+        '422':
+          $ref: '#/components/responses/BroadcastFailure'
+        '429':
+          $ref: '#/components/responses/BroadcastFailure'
+        '503':
+          $ref: '#/components/responses/BroadcastFailure'
+        '202':
+          description: BroadcastView
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordingCoverUploadEnvelope'
+      parameters:
+      - name: recordingId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          pattern: ^[a-zA-Z0-9._:-]{1,128}$
+      requestBody:
+        required: true
+        content:
+          image/jpeg:
+            schema:
+              type: string
+              format: binary
+          image/png:
+            schema:
+              type: string
+              format: binary
+  /admin/broadcasts/{recordingId}/cover-uploads/{uploadId}:
+    get:
+      operationId: getBroadcastCoverUpload
+      summary: getBroadcastCoverUpload
+      description: Durable B1 control with immutable operation receipts and verified media boundaries. Creation
+        and binding require BROADCAST_WRITERS_ENABLED; reads and existing controls remain available when disabled.
+      tags:
+      - Admin
+      x-hhc-visibility: admin
+      x-hhc-callers:
+      - api-gateway
+      x-hhc-cache: private, no-store
+      x-required-scopes:
+      - cms:recordings:read
+      security:
+      - daprApiToken: []
+        daprCallerAppId: []
+        trustedUserId: []
+        trustedAuthProvider: []
+        trustedScopes: []
+      servers:
+      - url: https://admin.alive.org.tw/api
+      responses:
+        '200':
+          description: BroadcastView
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordingCoverUploadEnvelope'
+        '400':
+          $ref: '#/components/responses/BroadcastFailure'
+        '401':
+          $ref: '#/components/responses/AdminUnauthorized'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/BroadcastFailure'
+        '409':
+          $ref: '#/components/responses/BroadcastFailure'
+        '412':
+          $ref: '#/components/responses/BroadcastFailure'
+        '422':
+          $ref: '#/components/responses/BroadcastFailure'
+        '429':
+          $ref: '#/components/responses/BroadcastFailure'
+        '503':
+          $ref: '#/components/responses/BroadcastFailure'
+      parameters:
+      - name: recordingId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: uploadId
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: ^[A-Za-z0-9-]{1,128}$
+  /admin/broadcasts/{recordingId}/cover-uploads/{uploadId}/content:
+    get:
+      operationId: getBroadcastCoverContent
+      summary: getBroadcastCoverContent
+      description: Durable B1 control with immutable operation receipts and verified media boundaries. Creation
+        and binding require BROADCAST_WRITERS_ENABLED; reads and existing controls remain available when disabled.
+      tags:
+      - Admin
+      x-hhc-visibility: admin
+      x-hhc-callers:
+      - api-gateway
+      x-hhc-cache: private, no-store
+      x-required-scopes:
+      - cms:recordings:read
+      security:
+      - daprApiToken: []
+        daprCallerAppId: []
+        trustedUserId: []
+        trustedAuthProvider: []
+        trustedScopes: []
+      servers:
+      - url: https://admin.alive.org.tw/api
+      responses:
+        '200':
+          description: BroadcastView
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/BroadcastFailure'
+        '401':
+          $ref: '#/components/responses/AdminUnauthorized'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/BroadcastFailure'
+        '409':
+          $ref: '#/components/responses/BroadcastFailure'
+        '412':
+          $ref: '#/components/responses/BroadcastFailure'
+        '422':
+          $ref: '#/components/responses/BroadcastFailure'
+        '429':
+          $ref: '#/components/responses/BroadcastFailure'
+        '503':
+          $ref: '#/components/responses/BroadcastFailure'
+      parameters:
+      - name: recordingId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: uploadId
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: ^[A-Za-z0-9-]{1,128}$
+  /admin/broadcasts/{recordingId}/cover/content:
+    get:
+      operationId: getSelectedBroadcastCoverContent
+      summary: getSelectedBroadcastCoverContent
+      description: Durable B1 control with immutable operation receipts and verified media boundaries. Creation
+        and binding require BROADCAST_WRITERS_ENABLED; reads and existing controls remain available when disabled.
+      tags:
+      - Admin
+      x-hhc-visibility: admin
+      x-hhc-callers:
+      - api-gateway
+      x-hhc-cache: private, no-store
+      x-required-scopes:
+      - cms:recordings:read
+      security:
+      - daprApiToken: []
+        daprCallerAppId: []
+        trustedUserId: []
+        trustedAuthProvider: []
+        trustedScopes: []
+      servers:
+      - url: https://admin.alive.org.tw/api
+      responses:
+        '200':
+          description: BroadcastView
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/BroadcastFailure'
+        '401':
+          $ref: '#/components/responses/AdminUnauthorized'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/BroadcastFailure'
+        '409':
+          $ref: '#/components/responses/BroadcastFailure'
+        '412':
+          $ref: '#/components/responses/BroadcastFailure'
+        '422':
+          $ref: '#/components/responses/BroadcastFailure'
+        '429':
+          $ref: '#/components/responses/BroadcastFailure'
+        '503':
+          $ref: '#/components/responses/BroadcastFailure'
+      parameters:
+      - name: recordingId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /member/recordings/{recordingId}/broadcast-cover:
+    get:
+      operationId: getMemberBroadcastCover
+      summary: Read the selected announced broadcast cover
+      description: Durable B1 control with immutable operation receipts and verified media boundaries. Creation
+        and binding require BROADCAST_WRITERS_ENABLED; reads and existing controls remain available when disabled.
+      tags:
+      - Authenticated
+      x-hhc-visibility: authenticated
+      x-hhc-callers:
+      - api-gateway
+      x-hhc-cache: private, no-store
+      security:
+      - daprApiToken: []
+        daprCallerAppId: []
+        trustedUserId: []
+        trustedAuthProvider: []
+        trustedScopes: []
+      responses:
+        '200':
+          description: BroadcastWatch
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/BroadcastFailure'
+        '401':
+          $ref: '#/components/responses/AdminUnauthorized'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/BroadcastFailure'
+        '409':
+          $ref: '#/components/responses/BroadcastFailure'
+        '412':
+          $ref: '#/components/responses/BroadcastFailure'
+        '422':
+          $ref: '#/components/responses/BroadcastFailure'
+        '429':
+          $ref: '#/components/responses/BroadcastFailure'
+        '503':
+          $ref: '#/components/responses/BroadcastFailure'
+      parameters:
+      - name: recordingId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+components:
+  securitySchemes:
+    daprApiToken:
+      type: apiKey
+      in: header
+      name: dapr-api-token
+      description: Dapr API token supplied by api-gateway; the value is never published in this contract.
+    daprCallerAppId:
+      type: apiKey
+      in: header
+      name: Dapr-Caller-App-Id
+      description: Must identify the configured api-gateway Dapr application.
+    trustedUserId:
+      type: apiKey
+      in: header
+      name: X-HHC-User-ID
+      description: Sanitized Account user identifier injected by api-gateway.
+    trustedAuthProvider:
+      type: apiKey
+      in: header
+      name: X-HHC-Auth-Provider
+      description: Must be account-api.
+    trustedPrincipalId:
+      type: apiKey
+      in: header
+      name: X-HHC-Principal-ID
+      description: Sanitized service principal UUID injected by api-gateway; never accepted directly from clients.
+    trustedPrincipalType:
+      type: apiKey
+      in: header
+      name: X-HHC-Principal-Type
+      description: Must be service for the service-principal security alternative. Human identity retains trustedUserId.
+    trustedClientId:
+      type: apiKey
+      in: header
+      name: X-HHC-Client-ID
+      description: Sanitized Account client identifier injected by api-gateway.
+    trustedCredentialId:
+      type: apiKey
+      in: header
+      name: X-HHC-Credential-ID
+      description: Sanitized service credential UUID injected by api-gateway; this is an identifier, never a secret.
+    trustedScopes:
+      type: apiKey
+      in: header
+      name: X-HHC-Scopes
+      description: Sanitized Account scopes injected by api-gateway and enforced per operation.
+  responses:
+    AdminForbidden:
+      description: The trusted Account identity lacks a required scope.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    AdminUnauthorized:
+      description: Trusted gateway identity is missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    BroadcastFailure:
+      description: B1 operation rejected or dependency unavailable; failed responses never prove a state transition.
+      headers:
+        Retry-After:
+          description: Retry delay for unavailable dependencies.
+          schema:
+            type: integer
+            minimum: 1
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/BroadcastErrorEnvelope'
+  schemas:
+    BroadcastBindInput:
+      type: object
+      additionalProperties: false
+      required:
+      - operationKey
+      - expectedRevision
+      - protocolVersion
+      properties:
+        operationKey:
+          type: string
+          pattern: ^[a-zA-Z0-9._:-]{1,128}$
+        expectedRevision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        protocolVersion:
+          type: string
+          minLength: 1
+          maxLength: 64
+    BroadcastCapabilitiesEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+      - data
+      - meta
+      - error
+      properties:
+        data:
+          $ref: '#/components/schemas/BroadcastCapabilities'
+        meta:
+          type: object
+          additionalProperties: true
+        error:
+          type: 'null'
+    BroadcastCapabilities:
+      type: object
+      additionalProperties: false
+      required:
+      - versions
+      - maxActiveCaptures
+      - markerMode
+      properties:
+        versions:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+            - b1-2026-10-10.rc1
+        maxActiveCaptures:
+          type: integer
+          enum:
+          - 1
+        markerMode:
+          type: string
+          enum:
+          - next-common-segment
+    BroadcastControlEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+      - data
+      - meta
+      - error
+      properties:
+        data:
+          $ref: '#/components/schemas/BroadcastControl'
+        meta:
+          type: object
+          additionalProperties: true
+        error:
+          type: 'null'
+    BroadcastControl:
+      type: object
+      additionalProperties: false
+      required:
+      - revision
+      - phase
+      - pendingCommand
+      properties:
+        revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        phase:
+          type: string
+          enum:
+          - draft
+          - scheduled
+          - preview
+          - start_pending
+          - live
+          - end_pending
+          - processing
+          - archived
+          - cancelled
+          - failed
+        pendingCommand:
+          anyOf:
+          - $ref: '#/components/schemas/BroadcastCommand'
+          - type: 'null'
+    BroadcastCommand:
+      type: object
+      additionalProperties: false
+      required:
+      - commandId
+      - kind
+      - captureId
+      - epoch
+      - requestedAt
+      - status
+      - boundarySequence
+      properties:
+        commandId:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum:
+          - start
+          - end
+        captureId:
+          type: string
+          pattern: ^[a-f0-9]{32}$
+        epoch:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        requestedAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum:
+          - pending
+          - acknowledged
+          - cancelled
+          - rejected
+        boundarySequence:
+          anyOf:
+          - type: integer
+            minimum: 0
+            maximum: 2147483647
+          - type: 'null'
+    BroadcastCreateInput:
+      type: object
+      additionalProperties: false
+      required:
+      - operationKey
+      - title
+      - description
+      - scheduledAt
+      - policy
+      properties:
+        operationKey:
+          type: string
+          pattern: ^[a-zA-Z0-9._:-]{1,128}$
+        title:
+          type: string
+          minLength: 1
+          maxLength: 180
+        description:
+          $ref: '#/components/schemas/RecordingDescription'
+        scheduledAt:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+        policy:
+          $ref: '#/components/schemas/BroadcastPolicy'
+        cover:
+          $ref: '#/components/schemas/LiveCoverSelection'
+    BroadcastEmergencyCloseInput:
+      type: object
+      additionalProperties: false
+      required:
+      - operationKey
+      - expectedRevision
+      - reason
+      properties:
+        operationKey:
+          type: string
+          pattern: ^[a-zA-Z0-9._:-]{1,128}$
+        expectedRevision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+    BroadcastErrorEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+      - data
+      - meta
+      - error
+      properties:
+        data:
+          type: 'null'
+        meta:
+          type: object
+          additionalProperties: true
+        error:
+          type: object
+          additionalProperties: false
+          required:
+          - code
+          - message
+          properties:
+            code:
+              type: string
+              enum:
+              - broadcast_invalid
+              - broadcast_not_found
+              - broadcast_state_conflict
+              - broadcast_already_bound
+              - broadcast_active_limit
+              - broadcast_epoch_mismatch
+              - broadcast_boundary_conflict
+              - broadcast_operation_conflict
+              - broadcast_revision_conflict
+              - broadcast_protocol_unsupported
+              - unauthorized
+              - forbidden
+              - rate_limited
+              - unavailable
+            message:
+              type: string
+    BroadcastListEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+      - data
+      - meta
+      - error
+      properties:
+        data:
+          $ref: '#/components/schemas/BroadcastList'
+        meta:
+          type: object
+          additionalProperties: true
+        error:
+          type: 'null'
+    BroadcastList:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      - nextCursor
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/BroadcastView'
+        nextCursor:
+          anyOf:
+          - type: string
+            minLength: 1
+          - type: 'null'
+    BroadcastMarkerAckInput:
+      type: object
+      additionalProperties: false
+      required:
+      - operationKey
+      - captureId
+      - epoch
+      - boundarySequence
+      properties:
+        operationKey:
+          type: string
+          pattern: ^[a-zA-Z0-9._:-]{1,128}$
+        captureId:
+          type: string
+          pattern: ^[a-f0-9]{32}$
+        epoch:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        boundarySequence:
+          type: integer
+          minimum: 0
+          maximum: 2147483647
+    BroadcastMutationInput:
+      type: object
+      additionalProperties: false
+      required:
+      - operationKey
+      - expectedRevision
+      properties:
+        operationKey:
+          type: string
+          pattern: ^[a-zA-Z0-9._:-]{1,128}$
+        expectedRevision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+    BroadcastMutationResultEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+      - data
+      - meta
+      - error
+      properties:
+        data:
+          $ref: '#/components/schemas/BroadcastMutationResult'
+        meta:
+          type: object
+          additionalProperties: true
+        error:
+          type: 'null'
+    BroadcastMutationResult:
+      type: object
+      additionalProperties: false
+      required:
+      - broadcast
+      - receipt
+      properties:
+        broadcast:
+          $ref: '#/components/schemas/BroadcastView'
+        receipt:
+          $ref: '#/components/schemas/BroadcastReceipt'
+    BroadcastPolicy:
+      type: object
+      additionalProperties: false
+      required:
+      - autoStart
+      - autoEnd
+      - autoPublish
+      properties:
+        autoStart:
+          type: boolean
+        autoEnd:
+          type: boolean
+        autoPublish:
+          type: boolean
+    BroadcastPreviewAccessEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+      - data
+      - meta
+      - error
+      properties:
+        data:
+          $ref: '#/components/schemas/BroadcastPreviewAccess'
+        meta:
+          type: object
+          additionalProperties: true
+        error:
+          type: 'null'
+    BroadcastPreviewAccess:
+      type: object
+      additionalProperties: false
+      required:
+      - recordingId
+      - captureId
+      - epoch
+      - purpose
+      - playbackScopeId
+      - mediaUrl
+      - exchangeCredential
+      - issuedAt
+      - expiresAt
+      properties:
+        recordingId:
+          type: string
+          format: uuid
+        captureId:
+          type: string
+          pattern: ^[a-f0-9]{32}$
+        epoch:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        purpose:
+          type: string
+          enum:
+          - staff-preview
+        playbackScopeId:
+          type: string
+          format: uuid
+        mediaUrl:
+          type: string
+          format: uri
+        exchangeCredential:
+          type: string
+          minLength: 1
+        issuedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+    BroadcastPreviewInput:
+      type: object
+      additionalProperties: false
+      required:
+      - captureId
+      - epoch
+      properties:
+        captureId:
+          type: string
+          pattern: ^[a-f0-9]{32}$
+        epoch:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+    BroadcastReceipt:
+      type: object
+      additionalProperties: false
+      required:
+      - operationKey
+      - operation
+      - state
+      properties:
+        operationKey:
+          type: string
+          pattern: ^[a-zA-Z0-9._:-]{1,128}$
+        operation:
+          type: string
+          enum:
+          - create
+          - update
+          - announce
+          - cancel
+          - bind
+          - start
+          - end
+          - cancel-command
+          - ack
+          - emergency-close
+        state:
+          type: string
+          enum:
+          - accepted
+          - completed
+          - rejected
+        commandId:
+          type: string
+          format: uuid
+    BroadcastUpdateInput:
+      type: object
+      additionalProperties: false
+      required:
+      - operationKey
+      - expectedRevision
+      properties:
+        operationKey:
+          type: string
+          pattern: ^[a-zA-Z0-9._:-]{1,128}$
+        expectedRevision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        title:
+          type: string
+          minLength: 1
+          maxLength: 180
+        description:
+          $ref: '#/components/schemas/RecordingDescription'
+        scheduledAt:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+        policy:
+          $ref: '#/components/schemas/BroadcastPolicy'
+        cover:
+          $ref: '#/components/schemas/LiveCoverSelection'
+      minProperties: 3
+    BroadcastView:
+      type: object
+      additionalProperties: false
+      required:
+      - recordingId
+      - revision
+      - phase
+      - announced
+      - scheduledAt
+      - title
+      - description
+      - policy
+      - cover
+      - binding
+      - boundaries
+      - health
+      - pendingCommand
+      - archive
+      properties:
+        recordingId:
+          type: string
+          format: uuid
+        revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        phase:
+          type: string
+          enum:
+          - draft
+          - scheduled
+          - preview
+          - start_pending
+          - live
+          - end_pending
+          - processing
+          - archived
+          - cancelled
+          - failed
+        announced:
+          type: boolean
+        scheduledAt:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+        title:
+          type: string
+          minLength: 1
+          maxLength: 180
+        description:
+          $ref: '#/components/schemas/RecordingDescription'
+        policy:
+          $ref: '#/components/schemas/BroadcastPolicy'
+        cover:
+          $ref: '#/components/schemas/LiveCoverSettings'
+        binding:
+          anyOf:
+          - $ref: '#/components/schemas/BroadcastBinding'
+          - type: 'null'
+        boundaries:
+          $ref: '#/components/schemas/BroadcastBoundaries'
+        health:
+          $ref: '#/components/schemas/BroadcastHealth'
+        pendingCommand:
+          anyOf:
+          - $ref: '#/components/schemas/BroadcastCommand'
+          - type: 'null'
+        archive:
+          $ref: '#/components/schemas/BroadcastArchive'
+    BroadcastArchive:
+      type: object
+      additionalProperties: false
+      required:
+      - state
+      - reason
+      properties:
+        state:
+          type: string
+          enum:
+          - none
+          - processing
+          - ready
+          - published
+          - failed
+        reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+    BroadcastBinding:
+      type: object
+      additionalProperties: false
+      required:
+      - captureId
+      - epoch
+      - actorId
+      properties:
+        captureId:
+          type: string
+          pattern: ^[a-f0-9]{32}$
+        epoch:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        actorId:
+          type: string
+          format: uuid
+    BroadcastBoundaries:
+      type: object
+      additionalProperties: false
+      required:
+      - startSequence
+      - endSequenceExclusive
+      - revision
+      properties:
+        startSequence:
+          anyOf:
+          - type: integer
+            minimum: 0
+            maximum: 2147483647
+          - type: 'null'
+        endSequenceExclusive:
+          anyOf:
+          - type: integer
+            minimum: 0
+            maximum: 2147483647
+          - type: 'null'
+        revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+    BroadcastHealth:
+      type: object
+      additionalProperties: false
+      required:
+      - state
+      - lastConfirmedAt
+      - lastPublishedAt
+      - verifiedEndSeconds
+      - queuedObjects
+      - reason
+      properties:
+        state:
+          type: string
+          enum:
+          - waiting
+          - healthy
+          - interrupted
+          - recovering
+        lastConfirmedAt:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+        lastPublishedAt:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+        verifiedEndSeconds:
+          anyOf:
+          - type: number
+            minimum: 0
+          - type: 'null'
+        queuedObjects:
+          anyOf:
+          - type: integer
+            minimum: 0
+          - type: 'null'
+        reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+    BroadcastViewEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+      - data
+      - meta
+      - error
+      properties:
+        data:
+          $ref: '#/components/schemas/BroadcastView'
+        meta:
+          type: object
+          additionalProperties: true
+        error:
+          type: 'null'
+    BroadcastWatchEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+      - data
+      - meta
+      - error
+      properties:
+        data:
+          $ref: '#/components/schemas/BroadcastWatch'
+        meta:
+          type: object
+          additionalProperties: true
+        error:
+          type: 'null'
+    BroadcastWatch:
+      type: object
+      additionalProperties: false
+      required:
+      - recordingId
+      - title
+      - description
+      - view
+      - scheduledAt
+      - serverNow
+      - cover
+      - stateRevision
+      properties:
+        recordingId:
+          type: string
+          format: uuid
+        title:
+          type: string
+          minLength: 1
+          maxLength: 180
+        description:
+          $ref: '#/components/schemas/RecordingDescription'
+        view:
+          type: string
+          enum:
+          - waiting
+          - live
+          - processing
+          - vod
+          - cancelled
+          - expired
+          - unavailable
+        scheduledAt:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+        serverNow:
+          type: string
+          format: date-time
+        cover:
+          anyOf:
+          - type: object
+            additionalProperties: false
+            required:
+            - revision
+            - contentPath
+            properties:
+              revision:
+                type: string
+                minLength: 1
+              contentPath:
+                type: string
+                pattern: ^/api/member/
+          - type: 'null'
+        stateRevision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        recording:
+          anyOf:
+          - $ref: '#/components/schemas/MemberRecording'
+          - type: 'null'
+        live:
+          anyOf:
+          - $ref: '#/components/schemas/MemberLiveRecording'
+          - type: 'null'
+        mediaStartSeconds:
+          anyOf:
+          - type: number
+            minimum: 0
+          - type: 'null'
+        durationSeconds:
+          anyOf:
+          - type: number
+            minimum: 0
+          - type: 'null'
+    BroadcastWatchListEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+      - data
+      - meta
+      - error
+      properties:
+        data:
+          $ref: '#/components/schemas/BroadcastWatchList'
+        meta:
+          type: object
+          additionalProperties: true
+        error:
+          type: 'null'
+    BroadcastWatchList:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      - nextCursor
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/BroadcastWatch'
+        nextCursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+    ErrorEnvelope:
+      type: object
+      required:
+      - data
+      - meta
+      - error
+      properties:
+        data:
+          type:
+          - 'null'
+        meta:
+          type: object
+          additionalProperties: true
+        error:
+          $ref: '#/components/schemas/ErrorBody'
+    ErrorBody:
+      type: object
+      required:
+      - code
+      - message
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+    LiveCoverSelection:
+      oneOf:
+      - type: object
+        additionalProperties: false
+        required:
+        - mode
+        properties:
+          mode:
+            type: string
+            enum:
+            - auto
+      - type: object
+        additionalProperties: false
+        required:
+        - mode
+        - uploadId
+        properties:
+          mode:
+            type: string
+            enum:
+            - custom
+          uploadId:
+            type: string
+            pattern: ^[A-Za-z0-9-]{1,128}$
+    LiveCoverSettings:
+      type: object
+      additionalProperties: false
+      required:
+      - revision
+      - selection
+      - coverState
+      properties:
+        revision:
+          type: integer
+          minimum: 1
+          format: int64
+        selection:
+          $ref: '#/components/schemas/LiveCoverSelection'
+        coverState:
+          type: string
+          enum:
+          - none
+          - waiting
+          - pending
+          - ready
+          - failed
+        coverId:
+          type: string
+          maxLength: 128
+        contentPath:
+          type: string
+          pattern: ^/api/admin/recordings/
+        inheritedRevision:
+          type: integer
+          minimum: 1
+          format: int64
+    MemberLiveRecording:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - captureId
+      - title
+      - liveState
+      - createdAt
+      - stopAcceptedAt
+      - progress
+      properties:
+        coverRevision:
+          type: string
+          maxLength: 128
+          description: Immutable active image identity; changes only after a ready image becomes effective.
+        id:
+          type: string
+          format: uuid
+        captureId:
+          type: string
+          pattern: ^[a-f0-9]{32}$
+        title:
+          type: string
+          maxLength: 180
+        description:
+          $ref: '#/components/schemas/RecordingDescription'
+        liveState:
+          type: string
+          enum:
+          - starting
+          - live
+          - recovering
+          - interrupted
+          - ending
+          - ended
+          - failed
+          - expired
+          - aborted
+        createdAt:
+          type: string
+          format: date-time
+          description: UTC RFC3339 timestamp emitted with Z suffix.
+        stopAcceptedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: UTC RFC3339 timestamp emitted with Z suffix.
+        progress:
+          $ref: '#/components/schemas/RecordingLiveProgress'
+    MemberRecording:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - title
+      - uploadedAt
+      - expiresAt
+      - featured
+      - hidden
+      - status
+      - version
+      properties:
+        id:
+          type: string
+          format: uuid
+        selectedCoverId:
+          type: string
+          pattern: ^[A-Za-z0-9-]{1,128}$
+          description: Optional explicit CMS selection. An absent value may use default auto cover; member clients
+            may lazily request the current cover endpoint.
+        title:
+          type: string
+          minLength: 1
+          maxLength: 180
+        description:
+          $ref: '#/components/schemas/RecordingDescription'
+        uploadedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        expiresAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        featured:
+          type: boolean
+        hidden:
+          type: boolean
+        status:
+          type: string
+          enum:
+          - draft
+          - published
+        primaryAssetVersionId:
+          type: string
+        packageId:
+          type: string
+          pattern: ^[a-f0-9]{32}$
+        sourceId:
+          type: string
+          pattern: ^[a-f0-9]{32}$
+          description: Immutable browser source reference for Admin resume and processing status.
+        readyAt:
+          type: string
+          format: date-time
+        durationSeconds:
+          type: number
+          minimum: 0
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+    RecordingCoverUploadEnvelope:
+      type: object
+      required:
+      - data
+      - meta
+      properties:
+        data:
+          $ref: '#/components/schemas/RecordingCoverUpload'
+        meta:
+          type: object
+          additionalProperties: true
+        error:
+          type:
+          - 'null'
+    RecordingCoverUpload:
+      type: object
+      additionalProperties: false
+      required:
+      - uploadId
+      - state
+      properties:
+        uploadId:
+          type: string
+          pattern: ^[A-Za-z0-9-]{1,128}$
+        state:
+          type: string
+          enum:
+          - uploading
+          - pending
+          - processing
+          - ready
+          - failed
+          - expired
+    RecordingDescription:
+      type: string
+      maxLength: 5000
+      pattern: ^[^\x00]*$
+      description: Optional plain-text video description; Unicode code points, no HTML rendering. Omission preserves
+        the saved value on update; an empty string clears it.
+    RecordingLiveProgress:
+      type: object
+      additionalProperties: false
+      required:
+      - revision
+      - firstSequence
+      - lastSequence
+      - mediaEndSeconds
+      - lastAdvancedAt
+      - endedAt
+      - ended
+      properties:
+        revision:
+          type: integer
+          format: int64
+          minimum: 0
+        firstSequence:
+          type: integer
+          const: 0
+        lastSequence:
+          type: integer
+          minimum: -1
+          maximum: 1439
+        mediaEndSeconds:
+          type: number
+          minimum: 0
+          maximum: 43200
+        lastAdvancedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: UTC RFC3339 timestamp emitted with Z suffix.
+        endedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: UTC RFC3339 timestamp emitted with Z suffix.
+        ended:
+          type: boolean

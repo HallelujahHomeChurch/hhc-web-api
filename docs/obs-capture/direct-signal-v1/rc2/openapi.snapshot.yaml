@@ -1,0 +1,551 @@
+openapi: 3.1.0
+info:
+  title: HHC Web API
+  version: d1-2026-10-17.rc2
+  description: 'Website API owns CMS records and publication state; asset-api owns
+    file bytes, scanning, derivatives, and grants.
+
+    Campaign routes are authorization-preserving proxies to engagement-api, which
+    owns campaign and consent state.
+
+    Structured online bulletins start at issue 1739. Earlier issues retain PDF discovery/downloads
+    and private immutable revision history, but online reader access, new extraction,
+    Simplified conversion and online publication return 404. Discovery omits only
+    their online projections, not their PDFs. Existing offline receipts are neither
+    rewritten nor extended.'
+paths:
+  /admin/broadcasts/{recordingId}/control:
+    get:
+      operationId: getBroadcastControl
+      summary: getBroadcastControl
+      description: Durable B1 control with immutable operation receipts and verified
+        media boundaries. Creation and binding require BROADCAST_WRITERS_ENABLED;
+        reads and existing controls remain available when disabled.
+      tags:
+      - Admin
+      x-hhc-visibility: admin
+      x-hhc-callers:
+      - api-gateway
+      x-hhc-cache: private, no-store
+      x-required-scopes:
+      - cms:recordings:write
+      security:
+      - daprApiToken: []
+        daprCallerAppId: []
+        trustedUserId: []
+        trustedAuthProvider: []
+        trustedScopes: []
+      servers:
+      - url: https://admin.alive.org.tw/api
+      responses:
+        '200':
+          description: BroadcastControl
+          content:
+            application/json:
+              schema:
+                oneOf:
+                - $ref: '#/components/schemas/BroadcastControlEnvelope'
+                - $ref: '#/components/schemas/BroadcastControlD1Envelope'
+        '400':
+          $ref: '#/components/responses/BroadcastFailure'
+        '401':
+          $ref: '#/components/responses/AdminUnauthorized'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/BroadcastFailure'
+        '409':
+          $ref: '#/components/responses/BroadcastFailure'
+        '412':
+          $ref: '#/components/responses/BroadcastFailure'
+        '422':
+          $ref: '#/components/responses/BroadcastFailure'
+        '429':
+          $ref: '#/components/responses/BroadcastFailure'
+        '503':
+          $ref: '#/components/responses/BroadcastFailure'
+      parameters:
+      - name: recordingId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: captureId
+        in: query
+        required: true
+        schema:
+          type: string
+          pattern: ^[a-f0-9]{32}$
+      - name: epoch
+        in: query
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+      - name: controlVersion
+        in: query
+        required: false
+        description: Omit for legacy B1 control; opt in to identity-bound D1 public
+          boundaries.
+        schema:
+          type: string
+          enum:
+          - d1-2026-10-17.rc2
+  /ingest/broadcasts/{id}/control:
+    get:
+      operationId: ingestIngestBroadcastsIdControlGet
+      summary: Key-only OBS control
+      description: K3 key-only OBS transport. Console owns metadata and publication
+        policy. No Account login; no proxy retry. Bootstrap/renewal use body-only
+        stream key; session requests use the event-scoped bearer. Existing B1/C1 validation
+        and idempotency are unchanged.
+      tags:
+      - Admin
+      x-hhc-visibility: admin
+      x-hhc-callers:
+      - api-gateway
+      x-hhc-cache: private, no-store
+      servers:
+      - url: https://admin.alive.org.tw/api
+      security:
+      - daprApiToken: []
+        daprCallerAppId: []
+        broadcastIngestSession: []
+      responses:
+        '200':
+          description: Accepted transport result
+          content:
+            application/json:
+              schema:
+                oneOf:
+                - $ref: '#/components/schemas/BroadcastControlEnvelope'
+                - $ref: '#/components/schemas/BroadcastControlD1Envelope'
+        '400':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '401':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '403':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '404':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '409':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '410':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '412':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '413':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '422':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '429':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '503':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: captureId
+        in: query
+        required: true
+        schema:
+          type: string
+          pattern: ^[a-f0-9]{32}$
+      - name: epoch
+        in: query
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+      - name: controlVersion
+        in: query
+        required: false
+        description: Omit for legacy B1 control; opt in to identity-bound D1 public
+          boundaries.
+        schema:
+          type: string
+          enum:
+          - d1-2026-10-17.rc2
+components:
+  schemas:
+    BroadcastControlEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+      - data
+      - meta
+      - error
+      properties:
+        data:
+          $ref: '#/components/schemas/BroadcastControl'
+        meta:
+          type: object
+          additionalProperties: true
+        error:
+          type: 'null'
+    BroadcastControl:
+      type: object
+      additionalProperties: false
+      required:
+      - revision
+      - phase
+      - pendingCommand
+      properties:
+        revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        phase:
+          type: string
+          enum:
+          - draft
+          - scheduled
+          - preview
+          - start_pending
+          - live
+          - end_pending
+          - processing
+          - archived
+          - cancelled
+          - failed
+        pendingCommand:
+          anyOf:
+          - $ref: '#/components/schemas/BroadcastCommand'
+          - type: 'null'
+    BroadcastCommand:
+      type: object
+      additionalProperties: false
+      required:
+      - commandId
+      - kind
+      - captureId
+      - epoch
+      - requestedAt
+      - status
+      - boundarySequence
+      properties:
+        commandId:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum:
+          - start
+          - end
+        captureId:
+          type: string
+          pattern: ^[a-f0-9]{32}$
+        epoch:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        requestedAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum:
+          - pending
+          - acknowledged
+          - cancelled
+          - rejected
+        boundarySequence:
+          anyOf:
+          - type: integer
+            minimum: 0
+            maximum: 2147483647
+          - type: 'null'
+    BroadcastControlD1Envelope:
+      type: object
+      additionalProperties: false
+      required:
+      - data
+      - meta
+      - error
+      properties:
+        data:
+          $ref: '#/components/schemas/BroadcastControlD1'
+        meta:
+          type: object
+          additionalProperties: true
+        error:
+          type: 'null'
+    BroadcastControlD1:
+      type: object
+      additionalProperties: false
+      required:
+      - revision
+      - phase
+      - pendingCommand
+      - controlVersion
+      - recordingId
+      - captureId
+      - epoch
+      - boundaries
+      properties:
+        revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        phase:
+          type: string
+          enum:
+          - draft
+          - scheduled
+          - preview
+          - start_pending
+          - live
+          - end_pending
+          - processing
+          - archived
+          - cancelled
+          - failed
+        pendingCommand:
+          anyOf:
+          - $ref: '#/components/schemas/BroadcastCommand'
+          - type: 'null'
+        controlVersion:
+          type: string
+          enum:
+          - d1-2026-10-17.rc2
+        recordingId:
+          type: string
+          format: uuid
+        captureId:
+          type: string
+          pattern: ^[a-f0-9]{32}$
+        epoch:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        boundaries:
+          $ref: '#/components/schemas/BroadcastBoundaries'
+    BroadcastBoundaries:
+      type: object
+      additionalProperties: false
+      required:
+      - startSequence
+      - endSequenceExclusive
+      - revision
+      properties:
+        startSequence:
+          anyOf:
+          - type: integer
+            minimum: 0
+            maximum: 2147483647
+          - type: 'null'
+        endSequenceExclusive:
+          anyOf:
+          - type: integer
+            minimum: 0
+            maximum: 2147483647
+          - type: 'null'
+        revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+    BroadcastErrorEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+      - data
+      - meta
+      - error
+      properties:
+        data:
+          type: 'null'
+        meta:
+          type: object
+          additionalProperties: true
+        error:
+          type: object
+          additionalProperties: false
+          required:
+          - code
+          - message
+          properties:
+            code:
+              type: string
+              enum:
+              - broadcast_invalid
+              - broadcast_not_found
+              - broadcast_state_conflict
+              - broadcast_already_bound
+              - broadcast_active_limit
+              - broadcast_epoch_mismatch
+              - broadcast_boundary_conflict
+              - broadcast_operation_conflict
+              - broadcast_revision_conflict
+              - broadcast_protocol_unsupported
+              - unauthorized
+              - forbidden
+              - rate_limited
+              - unavailable
+            message:
+              type: string
+    ErrorEnvelope:
+      type: object
+      required:
+      - data
+      - meta
+      - error
+      properties:
+        data:
+          type:
+          - 'null'
+        meta:
+          type: object
+          additionalProperties: true
+        error:
+          $ref: '#/components/schemas/ErrorBody'
+    ErrorBody:
+      type: object
+      required:
+      - code
+      - message
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+    BroadcastIngestErrorEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+      - data
+      - meta
+      - error
+      properties:
+        data:
+          type: 'null'
+        meta:
+          type: object
+          additionalProperties: true
+        error:
+          type: object
+          additionalProperties: false
+          required:
+          - code
+          - message
+          properties:
+            code:
+              type: string
+              minLength: 1
+            message:
+              type: string
+            details:
+              type: object
+              additionalProperties: true
+  responses:
+    BroadcastFailure:
+      description: B1 operation rejected or dependency unavailable; failed responses
+        never prove a state transition.
+      headers:
+        Retry-After:
+          description: Retry delay for unavailable dependencies.
+          schema:
+            type: integer
+            minimum: 1
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/BroadcastErrorEnvelope'
+    AdminUnauthorized:
+      description: Trusted gateway identity is missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    AdminForbidden:
+      description: The trusted Account identity lacks a required scope.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+  securitySchemes:
+    broadcastIngestSession:
+      type: http
+      scheme: bearer
+      bearerFormat: HHC-INGEST
+      description: Event-bound short-lived HHC ingest session; never an Account access
+        token.
+    daprApiToken:
+      type: apiKey
+      in: header
+      name: dapr-api-token
+      description: Dapr API token supplied by api-gateway; the value is never published
+        in this contract.
+    daprCallerAppId:
+      type: apiKey
+      in: header
+      name: Dapr-Caller-App-Id
+      description: Must identify the configured api-gateway Dapr application.
+    trustedAuthProvider:
+      type: apiKey
+      in: header
+      name: X-HHC-Auth-Provider
+      description: Must be account-api.
+    trustedScopes:
+      type: apiKey
+      in: header
+      name: X-HHC-Scopes
+      description: Sanitized Account scopes injected by api-gateway and enforced per
+        operation.
+    trustedUserId:
+      type: apiKey
+      in: header
+      name: X-HHC-User-ID
+      description: Sanitized Account user identifier injected by api-gateway.
+servers:
+- url: https://admin.alive.org.tw/api

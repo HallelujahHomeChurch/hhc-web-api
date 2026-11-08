@@ -1,0 +1,560 @@
+[
+  {
+    "name": "create",
+    "schema": "BroadcastCreateInput",
+    "valid": true,
+    "value": {
+      "operationKey": "create-1",
+      "title": "Sunday gathering",
+      "description": "",
+      "scheduledAt": "2026-10-18T01:00:00Z",
+      "policy": {
+        "autoStart": false,
+        "autoEnd": true,
+        "autoPublish": true
+      }
+    }
+  },
+  {
+    "name": "invalid_create_unknown",
+    "schema": "BroadcastCreateInput",
+    "valid": false,
+    "value": {
+      "operationKey": "create-1",
+      "title": "Sunday gathering",
+      "description": "",
+      "scheduledAt": "2026-10-18T01:00:00Z",
+      "policy": {
+        "autoStart": false,
+        "autoEnd": true,
+        "autoPublish": true
+      },
+      "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  },
+  {
+    "name": "invalid_create_empty_title",
+    "schema": "BroadcastCreateInput",
+    "valid": false,
+    "value": {
+      "operationKey": "create-1",
+      "title": "",
+      "description": "",
+      "scheduledAt": "2026-10-18T01:00:00Z",
+      "policy": {
+        "autoStart": false,
+        "autoEnd": true,
+        "autoPublish": true
+      }
+    }
+  },
+  {
+    "name": "view_draft",
+    "schema": "BroadcastViewEnvelope",
+    "valid": true,
+    "value": {
+      "data": {
+        "recordingId": "018f0c1f-18d0-7e81-9f6f-69c456db7003",
+        "revision": 1,
+        "phase": "draft",
+        "announced": false,
+        "scheduledAt": "2026-10-18T01:00:00Z",
+        "title": "Sunday gathering",
+        "description": "",
+        "policy": {
+          "autoStart": false,
+          "autoEnd": true,
+          "autoPublish": true
+        },
+        "cover": {
+          "revision": 1,
+          "selection": {
+            "mode": "auto"
+          },
+          "coverState": "waiting"
+        },
+        "binding": null,
+        "boundaries": {
+          "startSequence": null,
+          "endSequenceExclusive": null,
+          "revision": 1
+        },
+        "health": {
+          "state": "waiting",
+          "lastConfirmedAt": null,
+          "lastPublishedAt": null,
+          "verifiedEndSeconds": null,
+          "queuedObjects": null,
+          "reason": null
+        },
+        "pendingCommand": null,
+        "archive": {
+          "state": "none",
+          "reason": null
+        }
+      },
+      "meta": {},
+      "error": null
+    }
+  },
+  {
+    "name": "create_receipt",
+    "schema": "BroadcastMutationResultEnvelope",
+    "valid": true,
+    "value": {
+      "data": {
+        "broadcast": {
+          "recordingId": "018f0c1f-18d0-7e81-9f6f-69c456db7003",
+          "revision": 1,
+          "phase": "draft",
+          "announced": false,
+          "scheduledAt": "2026-10-18T01:00:00Z",
+          "title": "Sunday gathering",
+          "description": "",
+          "policy": {
+            "autoStart": false,
+            "autoEnd": true,
+            "autoPublish": true
+          },
+          "cover": {
+            "revision": 1,
+            "selection": {
+              "mode": "auto"
+            },
+            "coverState": "waiting"
+          },
+          "binding": null,
+          "boundaries": {
+            "startSequence": null,
+            "endSequenceExclusive": null,
+            "revision": 1
+          },
+          "health": {
+            "state": "waiting",
+            "lastConfirmedAt": null,
+            "lastPublishedAt": null,
+            "verifiedEndSeconds": null,
+            "queuedObjects": null,
+            "reason": null
+          },
+          "pendingCommand": null,
+          "archive": {
+            "state": "none",
+            "reason": null
+          }
+        },
+        "receipt": {
+          "operationKey": "create-1",
+          "operation": "create",
+          "state": "completed"
+        }
+      },
+      "meta": {},
+      "error": null
+    }
+  },
+  {
+    "name": "list",
+    "schema": "BroadcastListEnvelope",
+    "valid": true,
+    "value": {
+      "data": {
+        "items": [
+          {
+            "recordingId": "018f0c1f-18d0-7e81-9f6f-69c456db7003",
+            "revision": 1,
+            "phase": "draft",
+            "announced": false,
+            "scheduledAt": "2026-10-18T01:00:00Z",
+            "title": "Sunday gathering",
+            "description": "",
+            "policy": {
+              "autoStart": false,
+              "autoEnd": true,
+              "autoPublish": true
+            },
+            "cover": {
+              "revision": 1,
+              "selection": {
+                "mode": "auto"
+              },
+              "coverState": "waiting"
+            },
+            "binding": null,
+            "boundaries": {
+              "startSequence": null,
+              "endSequenceExclusive": null,
+              "revision": 1
+            },
+            "health": {
+              "state": "waiting",
+              "lastConfirmedAt": null,
+              "lastPublishedAt": null,
+              "verifiedEndSeconds": null,
+              "queuedObjects": null,
+              "reason": null
+            },
+            "pendingCommand": null,
+            "archive": {
+              "state": "none",
+              "reason": null
+            }
+          }
+        ],
+        "nextCursor": null
+      },
+      "meta": {},
+      "error": null
+    }
+  },
+  {
+    "name": "capabilities",
+    "schema": "BroadcastCapabilitiesEnvelope",
+    "valid": true,
+    "value": {
+      "data": {
+        "versions": [
+          "b1-2026-10-10.rc1"
+        ],
+        "maxActiveCaptures": 1,
+        "markerMode": "next-common-segment"
+      },
+      "meta": {},
+      "error": null
+    }
+  },
+  {
+    "name": "update",
+    "schema": "BroadcastUpdateInput",
+    "valid": true,
+    "value": {
+      "operationKey": "update-1",
+      "expectedRevision": 1,
+      "title": "Updated"
+    }
+  },
+  {
+    "name": "empty_update",
+    "schema": "BroadcastUpdateInput",
+    "valid": false,
+    "value": {
+      "operationKey": "update-1",
+      "expectedRevision": 1
+    }
+  },
+  {
+    "name": "bind",
+    "schema": "BroadcastBindInput",
+    "valid": true,
+    "value": {
+      "operationKey": "bind-1",
+      "expectedRevision": 2,
+      "protocolVersion": "b1-2026-10-10.rc1"
+    }
+  },
+  {
+    "name": "control_pending",
+    "schema": "BroadcastControlEnvelope",
+    "valid": true,
+    "value": {
+      "data": {
+        "revision": 4,
+        "phase": "start_pending",
+        "pendingCommand": {
+          "commandId": "018f0c1f-18d0-7e81-9f6f-69c456db7005",
+          "kind": "start",
+          "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "epoch": 1,
+          "requestedAt": "2026-10-18T00:59:00Z",
+          "status": "pending",
+          "boundarySequence": null
+        }
+      },
+      "meta": {},
+      "error": null
+    }
+  },
+  {
+    "name": "start_ack",
+    "schema": "BroadcastMarkerAckInput",
+    "valid": true,
+    "value": {
+      "operationKey": "ack-1",
+      "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "epoch": 1,
+      "boundarySequence": 8
+    }
+  },
+  {
+    "name": "end_ack",
+    "schema": "BroadcastMarkerAckInput",
+    "valid": true,
+    "value": {
+      "operationKey": "ack-2",
+      "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "epoch": 1,
+      "boundarySequence": 20
+    }
+  },
+  {
+    "name": "invalid_ack_revision",
+    "schema": "BroadcastMarkerAckInput",
+    "valid": false,
+    "value": {
+      "operationKey": "ack-1",
+      "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "epoch": 1,
+      "boundarySequence": 8,
+      "expectedRevision": 4
+    }
+  },
+  {
+    "name": "watch_waiting",
+    "schema": "BroadcastWatchEnvelope",
+    "valid": true,
+    "value": {
+      "data": {
+        "recordingId": "018f0c1f-18d0-7e81-9f6f-69c456db7003",
+        "title": "Sunday gathering",
+        "description": "",
+        "view": "waiting",
+        "scheduledAt": "2026-10-18T01:00:00Z",
+        "serverNow": "2026-10-18T00:30:00Z",
+        "cover": null,
+        "stateRevision": 2
+      },
+      "meta": {},
+      "error": null
+    }
+  },
+  {
+    "name": "preview",
+    "schema": "BroadcastPreviewAccessEnvelope",
+    "valid": true,
+    "value": {
+      "data": {
+        "recordingId": "018f0c1f-18d0-7e81-9f6f-69c456db7003",
+        "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "epoch": 1,
+        "purpose": "staff-preview",
+        "playbackScopeId": "018f0c1f-18d0-7e81-9f6f-69c456db7005",
+        "mediaUrl": "https://example.invalid/preview/master.m3u8",
+        "exchangeCredential": "synthetic-not-a-credential",
+        "issuedAt": "2026-10-18T00:30:00Z",
+        "expiresAt": "2026-10-18T00:35:00Z"
+      },
+      "meta": {},
+      "error": null
+    }
+  },
+  {
+    "name": "broadcast_invalid",
+    "schema": "BroadcastErrorEnvelope",
+    "valid": true,
+    "value": {
+      "data": null,
+      "meta": {},
+      "error": {
+        "code": "broadcast_invalid",
+        "message": "broadcast_invalid"
+      }
+    }
+  },
+  {
+    "name": "broadcast_not_found",
+    "schema": "BroadcastErrorEnvelope",
+    "valid": true,
+    "value": {
+      "data": null,
+      "meta": {},
+      "error": {
+        "code": "broadcast_not_found",
+        "message": "broadcast_not_found"
+      }
+    }
+  },
+  {
+    "name": "broadcast_state_conflict",
+    "schema": "BroadcastErrorEnvelope",
+    "valid": true,
+    "value": {
+      "data": null,
+      "meta": {},
+      "error": {
+        "code": "broadcast_state_conflict",
+        "message": "broadcast_state_conflict"
+      }
+    }
+  },
+  {
+    "name": "broadcast_already_bound",
+    "schema": "BroadcastErrorEnvelope",
+    "valid": true,
+    "value": {
+      "data": null,
+      "meta": {},
+      "error": {
+        "code": "broadcast_already_bound",
+        "message": "broadcast_already_bound"
+      }
+    }
+  },
+  {
+    "name": "broadcast_active_limit",
+    "schema": "BroadcastErrorEnvelope",
+    "valid": true,
+    "value": {
+      "data": null,
+      "meta": {},
+      "error": {
+        "code": "broadcast_active_limit",
+        "message": "broadcast_active_limit"
+      }
+    }
+  },
+  {
+    "name": "broadcast_epoch_mismatch",
+    "schema": "BroadcastErrorEnvelope",
+    "valid": true,
+    "value": {
+      "data": null,
+      "meta": {},
+      "error": {
+        "code": "broadcast_epoch_mismatch",
+        "message": "broadcast_epoch_mismatch"
+      }
+    }
+  },
+  {
+    "name": "broadcast_boundary_conflict",
+    "schema": "BroadcastErrorEnvelope",
+    "valid": true,
+    "value": {
+      "data": null,
+      "meta": {},
+      "error": {
+        "code": "broadcast_boundary_conflict",
+        "message": "broadcast_boundary_conflict"
+      }
+    }
+  },
+  {
+    "name": "broadcast_operation_conflict",
+    "schema": "BroadcastErrorEnvelope",
+    "valid": true,
+    "value": {
+      "data": null,
+      "meta": {},
+      "error": {
+        "code": "broadcast_operation_conflict",
+        "message": "broadcast_operation_conflict"
+      }
+    }
+  },
+  {
+    "name": "broadcast_revision_conflict",
+    "schema": "BroadcastErrorEnvelope",
+    "valid": true,
+    "value": {
+      "data": null,
+      "meta": {},
+      "error": {
+        "code": "broadcast_revision_conflict",
+        "message": "broadcast_revision_conflict"
+      }
+    }
+  },
+  {
+    "name": "broadcast_protocol_unsupported",
+    "schema": "BroadcastErrorEnvelope",
+    "valid": true,
+    "value": {
+      "data": null,
+      "meta": {},
+      "error": {
+        "code": "broadcast_protocol_unsupported",
+        "message": "broadcast_protocol_unsupported"
+      }
+    }
+  },
+  {
+    "name": "unauthorized",
+    "schema": "BroadcastErrorEnvelope",
+    "valid": true,
+    "value": {
+      "data": null,
+      "meta": {},
+      "error": {
+        "code": "unauthorized",
+        "message": "unauthorized"
+      }
+    }
+  },
+  {
+    "name": "forbidden",
+    "schema": "BroadcastErrorEnvelope",
+    "valid": true,
+    "value": {
+      "data": null,
+      "meta": {},
+      "error": {
+        "code": "forbidden",
+        "message": "forbidden"
+      }
+    }
+  },
+  {
+    "name": "rate_limited",
+    "schema": "BroadcastErrorEnvelope",
+    "valid": true,
+    "value": {
+      "data": null,
+      "meta": {},
+      "error": {
+        "code": "rate_limited",
+        "message": "rate_limited"
+      }
+    }
+  },
+  {
+    "name": "unavailable",
+    "schema": "BroadcastErrorEnvelope",
+    "valid": true,
+    "value": {
+      "data": null,
+      "meta": {},
+      "error": {
+        "code": "unavailable",
+        "message": "unavailable"
+      }
+    }
+  },
+  {
+    "name": "start",
+    "schema": "BroadcastMutationInput",
+    "valid": true,
+    "value": {
+      "operationKey": "start-1",
+      "expectedRevision": 4
+    }
+  },
+  {
+    "name": "emergency_close",
+    "schema": "BroadcastEmergencyCloseInput",
+    "valid": true,
+    "value": {
+      "operationKey": "close-1",
+      "expectedRevision": 7,
+      "reason": "Stop member exposure"
+    }
+  },
+  {
+    "name": "preview_input",
+    "schema": "BroadcastPreviewInput",
+    "valid": true,
+    "value": {
+      "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "epoch": 1
+    }
+  }
+]

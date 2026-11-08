@@ -1,0 +1,336 @@
+components:
+    schemas:
+        BroadcastIngestSession:
+            additionalProperties: false
+            properties:
+                captureId:
+                    pattern: ^[a-f0-9]{32}$
+                    type: string
+                epoch:
+                    maximum: 9.007199254740991e+15
+                    minimum: 1
+                    type: integer
+                expiresAt:
+                    format: date-time
+                    type: string
+                recordingId:
+                    format: uuid
+                    type: string
+                token:
+                    maxLength: 2048
+                    pattern: ^hhc_ingest_[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$
+                    readOnly: true
+                    type: string
+            required:
+                - token
+                - expiresAt
+                - recordingId
+                - captureId
+                - epoch
+            type: object
+        BroadcastOutputReplayActive:
+            additionalProperties: false
+            properties:
+                captureId:
+                    pattern: ^[a-f0-9]{32}$
+                    type: string
+                epoch:
+                    maximum: 9.007199254740991e+15
+                    minimum: 1
+                    type: integer
+                mediaProfile:
+                    enum:
+                        - obs-hls-10s-v1
+                    type: string
+                outputSessionId:
+                    format: uuid
+                    not:
+                        const: 00000000-0000-0000-0000-000000000000
+                    pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+                    type: string
+                protocolVersion:
+                    const: k5-2026-10-20.rc1
+                receipt:
+                    $ref: '#/components/schemas/BroadcastOutputReplayReceipt'
+                recordingId:
+                    format: uuid
+                    not:
+                        const: 00000000-0000-0000-0000-000000000000
+                    pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+                    type: string
+                session:
+                    $ref: '#/components/schemas/BroadcastIngestSession'
+                sourceId:
+                    format: uuid
+                    not:
+                        const: 00000000-0000-0000-0000-000000000000
+                    pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+                    type: string
+                state:
+                    const: active
+            required:
+                - protocolVersion
+                - outputSessionId
+                - sourceId
+                - recordingId
+                - captureId
+                - epoch
+                - receipt
+                - state
+                - session
+            type: object
+        BroadcastOutputReplayEnvelope:
+            additionalProperties: false
+            properties:
+                data:
+                    oneOf:
+                        - $ref: '#/components/schemas/BroadcastOutputReplayActive'
+                        - $ref: '#/components/schemas/BroadcastOutputReplayTerminal'
+                error:
+                    type: "null"
+                meta:
+                    additionalProperties: true
+                    type: object
+            required:
+                - data
+                - meta
+                - error
+            type: object
+        BroadcastOutputReplayErrorEnvelope:
+            additionalProperties: false
+            properties:
+                data:
+                    type: "null"
+                error:
+                    additionalProperties: false
+                    properties:
+                        code:
+                            minLength: 1
+                            type: string
+                        details:
+                            additionalProperties: true
+                            type: object
+                        message:
+                            type: string
+                    required:
+                        - code
+                        - message
+                    type: object
+                meta:
+                    additionalProperties: true
+                    type: object
+            required:
+                - data
+                - meta
+                - error
+            type: object
+        BroadcastOutputReplayInput:
+            additionalProperties: false
+            properties:
+                captureId:
+                    pattern: ^[a-f0-9]{32}$
+                    type: string
+                epoch:
+                    maximum: 9.007199254740991e+15
+                    minimum: 1
+                    type: integer
+                mediaProfile:
+                    enum:
+                        - obs-hls-10s-v1
+                    type: string
+                outputSessionId:
+                    format: uuid
+                    not:
+                        const: 00000000-0000-0000-0000-000000000000
+                    pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+                    type: string
+                protocolVersion:
+                    const: k5-2026-10-20.rc1
+                receipt:
+                    $ref: '#/components/schemas/BroadcastOutputReplayReceipt'
+                recordingId:
+                    format: uuid
+                    not:
+                        const: 00000000-0000-0000-0000-000000000000
+                    pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+                    type: string
+                sourceId:
+                    format: uuid
+                    not:
+                        const: 00000000-0000-0000-0000-000000000000
+                    pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+                    type: string
+                streamKey:
+                    pattern: ^hhc_stream_[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$
+                    type: string
+                    writeOnly: true
+            required:
+                - protocolVersion
+                - outputSessionId
+                - sourceId
+                - recordingId
+                - captureId
+                - epoch
+                - receipt
+                - streamKey
+            type: object
+        BroadcastOutputReplayReceipt:
+            additionalProperties: false
+            properties:
+                commandId:
+                    format: uuid
+                    not:
+                        const: 00000000-0000-0000-0000-000000000000
+                    pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+                    type: string
+                operation:
+                    const: bind
+                operationKey:
+                    pattern: ^[a-zA-Z0-9._:-]{1,128}$
+                    type: string
+                state:
+                    const: completed
+            required:
+                - operationKey
+                - operation
+                - state
+            type: object
+        BroadcastOutputReplayTerminal:
+            additionalProperties: false
+            properties:
+                captureId:
+                    pattern: ^[a-f0-9]{32}$
+                    type: string
+                epoch:
+                    maximum: 9.007199254740991e+15
+                    minimum: 1
+                    type: integer
+                mediaProfile:
+                    enum:
+                        - obs-hls-10s-v1
+                    type: string
+                outputSessionId:
+                    format: uuid
+                    not:
+                        const: 00000000-0000-0000-0000-000000000000
+                    pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+                    type: string
+                protocolVersion:
+                    const: k5-2026-10-20.rc1
+                receipt:
+                    $ref: '#/components/schemas/BroadcastOutputReplayReceipt'
+                recordingId:
+                    format: uuid
+                    not:
+                        const: 00000000-0000-0000-0000-000000000000
+                    pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+                    type: string
+                sourceId:
+                    format: uuid
+                    not:
+                        const: 00000000-0000-0000-0000-000000000000
+                    pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+                    type: string
+                state:
+                    const: terminal
+            required:
+                - protocolVersion
+                - outputSessionId
+                - sourceId
+                - recordingId
+                - captureId
+                - epoch
+                - receipt
+                - state
+            type: object
+    securitySchemes:
+        daprApiToken:
+            in: header
+            name: dapr-api-token
+            type: apiKey
+        daprCallerAppId:
+            in: header
+            name: X-Internal-Caller-App-Id
+            type: apiKey
+info:
+    title: Authenticated original-output replay
+    version: k5-2026-10-20.rc1
+openapi: 3.1.0
+paths:
+    /ingest/streams/replay:
+        post:
+            description: Hard-requires the authenticated original source/output ledger, complete original pins/profile/receipt, and no bind creation or completion. Terminal requires the same original capture input_active=false. Missing/incomplete/changed identity and all errors are unknown. Never fall back to open on unsupported/rollback404.
+            operationId: replayBroadcastOutput
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/BroadcastOutputReplayInput'
+                required: true
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/BroadcastOutputReplayEnvelope'
+                    description: Authenticated original output; terminal additionally proves the original durable input is released.
+                "400":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/BroadcastOutputReplayErrorEnvelope'
+                    description: Unknown original output; preserve identity and media. Never treat an error as terminal or fall back to open.
+                "401":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/BroadcastOutputReplayErrorEnvelope'
+                    description: Unknown original output; preserve identity and media. Never treat an error as terminal or fall back to open.
+                "403":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/BroadcastOutputReplayErrorEnvelope'
+                    description: Unknown original output; preserve identity and media. Never treat an error as terminal or fall back to open.
+                "404":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/BroadcastOutputReplayErrorEnvelope'
+                    description: Unknown original output; preserve identity and media. Never treat an error as terminal or fall back to open.
+                "409":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/BroadcastOutputReplayErrorEnvelope'
+                    description: Unknown original output; preserve identity and media. Never treat an error as terminal or fall back to open.
+                "422":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/BroadcastOutputReplayErrorEnvelope'
+                    description: Unknown original output; preserve identity and media. Never treat an error as terminal or fall back to open.
+                "429":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/BroadcastOutputReplayErrorEnvelope'
+                    description: Unknown original output; preserve identity and media. Never treat an error as terminal or fall back to open.
+                "503":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/BroadcastOutputReplayErrorEnvelope'
+                    description: Unknown original output; preserve identity and media. Never treat an error as terminal or fall back to open.
+            security:
+                - daprApiToken: []
+                  daprCallerAppId: []
+            servers:
+                - url: https://admin.alive.org.tw/api
+            summary: Read or renew only a proven original OBS output
+            tags:
+                - Admin
+            x-hhc-cache: private, no-store
+            x-hhc-callers:
+                - api-gateway
+            x-hhc-visibility: admin

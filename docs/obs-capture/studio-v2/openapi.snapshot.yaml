@@ -1,0 +1,568 @@
+openapi: 3.1.0
+info:
+  title: HHC K4 output bootstrap candidate
+  version: k4-2026-10-15.rc1
+  license:
+    name: All rights reserved
+    identifier: LicenseRef-HHC-Proprietary
+  description: Frozen consumer contract; not a deployment/readiness claim. Only this
+    new bootstrap route is added. Existing K3/B1/C1 routes are unchanged.
+servers:
+- url: https://admin.alive.org.tw/api
+tags:
+- name: Admin
+  description: OBS transport only
+paths:
+  /ingest/streams/open:
+    post:
+      operationId: openBroadcastOutput
+      summary: Open or resume one durable OBS output
+      description: K4 candidate. Completes server-owned event selection/creation and
+        B1 binding before 200. Retry the same persisted outputSessionId; never fallback
+        to K3 resolve. No runtime readiness implied.
+      tags:
+      - Admin
+      x-hhc-visibility: admin
+      x-hhc-callers:
+      - api-gateway
+      x-hhc-cache: private, no-store
+      servers:
+      - url: https://admin.alive.org.tw/api
+      security:
+      - daprApiToken: []
+        daprCallerAppId: []
+      responses:
+        '200':
+          description: Bound original output; session is renewable, not byte-identical
+            on replay
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastOutputOpenedEnvelope'
+        '400':
+          description: Invalid input; retain identity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '403':
+          description: Invalid key or delegate denied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '404':
+          description: Route unavailable; never fall back
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '409':
+          description: Wait, busy, capacity, terminal or operation conflict; classify
+            by code
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '413':
+          description: Body exceeds 4096 bytes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '422':
+          description: Protocol unsupported
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '429':
+          description: Rate limited; Retry-After
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '503':
+          description: Disabled or dependency unavailable; preserve identity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BroadcastOutputOpenInput'
+components:
+  securitySchemes:
+    daprApiToken:
+      type: apiKey
+      in: header
+      name: dapr-api-token
+      description: Dapr API token supplied by api-gateway; the value is never published
+        in this contract.
+    daprCallerAppId:
+      type: apiKey
+      in: header
+      name: Dapr-Caller-App-Id
+      description: Must identify the configured api-gateway Dapr application.
+  schemas:
+    BroadcastIngestErrorEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+      - data
+      - meta
+      - error
+      properties:
+        data:
+          type: 'null'
+        meta:
+          type: object
+          additionalProperties: true
+        error:
+          type: object
+          additionalProperties: false
+          required:
+          - code
+          - message
+          properties:
+            code:
+              type: string
+              minLength: 1
+            message:
+              type: string
+            details:
+              type: object
+              additionalProperties: true
+    BroadcastReceipt:
+      type: object
+      additionalProperties: false
+      required:
+      - operationKey
+      - operation
+      - state
+      properties:
+        operationKey:
+          type: string
+          pattern: ^[a-zA-Z0-9._:-]{1,128}$
+        operation:
+          type: string
+          enum:
+          - create
+          - update
+          - announce
+          - cancel
+          - bind
+          - start
+          - end
+          - cancel-command
+          - ack
+          - emergency-close
+        state:
+          type: string
+          enum:
+          - accepted
+          - completed
+          - rejected
+        commandId:
+          type: string
+          format: uuid
+    BroadcastView:
+      type: object
+      additionalProperties: false
+      required:
+      - recordingId
+      - revision
+      - phase
+      - announced
+      - scheduledAt
+      - title
+      - description
+      - policy
+      - cover
+      - binding
+      - boundaries
+      - health
+      - pendingCommand
+      - archive
+      properties:
+        recordingId:
+          type: string
+          format: uuid
+        revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        phase:
+          type: string
+          enum:
+          - draft
+          - scheduled
+          - preview
+          - start_pending
+          - live
+          - end_pending
+          - processing
+          - archived
+          - cancelled
+          - failed
+        announced:
+          type: boolean
+        scheduledAt:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+        title:
+          type: string
+          minLength: 1
+          maxLength: 180
+        description:
+          $ref: '#/components/schemas/RecordingDescription'
+        policy:
+          $ref: '#/components/schemas/BroadcastPolicy'
+        cover:
+          $ref: '#/components/schemas/LiveCoverSettings'
+        binding:
+          anyOf:
+          - $ref: '#/components/schemas/BroadcastBinding'
+          - type: 'null'
+        boundaries:
+          $ref: '#/components/schemas/BroadcastBoundaries'
+        health:
+          $ref: '#/components/schemas/BroadcastHealth'
+        pendingCommand:
+          anyOf:
+          - $ref: '#/components/schemas/BroadcastCommand'
+          - type: 'null'
+        archive:
+          $ref: '#/components/schemas/BroadcastArchive'
+    BroadcastArchive:
+      type: object
+      additionalProperties: false
+      required:
+      - state
+      - reason
+      properties:
+        state:
+          type: string
+          enum:
+          - none
+          - processing
+          - ready
+          - published
+          - failed
+        reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+    BroadcastCommand:
+      type: object
+      additionalProperties: false
+      required:
+      - commandId
+      - kind
+      - captureId
+      - epoch
+      - requestedAt
+      - status
+      - boundarySequence
+      properties:
+        commandId:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum:
+          - start
+          - end
+        captureId:
+          type: string
+          pattern: ^[a-f0-9]{32}$
+        epoch:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        requestedAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum:
+          - pending
+          - acknowledged
+          - cancelled
+          - rejected
+        boundarySequence:
+          anyOf:
+          - type: integer
+            minimum: 0
+            maximum: 2147483647
+          - type: 'null'
+    BroadcastHealth:
+      type: object
+      additionalProperties: false
+      required:
+      - state
+      - lastConfirmedAt
+      - lastPublishedAt
+      - verifiedEndSeconds
+      - queuedObjects
+      - reason
+      properties:
+        state:
+          type: string
+          enum:
+          - waiting
+          - healthy
+          - interrupted
+          - recovering
+        lastConfirmedAt:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+        lastPublishedAt:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+        verifiedEndSeconds:
+          anyOf:
+          - type: number
+            minimum: 0
+          - type: 'null'
+        queuedObjects:
+          anyOf:
+          - type: integer
+            minimum: 0
+          - type: 'null'
+        reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+    BroadcastBoundaries:
+      type: object
+      additionalProperties: false
+      required:
+      - startSequence
+      - endSequenceExclusive
+      - revision
+      properties:
+        startSequence:
+          anyOf:
+          - type: integer
+            minimum: 0
+            maximum: 2147483647
+          - type: 'null'
+        endSequenceExclusive:
+          anyOf:
+          - type: integer
+            minimum: 0
+            maximum: 2147483647
+          - type: 'null'
+        revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+    BroadcastBinding:
+      type: object
+      additionalProperties: false
+      required:
+      - captureId
+      - epoch
+      - actorId
+      properties:
+        captureId:
+          type: string
+          pattern: ^[a-f0-9]{32}$
+        epoch:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        actorId:
+          type: string
+          format: uuid
+    LiveCoverSettings:
+      type: object
+      additionalProperties: false
+      required:
+      - revision
+      - selection
+      - coverState
+      properties:
+        revision:
+          type: integer
+          minimum: 1
+          format: int64
+        selection:
+          $ref: '#/components/schemas/LiveCoverSelection'
+        coverState:
+          type: string
+          enum:
+          - none
+          - waiting
+          - pending
+          - ready
+          - failed
+        coverId:
+          type: string
+          maxLength: 128
+        contentPath:
+          type: string
+          pattern: ^/api/admin/recordings/
+        inheritedRevision:
+          type: integer
+          minimum: 1
+          format: int64
+    LiveCoverSelection:
+      oneOf:
+      - type: object
+        additionalProperties: false
+        required:
+        - mode
+        properties:
+          mode:
+            type: string
+            enum:
+            - auto
+      - type: object
+        additionalProperties: false
+        required:
+        - mode
+        - uploadId
+        properties:
+          mode:
+            type: string
+            enum:
+            - custom
+          uploadId:
+            type: string
+            pattern: ^[A-Za-z0-9-]{1,128}$
+    BroadcastPolicy:
+      type: object
+      additionalProperties: false
+      required:
+      - autoStart
+      - autoEnd
+      - autoPublish
+      properties:
+        autoStart:
+          type: boolean
+        autoEnd:
+          type: boolean
+        autoPublish:
+          type: boolean
+    RecordingDescription:
+      type: string
+      maxLength: 5000
+      pattern: ^[^\x00]*$
+      description: Optional plain-text video description; Unicode code points, no
+        HTML rendering. Omission preserves the saved value on update; an empty string
+        clears it.
+    BroadcastIngestSession:
+      type: object
+      additionalProperties: false
+      required:
+      - token
+      - expiresAt
+      - recordingId
+      - captureId
+      - epoch
+      properties:
+        token:
+          type: string
+          readOnly: true
+          maxLength: 2048
+          pattern: ^hhc_ingest_[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$
+          description: Opaque 15-minute event-scoped credential; store in OS credential
+            storage, never log or journal.
+        expiresAt:
+          type: string
+          format: date-time
+        recordingId:
+          type: string
+          format: uuid
+        captureId:
+          type: string
+          pattern: ^[a-f0-9]{32}$
+        epoch:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+    BroadcastOutputOpenInput:
+      type: object
+      additionalProperties: false
+      required:
+      - protocolVersion
+      - outputSessionId
+      - streamKey
+      properties:
+        protocolVersion:
+          type: string
+          const: k4-2026-10-15.rc1
+        outputSessionId: &id001
+          type: string
+          format: uuid
+          pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+          not:
+            const: 00000000-0000-0000-0000-000000000000
+        streamKey:
+          type: string
+          writeOnly: true
+          pattern: ^hhc_stream_[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$
+          description: Canonical 32 CSPRNG bytes. Never log or persist raw value;
+            OBS uses OS credential storage.
+    BroadcastOutputOpened:
+      type: object
+      additionalProperties: false
+      required:
+      - broadcast
+      - receipt
+      - session
+      - protocolVersion
+      - outputSessionId
+      - sourceId
+      properties:
+        broadcast:
+          allOf:
+          - $ref: '#/components/schemas/BroadcastView'
+          - type: object
+            required:
+            - binding
+            properties:
+              binding:
+                $ref: '#/components/schemas/BroadcastBinding'
+        receipt:
+          allOf:
+          - $ref: '#/components/schemas/BroadcastReceipt'
+          - type: object
+            properties:
+              operation:
+                const: bind
+              state:
+                const: completed
+        session:
+          $ref: '#/components/schemas/BroadcastIngestSession'
+        protocolVersion:
+          type: string
+          const: k4-2026-10-15.rc1
+        outputSessionId: *id001
+        sourceId: *id001
+    BroadcastOutputOpenedEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+      - data
+      - meta
+      - error
+      properties:
+        data:
+          $ref: '#/components/schemas/BroadcastOutputOpened'
+        meta:
+          type: object
+          additionalProperties: true
+        error:
+          type: 'null'

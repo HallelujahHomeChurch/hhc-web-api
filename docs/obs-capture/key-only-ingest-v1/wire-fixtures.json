@@ -1,0 +1,61 @@
+{
+  "version": "k3-2026-10-14.rc1",
+  "snapshotSha256": "f85eb10aee6c88676113454c9f7e61792309a60005eb27736049bc306bd196b6",
+  "fixtures": [
+    {
+      "name": "bootstrap_without_login_or_metadata",
+      "schema": "BroadcastSourceBindInput",
+      "value": {
+        "streamKey": "hhc_stream_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "operationKey": "bind-example",
+        "expectedSourceRevision": 3,
+        "recordingId": "018f0000-0000-7000-8000-000000000002",
+        "expectedRevision": 2,
+        "protocolVersion": "b1-2026-10-10.rc1"
+      }
+    },
+    {
+      "name": "event_scoped_session",
+      "schema": "BroadcastIngestSession",
+      "value": {
+        "token": "hhc_ingest_example.signature",
+        "expiresAt": "2026-10-14T00:15:00Z",
+        "recordingId": "018f0000-0000-7000-8000-000000000002",
+        "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "epoch": 1
+      }
+    },
+    {
+      "name": "renew_original_session",
+      "schema": "BroadcastIngestRenewInput",
+      "value": {
+        "streamKey": "hhc_stream_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "sessionToken": "hhc_ingest_example.signature"
+      }
+    },
+    {
+      "name": "expired_session",
+      "schema": "BroadcastIngestErrorEnvelope",
+      "value": {
+        "data": null,
+        "meta": {},
+        "error": {
+          "code": "broadcast_ingest_session_invalid",
+          "message": "broadcast_ingest_session_invalid"
+        }
+      }
+    },
+    {
+      "name": "revoked_transfer_cleanup_only",
+      "schema": "BroadcastIngestErrorEnvelope",
+      "value": {
+        "data": null,
+        "meta": {},
+        "error": {
+          "code": "broadcast_ingest_revoked",
+          "message": "broadcast_ingest_revoked"
+        }
+      }
+    }
+  ]
+}

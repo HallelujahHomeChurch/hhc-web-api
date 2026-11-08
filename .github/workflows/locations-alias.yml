@@ -1,0 +1,191 @@
+name: CMS locations alias configuration
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type configure-hhc-web-api-locations-production or retire-hhc-web-api-dapr
+        required: true
+        type: string
+      transition:
+        description: Reviewed CMS runtime transition
+        required: true
+        type: choice
+        options: [enable, disable, retire-dapr]
+      expected_revision:
+        description: Exact current ready CMS revision
+        required: true
+        type: string
+      source_release_run:
+        description: Successful original Production Release run ID for the serving image
+        required: true
+        type: string
+      recovery_run:
+        description: Failed main owner retirement run whose exact candidate may be resumed
+        required: false
+        type: string
+      apply:
+        description: Apply the reviewed transition after checking a fresh preview
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hhc-web-api-production-actions
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  locations_alias:
+    if: ${{ inputs.transition != 'retire-dapr' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: production-actions
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    env:
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      ACR_NAME: ${{ secrets.ACR_NAME }}
+      ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+      IMAGE_REPOSITORY: ${{ secrets.IMAGE_REPOSITORY }}
+      EXTRACTOR_IMAGE_REPOSITORY: ${{ secrets.EXTRACTOR_IMAGE_REPOSITORY }}
+      CONTAINER_APP_ENVIRONMENT_NAME: ${{ secrets.CONTAINER_APP_ENVIRONMENT_NAME }}
+      RUNTIME_KEY_VAULT_NAME: ${{ secrets.RUNTIME_KEY_VAULT_NAME }}
+      MIGRATION_KEY_VAULT_NAME: ${{ secrets.MIGRATION_KEY_VAULT_NAME }}
+      LEGACY_KEY_VAULT_NAME: ${{ secrets.LEGACY_KEY_VAULT_NAME }}
+      ACCOUNT_KEY_VAULT_NAME: ${{ secrets.ACCOUNT_KEY_VAULT_NAME }}
+      ENGAGEMENT_KEY_VAULT_NAME: ${{ secrets.ENGAGEMENT_KEY_VAULT_NAME }}
+      QUEUE_STORAGE_ACCOUNT_NAME: ${{ secrets.QUEUE_STORAGE_ACCOUNT_NAME }}
+      AZURE_OPENAI_ACCOUNT_NAME: ${{ secrets.AZURE_OPENAI_ACCOUNT_NAME }}
+      API_APP_NAME: hhc-web-api
+      RESOURCE_GROUP: ${{ secrets.RESOURCE_GROUP }}
+      RELEASE_PUBLIC_EXPECTATION: ${{ vars.RELEASE_PUBLIC_EXPECTATION || 'normal' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate release controls
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          [[ "$GITHUB_REF" == refs/heads/main && "$CONFIRMATION" == configure-hhc-web-api-locations-production ]] || exit 1
+          ./scripts/test-cms-locations-release.sh
+          ./scripts/test-what-if-policy.sh
+      - uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3.0.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Install Container Apps tooling
+        run: az extension add --name containerapp --upgrade --yes
+      - name: Prepare verified runtime-only transition
+        if: ${{ !inputs.apply }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CMS_LOCATIONS_TRANSITION: ${{ inputs.transition }}
+          CMS_LOCATIONS_EXPECTED_REVISION: ${{ inputs.expected_revision }}
+          CMS_LOCATIONS_REQUESTED_VERSION: ${{ inputs.transition == 'enable' && secrets.CMS_LOCATIONS_SECRET_VERSION || '' }}
+          CMS_SOURCE_RELEASE_RUN: ${{ inputs.source_release_run }}
+        run: python3 scripts/deploy-cms-locations-alias.py preview
+      - name: Apply reviewed runtime-only transition
+        id: apply
+        if: ${{ inputs.apply }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CMS_LOCATIONS_TRANSITION: ${{ inputs.transition }}
+          CMS_LOCATIONS_EXPECTED_REVISION: ${{ inputs.expected_revision }}
+          CMS_LOCATIONS_REQUESTED_VERSION: ${{ inputs.transition == 'enable' && secrets.CMS_LOCATIONS_SECRET_VERSION || '' }}
+          CMS_SOURCE_RELEASE_RUN: ${{ inputs.source_release_run }}
+        run: python3 scripts/deploy-cms-locations-alias.py apply
+      - name: Verify exact serving CMS and legacy public routes
+        id: verify
+        if: ${{ inputs.apply }}
+        run: |
+          python3 scripts/verify-release-runtime.py
+          result=0
+          ./scripts/cms-locations-release.sh verify "$CANDIDATE_REVISION" || result=$?
+          if [[ "$result" == 10 ]]; then echo 'alias_mismatch=true' >> "$GITHUB_OUTPUT"; fi
+          if [[ "$result" != 0 ]]; then exit "$result"; fi
+          SMOKE_MODE=forward ./scripts/smoke-release.sh
+      - name: Classify runtime recovery
+        id: recovery
+        if: ${{ failure() && !cancelled() && steps.apply.outcome != 'skipped' }}
+        env:
+          CONFIRMED_ALIAS_MISMATCH: ${{ steps.verify.outputs.alias_mismatch }}
+        run: |
+          if [[ "$CONFIRMED_ALIAS_MISMATCH" == true ]]; then
+            echo 'required=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ -z "${CMS_LOCATIONS_DEPLOYMENT:-}" ]]; then exit 0; fi
+          export FAILED_DEPLOYMENTS="[\"$CMS_LOCATIONS_DEPLOYMENT\"]"
+          python3 scripts/verify-release-runtime.py recovery
+      - name: Restore prior runtime on confirmed failure
+        if: ${{ failure() && steps.recovery.outputs.required == 'true' }}
+        run: |
+          binding=(--remove-env-vars CMS_GATEWAY_LOCATIONS_TOKEN)
+          if [[ "$CMS_LOCATIONS_PREVIOUS_ENABLED" == true ]]; then
+            binding=(--set-env-vars CMS_GATEWAY_LOCATIONS_TOKEN=secretref:cms-gateway-locations-token)
+          fi
+          suffix="locations-rollback-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          az containerapp revision copy -g "$RESOURCE_GROUP" -n "$API_APP_NAME" \
+            --from-revision "$PREVIOUS_READY_REVISION" --image "$IMAGE_REF" --revision-suffix "$suffix" "${binding[@]}" \
+            --only-show-errors --output none
+          CANDIDATE_REVISION="$API_APP_NAME--$suffix" python3 scripts/verify-release-runtime.py
+          ./scripts/cms-locations-release.sh verify-rollback "$API_APP_NAME--$suffix"
+          SMOKE_MODE=rollback ./scripts/smoke-release.sh
+
+  retire_cms_dapr:
+    if: ${{ inputs.transition == 'retire-dapr' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: production-actions
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    env:
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      ACR_NAME: ${{ secrets.ACR_NAME }}
+      ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+      IMAGE_REPOSITORY: ${{ secrets.IMAGE_REPOSITORY }}
+      EXTRACTOR_IMAGE_REPOSITORY: ${{ secrets.EXTRACTOR_IMAGE_REPOSITORY }}
+      CONTAINER_APP_ENVIRONMENT_NAME: ${{ secrets.CONTAINER_APP_ENVIRONMENT_NAME }}
+      RUNTIME_KEY_VAULT_NAME: ${{ secrets.RUNTIME_KEY_VAULT_NAME }}
+      MIGRATION_KEY_VAULT_NAME: ${{ secrets.MIGRATION_KEY_VAULT_NAME }}
+      LEGACY_KEY_VAULT_NAME: ${{ secrets.LEGACY_KEY_VAULT_NAME }}
+      ACCOUNT_KEY_VAULT_NAME: ${{ secrets.ACCOUNT_KEY_VAULT_NAME }}
+      ENGAGEMENT_KEY_VAULT_NAME: ${{ secrets.ENGAGEMENT_KEY_VAULT_NAME }}
+      QUEUE_STORAGE_ACCOUNT_NAME: ${{ secrets.QUEUE_STORAGE_ACCOUNT_NAME }}
+      AZURE_OPENAI_ACCOUNT_NAME: ${{ secrets.AZURE_OPENAI_ACCOUNT_NAME }}
+      API_APP_NAME: hhc-web-api
+      RESOURCE_GROUP: ${{ secrets.RESOURCE_GROUP }}
+      RELEASE_PUBLIC_EXPECTATION: ${{ vars.RELEASE_PUBLIC_EXPECTATION || 'normal' }}
+      GH_TOKEN: ${{ github.token }}
+      CONFIRMATION: ${{ inputs.confirmation }}
+      DAPR_RECOVERY_RUN: ${{ inputs.recovery_run }}
+      DAPR_SOURCE_RELEASE_RUN: ${{ inputs.source_release_run }}
+      APPLY_REQUESTED: ${{ inputs.apply }}
+      CMS_DAPR_OFF_EXPECTED_CMS_REVISION: ${{ inputs.expected_revision }}
+      CMS_DAPR_OFF_EXPECTED_GATEWAY_REVISION: ${{ vars.CMS_DAPR_OFF_EXPECTED_GATEWAY_REVISION }}
+      CMS_DAPR_OFF_EXPECTED_WEBSITE_REVISION: ${{ vars.CMS_DAPR_OFF_EXPECTED_WEBSITE_REVISION }}
+      ACCOUNT_CMS_PRIVATE_SECRET_VERSION: ${{ secrets.ACCOUNT_CMS_PRIVATE_SECRET_VERSION }}
+      ENGAGEMENT_CMS_PRIVATE_TOKEN_VERSION: ${{ secrets.ENGAGEMENT_CMS_PRIVATE_TOKEN_VERSION }}
+      OPERATIONS_CMS_PRIVATE_TOKEN_VERSION: ${{ secrets.OPERATIONS_CMS_PRIVATE_TOKEN_VERSION }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - run: az extension add --name containerapp --upgrade --yes
+      - run: python3 scripts/retire_cms_dapr.py

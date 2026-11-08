@@ -1,0 +1,625 @@
+{
+  "version": "k5-2026-10-20.rc1",
+  "fixtures": [
+    {
+      "name": "legacy900 active request",
+      "schema": "BroadcastOutputReplayInput",
+      "valid": true,
+      "value": {
+        "protocolVersion": "k5-2026-10-20.rc1",
+        "outputSessionId": "018f0000-0000-4000-8000-000000000001",
+        "sourceId": "018f0000-0000-4000-8000-000000000002",
+        "recordingId": "018f0000-0000-4000-8000-000000000003",
+        "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "epoch": 1,
+        "receipt": {
+          "operationKey": "018f0000-0000-4000-8000-000000000001.bind",
+          "operation": "bind",
+          "state": "completed"
+        },
+        "streamKey": "hhc_stream_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      },
+      "semanticExpectation": "Existing original ledger/pins only; omission of mediaProfile means legacy900, never renegotiation"
+    },
+    {
+      "name": "S10 request",
+      "schema": "BroadcastOutputReplayInput",
+      "valid": true,
+      "value": {
+        "protocolVersion": "k5-2026-10-20.rc1",
+        "outputSessionId": "018f0000-0000-4000-8000-000000000001",
+        "sourceId": "018f0000-0000-4000-8000-000000000002",
+        "recordingId": "018f0000-0000-4000-8000-000000000003",
+        "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "epoch": 1,
+        "receipt": {
+          "operationKey": "018f0000-0000-4000-8000-000000000001.bind",
+          "operation": "bind",
+          "state": "completed"
+        },
+        "streamKey": "hhc_stream_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "mediaProfile": "obs-hls-10s-v1"
+      }
+    },
+    {
+      "name": "missing protocolVersion",
+      "schema": "BroadcastOutputReplayInput",
+      "valid": false,
+      "value": {
+        "outputSessionId": "018f0000-0000-4000-8000-000000000001",
+        "sourceId": "018f0000-0000-4000-8000-000000000002",
+        "recordingId": "018f0000-0000-4000-8000-000000000003",
+        "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "epoch": 1,
+        "receipt": {
+          "operationKey": "018f0000-0000-4000-8000-000000000001.bind",
+          "operation": "bind",
+          "state": "completed"
+        },
+        "streamKey": "hhc_stream_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    {
+      "name": "missing outputSessionId",
+      "schema": "BroadcastOutputReplayInput",
+      "valid": false,
+      "value": {
+        "protocolVersion": "k5-2026-10-20.rc1",
+        "sourceId": "018f0000-0000-4000-8000-000000000002",
+        "recordingId": "018f0000-0000-4000-8000-000000000003",
+        "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "epoch": 1,
+        "receipt": {
+          "operationKey": "018f0000-0000-4000-8000-000000000001.bind",
+          "operation": "bind",
+          "state": "completed"
+        },
+        "streamKey": "hhc_stream_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    {
+      "name": "missing sourceId",
+      "schema": "BroadcastOutputReplayInput",
+      "valid": false,
+      "value": {
+        "protocolVersion": "k5-2026-10-20.rc1",
+        "outputSessionId": "018f0000-0000-4000-8000-000000000001",
+        "recordingId": "018f0000-0000-4000-8000-000000000003",
+        "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "epoch": 1,
+        "receipt": {
+          "operationKey": "018f0000-0000-4000-8000-000000000001.bind",
+          "operation": "bind",
+          "state": "completed"
+        },
+        "streamKey": "hhc_stream_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    {
+      "name": "missing recordingId",
+      "schema": "BroadcastOutputReplayInput",
+      "valid": false,
+      "value": {
+        "protocolVersion": "k5-2026-10-20.rc1",
+        "outputSessionId": "018f0000-0000-4000-8000-000000000001",
+        "sourceId": "018f0000-0000-4000-8000-000000000002",
+        "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "epoch": 1,
+        "receipt": {
+          "operationKey": "018f0000-0000-4000-8000-000000000001.bind",
+          "operation": "bind",
+          "state": "completed"
+        },
+        "streamKey": "hhc_stream_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    {
+      "name": "missing captureId",
+      "schema": "BroadcastOutputReplayInput",
+      "valid": false,
+      "value": {
+        "protocolVersion": "k5-2026-10-20.rc1",
+        "outputSessionId": "018f0000-0000-4000-8000-000000000001",
+        "sourceId": "018f0000-0000-4000-8000-000000000002",
+        "recordingId": "018f0000-0000-4000-8000-000000000003",
+        "epoch": 1,
+        "receipt": {
+          "operationKey": "018f0000-0000-4000-8000-000000000001.bind",
+          "operation": "bind",
+          "state": "completed"
+        },
+        "streamKey": "hhc_stream_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    {
+      "name": "missing epoch",
+      "schema": "BroadcastOutputReplayInput",
+      "valid": false,
+      "value": {
+        "protocolVersion": "k5-2026-10-20.rc1",
+        "outputSessionId": "018f0000-0000-4000-8000-000000000001",
+        "sourceId": "018f0000-0000-4000-8000-000000000002",
+        "recordingId": "018f0000-0000-4000-8000-000000000003",
+        "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "receipt": {
+          "operationKey": "018f0000-0000-4000-8000-000000000001.bind",
+          "operation": "bind",
+          "state": "completed"
+        },
+        "streamKey": "hhc_stream_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    {
+      "name": "missing receipt",
+      "schema": "BroadcastOutputReplayInput",
+      "valid": false,
+      "value": {
+        "protocolVersion": "k5-2026-10-20.rc1",
+        "outputSessionId": "018f0000-0000-4000-8000-000000000001",
+        "sourceId": "018f0000-0000-4000-8000-000000000002",
+        "recordingId": "018f0000-0000-4000-8000-000000000003",
+        "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "epoch": 1,
+        "streamKey": "hhc_stream_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    {
+      "name": "missing streamKey",
+      "schema": "BroadcastOutputReplayInput",
+      "valid": false,
+      "value": {
+        "protocolVersion": "k5-2026-10-20.rc1",
+        "outputSessionId": "018f0000-0000-4000-8000-000000000001",
+        "sourceId": "018f0000-0000-4000-8000-000000000002",
+        "recordingId": "018f0000-0000-4000-8000-000000000003",
+        "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "epoch": 1,
+        "receipt": {
+          "operationKey": "018f0000-0000-4000-8000-000000000001.bind",
+          "operation": "bind",
+          "state": "completed"
+        }
+      }
+    },
+    {
+      "name": "old K4 protocol",
+      "schema": "BroadcastOutputReplayInput",
+      "valid": false,
+      "value": {
+        "protocolVersion": "k4-2026-10-15.rc1",
+        "outputSessionId": "018f0000-0000-4000-8000-000000000001",
+        "sourceId": "018f0000-0000-4000-8000-000000000002",
+        "recordingId": "018f0000-0000-4000-8000-000000000003",
+        "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "epoch": 1,
+        "receipt": {
+          "operationKey": "018f0000-0000-4000-8000-000000000001.bind",
+          "operation": "bind",
+          "state": "completed"
+        },
+        "streamKey": "hhc_stream_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    {
+      "name": "optional replay flag forbidden",
+      "schema": "BroadcastOutputReplayInput",
+      "valid": false,
+      "value": {
+        "protocolVersion": "k5-2026-10-20.rc1",
+        "outputSessionId": "018f0000-0000-4000-8000-000000000001",
+        "sourceId": "018f0000-0000-4000-8000-000000000002",
+        "recordingId": "018f0000-0000-4000-8000-000000000003",
+        "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "epoch": 1,
+        "receipt": {
+          "operationKey": "018f0000-0000-4000-8000-000000000001.bind",
+          "operation": "bind",
+          "state": "completed"
+        },
+        "streamKey": "hhc_stream_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "replayOnly": true
+      }
+    },
+    {
+      "name": "null profile",
+      "schema": "BroadcastOutputReplayInput",
+      "valid": false,
+      "value": {
+        "protocolVersion": "k5-2026-10-20.rc1",
+        "outputSessionId": "018f0000-0000-4000-8000-000000000001",
+        "sourceId": "018f0000-0000-4000-8000-000000000002",
+        "recordingId": "018f0000-0000-4000-8000-000000000003",
+        "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "epoch": 1,
+        "receipt": {
+          "operationKey": "018f0000-0000-4000-8000-000000000001.bind",
+          "operation": "bind",
+          "state": "completed"
+        },
+        "streamKey": "hhc_stream_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "mediaProfile": null
+      }
+    },
+    {
+      "name": "empty profile",
+      "schema": "BroadcastOutputReplayInput",
+      "valid": false,
+      "value": {
+        "protocolVersion": "k5-2026-10-20.rc1",
+        "outputSessionId": "018f0000-0000-4000-8000-000000000001",
+        "sourceId": "018f0000-0000-4000-8000-000000000002",
+        "recordingId": "018f0000-0000-4000-8000-000000000003",
+        "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "epoch": 1,
+        "receipt": {
+          "operationKey": "018f0000-0000-4000-8000-000000000001.bind",
+          "operation": "bind",
+          "state": "completed"
+        },
+        "streamKey": "hhc_stream_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "mediaProfile": ""
+      }
+    },
+    {
+      "name": "epoch zero",
+      "schema": "BroadcastOutputReplayInput",
+      "valid": false,
+      "value": {
+        "protocolVersion": "k5-2026-10-20.rc1",
+        "outputSessionId": "018f0000-0000-4000-8000-000000000001",
+        "sourceId": "018f0000-0000-4000-8000-000000000002",
+        "recordingId": "018f0000-0000-4000-8000-000000000003",
+        "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "epoch": 0,
+        "receipt": {
+          "operationKey": "018f0000-0000-4000-8000-000000000001.bind",
+          "operation": "bind",
+          "state": "completed"
+        },
+        "streamKey": "hhc_stream_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    {
+      "name": "unknown profile",
+      "schema": "BroadcastOutputReplayInput",
+      "valid": false,
+      "value": {
+        "protocolVersion": "k5-2026-10-20.rc1",
+        "outputSessionId": "018f0000-0000-4000-8000-000000000001",
+        "sourceId": "018f0000-0000-4000-8000-000000000002",
+        "recordingId": "018f0000-0000-4000-8000-000000000003",
+        "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "epoch": 1,
+        "receipt": {
+          "operationKey": "018f0000-0000-4000-8000-000000000001.bind",
+          "operation": "bind",
+          "state": "completed"
+        },
+        "streamKey": "hhc_stream_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "mediaProfile": "obs-hls-other"
+      }
+    },
+    {
+      "name": "active response",
+      "schema": "BroadcastOutputReplayEnvelope",
+      "valid": true,
+      "value": {
+        "data": {
+          "protocolVersion": "k5-2026-10-20.rc1",
+          "outputSessionId": "018f0000-0000-4000-8000-000000000001",
+          "sourceId": "018f0000-0000-4000-8000-000000000002",
+          "recordingId": "018f0000-0000-4000-8000-000000000003",
+          "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "epoch": 1,
+          "receipt": {
+            "operationKey": "018f0000-0000-4000-8000-000000000001.bind",
+            "operation": "bind",
+            "state": "completed"
+          },
+          "state": "active",
+          "session": {
+            "token": "hhc_ingest_fixture.signature",
+            "expiresAt": "2026-10-20T02:00:00Z",
+            "recordingId": "018f0000-0000-4000-8000-000000000003",
+            "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "epoch": 1
+          }
+        },
+        "meta": {},
+        "error": null
+      }
+    },
+    {
+      "name": "authenticated terminal response",
+      "schema": "BroadcastOutputReplayEnvelope",
+      "valid": true,
+      "value": {
+        "data": {
+          "protocolVersion": "k5-2026-10-20.rc1",
+          "outputSessionId": "018f0000-0000-4000-8000-000000000001",
+          "sourceId": "018f0000-0000-4000-8000-000000000002",
+          "recordingId": "018f0000-0000-4000-8000-000000000003",
+          "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "epoch": 1,
+          "receipt": {
+            "operationKey": "018f0000-0000-4000-8000-000000000001.bind",
+            "operation": "bind",
+            "state": "completed"
+          },
+          "state": "terminal"
+        },
+        "meta": {},
+        "error": null
+      }
+    },
+    {
+      "name": "active without session",
+      "schema": "BroadcastOutputReplayEnvelope",
+      "valid": false,
+      "value": {
+        "data": {
+          "protocolVersion": "k5-2026-10-20.rc1",
+          "outputSessionId": "018f0000-0000-4000-8000-000000000001",
+          "sourceId": "018f0000-0000-4000-8000-000000000002",
+          "recordingId": "018f0000-0000-4000-8000-000000000003",
+          "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "epoch": 1,
+          "receipt": {
+            "operationKey": "018f0000-0000-4000-8000-000000000001.bind",
+            "operation": "bind",
+            "state": "completed"
+          },
+          "state": "active"
+        },
+        "meta": {},
+        "error": null
+      }
+    },
+    {
+      "name": "terminal must not expose credential",
+      "schema": "BroadcastOutputReplayEnvelope",
+      "valid": false,
+      "value": {
+        "data": {
+          "protocolVersion": "k5-2026-10-20.rc1",
+          "outputSessionId": "018f0000-0000-4000-8000-000000000001",
+          "sourceId": "018f0000-0000-4000-8000-000000000002",
+          "recordingId": "018f0000-0000-4000-8000-000000000003",
+          "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "epoch": 1,
+          "receipt": {
+            "operationKey": "018f0000-0000-4000-8000-000000000001.bind",
+            "operation": "bind",
+            "state": "completed"
+          },
+          "state": "terminal",
+          "session": {
+            "token": "hhc_ingest_fixture.signature",
+            "expiresAt": "2026-10-20T02:00:00Z",
+            "recordingId": "018f0000-0000-4000-8000-000000000003",
+            "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "epoch": 1
+          }
+        },
+        "meta": {},
+        "error": null
+      }
+    },
+    {
+      "name": "terminal missing receipt",
+      "schema": "BroadcastOutputReplayEnvelope",
+      "valid": false,
+      "value": {
+        "data": {
+          "protocolVersion": "k5-2026-10-20.rc1",
+          "outputSessionId": "018f0000-0000-4000-8000-000000000001",
+          "sourceId": "018f0000-0000-4000-8000-000000000002",
+          "recordingId": "018f0000-0000-4000-8000-000000000003",
+          "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "epoch": 1,
+          "state": "terminal"
+        },
+        "meta": {},
+        "error": null
+      }
+    },
+    {
+      "name": "wrong original source",
+      "schema": "BroadcastOutputReplayInput",
+      "valid": true,
+      "value": {
+        "protocolVersion": "k5-2026-10-20.rc1",
+        "outputSessionId": "018f0000-0000-4000-8000-000000000001",
+        "sourceId": "018f0000-0000-4000-8000-000000000004",
+        "recordingId": "018f0000-0000-4000-8000-000000000003",
+        "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "epoch": 1,
+        "receipt": {
+          "operationKey": "018f0000-0000-4000-8000-000000000001.bind",
+          "operation": "bind",
+          "state": "completed"
+        },
+        "streamKey": "hhc_stream_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      },
+      "semanticExpectation": "UNKNOWN/no writes against original ledger; syntactic validity never proves identity"
+    },
+    {
+      "name": "wrong original output",
+      "schema": "BroadcastOutputReplayInput",
+      "valid": true,
+      "value": {
+        "protocolVersion": "k5-2026-10-20.rc1",
+        "outputSessionId": "018f0000-0000-4000-8000-000000000005",
+        "sourceId": "018f0000-0000-4000-8000-000000000002",
+        "recordingId": "018f0000-0000-4000-8000-000000000003",
+        "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "epoch": 1,
+        "receipt": {
+          "operationKey": "018f0000-0000-4000-8000-000000000001.bind",
+          "operation": "bind",
+          "state": "completed"
+        },
+        "streamKey": "hhc_stream_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      },
+      "semanticExpectation": "UNKNOWN/no writes against original ledger; syntactic validity never proves identity"
+    },
+    {
+      "name": "wrong original recording",
+      "schema": "BroadcastOutputReplayInput",
+      "valid": true,
+      "value": {
+        "protocolVersion": "k5-2026-10-20.rc1",
+        "outputSessionId": "018f0000-0000-4000-8000-000000000001",
+        "sourceId": "018f0000-0000-4000-8000-000000000002",
+        "recordingId": "018f0000-0000-4000-8000-000000000006",
+        "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "epoch": 1,
+        "receipt": {
+          "operationKey": "018f0000-0000-4000-8000-000000000001.bind",
+          "operation": "bind",
+          "state": "completed"
+        },
+        "streamKey": "hhc_stream_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      },
+      "semanticExpectation": "UNKNOWN/no writes against original ledger; syntactic validity never proves identity"
+    },
+    {
+      "name": "wrong capture",
+      "schema": "BroadcastOutputReplayInput",
+      "valid": true,
+      "value": {
+        "protocolVersion": "k5-2026-10-20.rc1",
+        "outputSessionId": "018f0000-0000-4000-8000-000000000001",
+        "sourceId": "018f0000-0000-4000-8000-000000000002",
+        "recordingId": "018f0000-0000-4000-8000-000000000003",
+        "captureId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "epoch": 1,
+        "receipt": {
+          "operationKey": "018f0000-0000-4000-8000-000000000001.bind",
+          "operation": "bind",
+          "state": "completed"
+        },
+        "streamKey": "hhc_stream_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      },
+      "semanticExpectation": "UNKNOWN/no writes against original ledger; syntactic validity never proves identity"
+    },
+    {
+      "name": "wrong epoch",
+      "schema": "BroadcastOutputReplayInput",
+      "valid": true,
+      "value": {
+        "protocolVersion": "k5-2026-10-20.rc1",
+        "outputSessionId": "018f0000-0000-4000-8000-000000000001",
+        "sourceId": "018f0000-0000-4000-8000-000000000002",
+        "recordingId": "018f0000-0000-4000-8000-000000000003",
+        "captureId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "epoch": 2,
+        "receipt": {
+          "operationKey": "018f0000-0000-4000-8000-000000000001.bind",
+          "operation": "bind",
+          "state": "completed"
+        },
+        "streamKey": "hhc_stream_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      },
+      "semanticExpectation": "UNKNOWN/no writes against original ledger; syntactic validity never proves identity"
+    },
+    {
+      "name": "error 401 is never terminal",
+      "schema": "BroadcastOutputReplayErrorEnvelope",
+      "valid": true,
+      "value": {
+        "data": null,
+        "meta": {},
+        "error": {
+          "code": "broadcast_ingest_session_invalid",
+          "message": "broadcast_ingest_session_invalid"
+        }
+      },
+      "semanticExpectation": "UNKNOWN retain original output/media/receipt; no K4/resolve/bind fallback"
+    },
+    {
+      "name": "error 403 is never terminal",
+      "schema": "BroadcastOutputReplayErrorEnvelope",
+      "valid": true,
+      "value": {
+        "data": null,
+        "meta": {},
+        "error": {
+          "code": "forbidden",
+          "message": "forbidden"
+        }
+      },
+      "semanticExpectation": "UNKNOWN retain original output/media/receipt; no K4/resolve/bind fallback"
+    },
+    {
+      "name": "error 404 is never terminal",
+      "schema": "BroadcastOutputReplayErrorEnvelope",
+      "valid": true,
+      "value": {
+        "data": null,
+        "meta": {},
+        "error": {
+          "code": "not_found",
+          "message": "not_found"
+        }
+      },
+      "semanticExpectation": "UNKNOWN retain original output/media/receipt; no K4/resolve/bind fallback"
+    },
+    {
+      "name": "error 409 is never terminal",
+      "schema": "BroadcastOutputReplayErrorEnvelope",
+      "valid": true,
+      "value": {
+        "data": null,
+        "meta": {},
+        "error": {
+          "code": "broadcast_output_replay_unknown",
+          "message": "broadcast_output_replay_unknown"
+        }
+      },
+      "semanticExpectation": "UNKNOWN retain original output/media/receipt; no K4/resolve/bind fallback"
+    },
+    {
+      "name": "error 422 is never terminal",
+      "schema": "BroadcastOutputReplayErrorEnvelope",
+      "valid": true,
+      "value": {
+        "data": null,
+        "meta": {},
+        "error": {
+          "code": "broadcast_protocol_unsupported",
+          "message": "broadcast_protocol_unsupported"
+        }
+      },
+      "semanticExpectation": "UNKNOWN retain original output/media/receipt; no K4/resolve/bind fallback"
+    },
+    {
+      "name": "error 429 is never terminal",
+      "schema": "BroadcastOutputReplayErrorEnvelope",
+      "valid": true,
+      "value": {
+        "data": null,
+        "meta": {},
+        "error": {
+          "code": "rate_limited",
+          "message": "rate_limited"
+        }
+      },
+      "semanticExpectation": "UNKNOWN retain original output/media/receipt; no K4/resolve/bind fallback"
+    },
+    {
+      "name": "error 503 is never terminal",
+      "schema": "BroadcastOutputReplayErrorEnvelope",
+      "valid": true,
+      "value": {
+        "data": null,
+        "meta": {},
+        "error": {
+          "code": "unavailable",
+          "message": "unavailable"
+        }
+      },
+      "semanticExpectation": "UNKNOWN retain original output/media/receipt; no K4/resolve/bind fallback"
+    }
+  ]
+}

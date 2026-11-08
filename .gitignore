@@ -1,0 +1,13 @@
+.env
+/.artifacts/
+.data/
+bin/
+coverage.out
+
+# Local offline watermark runtime and private jobs are never source artifacts.
+__pycache__/
+.venv/
+node_modules/
+
+# Same-run CI verification transport, never source.
+/artifacts/extractor-*

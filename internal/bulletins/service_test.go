@@ -1,0 +1,229 @@
+package bulletins
+
+import (
+	"context"
+	"testing"
+	"time"
+)
+
+func TestBulletinEditionOrderIsIndependentFromContentLocales(t *testing.T) {
+	want := [5]BulletinEdition{
+		{Series: BulletinSeriesGeneral, Locale: BulletinLocaleTraditionalChinese},
+		{Series: BulletinSeriesGeneral, Locale: BulletinLocaleSimplifiedChinese},
+		{Series: BulletinSeriesGeneral, Locale: BulletinLocaleEnglish},
+		{Series: BulletinSeriesChildren, Locale: BulletinLocaleTraditionalChinese},
+		{Series: BulletinSeriesChildren, Locale: BulletinLocaleEnglish},
+	}
+	if BulletinEditionOrder != want {
+		t.Fatalf("order=%#v", BulletinEditionOrder)
+	}
+	for _, locale := range []string{"ja", "ko"} {
+		if IsBulletinEdition(locale) {
+			t.Fatalf("content locale %q accepted as bulletin edition", locale)
+		}
+	}
+	if _, ok := NormalizeBulletinEdition("children", "zh-Hans"); ok {
+		t.Fatal("unsupported children/zh-Hans edition accepted")
+	}
+}
+
+func TestServiceRejectsInvalidIssueAndVersion(t *testing.T) {
+	repo := &repositoryStub{}
+	service := NewService(repo, time.Now)
+	if _, err := service.CreateIssue(context.Background(), CreateIssueInput{IssueNumber: 1, IssueDate: "07/12/2026"}, "user", "key"); err != ErrInvalid {
+		t.Fatalf("error=%v", err)
+	}
+	if _, err := service.PutVersion(context.Background(), "id", 1, PutVersionInput{Locale: "fr", Title: "x", PDFAssetID: "a", PDFFileName: "a.pdf"}, "user"); err != ErrInvalid {
+		t.Fatalf("error=%v", err)
+	}
+}
+func TestServiceNormalizesPagination(t *testing.T) {
+	repo := &repositoryStub{}
+	service := NewService(repo, time.Now)
+	_, _ = service.ListIssues(context.Background(), 0, 1000, "", "", "", "")
+	if repo.page != 1 || repo.pageSize != 100 || repo.sort != "issueNumber" || repo.direction != "desc" {
+		t.Fatalf("page=%d size=%d", repo.page, repo.pageSize)
+	}
+	if _, err := service.ListIssues(context.Background(), 1, 20, "", "", "unknown", "asc"); err != ErrInvalid {
+		t.Fatalf("invalid sort err=%v", err)
+	}
+	if _, err := service.ListIssues(context.Background(), 1, 20, "", "", "title", "sideways"); err != ErrInvalid {
+		t.Fatalf("invalid direction err=%v", err)
+	}
+}
+
+func TestServiceForwardsPublishNotificationIntent(t *testing.T) {
+	repo := &repositoryStub{}
+	service := NewService(repo, func() time.Time { return time.Unix(123, 0) })
+
+	if _, err := service.Publish(context.Background(), "issue-1", "", "zh-Hant", 2, true, "user-1"); err != nil {
+		t.Fatal(err)
+	}
+	if !repo.notifySubscribers {
+		t.Fatal("notification intent was not forwarded")
+	}
+}
+
+func TestServiceUpdatesIssueMetadata(t *testing.T) {
+	repo := &repositoryStub{}
+	service := NewService(repo, func() time.Time { return time.Unix(123, 0) })
+
+	if _, err := service.UpdateIssue(context.Background(), "issue-1", 2, UpdateIssueInput{IssueNumber: 1733, IssueDate: "2026-08-09"}, "user-1"); err != nil {
+		t.Fatal(err)
+	}
+	if repo.issueNumber != 1733 || repo.issueDate != "2026-08-09" || repo.expected != 2 {
+		t.Fatalf("metadata forwarding=%#v", repo)
+	}
+}
+
+func TestServiceDeletesIssue(t *testing.T) {
+	repo := &repositoryStub{}
+	service := NewService(repo, func() time.Time { return time.Unix(123, 0) })
+
+	if err := service.DeleteIssue(context.Background(), "", 1, "user-1"); err != ErrInvalid {
+		t.Fatalf("invalid delete error=%v", err)
+	}
+	if err := service.DeleteIssue(context.Background(), "issue-1", 0, "user-1"); err != ErrInvalid {
+		t.Fatalf("invalid version error=%v", err)
+	}
+	if err := service.DeleteIssue(context.Background(), "issue-1", 2, "user-1"); err != nil {
+		t.Fatal(err)
+	}
+	if repo.deletedID != "issue-1" || repo.expected != 2 || repo.actor != "user-1" || !repo.now.Equal(time.Unix(123, 0).UTC()) {
+		t.Fatalf("delete forwarding=%#v", repo)
+	}
+}
+
+func TestServiceUpdatesAndDeletesVersion(t *testing.T) {
+	repo := &repositoryStub{}
+	service := NewService(repo, func() time.Time { return time.Unix(123, 0) })
+	if _, err := service.UpdateVersion(context.Background(), "issue-1", "", "fr", 2, UpdateVersionInput{Title: "Title"}, "user-1"); err != ErrInvalid {
+		t.Fatalf("invalid update error=%v", err)
+	}
+	if _, err := service.UpdateVersion(context.Background(), "issue-1", "", "en", 2, UpdateVersionInput{Title: " Title "}, "user-1"); err != nil {
+		t.Fatal(err)
+	}
+	if repo.locale != "en" || repo.title != "Title" {
+		t.Fatalf("locale=%q title=%q", repo.locale, repo.title)
+	}
+	if _, err := service.DeleteVersion(context.Background(), "issue-1", "", "en", 2, "user-1"); err != nil {
+		t.Fatal(err)
+	}
+	if repo.deletedLocale != "en" {
+		t.Fatalf("deleted locale=%q", repo.deletedLocale)
+	}
+}
+
+func TestServiceRejectsJapaneseAndKoreanBulletinLifecycleBeforeRepository(t *testing.T) {
+	repo := &repositoryStub{}
+	service := NewService(repo, func() time.Time { return time.Unix(123, 0) })
+
+	for _, locale := range []string{"ja", "ko"} {
+		if _, err := service.PutVersion(context.Background(), "issue-1", 1, PutVersionInput{Locale: locale, Title: "Weekly", PDFAssetID: "asset-1", PDFFileName: "weekly.pdf"}, "user-1"); err != ErrInvalid {
+			t.Fatalf("put %s error=%v", locale, err)
+		}
+		if _, err := service.UpdateVersion(context.Background(), "issue-1", "", locale, 1, UpdateVersionInput{Title: "Weekly"}, "user-1"); err != ErrInvalid {
+			t.Fatalf("update %s error=%v", locale, err)
+		}
+		if _, err := service.DeleteVersion(context.Background(), "issue-1", "", locale, 1, "user-1"); err != ErrInvalid {
+			t.Fatalf("delete %s error=%v", locale, err)
+		}
+		if _, err := service.Publish(context.Background(), "issue-1", "", locale, 1, false, "user-1"); err != ErrInvalid {
+			t.Fatalf("publish %s error=%v", locale, err)
+		}
+		if _, err := service.Unpublish(context.Background(), "issue-1", "", locale, 1, "user-1"); err != ErrInvalid {
+			t.Fatalf("unpublish %s error=%v", locale, err)
+		}
+	}
+	if repo.sideEffectCalls != 0 {
+		t.Fatalf("repository side effects=%d", repo.sideEffectCalls)
+	}
+}
+
+func TestServiceListsAndRestoresIssueRevision(t *testing.T) {
+	repo := &repositoryStub{}
+	service := NewService(repo, func() time.Time { return time.Unix(123, 0) })
+
+	if _, err := service.IssueRevisions(context.Background(), ""); err != ErrInvalid {
+		t.Fatalf("invalid list error=%v", err)
+	}
+	if _, err := service.RestoreIssueRevision(context.Background(), "issue-1", 0, 2, "user-1"); err != ErrInvalid {
+		t.Fatalf("invalid revision error=%v", err)
+	}
+	if _, err := service.RestoreIssueRevision(context.Background(), "issue-1", 1, 0, "user-1"); err != ErrInvalid {
+		t.Fatalf("invalid expected error=%v", err)
+	}
+	if _, err := service.RestoreIssueRevision(context.Background(), "issue-1", 1, 2, "user-1"); err != nil {
+		t.Fatal(err)
+	}
+	if repo.revision != 1 || repo.expected != 2 || repo.actor != "user-1" || !repo.now.Equal(time.Unix(123, 0).UTC()) {
+		t.Fatalf("restore forwarding=%#v", repo)
+	}
+}
+
+type repositoryStub struct {
+	page, pageSize    int
+	sort, direction   string
+	expected          int64
+	actor             string
+	deletedID         string
+	revision          int64
+	locale            string
+	title             string
+	deletedLocale     string
+	issueNumber       int
+	issueDate         string
+	notifySubscribers bool
+	sideEffectCalls   int
+	now               time.Time
+}
+
+func (r *repositoryStub) CreateIssue(context.Context, int, string, string, string, time.Time) (Issue, error) {
+	return Issue{}, nil
+}
+func (r *repositoryStub) ListIssues(_ context.Context, p, s int, _, _, sort, direction string) (Page, error) {
+	r.page = p
+	r.pageSize = s
+	r.sort = sort
+	r.direction = direction
+	return Page{}, nil
+}
+func (r *repositoryStub) GetIssue(context.Context, string) (Issue, error) { return Issue{}, nil }
+func (r *repositoryStub) UpdateIssue(_ context.Context, _ string, expected int64, input UpdateIssueInput, _ string, _ time.Time) (Issue, error) {
+	r.expected, r.issueNumber, r.issueDate = expected, input.IssueNumber, input.IssueDate
+	return Issue{}, nil
+}
+func (r *repositoryStub) PutVersion(context.Context, string, int64, PutVersionInput, string, time.Time) (Issue, error) {
+	r.sideEffectCalls++
+	return Issue{}, nil
+}
+func (r *repositoryStub) UpdateVersion(_ context.Context, _ string, _ string, locale string, _ int64, title, _ string, _ string, _ time.Time) (Issue, error) {
+	r.locale, r.title = locale, title
+	r.sideEffectCalls++
+	return Issue{}, nil
+}
+func (r *repositoryStub) DeleteVersion(_ context.Context, _ string, _ string, locale string, _ int64, _ string, _ time.Time) (Issue, error) {
+	r.deletedLocale = locale
+	r.sideEffectCalls++
+	return Issue{}, nil
+}
+func (r *repositoryStub) StartPublish(_ context.Context, _ string, _ string, _ string, _ int64, notifySubscribers bool, _ string, _ time.Time) (Workflow, error) {
+	r.sideEffectCalls++
+	r.notifySubscribers = notifySubscribers
+	return Workflow{}, nil
+}
+func (r *repositoryStub) Unpublish(context.Context, string, string, string, int64, string, time.Time) (Issue, error) {
+	r.sideEffectCalls++
+	return Issue{}, nil
+}
+func (r *repositoryStub) DeleteIssue(_ context.Context, id string, expected int64, actor string, now time.Time) error {
+	r.deletedID, r.expected, r.actor, r.now = id, expected, actor, now
+	return nil
+}
+func (*repositoryStub) IssueRevisions(context.Context, string) ([]Revision, error) {
+	return []Revision{}, nil
+}
+func (r *repositoryStub) RestoreIssueRevision(_ context.Context, _ string, revision, expected int64, actor string, now time.Time) (Issue, error) {
+	r.revision, r.expected, r.actor, r.now = revision, expected, actor, now
+	return Issue{}, nil
+}

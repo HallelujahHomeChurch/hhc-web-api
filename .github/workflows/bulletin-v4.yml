@@ -1,0 +1,64 @@
+name: Isolated bulletin V4 acceptance
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type run-isolated-v4-lab
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: hhc-web-api-v4-lab
+  cancel-in-progress: false
+jobs:
+  accept:
+    if: github.ref == 'refs/heads/main' && inputs.confirmation == 'run-isolated-v4-lab'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: production-actions
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      RESOURCE_GROUP: ${{ secrets.RESOURCE_GROUP }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      ACR_NAME: ${{ secrets.ACR_NAME }}
+      ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+      V4_IMAGE_REPOSITORY: ${{ secrets.V4_IMAGE_REPOSITORY }}
+      V4_BASE_IMAGE: ${{ secrets.V4_BASE_IMAGE }}
+      CONTAINER_APP_ENVIRONMENT_NAME: ${{ secrets.CONTAINER_APP_ENVIRONMENT_NAME }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check diagnostic resource policy
+        run: python3 -m unittest discover -s tools/bulletin_v4 -p 'test_*.py'
+      - uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3.0.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Build immutable lab image from the merged commit
+        id: image
+        run: |
+          set -euo pipefail
+          az acr login --name "$ACR_NAME"
+          tag="${ACR_LOGIN_SERVER}/${V4_IMAGE_REPOSITORY}:${GITHUB_SHA}-${GITHUB_RUN_ID}"
+          [[ "$V4_BASE_IMAGE" =~ ^"${ACR_LOGIN_SERVER}/"[a-z0-9/-]+@sha256:[a-f0-9]{64}$ ]]
+          docker build --build-arg BASE_IMAGE="$V4_BASE_IMAGE" --platform linux/amd64 -f tools/bulletin_v4/Dockerfile -t "$tag" .
+          docker push "$tag"
+          digest=$(docker inspect --format '{{index .RepoDigests 0}}' "$tag")
+          echo "image=$digest" >> "$GITHUB_OUTPUT"
+      - name: Preview, verify and execute only the finite owned lab
+        env:
+          V4_IMAGE: ${{ steps.image.outputs.image }}
+        run: bash tools/bulletin_v4/run.sh
+      - name: Preserve sanitized acceptance and cleanup evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: v4-acceptance-${{ github.run_id }}
+          path: v4-evidence/
+          if-no-files-found: warn
+          retention-days: 30

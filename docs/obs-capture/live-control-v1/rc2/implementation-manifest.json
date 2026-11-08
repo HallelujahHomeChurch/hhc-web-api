@@ -1,0 +1,22 @@
+{
+  "packageVersion": "b1-mac-2026-10-10.rc2",
+  "protocolVersion": "b1-2026-10-10.rc1",
+  "status": "implementation-candidate-not-deployed",
+  "c1Version": "c1-2026-10-08.2",
+  "inventorySchema": 1,
+  "sources": {
+    "hhc-web-api": "5a431dda69354263f30cb2259a931cff58b6bd1c",
+    "asset-api": "ece3122d2fb6848eb909c5b5b8b1d97634e3faf2",
+    "api-gateway": "da0a43d3121aac5257517dddc88556c9d4e2009b",
+    "frontend-platform": "3ab7ca43509d5d812d416e11a585767f3ad81a0a",
+    "admin-fe": "2614b6cba76da5f8ea56a5e0c503258c16e5d0b7",
+    "hhc-web": "3ecb7d67a89b9fe19fbcf9a8e93166a6d22ae532"
+  },
+  "deployedRevisions": null,
+  "files": {
+    "docs/obs-capture/live-control-v1/rc2/asset.openapi.snapshot.yaml": "089fe35b8495cca1db229f0594380b33e3616ca7fa1c4678d154848adfc54508",
+    "docs/obs-capture/live-control-v1/rc2/integration-handoff.md": "f49541269165975d981e299a69c7773fc639b199023e4b9bdaa4d0b0b42cbb11",
+    "docs/obs-capture/live-control-v1/rc2/openapi.snapshot.yaml": "845f7864578754bf80009f659075d4e3b53f20cc049f7a63b5bf138df70395cf",
+    "docs/obs-capture/live-control-v1/rc2/wire-fixtures.json": "bbd056e6e3bb7546caadd4a2ff913ca760341ca61cb6bdfb4e94425be9c82bcc"
+  }
+}

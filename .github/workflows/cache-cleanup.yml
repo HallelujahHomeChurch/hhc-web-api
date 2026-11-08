@@ -1,0 +1,66 @@
+name: Closed PR cache cleanup
+
+on:
+  pull_request_target:
+    types: [closed]
+    paths-ignore:
+      - '**/*.md'
+
+permissions: {}
+
+concurrency:
+  group: hhc-web-api-cache-cleanup-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: write
+      pull-requests: read
+    steps:
+      # No checkout: this privileged workflow only executes trusted base-branch code.
+      - name: Remove caches for the closed PR merge ref
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          import subprocess
+
+          number = os.environ['PR_NUMBER']
+          if not re.fullmatch(r'[1-9][0-9]*', number):
+              raise ValueError('Invalid pull request number')
+          repo = os.environ['GH_REPO']
+          ref = f'refs/pull/{number}/merge'
+
+          def closed():
+              pr = json.loads(subprocess.check_output([
+                  'gh', 'api', '--method', 'GET', f'repos/{repo}/pulls/{number}']))
+              if (type(pr['number']) is not int or pr['number'] != int(number)
+                      or pr['state'] not in ('open', 'closed')):
+                  raise ValueError('Unexpected pull request response')
+              return pr['state'] == 'closed'
+
+          if closed():
+              pages = json.loads(subprocess.check_output([
+                  'gh', 'api', '--method', 'GET', f'repos/{repo}/actions/caches',
+                  '-f', f'ref={ref}', '-f', 'per_page=100', '--paginate', '--slurp']))
+              caches = [cache for page in pages for cache in page['actions_caches']]
+              # Validate every page before the first delete; never trust only the API filter.
+              for cache in caches:
+                  if (cache['ref'] != ref or type(cache['id']) is not int or cache['id'] <= 0):
+                      raise ValueError('Unexpected cache ref or ID')
+              for cache in caches:
+                  if not closed():
+                      print('PR reopened; stopping cache cleanup')
+                      break
+                  subprocess.check_output([
+                      'gh', 'api', '--method', 'DELETE', f"repos/{repo}/actions/caches/{cache['id']}"])
+                  print(f"Deleted cache {cache['id']} from {ref}")
+          PY

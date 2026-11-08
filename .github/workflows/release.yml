@@ -1,0 +1,1291 @@
+name: Production Release
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - docs/**
+      - openapi.yaml
+      - openapi_test.go
+      - .github/workflows/ci.yml
+      - .github/workflows/release.yml
+      - .github/workflows/locations-alias.yml
+      - scripts/deploy-cms-locations-alias.py
+      - scripts/cms-locations-release.sh
+      - scripts/test-cms-locations-release.sh
+      - scripts/retire_cms_dapr.py
+      - scripts/test-retire-cms-dapr.py
+      - scripts/test-release-policy.sh
+      - README.md
+      - '**/*_test.go'
+      - tools/bulletin_v4/**
+      - infra/bulletin-v4.bicep
+      - .github/workflows/bulletin-v4.yml
+      - '**/*.md'
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type deploy-hhc-web-api-production
+        required: true
+        type: string
+      fail_openapi_before_pointer:
+        description: Fail before publishing the OpenAPI pointer on attempt 1
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hhc-web-api-production-actions
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  agent_docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      docs_only: ${{ steps.diff.outputs.docs_only }}
+      config_only: ${{ steps.diff.outputs.config_only }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Classify proven human documentation
+        id: diff
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          python3 .github/scripts/ci-agent-docs.py "$EVENT_NAME" "$BASE_SHA" "$HEAD_SHA" >> "$GITHUB_OUTPUT"
+          python3 .github/scripts/ci-runtime-env.py "$EVENT_NAME" "$BASE_SHA" "$HEAD_SHA" >> "$GITHUB_OUTPUT"
+      - name: Test configuration routing
+        if: steps.diff.outputs.config_only != 'true'
+        run: |
+          python3 .github/scripts/test-ci-agent-docs.py
+          python3 scripts/test-runtime-env.py
+
+  runtime_env:
+    needs: agent_docs
+    if: ${{ needs.agent_docs.outputs.config_only == 'true' && github.repository == 'HallelujahHomeChurch/hhc-web-api' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production-actions
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      ACR_NAME: ${{ secrets.ACR_NAME }}
+      ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+      IMAGE_REPOSITORY: ${{ secrets.IMAGE_REPOSITORY }}
+      EXTRACTOR_IMAGE_REPOSITORY: ${{ secrets.EXTRACTOR_IMAGE_REPOSITORY }}
+      RESOURCE_GROUP: ${{ secrets.RESOURCE_GROUP }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Apply runtime environment using the serving image
+        env:
+          RUNTIME_ENV_BASE_SHA: ${{ github.event.before }}
+        run: |
+          az extension add --name containerapp --yes --only-show-errors
+          python3 scripts/runtime_env.py deploy
+
+  configuration:
+    needs: agent_docs
+    if: ${{ needs.agent_docs.result == 'success' && needs.agent_docs.outputs.docs_only != 'true' && needs.agent_docs.outputs.config_only != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production-actions
+    env: &release_env
+      CONTAINER_APP_ENVIRONMENT_NAME: ${{ secrets.CONTAINER_APP_ENVIRONMENT_NAME }}
+      RUNTIME_KEY_VAULT_NAME: ${{ secrets.RUNTIME_KEY_VAULT_NAME }}
+      MIGRATION_KEY_VAULT_NAME: ${{ secrets.MIGRATION_KEY_VAULT_NAME }}
+      LEGACY_KEY_VAULT_NAME: ${{ secrets.LEGACY_KEY_VAULT_NAME }}
+      ACCOUNT_KEY_VAULT_NAME: ${{ secrets.ACCOUNT_KEY_VAULT_NAME }}
+      ENGAGEMENT_KEY_VAULT_NAME: ${{ secrets.ENGAGEMENT_KEY_VAULT_NAME }}
+      QUEUE_STORAGE_ACCOUNT_NAME: ${{ secrets.QUEUE_STORAGE_ACCOUNT_NAME }}
+      ACR_NAME: ${{ secrets.ACR_NAME }}
+      ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+      IMAGE_REPOSITORY: ${{ secrets.IMAGE_REPOSITORY }}
+      EXTRACTOR_IMAGE_REPOSITORY: ${{ secrets.EXTRACTOR_IMAGE_REPOSITORY }}
+      BULLETIN_RENDERER_IMAGE: ${{ vars.BULLETIN_RENDERER_IMAGE }}
+      BULLETIN_RENDERER_ARTIFACT_SHA256: 50cb71b21129cb5296f8fa849da743d3553048d9ebacee27d013ad1552d087a1
+      BULLETIN_EXTRACTION_ENABLED: ${{ vars.BULLETIN_EXTRACTION_ENABLED || 'false' }}
+      BULLETIN_LLM_EXTRACTION_ENABLED: ${{ vars.BULLETIN_LLM_EXTRACTION_ENABLED || 'false' }}
+      BULLETIN_AUTO_EXTRACTION_ENABLED: ${{ vars.BULLETIN_AUTO_EXTRACTION_ENABLED || 'true' }}
+      BULLETIN_EXTRACTOR_ASSET_AUDIENCE: ${{ secrets.BULLETIN_EXTRACTOR_ASSET_AUDIENCE }}
+      BULLETIN_WORKER_IDENTITY_ENABLED: ${{ vars.BULLETIN_WORKER_IDENTITY_ENABLED || 'false' }}
+      BULLETIN_WORKER_ASSET_AUTH: ${{ vars.BULLETIN_WORKER_ASSET_AUTH || 'dapr' }}
+      RESOURCE_GROUP: ${{ secrets.RESOURCE_GROUP }}
+      MIGRATION_JOB_NAME: hhc-web-migrate
+      CONTENT_IMPORT_JOB_NAME: hhc-web-content-import
+      WATERMARK_WORKER_APP_NAME: hhc-web-bulletin-worker
+      WATERMARK_JOB_NAME: hhc-web-bulletin-watermark
+      API_APP_NAME: hhc-web-api
+      CMS_ACCOUNT_PRIVATE_SECRET_VERSION: ${{ secrets.CMS_ACCOUNT_PRIVATE_SECRET_VERSION }}
+      CMS_OPERATIONS_PRIVATE_SECRET_VERSION: ${{ secrets.CMS_OPERATIONS_PRIVATE_SECRET_VERSION }}
+      CMS_ENGAGEMENT_PRIVATE_SECRET_VERSION: ${{ secrets.CMS_ENGAGEMENT_PRIVATE_SECRET_VERSION }}
+      CMS_LINE_PRIVATE_SECRET_VERSION: ${{ secrets.CMS_LINE_PRIVATE_SECRET_VERSION }}
+      CMS_GATEWAY_PRIVATE_SECRET_VERSION: ${{ secrets.CMS_GATEWAY_PRIVATE_SECRET_VERSION }}
+      CMS_GATEWAY_LIVE_PRIVATE_SECRET_VERSION: ${{ secrets.CMS_GATEWAY_LIVE_PRIVATE_SECRET_VERSION }}
+      ACCOUNT_CMS_PRIVATE_SECRET_VERSION: ${{ secrets.ACCOUNT_CMS_PRIVATE_SECRET_VERSION }}
+      ENGAGEMENT_CMS_PRIVATE_TOKEN_VERSION: ${{ secrets.ENGAGEMENT_CMS_PRIVATE_TOKEN_VERSION }}
+      OPERATIONS_CMS_PRIVATE_TOKEN_VERSION: ${{ secrets.OPERATIONS_CMS_PRIVATE_TOKEN_VERSION }}
+      CMS_AUDIT_PRIVATE_HTTPS: ${{ vars.CMS_AUDIT_PRIVATE_HTTPS || 'false' }}
+      CMS_ASSET_PRIVATE_HTTPS: ${{ vars.CMS_ASSET_PRIVATE_HTTPS || 'false' }}
+      API_GATEWAY_APP_NAME: api-gateway
+      RUNTIME_CPU: "0.25"
+      RUNTIME_MEMORY: 0.5Gi
+      SITE_LAYOUT_SMOKE_URL: https://www.alive.org.tw/api/site-layout?locale=zh-Hant
+      PAGE_SMOKE_BASE_URL: https://www.alive.org.tw/api/pages
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      BULLETIN_WATERMARK_PRIVACY_VERSION: ${{ vars.BULLETIN_WATERMARK_PRIVACY_VERSION }}
+      CMS_TRANSLATION_ENABLED: "true"
+      AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
+      AZURE_OPENAI_DEPLOYMENT: ${{ secrets.AZURE_OPENAI_DEPLOYMENT }}
+      BROADCAST_WRITERS_ENABLED: ${{ vars.BROADCAST_WRITERS_ENABLED || 'false' }}
+      STUDIO_WRITERS_ENABLED: ${{ vars.STUDIO_WRITERS_ENABLED || 'false' }}
+      VIDEO_INTERACTIONS_ENABLED: ${{ vars.VIDEO_INTERACTIONS_ENABLED || 'false' }}
+      VIDEO_ANALYTICS_ENABLED: ${{ vars.VIDEO_ANALYTICS_ENABLED || 'false' }}
+      VIDEO_MEDIA_BASE_URL: ${{ secrets.VIDEO_MEDIA_BASE_URL }}
+      AZURE_OPENAI_ACCOUNT_NAME: ${{ secrets.AZURE_OPENAI_ACCOUNT_NAME }}
+      AZURE_OPENAI_RAI_POLICY: "hhc-cms-translation-v1"
+      RELEASE_PUBLIC_EXPECTATION: ${{ vars.RELEASE_PUBLIC_EXPECTATION || 'normal' }}
+      RELEASE_CONFIRMATION: ${{ github.event_name == 'push' && 'deploy-hhc-web-api-production' || inputs.confirmation }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Load runtime feature flags
+        run: python3 scripts/runtime_env.py export-flags
+      - name: Validate release configuration
+        run: |
+          python3 scripts/deployment_config.py targets >/dev/null
+          [[ "$GITHUB_REF" == "refs/heads/main" ]] || exit 1
+          [[ "$RELEASE_CONFIRMATION" == "deploy-hhc-web-api-production" ]] || exit 1
+          [[ "$RELEASE_PUBLIC_EXPECTATION" == normal || "$RELEASE_PUBLIC_EXPECTATION" == maintenance ]] || exit 1
+          [[ "$BULLETIN_RENDERER_IMAGE" =~ ^ghcr\.io/hallelujahhomechurch/hhc-bulletin-renderer@sha256:[0-9a-f]{64}$ ]] || exit 1
+          [[ "$BULLETIN_EXTRACTION_ENABLED" == false || "$BULLETIN_EXTRACTION_ENABLED" == true ]] || exit 1
+          [[ "${CMS_AUDIT_PRIVATE_HTTPS:-false}" == false || "$CMS_AUDIT_PRIVATE_HTTPS" == true ]] || exit 1
+          [[ "${CMS_ASSET_PRIVATE_HTTPS:-false}" == false || "$CMS_ASSET_PRIVATE_HTTPS" == true ]] || exit 1
+          [[ "$BULLETIN_AUTO_EXTRACTION_ENABLED" == false || "$BULLETIN_AUTO_EXTRACTION_ENABLED" == true ]] || exit 1
+          if [[ "$BULLETIN_AUTO_EXTRACTION_ENABLED" == true && "$BULLETIN_EXTRACTION_ENABLED" != true ]]; then
+            echo 'Automatic bulletin conversion requires the enabled extractor' >&2
+            exit 1
+          fi
+          [[ "$BULLETIN_LLM_EXTRACTION_ENABLED" == false || "$BULLETIN_LLM_EXTRACTION_ENABLED" == true ]] || exit 1
+          if [[ "$BULLETIN_LLM_EXTRACTION_ENABLED" == true ]]; then
+            [[ "$BULLETIN_EXTRACTION_ENABLED" == true && -n "$AZURE_OPENAI_ENDPOINT" && -n "$AZURE_OPENAI_DEPLOYMENT" ]] || exit 1
+          fi
+          test -n "$BULLETIN_EXTRACTOR_ASSET_AUDIENCE"
+          case "${BULLETIN_WORKER_IDENTITY_ENABLED:-false}:${BULLETIN_WORKER_ASSET_AUTH:-dapr}" in
+            false:dapr|true:dapr|true:workload) ;;
+            *) echo 'BULLETIN_WORKER_ASSET_AUTH=workload requires BULLETIN_WORKER_IDENTITY_ENABLED=true; values are true|false and dapr|workload' >&2; exit 1 ;;
+          esac
+          for name in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID; do
+            test -n "${!name:-}" || { echo "Missing repository variable: ${name}" >&2; exit 1; }
+          done
+          translation_configured=false
+          if [[ -n "$AZURE_OPENAI_ENDPOINT" || -n "$AZURE_OPENAI_DEPLOYMENT" ]]; then
+            test -n "$AZURE_OPENAI_ENDPOINT" && test -n "$AZURE_OPENAI_DEPLOYMENT" || {
+              echo "AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_DEPLOYMENT must be configured together" >&2
+              exit 1
+            }
+            case "$AZURE_OPENAI_ENDPOINT" in
+              https://*) ;;
+              *) echo "AZURE_OPENAI_ENDPOINT must use HTTPS" >&2; exit 1 ;;
+            esac
+            translation_configured=true
+          fi
+          case "$CMS_TRANSLATION_ENABLED" in
+            false) ;;
+            true) ;;
+            *) echo "CMS_TRANSLATION_ENABLED must be true or false" >&2; exit 1 ;;
+          esac
+          if [[ "$CMS_TRANSLATION_ENABLED" == "true" && "$translation_configured" != "true" ]]; then
+            echo "Azure OpenAI provider configuration is required when CMS translation is enabled" >&2
+            exit 1
+          fi
+          case "$VIDEO_ANALYTICS_ENABLED" in
+            true|false) ;;
+            *) echo "VIDEO_ANALYTICS_ENABLED must be true or false" >&2; exit 1 ;;
+          esac
+          case "$VIDEO_INTERACTIONS_ENABLED" in
+            true|false) ;;
+            *) echo "VIDEO_INTERACTIONS_ENABLED must be true or false" >&2; exit 1 ;;
+          esac
+          case "$STUDIO_WRITERS_ENABLED" in
+            true|false) ;;
+            *) echo "STUDIO_WRITERS_ENABLED must be true or false" >&2; exit 1 ;;
+          esac
+          case "$BROADCAST_WRITERS_ENABLED" in
+            false|true) ;;
+            *) echo "BROADCAST_WRITERS_ENABLED must be true or false" >&2; exit 1 ;;
+          esac
+          if [[ "$BROADCAST_WRITERS_ENABLED" == "true" && -z "$VIDEO_MEDIA_BASE_URL" ]]; then
+            echo "Configured media producer is required when broadcast writers are enabled" >&2
+            exit 1
+          fi
+          if [[ -n "$VIDEO_MEDIA_BASE_URL" ]]; then
+            [[ "$VIDEO_MEDIA_BASE_URL" == "https://media.alive.org.tw" ]] || {
+              echo "VIDEO_MEDIA_BASE_URL must be the production media host" >&2
+              exit 1
+            }
+          fi
+
+  verify:
+    needs: agent_docs
+    if: ${{ needs.agent_docs.result == 'success' && needs.agent_docs.outputs.docs_only != 'true' && needs.agent_docs.outputs.config_only != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+        env:
+          POSTGRES_DB: hhc_web_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d hhc_web_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      HHW_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/hhc_web_core_test?sslmode=disable
+      HHW_TEST_STORAGE_DATABASE_URL: postgres://postgres:postgres@localhost:5432/hhc_web_test?sslmode=disable
+      TEST_POSTGRES_DSN: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
+      DB_PHASE_TEST_DSN: postgres://postgres:postgres@localhost:5432/db_phase_test?sslmode=disable
+      HHC_WEB_ALLOW_DESTRUCTIVE_TEST: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - id: go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Cache Go modules
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ~/go/pkg/mod
+          key: hhc-go-mod-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ hashFiles('go.mod', 'go.sum') }}
+      - name: Cache incremental Go builds
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ~/.cache/go-build
+          key: hhc-go-build-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ hashFiles('go.mod', 'go.sum') }}-race-core-${{ hashFiles('**/*.go', 'internal/migrations/sql/*.sql', 'seeds/content/manifest.json', 'internal/auditclient/hhc-web-producer-fixture.json', 'internal/recordings/assets/*.jpg') }}
+          restore-keys: hhc-go-build-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ hashFiles('go.mod', 'go.sum') }}-race-core-
+      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: '24.22.1'
+      - name: Install and test deterministic bulletin converter
+        working-directory: tools/bulletin-conversion
+        run: npm ci --ignore-scripts --no-audit --no-fund && npm test
+      - name: Scan dependencies
+        run: |
+          trivy_cache="$RUNNER_TEMP/trivy-cache"
+          mkdir -p "$trivy_cache"
+          echo "TRIVY_CACHE=$trivy_cache" >> "$GITHUB_ENV"
+          docker run --rm \
+            -v "$PWD:/workspace:ro" \
+            -v "$trivy_cache:/root/.cache/trivy" \
+            ghcr.io/aquasecurity/trivy@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 \
+            fs --db-repository ghcr.io/aquasecurity/trivy-db:2 --db-repository public.ecr.aws/aquasecurity/trivy-db:2 --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 \
+            --skip-dirs /workspace/.git --skip-dirs /workspace/node_modules /workspace
+      - name: Test migration and deployment policies
+        run: |
+          ./scripts/bootstrap-migration-role.test.sh
+          ./scripts/test-migration-policy-test.sh
+          ./scripts/test-migration-policy.sh internal/migrations/sql/*.sql
+          ./scripts/test-what-if-policy.sh
+          ./scripts/test-cms-locations-release.sh
+          ./scripts/test-build-cache-policy.sh
+          ./scripts/test-release-policy.sh
+          ./scripts/test-rollback-bulletin-extractor.sh
+      - name: Test Go packages
+        run: |
+          python3 scripts/test-go-lanes_test.py
+          psql "$TEST_POSTGRES_DSN" --set=ON_ERROR_STOP=1 --command='CREATE DATABASE hhc_web_core_test'
+          psql "$TEST_POSTGRES_DSN" --set=ON_ERROR_STOP=1 --command='CREATE DATABASE db_phase_test'
+          python3 scripts/test-go-lanes.py
+      - name: Vet Go
+        run: go vet ./...
+
+  prepare_api:
+    needs: configuration
+    if: ${{ needs.configuration.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production-actions
+    env: *release_env
+    outputs:
+      commit: ${{ steps.image.outputs.commit }}
+      image_digest: ${{ steps.image.outputs.image_digest }}
+      watermark_digest: ${{ steps.image.outputs.watermark_digest }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set image tag
+        run: echo "IMAGE_TAG=main-${GITHUB_SHA}" >> "$GITHUB_ENV"
+      - name: Sign in to Azure with OIDC
+        uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3.0.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Build and push image
+        run: |
+          az acr login --name "$ACR_NAME" --only-show-errors
+          docker buildx create --use --driver docker-container \
+            --driver-opt image=moby/buildkit@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
+          cache_ref="${ACR_LOGIN_SERVER}/${IMAGE_REPOSITORY}:buildcache"
+          docker buildx build --platform linux/amd64 \
+            --cache-from "type=registry,ref=${cache_ref}" \
+            --cache-to "type=registry,ref=${cache_ref},mode=max" \
+            --tag "${ACR_LOGIN_SERVER}/${IMAGE_REPOSITORY}:watermark-${IMAGE_TAG}" \
+            --build-arg APT_CACHE_DATE="$(date -u +%F)" \
+            --file Dockerfile --target watermark --push .
+          api_cache_ref="${ACR_LOGIN_SERVER}/${IMAGE_REPOSITORY}:buildcache-api"
+          docker buildx build --platform linux/amd64 --target api \
+            --cache-from "type=registry,ref=${api_cache_ref}" \
+            --cache-to "type=registry,ref=${api_cache_ref},mode=max" \
+            --tag "${ACR_LOGIN_SERVER}/${IMAGE_REPOSITORY}:${IMAGE_TAG}" \
+            --file Dockerfile --push .
+      - name: Resolve immutable image digest
+        run: |
+          digest="$(az acr repository show \
+            --name "$ACR_NAME" \
+            --image "${IMAGE_REPOSITORY}:${IMAGE_TAG}" \
+            --query digest -o tsv --only-show-errors)"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "IMAGE_REF=${ACR_LOGIN_SERVER}/${IMAGE_REPOSITORY}@${digest}" >> "$GITHUB_ENV"
+          worker_digest="$(az acr repository show --name "$ACR_NAME" \
+            --image "${IMAGE_REPOSITORY}:watermark-${IMAGE_TAG}" --query digest -o tsv --only-show-errors)"
+          [[ "$worker_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "WATERMARK_IMAGE_REF=${ACR_LOGIN_SERVER}/${IMAGE_REPOSITORY}@${worker_digest}" >> "$GITHUB_ENV"
+      - name: Test and scan immutable image
+        run: |
+          trivy_cache="$RUNNER_TEMP/trivy-cache"
+          mkdir -p "$trivy_cache"
+          az acr login --name "$ACR_NAME" --only-show-errors
+          docker pull "$IMAGE_REF"
+          docker pull "$WATERMARK_IMAGE_REF"
+          python3 scripts/test-runtime-images.py "$IMAGE_REF" "$WATERMARK_IMAGE_REF"
+          docker run --rm --network none --memory 2g --cpus 1 \
+            --entrypoint /opt/watermark/bin/python \
+            -e HHC_WATERMARK_INTEGRATION=1 -e HHC_WATERMARK_PDF_TESTS=1 -e HHC_WATERMARK_PDFTOPPM=/usr/bin/pdftoppm \
+            -v "$PWD:/workspace:ro" -w /workspace "$WATERMARK_IMAGE_REF" \
+            -m unittest discover -s tools/bulletin_watermark -p 'test_*.py'
+          for verified_image in "$IMAGE_REF" "$WATERMARK_IMAGE_REF"; do
+            sh scripts/scan-image.sh "$verified_image"
+            docker run --rm -v "$trivy_cache:/root/.cache/trivy" \
+              ghcr.io/aquasecurity/trivy@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 \
+              version --format json | jq -r '"- Vulnerability DB updated: " + .VulnerabilityDB.UpdatedAt' >> "$GITHUB_STEP_SUMMARY"
+          done
+      - name: Export verified immutable image
+        id: image
+        run: |
+          echo "commit=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          echo "image_digest=${IMAGE_REF##*@}" >> "$GITHUB_OUTPUT"
+          echo "watermark_digest=${WATERMARK_IMAGE_REF##*@}" >> "$GITHUB_OUTPUT"
+
+  prepare_extractor:
+    needs: configuration
+    if: ${{ needs.configuration.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production-actions
+    env: *release_env
+    outputs:
+      matrix: ${{ steps.selection.outputs.matrix }}
+      selection_id: ${{ steps.selection_archive.outputs.artifact-id }}
+      commit: ${{ steps.image.outputs.commit }}
+      image_digest: ${{ steps.image.outputs.image_digest }}
+    permissions:
+      contents: read
+      id-token: write
+      packages: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Set image tag
+        run: echo "IMAGE_TAG=main-${GITHUB_SHA}" >> "$GITHUB_ENV"
+      - name: Sign in to Azure with OIDC
+        uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3.0.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Build and push isolated extractor
+        id: image
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Authenticate both registries before the native image build.
+          az acr login --name "$ACR_NAME" --only-show-errors
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          extractor_tag="${ACR_LOGIN_SERVER}/${EXTRACTOR_IMAGE_REPOSITORY}:${IMAGE_TAG}"
+          docker buildx create --use --driver docker-container \
+            --driver-opt image=moby/buildkit@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
+          cache_ref="${ACR_LOGIN_SERVER}/${EXTRACTOR_IMAGE_REPOSITORY}:buildcache"
+          docker buildx build --platform linux/amd64 --push --provenance=false -f Dockerfile.extractor \
+            --cache-from "type=registry,ref=${cache_ref}" \
+            --cache-to "type=registry,ref=${cache_ref},mode=max" \
+            --build-arg APT_CACHE_DATE="$(date -u +%F)" \
+            --build-arg BULLETIN_RENDERER_IMAGE="$BULLETIN_RENDERER_IMAGE" \
+            --build-arg BULLETIN_RENDERER_ARTIFACT_SHA256="$BULLETIN_RENDERER_ARTIFACT_SHA256" \
+            -t "$extractor_tag" .
+          digest="$(az acr repository show --name "$ACR_NAME" --image "${EXTRACTOR_IMAGE_REPOSITORY}:${IMAGE_TAG}" --query digest -o tsv --only-show-errors)"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "commit=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          echo "image=${ACR_LOGIN_SERVER}/${EXTRACTOR_IMAGE_REPOSITORY}@${digest}" >> "$GITHUB_OUTPUT"
+          echo "image_digest=$digest" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Prepare shared release verification plan
+        id: selection
+        env:
+          EXTRACTOR_IMAGE_REF: ${{ steps.image.outputs.image }}
+          GH_TOKEN: ${{ github.token }}
+          EXTRACTOR_FORCE_FULL: ${{ vars.EXTRACTOR_FORCE_FULL }}
+        run: |
+          docker pull "$EXTRACTOR_IMAGE_REF"
+          ./scripts/prepare_extractor_tests.sh
+          python3 scripts/extractor_selection.py prepare release
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        id: selection_archive
+        with:
+          name: extractor-selection-${{ github.sha }}-${{ github.run_attempt }}
+          path: artifacts/extractor-selection
+          if-no-files-found: error
+          retention-days: 1
+
+  scan_extractor:
+    needs: prepare_extractor
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production-actions
+    env: *release_env
+    permissions:
+      id-token: write
+    steps:
+      - name: Validate prepared extractor artifact
+        env:
+          EXTRACTOR_IMAGE_REF: ${{ format('{0}/{1}@{2}', secrets.ACR_LOGIN_SERVER, secrets.EXTRACTOR_IMAGE_REPOSITORY, needs.prepare_extractor.outputs.image_digest) }}
+          EXTRACTOR_BUILD_COMMIT: ${{ needs.prepare_extractor.outputs.commit }}
+        run: |
+          [[ "$GITHUB_REF" == "refs/heads/main" ]] || exit 1
+          [[ "$EXTRACTOR_BUILD_COMMIT" == "$GITHUB_SHA" ]] || exit 1
+          [[ "$EXTRACTOR_IMAGE_REF" =~ ^"${ACR_LOGIN_SERVER}/${EXTRACTOR_IMAGE_REPOSITORY}"@sha256:[0-9a-f]{64}$ ]] || exit 1
+          echo "EXTRACTOR_IMAGE_REF=$EXTRACTOR_IMAGE_REF" >> "$GITHUB_ENV"
+      - name: Sign in to Azure with OIDC
+        uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3.0.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Scan immutable extractor image
+        run: |
+          az acr login --name "$ACR_NAME" --only-show-errors
+          docker pull "$EXTRACTOR_IMAGE_REF"
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            ghcr.io/aquasecurity/trivy@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 \
+            image --db-repository ghcr.io/aquasecurity/trivy-db:2 --db-repository public.ecr.aws/aquasecurity/trivy-db:2 --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 "$EXTRACTOR_IMAGE_REF"
+
+  verify_extractor:
+    needs: prepare_extractor
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production-actions
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare_extractor.outputs.matrix) }}
+    services:
+      postgres:
+        image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+        env:
+          POSTGRES_DB: hhc_extractor_load
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d hhc_extractor_load"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    permissions:
+      contents: read
+      id-token: write
+      actions: read
+    env: *release_env
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Validate prepared extractor artifact
+        env:
+          EXTRACTOR_IMAGE_REF: ${{ format('{0}/{1}@{2}', secrets.ACR_LOGIN_SERVER, secrets.EXTRACTOR_IMAGE_REPOSITORY, needs.prepare_extractor.outputs.image_digest) }}
+          EXTRACTOR_BUILD_COMMIT: ${{ needs.prepare_extractor.outputs.commit }}
+        run: |
+          [[ "$GITHUB_REF" == "refs/heads/main" ]] || exit 1
+          [[ "$EXTRACTOR_BUILD_COMMIT" == "$GITHUB_SHA" ]] || exit 1
+          [[ "$EXTRACTOR_IMAGE_REF" =~ ^"${ACR_LOGIN_SERVER}/${EXTRACTOR_IMAGE_REPOSITORY}"@sha256:[0-9a-f]{64}$ ]] || exit 1
+          echo "EXTRACTOR_IMAGE_REF=$EXTRACTOR_IMAGE_REF" >> "$GITHUB_ENV"
+      - name: Sign in to Azure with OIDC
+        uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3.0.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - id: go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.prepare_extractor.outputs.selection_id }}
+          path: artifacts/extractor-selection
+          digest-mismatch: error
+      - name: Load-test immutable extractor image
+        env:
+          HHW_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/hhc_extractor_load?sslmode=disable
+          EXTRACTOR_GROUP: ${{ matrix.group }}
+        run: |
+          az acr login --name "$ACR_NAME" --only-show-errors
+          docker pull "$EXTRACTOR_IMAGE_REF"
+          chmod +x artifacts/extractor-selection/*.test
+          python3 scripts/run_extractor_selection.py release artifacts/extractor-selection/release.json "$EXTRACTOR_GROUP" artifacts/extractor-results
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: extractor-result-release-${{ matrix.group }}-${{ github.sha }}-${{ github.run_id }}
+          overwrite: true
+          path: artifacts/extractor-results
+          if-no-files-found: error
+          retention-days: 1
+
+  verify_extractor_evidence:
+    needs: [prepare_extractor, verify_extractor]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.prepare_extractor.outputs.selection_id }}
+          path: artifacts/extractor-selection
+          digest-mismatch: error
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: extractor-result-release-*-${{ github.sha }}-${{ github.run_id }}
+          path: extractor-results
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/extractor_selection.py verify release artifacts/extractor-selection/release.json extractor-results
+
+  deploy:
+    needs: [configuration, verify, prepare_api, prepare_extractor, scan_extractor, verify_extractor, verify_extractor_evidence]
+    if: >-
+      ${{ !cancelled() && needs.configuration.result == 'success' &&
+        needs.verify.result == 'success' && needs.prepare_api.result == 'success' &&
+        needs.prepare_extractor.result == 'success' && needs.scan_extractor.result == 'success' &&
+        needs.verify_extractor.result == 'success' && needs.verify_extractor_evidence.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: production-actions
+    outputs:
+      commit: ${{ steps.release_outputs.outputs.commit }}
+      image_digest: ${{ steps.release_outputs.outputs.image_digest }}
+      revision: ${{ steps.release_outputs.outputs.revision }}
+      deployment-attempt: ${{ steps.release_outputs.outputs.deployment-attempt }}
+      public-state: ${{ steps.release_outputs.outputs.public-state }}
+      worker_digest: ${{ steps.release_outputs.outputs.worker_digest }}
+      worker-job: ${{ steps.release_outputs.outputs.worker-job }}
+      extractor_digest: ${{ steps.release_outputs.outputs.extractor_digest }}
+      extractor-enabled: ${{ steps.release_outputs.outputs.extractor-enabled }}
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    env: *release_env
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Prepare private deployment parameters
+        run: python3 scripts/deployment_config.py parameters infra/main.bicep "$RUNNER_TEMP/cms-private-parameters.json"
+      - name: Load latest merged runtime configuration
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/runtime_env.py refresh
+          python3 scripts/runtime_env.py export-flags
+      - name: Validate prepared release artifacts
+        env:
+          IMAGE_REF: ${{ format('{0}/{1}@{2}', secrets.ACR_LOGIN_SERVER, secrets.IMAGE_REPOSITORY, needs.prepare_api.outputs.image_digest) }}
+          WATERMARK_IMAGE_REF: ${{ format('{0}/{1}@{2}', secrets.ACR_LOGIN_SERVER, secrets.IMAGE_REPOSITORY, needs.prepare_api.outputs.watermark_digest) }}
+          EXTRACTOR_IMAGE_REF: ${{ format('{0}/{1}@{2}', secrets.ACR_LOGIN_SERVER, secrets.EXTRACTOR_IMAGE_REPOSITORY, needs.prepare_extractor.outputs.image_digest) }}
+          API_BUILD_COMMIT: ${{ needs.prepare_api.outputs.commit }}
+          EXTRACTOR_BUILD_COMMIT: ${{ needs.prepare_extractor.outputs.commit }}
+        run: |
+          [[ "$GITHUB_REF" == "refs/heads/main" ]] || exit 1
+          [[ "$API_BUILD_COMMIT" == "$GITHUB_SHA" && "$EXTRACTOR_BUILD_COMMIT" == "$GITHUB_SHA" ]] || exit 1
+          [[ "$IMAGE_REF" =~ ^"${ACR_LOGIN_SERVER}/${IMAGE_REPOSITORY}"@sha256:[0-9a-f]{64}$ ]] || exit 1
+          [[ "$WATERMARK_IMAGE_REF" =~ ^"${ACR_LOGIN_SERVER}/${IMAGE_REPOSITORY}"@sha256:[0-9a-f]{64}$ && "$WATERMARK_IMAGE_REF" != "$IMAGE_REF" ]] || exit 1
+          [[ "$EXTRACTOR_IMAGE_REF" =~ ^"${ACR_LOGIN_SERVER}/${EXTRACTOR_IMAGE_REPOSITORY}"@sha256:[0-9a-f]{64}$ ]] || exit 1
+          echo "IMAGE_REF=$IMAGE_REF" >> "$GITHUB_ENV"
+          echo "WATERMARK_IMAGE_REF=$WATERMARK_IMAGE_REF" >> "$GITHUB_ENV"
+          echo "EXTRACTOR_IMAGE_REF=$EXTRACTOR_IMAGE_REF" >> "$GITHUB_ENV"
+      - name: Reject stale or changed-identity redeployment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/extractor_evidence.py
+      - name: Sign in to Azure with OIDC
+        uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3.0.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - run: az extension add --name containerapp --upgrade --yes
+      - name: Verify planned maintenance before any deployment writes
+        if: ${{ env.RELEASE_PUBLIC_EXPECTATION == 'maintenance' }}
+        run: |
+          source scripts/maintenance-contract.sh
+          require_gateway_mode on
+      - name: Verify isolated runtime prerequisites
+        run: |
+          runtime_principal="$(az identity show -g "$RESOURCE_GROUP" -n hhc-web-api-identity --query principalId -o tsv --only-show-errors)"
+          migration_principal="$(az identity show -g "$RESOURCE_GROUP" -n hhc-web-migrate-identity --query principalId -o tsv --only-show-errors)"
+          for vault in "$RUNTIME_KEY_VAULT_NAME" "$MIGRATION_KEY_VAULT_NAME"; do
+            [[ "$(az keyvault show -g "$RESOURCE_GROUP" -n "$vault" --query properties.enableRbacAuthorization -o tsv --only-show-errors)" == true ]]
+          done
+          runtime_vault="$(az keyvault show -g "$RESOURCE_GROUP" -n "$RUNTIME_KEY_VAULT_NAME" --query id -o tsv --only-show-errors)"
+          migration_vault="$(az keyvault show -g "$RESOURCE_GROUP" -n "$MIGRATION_KEY_VAULT_NAME" --query id -o tsv --only-show-errors)"
+          [[ "$(az resource show --ids "$runtime_vault/secrets/jobs-database-url" --api-version 2024-11-01 --query properties.attributes.enabled -o tsv --only-show-errors)" == "true" ]]
+          [[ "$(az role assignment list --scope "$runtime_vault" --assignee-object-id "$runtime_principal" --query "[?roleDefinitionName=='Key Vault Secrets User'] | length(@)" -o tsv --only-show-errors)" == "1" ]]
+          [[ "$(az role assignment list --scope "$migration_vault" --assignee-object-id "$migration_principal" --query "[?roleDefinitionName=='Key Vault Secrets User'] | length(@)" -o tsv --only-show-errors)" == "1" ]]
+          [[ "$(az keyvault show -g "$RESOURCE_GROUP" -n "$LEGACY_KEY_VAULT_NAME" --query "properties.accessPolicies[?objectId=='${runtime_principal}'] | length(@)" -o tsv --only-show-errors)" == "0" ]]
+          if [[ -n "$AZURE_OPENAI_ENDPOINT" && -n "$AZURE_OPENAI_DEPLOYMENT" ]]; then
+            account_id="$(az cognitiveservices account show -g "$RESOURCE_GROUP" -n "$AZURE_OPENAI_ACCOUNT_NAME" --query id -o tsv --only-show-errors)"
+            test -n "$account_id"
+            if [[ "$BULLETIN_LLM_EXTRACTION_ENABLED" == true ]]; then
+              az cognitiveservices account deployment show -g "$RESOURCE_GROUP" -n "$AZURE_OPENAI_ACCOUNT_NAME" --deployment-name hhc-bulletin-ai -o json --only-show-errors | jq -e '.properties.provisioningState == "Succeeded" and .properties.model.name == "gpt-6.1-terra" and .properties.model.version == "2026-10-26" and .properties.versionUpgradeOption == "NoAutoUpgrade"' >/dev/null
+            fi
+            if [[ "$AZURE_OPENAI_DEPLOYMENT" == hhc-content-ai ]]; then
+              az cognitiveservices account deployment show -g "$RESOURCE_GROUP" -n "$AZURE_OPENAI_ACCOUNT_NAME" --deployment-name hhc-content-ai -o json --only-show-errors | jq -e '.properties.provisioningState == "Succeeded" and .properties.model.name == "gpt-6-luna" and .properties.model.version == "2026-09-22" and .properties.versionUpgradeOption == "NoAutoUpgrade"' >/dev/null
+            fi
+            translation_secret_name="$(az keyvault secret show --vault-name "$RUNTIME_KEY_VAULT_NAME" \
+              --name hhc-web-azure-openai-api-key --query name --output tsv --only-show-errors)"
+            [[ "$translation_secret_name" == "hhc-web-azure-openai-api-key" ]]
+          fi
+          if [[ -n "$VIDEO_MEDIA_BASE_URL" ]]; then
+            video_secret_name="$(az keyvault secret show --vault-name "$RUNTIME_KEY_VAULT_NAME" \
+              --name member-video-watermark-key-hex --query name --output tsv --only-show-errors)"
+            [[ "$video_secret_name" == "member-video-watermark-key-hex" ]]
+          fi
+          if [[ "$STUDIO_WRITERS_ENABLED" == "true" ]]; then
+            key_name="$(az keyvault secret show --vault-name "$RUNTIME_KEY_VAULT_NAME" \
+              --name studio-stream-key-encryption-keys --query name --output tsv --only-show-errors)"
+            [[ "$key_name" == "studio-stream-key-encryption-keys" ]]
+          fi
+      - name: Capture rollback revision
+        run: |
+          resolve_image_ref() {
+            local image="$1"
+            if [[ "$image" == *@sha256:* ]]; then
+              printf '%s\n' "$image"
+              return
+            fi
+            [[ "$image" == "${ACR_LOGIN_SERVER}/"* ]]
+            local image_spec="${image#${ACR_LOGIN_SERVER}/}"
+            local repository="${image_spec%:*}"
+            local digest
+            digest="$(az acr repository show --name "$ACR_NAME" --image "$image_spec" \
+              --query digest -o tsv --only-show-errors)"
+            [[ "$digest" == sha256:* ]]
+            printf '%s/%s@%s\n' "$ACR_LOGIN_SERVER" "$repository" "$digest"
+          }
+
+          revision="$(az containerapp show -g "$RESOURCE_GROUP" -n "$API_APP_NAME" \
+            --query properties.latestReadyRevisionName -o tsv --only-show-errors)"
+          test -n "$revision"
+          image="$(az containerapp revision show -g "$RESOURCE_GROUP" -n "$API_APP_NAME" \
+            --revision "$revision" \
+            --query properties.template.containers[0].image -o tsv --only-show-errors)"
+          test -n "$image"
+          {
+            echo "PREVIOUS_READY_REVISION=$revision"
+            echo "PREVIOUS_IMAGE_REF=$(resolve_image_ref "$image")"
+          } >> "$GITHUB_ENV"
+          # The persistent worker App exists until the first Job cutover deletes it;
+          # afterwards only the Job's previous image is the rollback source.
+          worker_apps="$(az containerapp list -g "$RESOURCE_GROUP" --query "[?name=='${WATERMARK_WORKER_APP_NAME}'] | length(@)" -o tsv --only-show-errors)"
+          [[ "$worker_apps" == 0 || "$worker_apps" == 1 ]]
+          if [[ "$worker_apps" == 1 ]]; then
+            worker_revision="$(az containerapp show -g "$RESOURCE_GROUP" -n "$WATERMARK_WORKER_APP_NAME" --query properties.latestReadyRevisionName -o tsv --only-show-errors)"
+            test -n "$worker_revision"
+            worker_image="$(az containerapp revision show -g "$RESOURCE_GROUP" -n "$WATERMARK_WORKER_APP_NAME" --revision "$worker_revision" --query properties.template.containers[0].image -o tsv --only-show-errors)"
+            echo "PREVIOUS_WORKER_REVISION=$worker_revision" >> "$GITHUB_ENV"
+            echo "PREVIOUS_WORKER_IMAGE_REF=$(resolve_image_ref "$worker_image")" >> "$GITHUB_ENV"
+          fi
+          previous_watermark_job="$(az containerapp job list -g "$RESOURCE_GROUP" --query "[?name=='${WATERMARK_JOB_NAME}'].properties.template.containers[0].image | [0]" -o tsv --only-show-errors)"
+          if [[ -n "$previous_watermark_job" ]]; then
+            echo "PREVIOUS_WATERMARK_JOB_IMAGE_REF=$(resolve_image_ref "$previous_watermark_job")" >> "$GITHUB_ENV"
+          fi
+          if [[ "$worker_apps" == 0 && -z "$previous_watermark_job" ]]; then
+            echo 'Neither the watermark worker App nor the Job exists; no rollback source' >&2
+            exit 1
+          fi
+          az containerapp job show -g "$RESOURCE_GROUP" -n hhc-web-bulletin-extractor -o json --only-show-errors \
+            | jq -e 'select(all(.properties.configuration.secrets[]; (.value // "") == ""))' > "$RUNNER_TEMP/extractor-rollback.json"
+          echo "PREVIOUS_EXTRACTOR_SNAPSHOT=$RUNNER_TEMP/extractor-rollback.json" >> "$GITHUB_ENV"
+          previous_extractor="$(az containerapp job list -g "$RESOURCE_GROUP" --query "[?name=='hhc-web-bulletin-extractor'].properties.template.containers[0].image | [0]" -o tsv --only-show-errors)"
+          if [[ -n "$previous_extractor" ]]; then
+            echo "PREVIOUS_EXTRACTOR_IMAGE_REF=$(resolve_image_ref "$previous_extractor")" >> "$GITHUB_ENV"
+          fi
+      - name: Capture CMS locations alias release state
+        run: ./scripts/cms-locations-release.sh capture "$PREVIOUS_READY_REVISION"
+      - name: Reject destructive infrastructure changes
+        run: |
+          az deployment group what-if \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file infra/main.bicep \
+            --parameters "@$RUNNER_TEMP/cms-private-parameters.json" \
+            --parameters enableGatewayLocationsAlias="$CMS_LOCATIONS_ENABLED" gatewayLocationsSecretVersion="$CMS_LOCATIONS_VERSION" cmsPrivateServiceVersions="$CMS_PRIVATE_SERVICE_VERSIONS" cmsDaprEnabled="$CMS_DAPR_ENABLED" auditPrivateHTTPS="$CMS_AUDIT_PRIVATE_HTTPS" assetPrivateHTTPS="$CMS_ASSET_PRIVATE_HTTPS" \
+            --parameters bulletinAutoExtractionEnabled="$BULLETIN_AUTO_EXTRACTION_ENABLED" \
+            --parameters migrationImage="$IMAGE_REF" runtimeImage="$IMAGE_REF" watermarkWorkerImage="$WATERMARK_IMAGE_REF" runtimeCpu="$RUNTIME_CPU" runtimeMemory="$RUNTIME_MEMORY" bulletinWatermarkPrivacyVersion="$BULLETIN_WATERMARK_PRIVACY_VERSION" release="$GITHUB_SHA" deployRuntime=true deployWatermarkWorker=false deployWatermarkJob=true bulletinWorkerIdentityEnabled=true provisionPermissions=false retainLegacyRuntimeSecret=false cmsTranslationEnabled="$CMS_TRANSLATION_ENABLED" azureOpenAIEndpoint="$AZURE_OPENAI_ENDPOINT" azureOpenAIDeployment="$AZURE_OPENAI_DEPLOYMENT" bulletinLLMExtractionEnabled="$BULLETIN_LLM_EXTRACTION_ENABLED" videoMediaBaseURL="$VIDEO_MEDIA_BASE_URL" broadcastWritersEnabled="$BROADCAST_WRITERS_ENABLED" studioWritersEnabled="$STUDIO_WRITERS_ENABLED" videoInteractionsEnabled="$VIDEO_INTERACTIONS_ENABLED" videoAnalyticsEnabled="$VIDEO_ANALYTICS_ENABLED" deployBulletinExtractor=true bulletinExtractorImage="$EXTRACTOR_IMAGE_REF" bulletinExtractionEnabled="$BULLETIN_EXTRACTION_ENABLED" bulletinExtractorAssetAudience="$BULLETIN_EXTRACTOR_ASSET_AUDIENCE" \
+            --validation-level Provider \
+            --result-format FullResourcePayloads \
+            --no-pretty-print \
+            --only-show-errors \
+            --output json > what-if.json
+          ./scripts/check-what-if.sh what-if.json preview
+      - name: Verify extraction queue bootstrap
+        run: |
+          principal="$(az identity show -g "$RESOURCE_GROUP" -n hhc-web-api-identity --query principalId -o tsv --only-show-errors)"
+          for spec in 'bulletin-extraction:974c5e8b-45b9-4653-ba55-5f855dd0fb88' 'bulletin-extraction-poison:c6a89b2d-59bc-44d0-9896-0f6e12d7b80a'; do
+            queue="${spec%:*}"; role="${spec#*:}"
+            scope="/subscriptions/$AZURE_SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP/providers/Microsoft.Storage/storageAccounts/$QUEUE_STORAGE_ACCOUNT_NAME/queueServices/default/queues/$queue"
+            az resource show --ids "$scope" --api-version 2023-05-01 --only-show-errors --output none
+            az role assignment list --scope "$scope" --assignee-object-id "$principal" --only-show-errors -o json \
+              | jq -e --arg role "$role" --arg scope "$scope" 'any(.[]; (.scope | ascii_downcase) == ($scope | ascii_downcase) and (.roleDefinitionId | endswith($role)))' >/dev/null
+          done
+      - name: Update release jobs
+        id: update_migration
+        run: |
+          az deployment group create \
+            --name "hhc-web-migrate-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file infra/main.bicep \
+            --parameters "@$RUNNER_TEMP/cms-private-parameters.json" \
+            --parameters migrationImage="$IMAGE_REF" runtimeImage="$IMAGE_REF" watermarkWorkerImage="$WATERMARK_IMAGE_REF" runtimeCpu="$RUNTIME_CPU" runtimeMemory="$RUNTIME_MEMORY" bulletinWatermarkPrivacyVersion="$BULLETIN_WATERMARK_PRIVACY_VERSION" release="$GITHUB_SHA" deployRuntime=false deployWatermarkWorker=false provisionPermissions=false retainLegacyRuntimeSecret=false cmsTranslationEnabled="$CMS_TRANSLATION_ENABLED" azureOpenAIEndpoint="$AZURE_OPENAI_ENDPOINT" azureOpenAIDeployment="$AZURE_OPENAI_DEPLOYMENT" bulletinLLMExtractionEnabled="$BULLETIN_LLM_EXTRACTION_ENABLED" videoMediaBaseURL="$VIDEO_MEDIA_BASE_URL" broadcastWritersEnabled="$BROADCAST_WRITERS_ENABLED" studioWritersEnabled="$STUDIO_WRITERS_ENABLED" videoInteractionsEnabled="$VIDEO_INTERACTIONS_ENABLED" videoAnalyticsEnabled="$VIDEO_ANALYTICS_ENABLED" \
+            --only-show-errors --output none
+      - name: Run migrations
+        run: |
+          execution_name="$(az containerapp job start -g "$RESOURCE_GROUP" -n "$MIGRATION_JOB_NAME" --query name -o tsv --only-show-errors)"
+          test -n "$execution_name"
+          for attempt in {1..60}; do
+            status="$(az containerapp job execution list -g "$RESOURCE_GROUP" -n "$MIGRATION_JOB_NAME" \
+              --query "[?name=='${execution_name}'].properties.status | [0]" -o tsv --only-show-errors)"
+            case "$status" in
+              Succeeded) exit 0 ;;
+              Failed|Canceled|Cancelled|Stopped)
+                az containerapp job logs show -g "$RESOURCE_GROUP" -n "$MIGRATION_JOB_NAME" \
+                  --execution "$execution_name" --container hhc-web-migrate --tail 200 || true
+                echo "Migration ${execution_name}: ${status}" >&2
+                exit 1
+                ;;
+            esac
+            sleep 10
+          done
+          echo "Migration timed out" >&2
+          exit 1
+      - name: Recheck captured CMS locations alias state
+        env:
+          CMS_LOCATIONS_ENABLED: ${{ env.CMS_LOCATIONS_PREVIOUS_ENABLED }}
+          CMS_LOCATIONS_VERSION: ${{ env.CMS_LOCATIONS_PREVIOUS_VERSION }}
+          CMS_PRIVATE_SERVICE_VERSIONS: ${{ env.CMS_PRIVATE_SERVICE_PREVIOUS_VERSIONS }}
+          CMS_DAPR_ENABLED: ${{ env.CMS_DAPR_PREVIOUS_ENABLED }}
+        run: ./scripts/cms-locations-release.sh verify "$PREVIOUS_READY_REVISION"
+      - name: Deploy isolated bulletin extractor
+        id: deploy_extractor
+        run: |
+          echo "EXTRACTOR_RECOVERY_REQUIRED=true" >> "$GITHUB_ENV"
+          az deployment group create \
+            --name "hhc-web-extractor-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --resource-group "$RESOURCE_GROUP" --template-file infra/main.bicep \
+            --parameters "@$RUNNER_TEMP/cms-private-parameters.json" \
+            --parameters migrationImage="$IMAGE_REF" runtimeImage="$IMAGE_REF" watermarkWorkerImage="$WATERMARK_IMAGE_REF" runtimeCpu="$RUNTIME_CPU" runtimeMemory="$RUNTIME_MEMORY" bulletinWatermarkPrivacyVersion="$BULLETIN_WATERMARK_PRIVACY_VERSION" release="$GITHUB_SHA" deployRuntime=false deployMigrationJob=false deployWatermarkWorker=false provisionPermissions=false retainLegacyRuntimeSecret=false cmsTranslationEnabled="$CMS_TRANSLATION_ENABLED" azureOpenAIEndpoint="$AZURE_OPENAI_ENDPOINT" azureOpenAIDeployment="$AZURE_OPENAI_DEPLOYMENT" bulletinLLMExtractionEnabled="$BULLETIN_LLM_EXTRACTION_ENABLED" videoMediaBaseURL="$VIDEO_MEDIA_BASE_URL" broadcastWritersEnabled="$BROADCAST_WRITERS_ENABLED" studioWritersEnabled="$STUDIO_WRITERS_ENABLED" videoInteractionsEnabled="$VIDEO_INTERACTIONS_ENABLED" videoAnalyticsEnabled="$VIDEO_ANALYTICS_ENABLED" deployBulletinExtractor=true bulletinExtractorImage="$EXTRACTOR_IMAGE_REF" bulletinExtractionEnabled="$BULLETIN_EXTRACTION_ENABLED" bulletinExtractorAssetAudience="$BULLETIN_EXTRACTOR_ASSET_AUDIENCE" \
+            --only-show-errors --output none
+          az containerapp job show -g "$RESOURCE_GROUP" -n hhc-web-bulletin-extractor --only-show-errors -o json \
+            | jq '{changes:[{resourceId:.id,changeType:"Modify",delta:[],after:.}]}' > extractor-verify.json
+          ./scripts/check-what-if.sh extractor-verify.json
+          jq -e --arg image "$EXTRACTOR_IMAGE_REF" --arg enabled "$BULLETIN_EXTRACTION_ENABLED" --slurpfile runtime infra/runtime-env.json \
+            '$runtime[0].resources["hhc-web-bulletin-extractor"] as $overrides |
+             (if $overrides | has("BULLETIN_EXTRACTION_ENABLED") then $overrides.BULLETIN_EXTRACTION_ENABLED else {value:$enabled} end) as $expected |
+             .changes[0].after.properties.template.containers[0] | .image == $image and
+             (if $expected == null then all(.env[]; .name != "BULLETIN_EXTRACTION_ENABLED")
+              else any(.env[]; .name == "BULLETIN_EXTRACTION_ENABLED" and .value == $expected.value and .secretRef == $expected.secretRef) end)' extractor-verify.json >/dev/null
+          python3 scripts/wait-bulletin-extractor-rollout.py
+          # New-format queued jobs must keep a compatible consumer during API rollback.
+          if [[ "$BULLETIN_LLM_EXTRACTION_ENABLED" == true ]]; then
+            echo "EXTRACTOR_RECOVERY_REQUIRED=false" >> "$GITHUB_ENV"
+            echo "EXTRACTOR_COMPATIBLE_DEPLOYED=true" >> "$GITHUB_ENV"
+          fi
+      - name: Deploy API
+        id: deploy_runtime
+        run: |
+          az deployment group create \
+            --name "hhc-web-runtime-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file infra/main.bicep \
+            --parameters "@$RUNNER_TEMP/cms-private-parameters.json" \
+            --parameters enableGatewayLocationsAlias="$CMS_LOCATIONS_ENABLED" gatewayLocationsSecretVersion="$CMS_LOCATIONS_VERSION" cmsPrivateServiceVersions="$CMS_PRIVATE_SERVICE_VERSIONS" cmsDaprEnabled="$CMS_DAPR_ENABLED" auditPrivateHTTPS="$CMS_AUDIT_PRIVATE_HTTPS" assetPrivateHTTPS="$CMS_ASSET_PRIVATE_HTTPS" \
+            --parameters bulletinAutoExtractionEnabled="$BULLETIN_AUTO_EXTRACTION_ENABLED" \
+            --parameters migrationImage="$IMAGE_REF" runtimeImage="$IMAGE_REF" watermarkWorkerImage="$WATERMARK_IMAGE_REF" runtimeCpu="$RUNTIME_CPU" runtimeMemory="$RUNTIME_MEMORY" bulletinWatermarkPrivacyVersion="$BULLETIN_WATERMARK_PRIVACY_VERSION" release="$GITHUB_SHA" deployRuntime=true deployWatermarkWorker=false provisionPermissions=false retainLegacyRuntimeSecret=false cmsTranslationEnabled="$CMS_TRANSLATION_ENABLED" azureOpenAIEndpoint="$AZURE_OPENAI_ENDPOINT" azureOpenAIDeployment="$AZURE_OPENAI_DEPLOYMENT" bulletinLLMExtractionEnabled="$BULLETIN_LLM_EXTRACTION_ENABLED" videoMediaBaseURL="$VIDEO_MEDIA_BASE_URL" broadcastWritersEnabled="$BROADCAST_WRITERS_ENABLED" studioWritersEnabled="$STUDIO_WRITERS_ENABLED" videoInteractionsEnabled="$VIDEO_INTERACTIONS_ENABLED" videoAnalyticsEnabled="$VIDEO_ANALYTICS_ENABLED" \
+            --only-show-errors --output none
+      - name: Verify content import job image
+        run: |
+          content_import_image="$(az containerapp job show \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$CONTENT_IMPORT_JOB_NAME" \
+            --query properties.template.containers[0].image \
+            --output tsv --only-show-errors)"
+          [[ "$content_import_image" == "$IMAGE_REF" ]]
+      - name: Wait for API revision
+        run: |
+          for attempt in {1..60}; do
+            latest="$(az containerapp show -g "$RESOURCE_GROUP" -n "$API_APP_NAME" --query properties.latestRevisionName -o tsv --only-show-errors)"
+            ready="$(az containerapp show -g "$RESOURCE_GROUP" -n "$API_APP_NAME" --query properties.latestReadyRevisionName -o tsv --only-show-errors)"
+            if [[ -n "$latest" && "$latest" == "$ready" ]]; then
+              image="$(az containerapp revision show -g "$RESOURCE_GROUP" -n "$API_APP_NAME" --revision "$ready" \
+                --query properties.template.containers[0].image -o tsv --only-show-errors)"
+              cpu="$(az containerapp revision show -g "$RESOURCE_GROUP" -n "$API_APP_NAME" --revision "$ready" \
+                --query properties.template.containers[0].resources.cpu -o tsv --only-show-errors)"
+              memory="$(az containerapp revision show -g "$RESOURCE_GROUP" -n "$API_APP_NAME" --revision "$ready" \
+                --query properties.template.containers[0].resources.memory -o tsv --only-show-errors)"
+              auto_enabled="$(az containerapp revision show -g "$RESOURCE_GROUP" -n "$API_APP_NAME" --revision "$ready" \
+                --query "properties.template.containers[0].env[?name=='BULLETIN_AUTO_EXTRACTION_ENABLED'].value | [0]" -o tsv --only-show-errors)"
+              if [[ "$image" == "$IMAGE_REF" && "$memory" == "$RUNTIME_MEMORY" && "$auto_enabled" == "$BULLETIN_AUTO_EXTRACTION_ENABLED" ]] && jq -en --arg actual "$cpu" --arg expected "$RUNTIME_CPU" '($actual | tonumber) == ($expected | tonumber)' >/dev/null; then
+                echo "CANDIDATE_REVISION=$ready" >> "$GITHUB_ENV"
+                exit 0
+              fi
+            fi
+            sleep 10
+          done
+          echo "HHC web API did not become ready" >&2
+          exit 1
+      - name: Verify exact serving runtime
+        run: |
+          RUNTIME_ENV_MANIFEST=infra/runtime-env.json python3 scripts/verify-release-runtime.py
+          ./scripts/cms-locations-release.sh verify "$CANDIDATE_REVISION"
+      - name: Verify API availability before background workers
+        env:
+          APP_NAME: ${{ env.API_APP_NAME }}
+          ROLLOUT_EVIDENCE_DIR: ${{ runner.temp }}/rollout-cms-forward
+        run: |
+          SMOKE_MODE=forward ./scripts/smoke-release.sh
+          ./scripts/verify-rollout.sh
+      - name: Verify Azure model consumer activation
+        run: |
+          az containerapp revision show -g "$RESOURCE_GROUP" -n "$API_APP_NAME" --revision "$CANDIDATE_REVISION" --query properties.template.containers[0].env -o json --only-show-errors | jq -e --arg llm "$BULLETIN_LLM_EXTRACTION_ENABLED" --arg model "$AZURE_OPENAI_DEPLOYMENT" 'any(.[]; .name=="BULLETIN_LLM_EXTRACTION_ENABLED" and .value==$llm) and any(.[]; .name=="AZURE_OPENAI_DEPLOYMENT" and .value==$model)' >/dev/null
+      - name: Verify translation guardrail
+        run: |
+          account_id="$(az cognitiveservices account show -g "$RESOURCE_GROUP" -n "$AZURE_OPENAI_ACCOUNT_NAME" --query id -o tsv --only-show-errors)"
+          az rest --method get \
+            --url "https://management.azure.com${account_id}/raiPolicies/$AZURE_OPENAI_RAI_POLICY?api-version=2024-10-01" \
+            --only-show-errors --output json > rai-policy.json
+          jq -e --arg name "$AZURE_OPENAI_RAI_POLICY" '
+            . as $policy
+            | $policy.name == $name
+            and $policy.properties.basePolicyName == "Microsoft.DefaultV2"
+            and $policy.properties.mode == "Blocking"
+            and (["Hate", "Sexual", "Violence", "Selfharm"] | all(. as $name |
+              ["Prompt", "Completion"] | all(. as $source |
+                [$policy.properties.contentFilters[] | select(.name == $name and .source == $source and .enabled == true and .blocking == true and .severityThreshold == "High")] | length == 1)))
+            and ([$policy.properties.contentFilters[] | select(.name == "Jailbreak" and .source == "Prompt" and .enabled == true and .blocking == false)] | length == 1)
+          ' rai-policy.json >/dev/null
+      - name: Deploy event-driven bulletin worker
+        id: deploy_watermark
+        run: |
+          az deployment group create \
+            --name "hhc-web-bulletin-worker-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file infra/main.bicep \
+            --parameters "@$RUNNER_TEMP/cms-private-parameters.json" \
+            --parameters migrationImage="$IMAGE_REF" runtimeImage="$IMAGE_REF" watermarkWorkerImage="$WATERMARK_IMAGE_REF" runtimeCpu="$RUNTIME_CPU" runtimeMemory="$RUNTIME_MEMORY" bulletinWatermarkPrivacyVersion="$BULLETIN_WATERMARK_PRIVACY_VERSION" release="$GITHUB_SHA" deployRuntime=false deployMigrationJob=false deployWatermarkWorker=false deployWatermarkJob=true watermarkJobMaxExecutions=0 bulletinWorkerIdentityEnabled=true bulletinExtractorAssetAudience="$BULLETIN_EXTRACTOR_ASSET_AUDIENCE" provisionPermissions=false retainLegacyRuntimeSecret=false cmsTranslationEnabled=false \
+            --only-show-errors --output none
+          # Verify the Job, run its --preflight execution, then retire the App.
+          ./scripts/cutover-watermark-job.sh
+      - name: Smoke HHC web API release
+        run: SMOKE_MODE=forward ./scripts/smoke-release.sh
+      - name: Wake verified bulletin extractor
+        run: |
+          # One release wake adopts any queued work from the retired schedule.
+          az containerapp job show -g "$RESOURCE_GROUP" -n hhc-web-bulletin-extractor --only-show-errors -o json \
+            | jq '{containers:[.properties.template.containers[0] | {name,image,command,args:["--wake"],env,resources:{cpu:.resources.cpu,memory:.resources.memory}}]}' > "$RUNNER_TEMP/extractor-wake.yaml"
+          execution="$(az containerapp job start -g "$RESOURCE_GROUP" -n hhc-web-bulletin-extractor --yaml "$RUNNER_TEMP/extractor-wake.yaml" --query name -o tsv --only-show-errors)"
+          [[ "$execution" == hhc-web-bulletin-extractor-* ]]
+          for attempt in $(seq 1 30); do
+            state="$(az containerapp job execution show -g "$RESOURCE_GROUP" -n hhc-web-bulletin-extractor --job-execution-name "$execution" --query properties.status -o tsv --only-show-errors)"
+            case "$state" in Succeeded) break ;; Failed|Stopped|Degraded) exit 1 ;; esac
+            sleep 10
+          done
+          [[ "$state" == Succeeded ]]
+          SMOKE_MODE=forward ./scripts/smoke-release.sh
+          echo "EXTRACTOR_RECOVERY_REQUIRED=false" >> "$GITHUB_ENV"
+      - name: Capture deployed release identity
+        id: release_outputs
+        run: |
+          echo "commit=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          echo "image_digest=${IMAGE_REF##*@}" >> "$GITHUB_OUTPUT"
+          echo "revision=$CANDIDATE_REVISION" >> "$GITHUB_OUTPUT"
+          echo "worker_digest=${WATERMARK_IMAGE_REF##*@}" >> "$GITHUB_OUTPUT"
+          echo "worker-job=${WATERMARK_JOB_NAME}@${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          echo "extractor_digest=${EXTRACTOR_IMAGE_REF##*@}" >> "$GITHUB_OUTPUT"
+          echo "extractor-enabled=$BULLETIN_EXTRACTION_ENABLED" >> "$GITHUB_OUTPUT"
+          echo "deployment-attempt=$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+          if [[ "$RELEASE_PUBLIC_EXPECTATION" == maintenance ]]; then
+            echo 'public-state=pending' >> "$GITHUB_OUTPUT"
+          else
+            echo 'public-state=accepted' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Classify recovery
+        id: recovery
+        if: ${{ failure() && steps.deploy_runtime.outcome != 'skipped' }}
+        env:
+          RUNTIME_OUTCOME: ${{ steps.deploy_runtime.outcome }}
+          WATERMARK_OUTCOME: ${{ steps.deploy_watermark.outcome }}
+          EXTRACTOR_OUTCOME: ${{ steps.deploy_extractor.outcome }}
+        run: |
+          FAILED_DEPLOYMENTS="$(python3 - <<'PYCODE'
+          import json, os
+          names = [('RUNTIME_OUTCOME', 'hhc-web-runtime'), ('WATERMARK_OUTCOME', 'hhc-web-bulletin-worker'), ('EXTRACTOR_OUTCOME', 'hhc-web-extractor')]
+          print(json.dumps([f'{name}-{os.environ["GITHUB_RUN_ID"]}-{os.environ["GITHUB_RUN_ATTEMPT"]}' for outcome, name in names if os.environ[outcome] == 'failure']))
+          PYCODE
+          )"
+          export FAILED_DEPLOYMENTS
+          RUNTIME_ENV_MANIFEST=infra/runtime-env.json python3 scripts/verify-release-runtime.py recovery
+      - name: Restore previous extractor trigger and image
+        if: ${{ failure() && (steps.recovery.outputs.required == 'true' || env.EXTRACTOR_RECOVERY_REQUIRED == 'true') && steps.deploy_extractor.outcome != 'skipped' && env.EXTRACTOR_COMPATIBLE_DEPLOYED != 'true' }}
+        run: ./scripts/rollback-bulletin-extractor.sh
+      - name: Roll back watermark Job to the previous worker App
+        if: ${{ failure() && (steps.recovery.outputs.required == 'true' || env.WATERMARK_RECOVERY_REQUIRED == 'true') && steps.deploy_watermark.outcome != 'skipped' }}
+        run: ./scripts/rollback-watermark-job.sh
+      - name: Roll back failed runtime
+        if: ${{ failure() && steps.recovery.outputs.required == 'true' && steps.deploy_runtime.outcome != 'skipped' }}
+        run: |
+          python3 scripts/restore-runtime-template.py "$API_APP_NAME" "$PREVIOUS_READY_REVISION" "$PREVIOUS_IMAGE_REF"
+
+          for attempt in {1..60}; do
+            latest="$(az containerapp show -g "$RESOURCE_GROUP" -n "$API_APP_NAME" \
+              --query properties.latestRevisionName -o tsv --only-show-errors)"
+            ready="$(az containerapp show -g "$RESOURCE_GROUP" -n "$API_APP_NAME" \
+              --query properties.latestReadyRevisionName -o tsv --only-show-errors)"
+            if [[ -n "$latest" && "$latest" == "$ready" ]]; then
+              image="$(az containerapp revision show -g "$RESOURCE_GROUP" -n "$API_APP_NAME" \
+                --revision "$ready" \
+                --query properties.template.containers[0].image -o tsv --only-show-errors)"
+              [[ "$image" == "$PREVIOUS_IMAGE_REF" ]] && exit 0
+            fi
+            sleep 10
+          done
+          echo "HHC web API rollback did not become ready" >&2
+          exit 1
+      - name: Verify rolled back runtime
+        if: ${{ failure() && steps.recovery.outputs.required == 'true' && steps.deploy_runtime.outcome != 'skipped' }}
+        run: |
+          SMOKE_MODE=rollback ./scripts/smoke-release.sh
+          rollback_revision="$(az containerapp show -g "$RESOURCE_GROUP" -n "$API_APP_NAME" --query properties.latestReadyRevisionName -o tsv --only-show-errors)"
+          ./scripts/cms-locations-release.sh verify-rollback "$rollback_revision"
+          APP_NAME="$API_APP_NAME" IMAGE_REF="$PREVIOUS_IMAGE_REF" CANDIDATE_REVISION="$rollback_revision" \
+            SMOKE_MODE=rollback ROLLOUT_EVIDENCE_DIR="$RUNNER_TEMP/rollout-cms-rollback" ./scripts/verify-rollout.sh
+
+      - name: Prepare public rollout receipt
+        if: ${{ always() }}
+        run: python3 scripts/public-release-evidence.py "$RUNNER_TEMP" "$RUNNER_TEMP/public-rollout"
+      - name: Upload rollout evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cms-rollout-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/public-rollout/*.json
+          if-no-files-found: warn
+          retention-days: 7
+
+  public_acceptance:
+    needs: [deploy]
+    if: ${{ always() && (needs.deploy.result == 'success') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production-actions
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    outputs:
+      commit: ${{ steps.accept.outputs.commit }}
+      image_digest: ${{ steps.accept.outputs.image_digest }}
+      extractor_digest: ${{ steps.accept.outputs.extractor_digest }}
+      deployment-run: ${{ steps.accept.outputs.deployment-run }}
+      acceptance-attempt: ${{ steps.accept.outputs.acceptance-attempt }}
+    env:
+      ACR_NAME: ${{ secrets.ACR_NAME }}
+      ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+      IMAGE_REPOSITORY: ${{ secrets.IMAGE_REPOSITORY }}
+      EXTRACTOR_IMAGE_REPOSITORY: ${{ secrets.EXTRACTOR_IMAGE_REPOSITORY }}
+      RESOURCE_GROUP: ${{ secrets.RESOURCE_GROUP }}
+      API_APP_NAME: hhc-web-api
+      API_GATEWAY_APP_NAME: api-gateway
+      DEPLOYED_RUN_ID: ${{ github.run_id }}
+      DEPLOYED_COMMIT: ${{ needs.deploy.outputs.commit }}
+      DEPLOYED_IMAGE: ${{ format('{0}/{1}@{2}', secrets.ACR_LOGIN_SERVER, secrets.IMAGE_REPOSITORY, needs.deploy.outputs.image_digest) }}
+      DEPLOYED_REVISION: ${{ needs.deploy.outputs.revision }}
+      DEPLOYED_ATTEMPT: ${{ needs.deploy.outputs.deployment-attempt }}
+      DEPLOYED_PUBLIC_STATE: ${{ needs.deploy.outputs.public-state }}
+      DEPLOYED_WORKER_IMAGE: ${{ format('{0}/{1}@{2}', secrets.ACR_LOGIN_SERVER, secrets.IMAGE_REPOSITORY, needs.deploy.outputs.worker_digest) }}
+      DEPLOYED_WORKER_JOB: ${{ needs.deploy.outputs.worker-job }}
+      DEPLOYED_EXTRACTOR_IMAGE: ${{ format('{0}/{1}@{2}', secrets.ACR_LOGIN_SERVER, secrets.EXTRACTOR_IMAGE_REPOSITORY, needs.deploy.outputs.extractor_digest) }}
+      DEPLOYED_EXTRACTOR_ENABLED: ${{ needs.deploy.outputs.extractor-enabled }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - name: Sign in for pending or retried public acceptance
+        if: ${{ needs.deploy.outputs.public-state == 'pending' || needs.deploy.outputs.deployment-attempt != format('{0}', github.run_attempt) }}
+        uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Install Container Apps tooling for pending or retried acceptance
+        if: ${{ needs.deploy.outputs.public-state == 'pending' || needs.deploy.outputs.deployment-attempt != format('{0}', github.run_attempt) }}
+        run: az extension add --name containerapp --upgrade --yes
+      - name: Accept the exact deployed release after public verification
+        id: accept
+        env:
+          ROLLOUT_EVIDENCE_DIR: ${{ runner.temp }}/rollout-cms-public-acceptance
+        run: ./scripts/accept-release.sh
+      - name: Prepare public acceptance receipt
+        if: ${{ always() }}
+        run: python3 scripts/public-release-evidence.py "$RUNNER_TEMP" "$RUNNER_TEMP/public-acceptance"
+      - name: Upload final public verification evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cms-public-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/public-acceptance/*.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+  publish_openapi:
+    needs: public_acceptance
+    if: ${{ always() && needs.public_acceptance.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production-actions
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      STORAGE_ACCOUNT: ${{ secrets.STORAGE_ACCOUNT }}
+      CONTAINER: api-docs-hhc-web-api
+      API_DOCS_AZURE_CLIENT_ID: ${{ secrets.API_DOCS_AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      ACCEPTANCE_ATTEMPT: ${{ needs.public_acceptance.outputs.acceptance-attempt }}
+      RELEASE_DEPLOYMENT_RUN: ${{ needs.public_acceptance.outputs.deployment-run }}
+      RELEASE_COMMIT: ${{ needs.public_acceptance.outputs.commit }}
+      RELEASE_IMAGE_DIGEST: ${{ needs.public_acceptance.outputs.image_digest }}
+      FAIL_OPENAPI_BEFORE_POINTER: ${{ inputs.fail_openapi_before_pointer && github.run_attempt == 1 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Validate publication configuration
+        run: |
+          [[ "$ACCEPTANCE_ATTEMPT" == "$GITHUB_RUN_ATTEMPT" ]] || { echo 'Rerun public_acceptance and its dependent jobs before completion' >&2; exit 1; }
+          if [[ "$RELEASE_COMMIT" != "$GITHUB_SHA" ]]; then
+            [[ "$RELEASE_DEPLOYMENT_RUN" != "$GITHUB_RUN_ID" && "$RELEASE_DEPLOYMENT_RUN" =~ ^[1-9][0-9]*$ ]]
+            git merge-base --is-ancestor "$RELEASE_COMMIT" HEAD
+          fi
+          [[ "$RELEASE_IMAGE_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]
+          for name in API_DOCS_AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID; do
+            test -n "${!name:-}" || { echo "Missing repository variable: ${name}" >&2; exit 1; }
+          done
+      - name: Sign in with API docs publisher identity
+        uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3.0.0
+        with:
+          client-id: ${{ secrets.API_DOCS_AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Publish production OpenAPI contract
+        run: |
+          spec_blob="specs/${RELEASE_COMMIT}/openapi.yaml"
+          spec_sha256="$(sha256sum openapi.yaml | cut -d " " -f 1)"
+          is_canonical_run_id() { [[ "$1" =~ ^[1-9][0-9]*$ ]]; }
+          if ! is_canonical_run_id "$GITHUB_RUN_ID"; then
+            echo "Invalid GITHUB_RUN_ID: expected canonical positive decimal" >&2
+            exit 1
+          fi
+          spec_exists="$(az storage blob exists \
+            --account-name "$STORAGE_ACCOUNT" \
+            --container-name "$CONTAINER" \
+            --name "$spec_blob" \
+            --auth-mode login \
+            --only-show-errors \
+            --query exists \
+            --output tsv)"
+          if [[ "$spec_exists" == "true" ]]; then
+            existing_spec="$(mktemp)"
+            az storage blob download \
+              --account-name "$STORAGE_ACCOUNT" \
+              --container-name "$CONTAINER" \
+              --name "$spec_blob" \
+              --file "$existing_spec" \
+              --auth-mode login \
+              --no-progress \
+              --only-show-errors \
+              --output none
+            [[ "$(sha256sum "$existing_spec" | cut -d " " -f 1)" == "$spec_sha256" ]] || {
+              echo "Existing OpenAPI spec hash does not match" >&2
+              exit 1
+            }
+          else
+            az storage blob upload \
+              --account-name "$STORAGE_ACCOUNT" \
+              --container-name "$CONTAINER" \
+              --name "$spec_blob" \
+              --file openapi.yaml \
+              --auth-mode login \
+              --overwrite false \
+              --only-show-errors \
+              --output none
+          fi
+
+          jq -n \
+            --arg service hhc-web-api \
+            --arg commit "$RELEASE_COMMIT" \
+            --arg image "$RELEASE_IMAGE_DIGEST" \
+            --arg specBlob "$spec_blob" \
+            --arg specSha256 "$spec_sha256" \
+            --arg releaseUrl "https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            --arg publishedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '{schemaVersion: 1, service: $service, commit: $commit, image: $image, imageDigest: $image, specBlob: $specBlob, specSha256: $specSha256, releaseUrl: $releaseUrl, publishedAt: $publishedAt}' \
+            > current.json
+
+          if [[ "$FAIL_OPENAPI_BEFORE_POINTER" == "true" ]]; then
+            echo "Requested failure before API docs pointer upload" >&2
+            exit 1
+          fi
+
+          pointer_exists="$(az storage blob exists \
+            --account-name "$STORAGE_ACCOUNT" \
+            --container-name "$CONTAINER" \
+            --name current.json \
+            --auth-mode login \
+            --only-show-errors \
+            --query exists \
+            --output tsv)"
+          if [[ "$pointer_exists" == "true" ]]; then
+            current_pointer="$(mktemp)"
+            az storage blob download \
+              --account-name "$STORAGE_ACCOUNT" \
+              --container-name "$CONTAINER" \
+              --name current.json \
+              --file "$current_pointer" \
+              --auth-mode login \
+              --no-progress \
+              --only-show-errors \
+              --output none
+            current_run_id="$(jq -er --arg release_url_prefix "https://github.com/${GITHUB_REPOSITORY}/actions/runs/" '
+              .releaseUrl? as $release_url
+              | if ($release_url | type) == "string" and ($release_url | startswith($release_url_prefix))
+                then ($release_url | ltrimstr($release_url_prefix))
+                else empty
+                end
+            ' "$current_pointer" 2>/dev/null)" || {
+              echo "Invalid existing API docs pointer: expected canonical GitHub workflow run ID" >&2
+              exit 1
+            }
+            if ! is_canonical_run_id "$current_run_id"; then
+              echo "Invalid existing API docs pointer: expected canonical GitHub workflow run ID" >&2
+              exit 1
+            fi
+            export LC_ALL=C
+            if [[ ${#current_run_id} -gt ${#GITHUB_RUN_ID} ]] || { [[ ${#current_run_id} -eq ${#GITHUB_RUN_ID} ]] && [[ "$current_run_id" > "$GITHUB_RUN_ID" || "$current_run_id" == "$GITHUB_RUN_ID" ]]; }; then
+              echo "API docs pointer already belongs to workflow run $current_run_id; skipping stale or rerun publication"
+              exit 0
+            fi
+          fi
+
+          az storage blob upload \
+            --account-name "$STORAGE_ACCOUNT" \
+            --container-name "$CONTAINER" \
+            --name current.json \
+            --file current.json \
+            --auth-mode login \
+            --overwrite true \
+            --only-show-errors \
+            --output none
+
+  seal_extractor_evidence:
+    needs: [prepare_extractor, verify_extractor_evidence, public_acceptance]
+    if: ${{ !cancelled() && needs.public_acceptance.result == 'success' && (needs.verify_extractor_evidence.result == 'success') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.prepare_extractor.outputs.selection_id }}
+          path: artifacts/extractor-selection
+          digest-mismatch: error
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: extractor-result-release-*-${{ github.sha }}-${{ github.run_id }}
+          path: extractor-results
+          digest-mismatch: error
+      - name: Seal deployed and smoke-verified extractor evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ACCEPTANCE_ATTEMPT: ${{ needs.public_acceptance.outputs.acceptance-attempt }}
+          DEPLOYED_COMMIT: ${{ needs.public_acceptance.outputs.commit }}
+          DEPLOYED_API_DIGEST: ${{ needs.public_acceptance.outputs.image_digest }}
+          DEPLOYED_EXTRACTOR_DIGEST: ${{ needs.public_acceptance.outputs.extractor_digest }}
+        run: python3 scripts/seal_extractor_evidence.py
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: extractor-release-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/extractor-release-evidence/checkpoint.json
+          if-no-files-found: error
+          retention-days: 90

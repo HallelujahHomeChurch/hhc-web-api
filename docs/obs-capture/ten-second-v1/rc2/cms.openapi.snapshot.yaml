@@ -1,0 +1,2689 @@
+openapi: 3.1.0
+info:
+  title: HHC S10 capture integration schema
+  version: s10-2026-10-18.rc2
+  description: Fixed S10 bounds supplement. See contract.md for profile-specific runtime validation.
+servers:
+- url: https://www.alive.org.tw/api
+  description: Public and admin gateway surface; api-gateway validates browser JWTs and injects trusted identity
+    headers.
+paths:
+  /ingest/broadcast-source/resolve:
+    post:
+      operationId: ingestIngestBroadcastSourceResolvePost
+      summary: Key-only OBS resolve
+      description: K3 key-only OBS transport. Console owns metadata and publication policy. No Account login; no
+        proxy retry. Bootstrap/renewal use body-only stream key; session requests use the event-scoped bearer. Existing
+        B1/C1 validation and idempotency are unchanged.
+      tags:
+      - Admin
+      x-hhc-visibility: admin
+      x-hhc-callers:
+      - api-gateway
+      x-hhc-cache: private, no-store
+      servers:
+      - url: https://admin.alive.org.tw/api
+      security:
+      - daprApiToken: []
+        daprCallerAppId: []
+      responses:
+        '200':
+          description: Accepted transport result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastSourceResolvedEnvelope'
+        '400':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '401':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '403':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '404':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '409':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '410':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '412':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '413':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '422':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '429':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '503':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BroadcastSourceResolveInput'
+  /ingest/broadcast-source/bindings:
+    post:
+      operationId: ingestIngestBroadcastSourceBindingsPost
+      summary: Key-only OBS bindings
+      description: K3 key-only OBS transport. Console owns metadata and publication policy. No Account login; no
+        proxy retry. Bootstrap/renewal use body-only stream key; session requests use the event-scoped bearer. Existing
+        B1/C1 validation and idempotency are unchanged.
+      tags:
+      - Admin
+      x-hhc-visibility: admin
+      x-hhc-callers:
+      - api-gateway
+      x-hhc-cache: private, no-store
+      servers:
+      - url: https://admin.alive.org.tw/api
+      security:
+      - daprApiToken: []
+        daprCallerAppId: []
+      responses:
+        '200':
+          description: Accepted transport result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestBindingEnvelope'
+        '400':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '401':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '403':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '404':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '409':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '410':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '412':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '413':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '422':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '429':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '503':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BroadcastSourceBindInput'
+  /ingest/broadcast-source/session:
+    post:
+      operationId: ingestIngestBroadcastSourceSessionPost
+      summary: Key-only OBS session
+      description: K3 key-only OBS transport. Console owns metadata and publication policy. No Account login; no
+        proxy retry. Bootstrap/renewal use body-only stream key; session requests use the event-scoped bearer. Existing
+        B1/C1 validation and idempotency are unchanged.
+      tags:
+      - Admin
+      x-hhc-visibility: admin
+      x-hhc-callers:
+      - api-gateway
+      x-hhc-cache: private, no-store
+      servers:
+      - url: https://admin.alive.org.tw/api
+      security:
+      - daprApiToken: []
+        daprCallerAppId: []
+      responses:
+        '200':
+          description: Accepted transport result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestSessionEnvelope'
+        '400':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '401':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '403':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '404':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '409':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '410':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '412':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '413':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '422':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '429':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '503':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BroadcastIngestRenewInput'
+  /ingest/broadcasts/{id}/captures/{captureId}:
+    get:
+      operationId: ingestIngestBroadcastsIdCapturesCaptureidGet
+      summary: Key-only OBS {captureId}
+      description: K3 key-only OBS transport. Console owns metadata and publication policy. No Account login; no
+        proxy retry. Bootstrap/renewal use body-only stream key; session requests use the event-scoped bearer. Existing
+        B1/C1 validation and idempotency are unchanged.
+      tags:
+      - Admin
+      x-hhc-visibility: admin
+      x-hhc-callers:
+      - api-gateway
+      x-hhc-cache: private, no-store
+      servers:
+      - url: https://admin.alive.org.tw/api
+      security:
+      - daprApiToken: []
+        daprCallerAppId: []
+        broadcastIngestSession: []
+      responses:
+        '200':
+          description: Accepted transport result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordingCaptureEnvelope'
+        '400':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '401':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '403':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '404':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '409':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '410':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '412':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '413':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '422':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '429':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '503':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: captureId
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: ^[a-f0-9]{32}$
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+          maxLength: 128
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          default: 1000
+  /ingest/broadcasts/{id}/captures/{captureId}/objects:
+    post:
+      operationId: ingestIngestBroadcastsIdCapturesCaptureidObjectsPost
+      summary: Key-only OBS objects
+      description: K3 key-only OBS transport. Console owns metadata and publication policy. No Account login; no
+        proxy retry. Bootstrap/renewal use body-only stream key; session requests use the event-scoped bearer. Existing
+        B1/C1 validation and idempotency are unchanged.
+      tags:
+      - Admin
+      x-hhc-visibility: admin
+      x-hhc-callers:
+      - api-gateway
+      x-hhc-cache: private, no-store
+      servers:
+      - url: https://admin.alive.org.tw/api
+      security:
+      - daprApiToken: []
+        daprCallerAppId: []
+        broadcastIngestSession: []
+      responses:
+        '200':
+          description: Accepted transport result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordingCaptureResultEnvelope'
+        '400':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '401':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '403':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '404':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '409':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '410':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '412':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '413':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '422':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '429':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '503':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordingCaptureDeclareInput'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: captureId
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: ^[a-f0-9]{32}$
+  /ingest/broadcasts/{id}/captures/{captureId}/sign:
+    post:
+      operationId: ingestIngestBroadcastsIdCapturesCaptureidSignPost
+      summary: Key-only OBS sign
+      description: K3 key-only OBS transport. Console owns metadata and publication policy. No Account login; no
+        proxy retry. Bootstrap/renewal use body-only stream key; session requests use the event-scoped bearer. Existing
+        B1/C1 validation and idempotency are unchanged.
+      tags:
+      - Admin
+      x-hhc-visibility: admin
+      x-hhc-callers:
+      - api-gateway
+      x-hhc-cache: private, no-store
+      servers:
+      - url: https://admin.alive.org.tw/api
+      security:
+      - daprApiToken: []
+        daprCallerAppId: []
+        broadcastIngestSession: []
+      responses:
+        '200':
+          description: Accepted transport result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordingCaptureSignedEnvelope'
+        '400':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '401':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '403':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '404':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '409':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '410':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '412':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '413':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '422':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '429':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '503':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordingCaptureSignInput'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: captureId
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: ^[a-f0-9]{32}$
+  /ingest/broadcasts/{id}/captures/{captureId}/confirm:
+    post:
+      operationId: ingestIngestBroadcastsIdCapturesCaptureidConfirmPost
+      summary: Key-only OBS confirm
+      description: K3 key-only OBS transport. Console owns metadata and publication policy. No Account login; no
+        proxy retry. Bootstrap/renewal use body-only stream key; session requests use the event-scoped bearer. Existing
+        B1/C1 validation and idempotency are unchanged.
+      tags:
+      - Admin
+      x-hhc-visibility: admin
+      x-hhc-callers:
+      - api-gateway
+      x-hhc-cache: private, no-store
+      servers:
+      - url: https://admin.alive.org.tw/api
+      security:
+      - daprApiToken: []
+        daprCallerAppId: []
+        broadcastIngestSession: []
+      responses:
+        '202':
+          description: Accepted transport result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordingCaptureResultEnvelope'
+        '400':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '401':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '403':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '404':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '409':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '410':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '412':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '413':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '422':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '429':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '503':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordingCaptureConfirmInput'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: captureId
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: ^[a-f0-9]{32}$
+  /ingest/broadcasts/{id}/captures/{captureId}/stop:
+    post:
+      operationId: ingestIngestBroadcastsIdCapturesCaptureidStopPost
+      summary: Key-only OBS stop
+      description: K3 key-only OBS transport. Console owns metadata and publication policy. No Account login; no
+        proxy retry. Bootstrap/renewal use body-only stream key; session requests use the event-scoped bearer. Existing
+        B1/C1 validation and idempotency are unchanged.
+      tags:
+      - Admin
+      x-hhc-visibility: admin
+      x-hhc-callers:
+      - api-gateway
+      x-hhc-cache: private, no-store
+      servers:
+      - url: https://admin.alive.org.tw/api
+      security:
+      - daprApiToken: []
+        daprCallerAppId: []
+        broadcastIngestSession: []
+      responses:
+        '200':
+          description: Accepted transport result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordingCaptureResultEnvelope'
+        '400':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '401':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '403':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '404':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '409':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '410':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '412':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '413':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '422':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '429':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '503':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordingCaptureOperationInput'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: captureId
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: ^[a-f0-9]{32}$
+  /ingest/broadcasts/{id}/captures/{captureId}/seal:
+    post:
+      operationId: ingestIngestBroadcastsIdCapturesCaptureidSealPost
+      summary: Key-only OBS seal
+      description: K3 key-only OBS transport. Console owns metadata and publication policy. No Account login; no
+        proxy retry. Bootstrap/renewal use body-only stream key; session requests use the event-scoped bearer. Existing
+        B1/C1 validation and idempotency are unchanged.
+      tags:
+      - Admin
+      x-hhc-visibility: admin
+      x-hhc-callers:
+      - api-gateway
+      x-hhc-cache: private, no-store
+      servers:
+      - url: https://admin.alive.org.tw/api
+      security:
+      - daprApiToken: []
+        daprCallerAppId: []
+        broadcastIngestSession: []
+      responses:
+        '202':
+          description: Accepted transport result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordingCaptureResultEnvelope'
+        '400':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '401':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '403':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '404':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '409':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '410':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '412':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '413':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '422':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '429':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '503':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordingCaptureSealInput'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: captureId
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: ^[a-f0-9]{32}$
+  /ingest/broadcasts/{id}/captures/{captureId}/abort:
+    post:
+      operationId: ingestIngestBroadcastsIdCapturesCaptureidAbortPost
+      summary: Key-only OBS abort
+      description: K3 key-only OBS transport. Console owns metadata and publication policy. No Account login; no
+        proxy retry. Bootstrap/renewal use body-only stream key; session requests use the event-scoped bearer. Existing
+        B1/C1 validation and idempotency are unchanged.
+      tags:
+      - Admin
+      x-hhc-visibility: admin
+      x-hhc-callers:
+      - api-gateway
+      x-hhc-cache: private, no-store
+      servers:
+      - url: https://admin.alive.org.tw/api
+      security:
+      - daprApiToken: []
+        daprCallerAppId: []
+        broadcastIngestSession: []
+      responses:
+        '200':
+          description: Accepted transport result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordingCaptureResultEnvelope'
+        '400':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '401':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '403':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '404':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '409':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '410':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '412':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '413':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '422':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '429':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '503':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordingCaptureAbortInput'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: captureId
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: ^[a-f0-9]{32}$
+  /ingest/broadcasts/{id}/control:
+    get:
+      operationId: ingestIngestBroadcastsIdControlGet
+      summary: Key-only OBS control
+      description: K3 key-only OBS transport. Console owns metadata and publication policy. No Account login; no
+        proxy retry. Bootstrap/renewal use body-only stream key; session requests use the event-scoped bearer. Existing
+        B1/C1 validation and idempotency are unchanged.
+      tags:
+      - Admin
+      x-hhc-visibility: admin
+      x-hhc-callers:
+      - api-gateway
+      x-hhc-cache: private, no-store
+      servers:
+      - url: https://admin.alive.org.tw/api
+      security:
+      - daprApiToken: []
+        daprCallerAppId: []
+        broadcastIngestSession: []
+      responses:
+        '200':
+          description: Accepted transport result
+          content:
+            application/json:
+              schema:
+                oneOf:
+                - $ref: '#/components/schemas/BroadcastControlEnvelope'
+                - $ref: '#/components/schemas/BroadcastControlD1Envelope'
+        '400':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '401':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '403':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '404':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '409':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '410':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '412':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '413':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '422':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '429':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '503':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: captureId
+        in: query
+        required: true
+        schema:
+          type: string
+          pattern: ^[a-f0-9]{32}$
+      - name: epoch
+        in: query
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+      - name: controlVersion
+        in: query
+        required: false
+        description: Omit for legacy B1 control; opt in to identity-bound D1 public boundaries.
+        schema:
+          type: string
+          enum:
+          - d1-2026-10-17.rc2
+  /ingest/broadcasts/{id}/commands/{commandId}/ack:
+    post:
+      operationId: ingestIngestBroadcastsIdCommandsCommandidAckPost
+      summary: Key-only OBS ack
+      description: K3 key-only OBS transport. Console owns metadata and publication policy. No Account login; no
+        proxy retry. Bootstrap/renewal use body-only stream key; session requests use the event-scoped bearer. Existing
+        B1/C1 validation and idempotency are unchanged.
+      tags:
+      - Admin
+      x-hhc-visibility: admin
+      x-hhc-callers:
+      - api-gateway
+      x-hhc-cache: private, no-store
+      servers:
+      - url: https://admin.alive.org.tw/api
+      security:
+      - daprApiToken: []
+        daprCallerAppId: []
+        broadcastIngestSession: []
+      responses:
+        '200':
+          description: Accepted transport result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastMutationResultEnvelope'
+        '400':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '401':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '403':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '404':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '409':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '410':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '412':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '413':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '422':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '429':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '503':
+          description: Rejected or retryable transport request; see fixed K3 contract.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BroadcastMarkerAckInput'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: commandId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /ingest/streams/open:
+    post:
+      operationId: openBroadcastOutput
+      summary: Open or resume one durable OBS output
+      description: Open or resume the durable original output. New outputs require STUDIO_WRITERS_ENABLED; existing
+        intents can recover while disabled.
+      tags:
+      - Admin
+      x-hhc-visibility: admin
+      x-hhc-callers:
+      - api-gateway
+      x-hhc-cache: private, no-store
+      servers:
+      - url: https://admin.alive.org.tw/api
+      security:
+      - daprApiToken: []
+        daprCallerAppId: []
+      responses:
+        '200':
+          description: Bound original output; session is renewable, not byte-identical on replay
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastOutputOpenedEnvelope'
+        '400':
+          description: Invalid input; retain identity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '403':
+          description: Invalid key or delegate denied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '404':
+          description: Route unavailable; never fall back
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '409':
+          description: Wait, busy, capacity, terminal or operation conflict; classify by code
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '413':
+          description: Body exceeds 4096 bytes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '422':
+          description: Protocol unsupported
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '429':
+          description: Rate limited; Retry-After
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+        '503':
+          description: Disabled or dependency unavailable; preserve identity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastIngestErrorEnvelope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BroadcastOutputOpenInput'
+components:
+  schemas:
+    BroadcastArchive:
+      type: object
+      additionalProperties: false
+      required:
+      - state
+      - reason
+      properties:
+        state:
+          type: string
+          enum:
+          - none
+          - processing
+          - ready
+          - published
+          - failed
+        reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+    BroadcastBinding:
+      type: object
+      additionalProperties: false
+      required:
+      - captureId
+      - epoch
+      - actorId
+      properties:
+        captureId:
+          type: string
+          pattern: ^[a-f0-9]{32}$
+        epoch:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        actorId:
+          type: string
+          format: uuid
+    BroadcastBoundaries:
+      type: object
+      additionalProperties: false
+      required:
+      - startSequence
+      - endSequenceExclusive
+      - revision
+      properties:
+        startSequence:
+          anyOf:
+          - type: integer
+            minimum: 0
+            maximum: 2147483647
+          - type: 'null'
+        endSequenceExclusive:
+          anyOf:
+          - type: integer
+            minimum: 0
+            maximum: 2147483647
+          - type: 'null'
+        revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+    BroadcastCommand:
+      type: object
+      additionalProperties: false
+      required:
+      - commandId
+      - kind
+      - captureId
+      - epoch
+      - requestedAt
+      - status
+      - boundarySequence
+      properties:
+        commandId:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum:
+          - start
+          - end
+        captureId:
+          type: string
+          pattern: ^[a-f0-9]{32}$
+        epoch:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        requestedAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum:
+          - pending
+          - acknowledged
+          - cancelled
+          - rejected
+        boundarySequence:
+          anyOf:
+          - type: integer
+            minimum: 0
+            maximum: 2147483647
+          - type: 'null'
+    BroadcastControl:
+      type: object
+      additionalProperties: false
+      required:
+      - revision
+      - phase
+      - pendingCommand
+      properties:
+        revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        phase:
+          type: string
+          enum:
+          - draft
+          - scheduled
+          - preview
+          - start_pending
+          - live
+          - end_pending
+          - processing
+          - archived
+          - cancelled
+          - failed
+        pendingCommand:
+          anyOf:
+          - $ref: '#/components/schemas/BroadcastCommand'
+          - type: 'null'
+    BroadcastControlD1:
+      type: object
+      additionalProperties: false
+      required:
+      - revision
+      - phase
+      - pendingCommand
+      - controlVersion
+      - recordingId
+      - captureId
+      - epoch
+      - boundaries
+      properties:
+        revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        phase:
+          type: string
+          enum:
+          - draft
+          - scheduled
+          - preview
+          - start_pending
+          - live
+          - end_pending
+          - processing
+          - archived
+          - cancelled
+          - failed
+        pendingCommand:
+          anyOf:
+          - $ref: '#/components/schemas/BroadcastCommand'
+          - type: 'null'
+        controlVersion:
+          type: string
+          enum:
+          - d1-2026-10-17.rc2
+        recordingId:
+          type: string
+          format: uuid
+        captureId:
+          type: string
+          pattern: ^[a-f0-9]{32}$
+        epoch:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        boundaries:
+          $ref: '#/components/schemas/BroadcastBoundaries'
+    BroadcastControlD1Envelope:
+      type: object
+      additionalProperties: false
+      required:
+      - data
+      - meta
+      - error
+      properties:
+        data:
+          $ref: '#/components/schemas/BroadcastControlD1'
+        meta:
+          type: object
+          additionalProperties: true
+        error:
+          type: 'null'
+    BroadcastControlEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+      - data
+      - meta
+      - error
+      properties:
+        data:
+          $ref: '#/components/schemas/BroadcastControl'
+        meta:
+          type: object
+          additionalProperties: true
+        error:
+          type: 'null'
+    BroadcastHealth:
+      type: object
+      additionalProperties: false
+      required:
+      - state
+      - lastConfirmedAt
+      - lastPublishedAt
+      - verifiedEndSeconds
+      - queuedObjects
+      - reason
+      properties:
+        state:
+          type: string
+          enum:
+          - waiting
+          - healthy
+          - interrupted
+          - recovering
+        lastConfirmedAt:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+        lastPublishedAt:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+        verifiedEndSeconds:
+          anyOf:
+          - type: number
+            minimum: 0
+          - type: 'null'
+        queuedObjects:
+          anyOf:
+          - type: integer
+            minimum: 0
+          - type: 'null'
+        reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+    BroadcastIngestBinding:
+      type: object
+      additionalProperties: false
+      required:
+      - broadcast
+      - receipt
+      - session
+      properties:
+        broadcast:
+          $ref: '#/components/schemas/BroadcastView'
+        receipt:
+          $ref: '#/components/schemas/BroadcastReceipt'
+        session:
+          $ref: '#/components/schemas/BroadcastIngestSession'
+    BroadcastIngestBindingEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+      - data
+      - meta
+      - error
+      properties:
+        data:
+          $ref: '#/components/schemas/BroadcastIngestBinding'
+        meta:
+          type: object
+          additionalProperties: true
+        error:
+          type: 'null'
+    BroadcastIngestErrorEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+      - data
+      - meta
+      - error
+      properties:
+        data:
+          type: 'null'
+        meta:
+          type: object
+          additionalProperties: true
+        error:
+          type: object
+          additionalProperties: false
+          required:
+          - code
+          - message
+          properties:
+            code:
+              type: string
+              minLength: 1
+            message:
+              type: string
+            details:
+              type: object
+              additionalProperties: true
+    BroadcastIngestRenewInput:
+      type: object
+      additionalProperties: false
+      required:
+      - streamKey
+      - sessionToken
+      properties:
+        streamKey:
+          type: string
+          writeOnly: true
+          pattern: ^hhc_stream_[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$
+          description: Canonical 32 CSPRNG bytes. Never log or persist raw value; OBS uses OS credential storage.
+        sessionToken:
+          type: string
+          writeOnly: true
+          maxLength: 2048
+          pattern: ^hhc_ingest_[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$
+    BroadcastIngestSession:
+      type: object
+      additionalProperties: false
+      required:
+      - token
+      - expiresAt
+      - recordingId
+      - captureId
+      - epoch
+      properties:
+        token:
+          type: string
+          readOnly: true
+          maxLength: 2048
+          pattern: ^hhc_ingest_[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$
+          description: Opaque 15-minute event-scoped credential; store in OS credential storage, never log or journal.
+        expiresAt:
+          type: string
+          format: date-time
+        recordingId:
+          type: string
+          format: uuid
+        captureId:
+          type: string
+          pattern: ^[a-f0-9]{32}$
+        epoch:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+    BroadcastIngestSessionEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+      - data
+      - meta
+      - error
+      properties:
+        data:
+          $ref: '#/components/schemas/BroadcastIngestSession'
+        meta:
+          type: object
+          additionalProperties: true
+        error:
+          type: 'null'
+    BroadcastMarkerAckInput:
+      type: object
+      additionalProperties: false
+      required:
+      - operationKey
+      - captureId
+      - epoch
+      - boundarySequence
+      properties:
+        operationKey:
+          type: string
+          pattern: ^[a-zA-Z0-9._:-]{1,128}$
+        captureId:
+          type: string
+          pattern: ^[a-f0-9]{32}$
+        epoch:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        boundarySequence:
+          type: integer
+          minimum: 0
+          maximum: 2147483647
+    BroadcastMutationResult:
+      type: object
+      additionalProperties: false
+      required:
+      - broadcast
+      - receipt
+      properties:
+        broadcast:
+          $ref: '#/components/schemas/BroadcastView'
+        receipt:
+          $ref: '#/components/schemas/BroadcastReceipt'
+    BroadcastMutationResultEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+      - data
+      - meta
+      - error
+      properties:
+        data:
+          $ref: '#/components/schemas/BroadcastMutationResult'
+        meta:
+          type: object
+          additionalProperties: true
+        error:
+          type: 'null'
+    BroadcastOutputOpenInput:
+      type: object
+      additionalProperties: false
+      required:
+      - protocolVersion
+      - outputSessionId
+      - streamKey
+      properties:
+        mediaProfile:
+          type: string
+          enum:
+          - obs-hls-10s-v1
+          description: S10 opt-in. Omit for legacy 900-frame output. Persist with outputSessionId; retries cannot
+            change the profile. Require the same value echoed before sending media.
+        protocolVersion:
+          type: string
+          const: k4-2026-10-15.rc1
+        outputSessionId: &id001
+          type: string
+          format: uuid
+          pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+          not:
+            const: 00000000-0000-0000-0000-000000000000
+        streamKey:
+          type: string
+          writeOnly: true
+          pattern: ^hhc_stream_[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$
+          description: Canonical 32 CSPRNG bytes. Never log or persist raw value; OBS uses OS credential storage.
+    BroadcastOutputOpened:
+      type: object
+      additionalProperties: false
+      required:
+      - broadcast
+      - receipt
+      - session
+      - protocolVersion
+      - outputSessionId
+      - sourceId
+      properties:
+        broadcast:
+          allOf:
+          - $ref: '#/components/schemas/BroadcastView'
+          - type: object
+            required:
+            - binding
+            properties:
+              binding:
+                $ref: '#/components/schemas/BroadcastBinding'
+        receipt:
+          allOf:
+          - $ref: '#/components/schemas/BroadcastReceipt'
+          - type: object
+            properties:
+              operation:
+                const: bind
+              state:
+                const: completed
+        session:
+          $ref: '#/components/schemas/BroadcastIngestSession'
+        mediaProfile:
+          type: string
+          enum:
+          - obs-hls-10s-v1
+          description: Echo of the accepted S10 profile. Omitted for legacy output.
+        protocolVersion:
+          type: string
+          const: k4-2026-10-15.rc1
+        outputSessionId: *id001
+        sourceId: *id001
+    BroadcastOutputOpenedEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+      - data
+      - meta
+      - error
+      properties:
+        data:
+          $ref: '#/components/schemas/BroadcastOutputOpened'
+        meta:
+          type: object
+          additionalProperties: true
+        error:
+          type: 'null'
+    BroadcastPolicy:
+      type: object
+      additionalProperties: false
+      required:
+      - autoStart
+      - autoEnd
+      - autoPublish
+      properties:
+        autoStart:
+          type: boolean
+        autoEnd:
+          type: boolean
+        autoPublish:
+          type: boolean
+    BroadcastReceipt:
+      type: object
+      additionalProperties: false
+      required:
+      - operationKey
+      - operation
+      - state
+      properties:
+        operationKey:
+          type: string
+          pattern: ^[a-zA-Z0-9._:-]{1,128}$
+        operation:
+          type: string
+          enum:
+          - create
+          - update
+          - announce
+          - cancel
+          - bind
+          - start
+          - end
+          - cancel-command
+          - ack
+          - emergency-close
+        state:
+          type: string
+          enum:
+          - accepted
+          - completed
+          - rejected
+        commandId:
+          type: string
+          format: uuid
+    BroadcastSourceBindInput:
+      type: object
+      additionalProperties: false
+      required:
+      - streamKey
+      - operationKey
+      - expectedSourceRevision
+      - recordingId
+      - expectedRevision
+      - protocolVersion
+      properties:
+        streamKey: &id003
+          type: string
+          writeOnly: true
+          pattern: ^hhc_stream_[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$
+          description: Canonical 32 CSPRNG bytes. Never log or persist raw value; OBS uses OS credential storage.
+        operationKey:
+          type: string
+          pattern: ^[a-zA-Z0-9._:-]{1,128}$
+        expectedSourceRevision: &id002
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        recordingId: &id004
+          type: string
+          format: uuid
+        expectedRevision: *id002
+        protocolVersion:
+          type: string
+          minLength: 1
+          maxLength: 64
+    BroadcastSourceResolveInput:
+      type: object
+      additionalProperties: false
+      required:
+      - streamKey
+      properties:
+        streamKey: *id003
+    BroadcastSourceResolved:
+      type: object
+      additionalProperties: false
+      required:
+      - sourceRevision
+      - recordingId
+      - broadcastRevision
+      properties:
+        sourceRevision: *id002
+        recordingId: *id004
+        broadcastRevision: *id002
+    BroadcastSourceResolvedEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+      - data
+      - meta
+      - error
+      properties:
+        data:
+          $ref: '#/components/schemas/BroadcastSourceResolved'
+        meta:
+          type: object
+          additionalProperties: true
+        error:
+          type: 'null'
+    BroadcastView:
+      type: object
+      additionalProperties: false
+      required:
+      - recordingId
+      - revision
+      - phase
+      - announced
+      - scheduledAt
+      - title
+      - description
+      - policy
+      - cover
+      - binding
+      - boundaries
+      - health
+      - pendingCommand
+      - archive
+      properties:
+        recordingId:
+          type: string
+          format: uuid
+        revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        phase:
+          type: string
+          enum:
+          - draft
+          - scheduled
+          - preview
+          - start_pending
+          - live
+          - end_pending
+          - processing
+          - archived
+          - cancelled
+          - failed
+        announced:
+          type: boolean
+        scheduledAt:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+        title:
+          type: string
+          minLength: 1
+          maxLength: 180
+        description:
+          $ref: '#/components/schemas/RecordingDescription'
+        policy:
+          $ref: '#/components/schemas/BroadcastPolicy'
+        cover:
+          $ref: '#/components/schemas/LiveCoverSettings'
+        binding:
+          anyOf:
+          - $ref: '#/components/schemas/BroadcastBinding'
+          - type: 'null'
+        boundaries:
+          $ref: '#/components/schemas/BroadcastBoundaries'
+        health:
+          $ref: '#/components/schemas/BroadcastHealth'
+        pendingCommand:
+          anyOf:
+          - $ref: '#/components/schemas/BroadcastCommand'
+          - type: 'null'
+        archive:
+          $ref: '#/components/schemas/BroadcastArchive'
+    LiveCoverSelection:
+      oneOf:
+      - type: object
+        additionalProperties: false
+        required:
+        - mode
+        properties:
+          mode:
+            type: string
+            enum:
+            - auto
+      - type: object
+        additionalProperties: false
+        required:
+        - mode
+        - uploadId
+        properties:
+          mode:
+            type: string
+            enum:
+            - custom
+          uploadId:
+            type: string
+            pattern: ^[A-Za-z0-9-]{1,128}$
+    LiveCoverSettings:
+      type: object
+      additionalProperties: false
+      required:
+      - revision
+      - selection
+      - coverState
+      properties:
+        revision:
+          type: integer
+          minimum: 1
+          format: int64
+        selection:
+          $ref: '#/components/schemas/LiveCoverSelection'
+        coverState:
+          type: string
+          enum:
+          - none
+          - waiting
+          - pending
+          - ready
+          - failed
+        coverId:
+          type: string
+          maxLength: 128
+        contentPath:
+          type: string
+          pattern: ^/api/admin/recordings/
+        inheritedRevision:
+          type: integer
+          minimum: 1
+          format: int64
+    RecordingCaptureAbortInput:
+      type: object
+      additionalProperties: false
+      required:
+      - operationKey
+      - reasonCode
+      properties:
+        operationKey:
+          type: string
+          pattern: ^[a-zA-Z0-9._:-]{1,128}$
+        reasonCode:
+          type: string
+          enum:
+          - user_abort
+          - disk_limit
+          - encoder_failure
+          - capture_incomplete
+    RecordingCaptureConfirmInput:
+      type: object
+      additionalProperties: false
+      required:
+      - operationKey
+      - paths
+      properties:
+        operationKey:
+          type: string
+          pattern: ^[a-zA-Z0-9._:-]{1,128}$
+        paths:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            type: string
+            pattern: ^(master\.m3u8|(480p|720p|1080p)/(index\.m3u8|init\.mp4|seg-[0-9]{6}\.m4s))$
+          uniqueItems: true
+    RecordingCaptureDeclareInput:
+      type: object
+      additionalProperties: false
+      required:
+      - operationKey
+      - objects
+      properties:
+        operationKey:
+          type: string
+          pattern: ^[a-zA-Z0-9._:-]{1,128}$
+        objects:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/RecordingPackageObject'
+    RecordingCaptureEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+      - data
+      - meta
+      - error
+      properties:
+        data:
+          $ref: '#/components/schemas/RecordingCaptureStatus'
+        meta:
+          type: object
+          additionalProperties: true
+        error:
+          type: 'null'
+    RecordingCaptureObjectStatus:
+      type: object
+      additionalProperties: false
+      required:
+      - path
+      - sizeBytes
+      - sha256
+      - state
+      properties:
+        path:
+          type: string
+          pattern: ^(master\.m3u8|(480p|720p|1080p)/(index\.m3u8|init\.mp4|seg-[0-9]{6}\.m4s))$
+        sizeBytes:
+          type: integer
+          minimum: 1
+          maximum: 134217728
+        sha256:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        state:
+          type: string
+          enum:
+          - declared
+          - queued
+          - verified
+          - failed
+    RecordingCaptureOperationInput:
+      type: object
+      additionalProperties: false
+      required:
+      - operationKey
+      properties:
+        operationKey:
+          type: string
+          pattern: ^[a-zA-Z0-9._:-]{1,128}$
+    RecordingCaptureReceipt:
+      type: object
+      additionalProperties: false
+      required:
+      - operationKey
+      - operation
+      - acceptedAt
+      - captureId
+      properties:
+        operationKey:
+          type: string
+          pattern: ^[a-zA-Z0-9._:-]{1,128}$
+        operation:
+          type: string
+          enum:
+          - create
+          - declare
+          - confirm
+          - stop
+          - seal
+          - abort
+          - cancel_auto_publish
+          - close_live
+        acceptedAt:
+          type: string
+          format: date-time
+          description: UTC RFC3339 timestamp emitted with Z suffix.
+        captureId:
+          type: string
+          pattern: ^[a-f0-9]{32}$
+    RecordingCaptureResult:
+      type: object
+      additionalProperties: false
+      required:
+      - capture
+      - receipt
+      properties:
+        capture:
+          $ref: '#/components/schemas/RecordingCaptureStatus'
+        receipt:
+          $ref: '#/components/schemas/RecordingCaptureReceipt'
+    RecordingCaptureResultEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+      - data
+      - meta
+      - error
+      properties:
+        data:
+          $ref: '#/components/schemas/RecordingCaptureResult'
+        meta:
+          type: object
+          additionalProperties: true
+        error:
+          type: 'null'
+    RecordingCaptureSealInput:
+      type: object
+      additionalProperties: false
+      required:
+      - operationKey
+      - normalEnd
+      - inventory
+      properties:
+        operationKey:
+          type: string
+          pattern: ^[a-zA-Z0-9._:-]{1,128}$
+        normalEnd:
+          type: boolean
+          const: true
+        inventory:
+          allOf:
+          - $ref: '#/components/schemas/RecordingPackageInventory'
+          - type: object
+            properties:
+              renditions:
+                type: array
+                minItems: 3
+                maxItems: 3
+    RecordingCaptureSignInput:
+      type: object
+      additionalProperties: false
+      required:
+      - paths
+      properties:
+        paths:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            type: string
+            pattern: ^(master\.m3u8|(480p|720p|1080p)/(index\.m3u8|init\.mp4|seg-[0-9]{6}\.m4s))$
+          uniqueItems: true
+    RecordingCaptureSignedEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+      - data
+      - meta
+      - error
+      properties:
+        data:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/SignedRecordingObject'
+        meta:
+          type: object
+          additionalProperties: true
+        error:
+          type: 'null'
+    RecordingCaptureStatus:
+      type: object
+      additionalProperties: false
+      required:
+      - captureId
+      - recordingId
+      - recordingVersion
+      - state
+      - liveState
+      - liveEnabled
+      - autoPublish
+      - createdAt
+      - expiresAt
+      - serverNow
+      - stopAcceptedAt
+      - replayUntil
+      - terminalAt
+      - terminalReason
+      - packageId
+      - declaredBytes
+      - declaredObjects
+      - objects
+      - nextCursor
+      - progress
+      properties:
+        captureId:
+          type: string
+          pattern: ^[a-f0-9]{32}$
+        recordingId:
+          type: string
+          format: uuid
+        recordingVersion:
+          type: integer
+          format: int64
+          minimum: 1
+        state:
+          type: string
+          enum:
+          - creating
+          - uploading
+          - freezing
+          - validating
+          - ready
+          - failed
+          - expired
+          - aborted
+        liveState:
+          type: string
+          enum:
+          - starting
+          - live
+          - recovering
+          - interrupted
+          - ending
+          - ended
+          - failed
+          - expired
+          - aborted
+        liveEnabled:
+          type: boolean
+        autoPublish:
+          type: string
+          enum:
+          - pending
+          - cancelled
+          - blocked
+          - published
+        createdAt:
+          type: string
+          format: date-time
+          description: UTC RFC3339 timestamp emitted with Z suffix.
+        expiresAt:
+          type: string
+          format: date-time
+          description: UTC RFC3339 timestamp emitted with Z suffix.
+        serverNow:
+          type: string
+          format: date-time
+          description: UTC RFC3339 timestamp emitted with Z suffix.
+        stopAcceptedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: UTC RFC3339 timestamp emitted with Z suffix.
+        replayUntil:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: UTC RFC3339 timestamp emitted with Z suffix.
+        terminalAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: UTC RFC3339 timestamp emitted with Z suffix.
+        terminalReason:
+          type:
+          - string
+          - 'null'
+          maxLength: 128
+        packageId:
+          type:
+          - string
+          - 'null'
+          pattern: ^[a-f0-9]{32}$
+        declaredBytes:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 10000000000
+        declaredObjects:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 13000
+        objects:
+          type: array
+          minItems: 0
+          maxItems: 1000
+          items:
+            $ref: '#/components/schemas/RecordingCaptureObjectStatus'
+        nextCursor:
+          type: string
+          maxLength: 128
+        progress:
+          $ref: '#/components/schemas/RecordingLiveProgress'
+    RecordingDescription:
+      type: string
+      maxLength: 5000
+      pattern: ^[^\x00]*$
+      description: Optional plain-text video description; Unicode code points, no HTML rendering. Omission preserves
+        the saved value on update; an empty string clears it.
+    RecordingLiveProgress:
+      type: object
+      additionalProperties: false
+      required:
+      - revision
+      - firstSequence
+      - lastSequence
+      - mediaEndSeconds
+      - lastAdvancedAt
+      - endedAt
+      - ended
+      properties:
+        revision:
+          type: integer
+          format: int64
+          minimum: 0
+        firstSequence:
+          type: integer
+          const: 0
+        lastSequence:
+          type: integer
+          minimum: -1
+          maximum: 4319
+        mediaEndSeconds:
+          type: number
+          minimum: 0
+          maximum: 43200
+        lastAdvancedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: UTC RFC3339 timestamp emitted with Z suffix.
+        endedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: UTC RFC3339 timestamp emitted with Z suffix.
+        ended:
+          type: boolean
+    RecordingPackageInventory:
+      type: object
+      additionalProperties: false
+      description: HLS v1 declared inventory for the gated package upload contract; current MP4 routes do not consume
+        it. SHA-256 inventoryDigest hashes UTF-8 encoding/json-compatible serialization with this field omitted,
+        objects sorted by path, renditions sorted by name, and fields in the order shown below. Objects exclude
+        package.json itself; total package bytes include the serialized inventory. Metadata and hashes are declarations,
+        not proof of readiness. Final bytes and media are verified by the recording Job. Master BANDWIDTH and optional
+        AVERAGE-BANDWIDTH must match measured media segment bytes and EXTINF durations under RFC 8216 section 4.1,
+        not configured encoder bitrates. Ineligible short-tail windows are excluded from peak bandwidth.
+      required:
+      - schemaVersion
+      - presetVersion
+      - objects
+      - renditions
+      - inventoryDigest
+      properties:
+        schemaVersion:
+          type: integer
+          const: 1
+        presetVersion:
+          type: string
+          pattern: ^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$
+        objects:
+          type: array
+          minItems: 4
+          maxItems: 13000
+          items:
+            $ref: '#/components/schemas/RecordingPackageObject'
+        renditions:
+          type: array
+          minItems: 1
+          maxItems: 3
+          items:
+            $ref: '#/components/schemas/RecordingRendition'
+        inventoryDigest:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+    RecordingPackageObject:
+      type: object
+      additionalProperties: false
+      required:
+      - path
+      - sizeBytes
+      - sha256
+      properties:
+        path:
+          type: string
+          pattern: ^(master\.m3u8|(480p|720p|1080p)/(index\.m3u8|init\.mp4|seg-[0-9]{6}\.m4s))$
+          description: Canonical relative path. Unique paths and every declared rendition's complete contiguous
+            segment list are required. No URLs, encoded paths, queries or package.json.
+        sizeBytes:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 134217728
+          description: Playlists additionally have a 1048576-byte limit. Package total including inventory must
+            be at most 10000000000 bytes.
+        sha256:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+    RecordingRendition:
+      type: object
+      additionalProperties: false
+      required:
+      - name
+      - width
+      - height
+      - frameRate
+      - videoBitrate
+      - audioBitrate
+      - durationSeconds
+      - segmentCount
+      properties:
+        name:
+          type: string
+          enum:
+          - 480p
+          - 720p
+          - 1080p
+          description: 720p is mandatory for backward compatibility; 480p and 1080p optional. Names are unique;
+            each additional rung has distinct dimensions and ordered bitrates.
+        width:
+          type: integer
+          minimum: 2
+          maximum: 1920
+          multipleOf: 2
+          description: 480p maximum width is 854; 720p maximum width is 1280; source must never be upscaled.
+        height:
+          type: integer
+          minimum: 2
+          maximum: 1080
+          multipleOf: 2
+          description: 480p maximum height is 480; 720p maximum height is 720. Actual dimensions are retained for
+            smaller sources.
+        frameRate:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 30
+        videoBitrate:
+          type: integer
+          minimum: 500000
+          maximum: 8000000
+        audioBitrate:
+          type: integer
+          const: 128000
+        durationSeconds:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 43200
+        segmentCount:
+          type: integer
+          minimum: 1
+          maximum: 4320
+          description: Actual number of contiguous media segments, including a legal short final segment; validated
+            against playlists and decoded media, not inferred from duration. All renditions require aligned actual
+            boundaries. The obs-hls-10s-v1 profile allows up to 4320 segments; other profiles remain limited to
+            1440.
+    SignedRecordingObject:
+      type: object
+      additionalProperties: false
+      required:
+      - path
+      - url
+      - method
+      - headers
+      properties:
+        path:
+          type: string
+        url:
+          type: string
+          format: uri
+          description: At most fifteen-minute single-object R2 PUT capability; never log or persist.
+        method:
+          type: string
+          enum:
+          - PUT
+        headers:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+  securitySchemes:
+    broadcastIngestSession:
+      type: http
+      scheme: bearer
+      bearerFormat: HHC-INGEST
+      description: Event-bound short-lived HHC ingest session; never an Account access token.
+    daprApiToken:
+      type: apiKey
+      in: header
+      name: dapr-api-token
+      description: Dapr API token supplied by api-gateway; the value is never published in this contract.
+    daprCallerAppId:
+      type: apiKey
+      in: header
+      name: Dapr-Caller-App-Id
+      description: Must identify the configured api-gateway Dapr application.

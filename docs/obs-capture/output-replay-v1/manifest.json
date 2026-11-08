@@ -1,0 +1,40 @@
+{
+  "version": "k5-2026-10-20.rc1",
+  "stage": "producer-source-contract-not-deployed",
+  "files": {
+    "docs/obs-capture/output-replay-v1/schema.json": "38ab8c99e1204c29153b35fbbb2d05264c4db80d22f60d97b3cbb2efae4a0b67",
+    "docs/obs-capture/output-replay-v1/wire-fixtures.json": "77a9647492406bcc538e7a2b2815ca2b652d2000280d3d03b8744ea0c50ec27f",
+    "docs/obs-capture/output-replay-v1/server-rules.json": "e7a57f6ec6658d231b4967f642aad814fe58da758a932fa84aca29f4451749fd",
+    "docs/obs-capture/output-replay-v1/semantic-fixtures.json": "6602649e794885c58c126d52becc4a031a651b91a96e972139bcd1e4a0211b31",
+    "docs/obs-capture/output-replay-v1/openapi.snapshot.yaml": "40dfe452df397621d50ba84a5b03b92c48bdf4f788216d881982d99b32dbc439",
+    "docs/obs-capture/output-replay-v1/contract.md": "5554aa915bef3481e0648b4d9a948e1693c49b7b99c7215e089171a0268d386b"
+  },
+  "frozenK4S10": "unchanged; existing source tests remain required",
+  "semanticAssertions": "Identity equality/auth/ledger/side-effect guarantees require service+PG+HTTP tests; JSON Schema validates only wire structure.",
+  "terminalInputReleaseGuard": "Required exact original durable input_active=false; no mutation to manufacture proof",
+  "frozenContracts": {
+    "docs/obs-capture/studio-v2/openapi.snapshot.yaml": "6c1cd5519d16823fe92bccaffd1d0d78cda3c1abfd08ab82d89bcc51b1b7060b",
+    "docs/obs-capture/studio-v2/mac-k4-studio-release-2026-10-16.md": "262d6d3cc24c6dd9a17a66036722fac23764e4052577c50eab600b052797079b",
+    "docs/obs-capture/studio-v2/live-timing-2026-10-16.md": "1037ea1dc0c06902df117d3f4952e1af8c1438d1a2ed8d08d80d7d9a52c0259b",
+    "docs/obs-capture/studio-v2/identity-fixtures.json": "022f0d62f34aad02a4c377f57f355b06ec967aa3fbd297a9e327225c6bc88248",
+    "docs/obs-capture/studio-v2/acceptance.json": "810c6173c7f47acba5e2b1160c8c87a632a73279b1b609c9682b0a8d82d2cab0",
+    "docs/obs-capture/studio-v2/wire-fixtures.json": "5986a11895fc35f74f793054c2b17bcdd36bf6b48d3f6c006fd50278406d5432",
+    "docs/obs-capture/studio-v2/contract.md": "3083a56e25f53c95530fdb219c9781271ca4942f2adb81783560898911b1ee2d",
+    "docs/obs-capture/studio-v2/manifest.json": "e984a5a54b80c817ba701f6923d73c02b57bf9c5b7d238f15442543c5ae18464",
+    "docs/obs-capture/studio-v2/autopublish-cadence-2026-10-17.md": "c9ada381adca9f5ad914d8f83e47d47b1f7ba9e9dfb189d09ed3b5c36eab9e22",
+    "docs/obs-capture/studio-v2/completed-live-management-2026-10-16.md": "08c469454814c445ecabbe6557667abcc221b8b13ff7d11051fbc68fe64bc87f",
+    "docs/obs-capture/studio-v2/windows-handoff.md": "d63a5d3b5d6e2e7835e0e1f162fed3a2050f510a94d44759bfd4fdc30d064c2e",
+    "docs/obs-capture/studio-v2/mac-k4-vod-monitor-handoff-2026-10-16.md": "bba026931ed724b718aebdc36943f1cac97ad01d32a444f6ea1506852fab9cf8",
+    "docs/obs-capture/ten-second-v1/cms.openapi.snapshot.yaml": "7ef0410f3bb064c8bc755748b47536cf99d1a07dec0db5a87d9e0785251e67c7",
+    "docs/obs-capture/ten-second-v1/direct-signal-loss-plan.md": "c96ba4ae34bda58f70c7717cc7b405619d0ca6c7f4f62877b50bfae83cdb06b9",
+    "docs/obs-capture/ten-second-v1/contract.md": "e2c1bbd8cb1ff0db6803bed1ae83471f621e2de67f78e64205e939cc3ed1b70f",
+    "docs/obs-capture/ten-second-v1/asset.openapi.snapshot.yaml": "72a268564e6f8d27d0e8bcff5231b1df9f6ba54432eecc67b412702dd66927f7",
+    "docs/obs-capture/ten-second-v1/manifest.json": "01e989e3f7d7a4b6356e37b9f7ef57da26e4bec889ccfbe1fb48f37d38adfa65",
+    "docs/obs-capture/ten-second-v1/rc2/cms.openapi.snapshot.yaml": "b9ae8320535133f0d3fc92b1e3f0898e3218b45710d6d7cbfc97e2a0cd48458f",
+    "docs/obs-capture/ten-second-v1/rc2/contract.md": "05427d60479d10ece164bbd19d7f055003af5d194475c158aa04bc0f3ae8e953",
+    "docs/obs-capture/ten-second-v1/rc2/asset.openapi.snapshot.yaml": "1011b00785af8da4051f529f2cb2bff04f11f12352471b20c971a3bd9f906199",
+    "docs/obs-capture/ten-second-v1/rc2/manifest.json": "74d7b3499bfe9bd94510872be0f0a0ec6f5cd6147faacd23070405645c5462a4",
+    "docs/obs-capture/ten-second-v1/rc2/fixtures.json": "8b48000e84ac2ffafb8b73bb27deece1337e0f577de9ab6d223d1b73db2bb9b9",
+    "docs/obs-capture/ten-second-v1/rc2/SHA256SUMS": "cb639861cdf0f947b2c8b996aa1604dafcb6f002333b9875fabdadb983f71a9e"
+  }
+}

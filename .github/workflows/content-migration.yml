@@ -1,0 +1,404 @@
+name: Content Migration
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Read-only inventory/plan, or approved apply
+        required: true
+        default: inventory
+        type: choice
+        options:
+          - inventory
+          - plan
+          - apply
+      seed_version:
+        description: Reviewed seed version (required for apply)
+        required: false
+        type: string
+      manifest_sha:
+        description: Reviewed manifest SHA-256 (required for apply)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hhc-web-api-production-actions
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  preflight:
+    environment: production-actions
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      image_digest: ${{ steps.evidence.outputs.image_digest }}
+    env:
+      IMAGE_REPOSITORY: ${{ secrets.IMAGE_REPOSITORY }}
+      EXTRACTOR_IMAGE_REPOSITORY: ${{ secrets.EXTRACTOR_IMAGE_REPOSITORY }}
+      ACR_NAME: ${{ secrets.ACR_NAME }}
+      ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+      RESOURCE_GROUP: ${{ secrets.RESOURCE_GROUP }}
+      CONTENT_IMPORT_JOB_NAME: hhc-web-content-import
+      API_APP_NAME: hhc-web-api
+      REQUESTED_MODE: ${{ inputs.mode }}
+      RUN_ATTEMPT: ${{ github.run_attempt }}
+      REVIEWED_SEED_VERSION: ${{ inputs.seed_version }}
+      REVIEWED_MANIFEST_SHA: ${{ inputs.manifest_sha }}
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Validate workflow inputs
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == refs/heads/main ]] || { echo "Content migration is allowed only from refs/heads/main" >&2; exit 1; }
+          for name in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID; do
+            test -n "${!name:-}" || { echo "Missing repository variable: ${name}" >&2; exit 1; }
+          done
+          case "$REQUESTED_MODE" in
+            inventory|plan) ;;
+            apply)
+              [[ "$RUN_ATTEMPT" == 1 ]] || { echo "Apply is allowed only on workflow attempt 1" >&2; exit 1; }
+              [[ "$REVIEWED_SEED_VERSION" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]
+              [[ "$REVIEWED_MANIFEST_SHA" =~ ^[0-9a-f]{64}$ ]]
+              ;;
+            *) echo "Unsupported mode: $REQUESTED_MODE" >&2; exit 1 ;;
+          esac
+      - name: Sign in to Azure with OIDC
+        uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3.0.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - run: az extension add --name containerapp --upgrade --yes
+      - name: Run read-only mode and capture evidence
+        id: evidence
+        run: |
+          set -euo pipefail
+
+          validate_report() {
+            local logs="$1" expected_mode="$2" expected_seed="$3" expected_sha="$4" reports count report
+            reports="$(printf '%s\n' "$logs" | awk '/^[[:space:]]*\{/')"
+            count="$(printf '%s\n' "$reports" | awk 'NF { count++ } END { print count + 0 }')"
+            [[ "$count" -eq 1 ]] || {
+              echo "Expected exactly one importer JSON report line, got $count" >&2
+              return 1
+            }
+            report="$reports"
+            jq -ce --arg mode "$expected_mode" --arg seed "$expected_seed" --arg sha "$expected_sha" '
+              select(type == "object"
+              and has("mode") and has("seedVersion") and has("manifestSHA256")
+              and has("inserts") and has("skips")
+              and has("updates") and has("deletes") and has("warnings") and has("conflicts")
+              and .mode == $mode
+              and (if $seed == ""
+                then (((.seedVersion | type) == "string") and (.seedVersion | test("^[A-Za-z0-9][A-Za-z0-9._-]*$")))
+                else .seedVersion == $seed
+                end)
+              and (if $sha == ""
+                then (((.manifestSHA256 | type) == "string") and (.manifestSHA256 | test("^[0-9a-f]{64}$")))
+                else .manifestSHA256 == $sha
+                end)
+              and (.inserts | type == "number" and . >= 0 and . == floor)
+              and (.skips | type == "number" and . >= 0 and . == floor)
+              and .updates == 0
+              and .deletes == 0
+              and .warnings == 0
+              and .conflicts == 0
+              )
+            ' <<<"$report"
+          }
+
+          resolve_image_ref() {
+            local image="$1" image_spec repository digest
+            if [[ "$image" == *@sha256:* ]]; then
+              printf '%s\n' "$image"
+              return
+            fi
+            [[ "$image" == "${ACR_LOGIN_SERVER}/"* ]]
+            image_spec="${image#${ACR_LOGIN_SERVER}/}"
+            repository="${image_spec%:*}"
+            digest="$(az acr repository show --name "$ACR_NAME" --image "$image_spec" \
+              --query digest -o tsv --only-show-errors)"
+            [[ "$digest" == sha256:* ]]
+            printf '%s/%s@%s\n' "$ACR_LOGIN_SERVER" "$repository" "$digest"
+          }
+
+          require_same_image() {
+            local job_image="$1" runtime_image="$2"
+            python3 scripts/deployment_config.py image-digest api "$job_image" >/dev/null || return 1
+            python3 scripts/deployment_config.py image-digest api "$runtime_image" >/dev/null || return 1
+            [[ "$job_image" == "$runtime_image" ]]
+          }
+
+          job="$(az containerapp job show \
+            --name "$CONTENT_IMPORT_JOB_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --output json --only-show-errors)"
+          job_template="$(jq -c '.properties.template' <<<"$job")"
+          image_ref="$(jq -r '.containers[0].image' <<<"$job_template")"
+          environment_id="$(jq -r '.properties.environmentId' <<<"$job")"
+          workspace_id="$(az containerapp env show --ids "$environment_id" \
+            --query properties.appLogsConfiguration.logAnalyticsConfiguration.customerId \
+            --output tsv --only-show-errors)"
+          test -n "$workspace_id"
+          ready_revision="$(az containerapp show \
+            --name "$API_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query properties.latestReadyRevisionName \
+            --output tsv --only-show-errors)"
+          test -n "$ready_revision"
+          runtime_image="$(az containerapp revision show \
+            --name "$API_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --revision "$ready_revision" \
+            --query properties.template.containers[0].image \
+            --output tsv --only-show-errors)"
+          runtime_image_ref="$(resolve_image_ref "$runtime_image")"
+          require_same_image "$image_ref" "$runtime_image_ref"
+
+          MODE="$REQUESTED_MODE"
+          if [[ "$REQUESTED_MODE" == apply ]]; then
+            MODE=plan
+          fi
+          CONFIRMATION="$REVIEWED_SEED_VERSION"
+          MANIFEST_SHA="$REVIEWED_MANIFEST_SHA"
+          execution_template="$(mktemp)"
+          jq --arg mode "$MODE" --arg confirmation "$CONFIRMATION" --arg sha "$MANIFEST_SHA" \
+            '.containers[0].args = ["--mode=\($mode)", "--confirmation=\($confirmation)", "--expected-manifest-sha=\($sha)"]' \
+            <<<"$job_template" > "$execution_template"
+          execution_name="$(az containerapp job start \
+            --name "$CONTENT_IMPORT_JOB_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --yaml "$execution_template" \
+            --query name -o tsv --only-show-errors)"
+          test -n "$execution_name"
+          [[ "$execution_name" =~ ^[a-z0-9-]+$ ]]
+
+          status=
+          for attempt in {1..90}; do
+            status="$(az containerapp job execution show \
+              --name "$CONTENT_IMPORT_JOB_NAME" \
+              --resource-group "$RESOURCE_GROUP" \
+              --job-execution-name "$execution_name" \
+              --query properties.status -o tsv --only-show-errors)"
+            case "$status" in
+              Succeeded) break ;;
+              Failed|Canceled|Cancelled|Stopped)
+                echo "Content import ${execution_name}: ${status}" >&2
+                exit 1
+                ;;
+            esac
+            sleep 10
+          done
+          [[ "$status" == Succeeded ]] || { echo "Content import ${execution_name} timed out" >&2; exit 1; }
+
+          logs=
+          for attempt in {1..30}; do
+            if logs="$(az monitor log-analytics query \
+              --workspace "$workspace_id" \
+              --analytics-query "ContainerAppConsoleLogs_CL
+                | where TimeGenerated > ago(30m)
+                | where ContainerGroupName_s startswith '${execution_name}-'
+                | where ContainerName_s == 'content-import'
+                | order by TimeGenerated asc
+                | project Log_s" \
+              --query '[].Log_s' --output tsv --only-show-errors)"; then
+              report_count="$(printf '%s\n' "$logs" | awk '/^[[:space:]]*\{/ { count++ } END { print count + 0 }')"
+              [[ "$report_count" -gt 0 ]] && break
+            fi
+            sleep 10
+          done
+          report="$(validate_report "$logs" "$MODE" "$REVIEWED_SEED_VERSION" "$REVIEWED_MANIFEST_SHA")"
+          echo "image_digest=${image_ref##*@}" >> "$GITHUB_OUTPUT"
+          {
+            echo '### Content import preflight evidence'
+            echo
+            jq -n --arg execution "$execution_name" --arg imageDigest "${image_ref##*@}" --argjson report "$report" \
+              '{imageDigest:$imageDigest,verified:true}'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  approved_apply:
+    needs: preflight
+    if: ${{ inputs.mode == 'apply' && github.run_attempt == 1 }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: production-actions
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      IMAGE_REPOSITORY: ${{ secrets.IMAGE_REPOSITORY }}
+      EXTRACTOR_IMAGE_REPOSITORY: ${{ secrets.EXTRACTOR_IMAGE_REPOSITORY }}
+      ACR_NAME: ${{ secrets.ACR_NAME }}
+      ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+      RESOURCE_GROUP: ${{ secrets.RESOURCE_GROUP }}
+      CONTENT_IMPORT_JOB_NAME: hhc-web-content-import
+      API_APP_NAME: hhc-web-api
+      REVIEWED_IMAGE_REF: ${{ format('{0}/{1}@{2}', secrets.ACR_LOGIN_SERVER, secrets.IMAGE_REPOSITORY, needs.preflight.outputs.image_digest) }}
+      RUN_ATTEMPT: ${{ github.run_attempt }}
+      REVIEWED_SEED_VERSION: ${{ inputs.seed_version }}
+      REVIEWED_MANIFEST_SHA: ${{ inputs.manifest_sha }}
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Sign in to Azure with OIDC
+        uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3.0.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - run: az extension add --name containerapp --upgrade --yes
+      - name: Recheck image and apply reviewed manifest
+        run: |
+          set -euo pipefail
+          [[ "$RUN_ATTEMPT" == 1 ]]
+
+          validate_report() {
+            local logs="$1" expected_mode="$2" expected_seed="$3" expected_sha="$4" reports count report
+            reports="$(printf '%s\n' "$logs" | awk '/^[[:space:]]*\{/')"
+            count="$(printf '%s\n' "$reports" | awk 'NF { count++ } END { print count + 0 }')"
+            [[ "$count" -eq 1 ]] || {
+              echo "Expected exactly one importer JSON report line, got $count" >&2
+              return 1
+            }
+            report="$reports"
+            jq -ce --arg mode "$expected_mode" --arg seed "$expected_seed" --arg sha "$expected_sha" '
+              select(type == "object"
+              and has("mode") and has("seedVersion") and has("manifestSHA256")
+              and has("inserts") and has("skips")
+              and has("updates") and has("deletes") and has("warnings") and has("conflicts")
+              and .mode == $mode
+              and (if $seed == ""
+                then (((.seedVersion | type) == "string") and (.seedVersion | test("^[A-Za-z0-9][A-Za-z0-9._-]*$")))
+                else .seedVersion == $seed
+                end)
+              and (if $sha == ""
+                then (((.manifestSHA256 | type) == "string") and (.manifestSHA256 | test("^[0-9a-f]{64}$")))
+                else .manifestSHA256 == $sha
+                end)
+              and (.inserts | type == "number" and . >= 0 and . == floor)
+              and (.skips | type == "number" and . >= 0 and . == floor)
+              and .updates == 0
+              and .deletes == 0
+              and .warnings == 0
+              and .conflicts == 0
+              )
+            ' <<<"$report"
+          }
+
+          resolve_image_ref() {
+            local image="$1" image_spec repository digest
+            if [[ "$image" == *@sha256:* ]]; then
+              printf '%s\n' "$image"
+              return
+            fi
+            [[ "$image" == "${ACR_LOGIN_SERVER}/"* ]]
+            image_spec="${image#${ACR_LOGIN_SERVER}/}"
+            repository="${image_spec%:*}"
+            digest="$(az acr repository show --name "$ACR_NAME" --image "$image_spec" \
+              --query digest -o tsv --only-show-errors)"
+            [[ "$digest" == sha256:* ]]
+            printf '%s/%s@%s\n' "$ACR_LOGIN_SERVER" "$repository" "$digest"
+          }
+
+          require_same_image() {
+            local job_image="$1" runtime_image="$2"
+            python3 scripts/deployment_config.py image-digest api "$job_image" >/dev/null || return 1
+            python3 scripts/deployment_config.py image-digest api "$runtime_image" >/dev/null || return 1
+            [[ "$job_image" == "$runtime_image" ]]
+          }
+
+          job="$(az containerapp job show \
+            --name "$CONTENT_IMPORT_JOB_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --output json --only-show-errors)"
+          job_template="$(jq -c '.properties.template' <<<"$job")"
+          current_image="$(jq -r '.containers[0].image' <<<"$job_template")"
+          environment_id="$(jq -r '.properties.environmentId' <<<"$job")"
+          workspace_id="$(az containerapp env show --ids "$environment_id" \
+            --query properties.appLogsConfiguration.logAnalyticsConfiguration.customerId \
+            --output tsv --only-show-errors)"
+          test -n "$workspace_id"
+          ready_revision="$(az containerapp show \
+            --name "$API_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query properties.latestReadyRevisionName \
+            --output tsv --only-show-errors)"
+          test -n "$ready_revision"
+          runtime_image="$(az containerapp revision show \
+            --name "$API_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --revision "$ready_revision" \
+            --query properties.template.containers[0].image \
+            --output tsv --only-show-errors)"
+          runtime_image_ref="$(resolve_image_ref "$runtime_image")"
+          require_same_image "$current_image" "$runtime_image_ref"
+          [[ "$current_image" == "$REVIEWED_IMAGE_REF" ]]
+
+          MODE=apply
+          CONFIRMATION="$REVIEWED_SEED_VERSION"
+          MANIFEST_SHA="$REVIEWED_MANIFEST_SHA"
+          execution_template="$(mktemp)"
+          jq --arg mode "$MODE" --arg confirmation "$CONFIRMATION" --arg sha "$MANIFEST_SHA" \
+            '.containers[0].args = ["--mode=\($mode)", "--confirmation=\($confirmation)", "--expected-manifest-sha=\($sha)"]' \
+            <<<"$job_template" > "$execution_template"
+          execution_name="$(az containerapp job start \
+            --name "$CONTENT_IMPORT_JOB_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --yaml "$execution_template" \
+            --query name -o tsv --only-show-errors)"
+          test -n "$execution_name"
+          [[ "$execution_name" =~ ^[a-z0-9-]+$ ]]
+
+          status=
+          for attempt in {1..90}; do
+            status="$(az containerapp job execution show \
+              --name "$CONTENT_IMPORT_JOB_NAME" \
+              --resource-group "$RESOURCE_GROUP" \
+              --job-execution-name "$execution_name" \
+              --query properties.status -o tsv --only-show-errors)"
+            case "$status" in
+              Succeeded) break ;;
+              Failed|Canceled|Cancelled|Stopped)
+                echo "Content import ${execution_name}: ${status}" >&2
+                exit 1
+                ;;
+            esac
+            sleep 10
+          done
+          [[ "$status" == Succeeded ]] || { echo "Content import ${execution_name} timed out" >&2; exit 1; }
+
+          logs=
+          for attempt in {1..30}; do
+            if logs="$(az monitor log-analytics query \
+              --workspace "$workspace_id" \
+              --analytics-query "ContainerAppConsoleLogs_CL
+                | where TimeGenerated > ago(30m)
+                | where ContainerGroupName_s startswith '${execution_name}-'
+                | where ContainerName_s == 'content-import'
+                | order by TimeGenerated asc
+                | project Log_s" \
+              --query '[].Log_s' --output tsv --only-show-errors)"; then
+              report_count="$(printf '%s\n' "$logs" | awk '/^[[:space:]]*\{/ { count++ } END { print count + 0 }')"
+              [[ "$report_count" -gt 0 ]] && break
+            fi
+            sleep 10
+          done
+          report="$(validate_report "$logs" "$MODE" "$CONFIRMATION" "$MANIFEST_SHA")"
+          {
+            echo '### Approved content import apply evidence'
+            echo
+            jq -n --arg execution "$execution_name" --arg imageDigest "${current_image##*@}" --argjson report "$report" \
+              '{imageDigest:$imageDigest,verified:true}'
+          } >> "$GITHUB_STEP_SUMMARY"
