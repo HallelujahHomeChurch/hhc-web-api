@@ -3,8 +3,8 @@ package main
 import (
 	"context"
 	"crypto/sha256"
-	"database/sql"
 	"encoding/hex"
+	"github.com/HallelujahHomeChurch/hhc-web-api/internal/dbbudget"
 	"regexp"
 	"time"
 
@@ -30,7 +30,7 @@ func runBatch(ctx context.Context) error {
 	if err != nil {
 		return errInvalidJob
 	}
-	db, err := sql.Open("pgx", cfg.DatabaseURL)
+	db, err := dbbudget.Open(cfg.DatabaseURL, "hhc_web_jobs", 24, 2, 1)
 	if err != nil {
 		return err
 	}

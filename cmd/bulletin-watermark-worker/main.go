@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"flag"
+	"github.com/HallelujahHomeChurch/hhc-web-api/internal/dbbudget"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -68,7 +69,7 @@ func loadWorkerConfig() (workerConfig, error) {
 }
 
 func openDatabase(cfg config.Config) (*sql.DB, error) {
-	db, err := sql.Open("pgx", cfg.DatabaseURL)
+	db, err := dbbudget.Open(cfg.DatabaseURL, "hhc_web_jobs", 24, cfg.DBMaxOpenConns, cfg.DBMaxIdleConns)
 	if err != nil {
 		return nil, err
 	}
