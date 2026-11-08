@@ -40,6 +40,9 @@ type Config struct {
 	OperationsPrivateToken                                 string
 	AuditPrivateHTTPS                                      bool
 	AssetPrivateHTTPS                                      bool
+	InboxEnabled                                           bool
+	NotificationAppID                                      string
+	InboxPublicationsAfter                                 time.Time
 	StreamKeyEncryptionID                                  string
 	StreamKeyEncryptionKeys                                map[string][]byte
 	VideoInteractionsEnabled                               bool
@@ -182,6 +185,7 @@ func load(worker bool) (Config, error) {
 		MediaBaseURL:                   strings.TrimSpace(os.Getenv("VIDEO_MEDIA_BASE_URL")),
 		MediaWatermarkKeyHex:           strings.TrimSpace(os.Getenv("VIDEO_WATERMARK_KEY_HEX")),
 		RecordingWatermarkTraceEnabled: strings.EqualFold(strings.TrimSpace(os.Getenv("RECORDING_WATERMARK_TRACE_ENABLED")), "true"),
+		NotificationAppID:              value("NOTIFICATION_APP_ID", "notification-api"),
 		InternalCallerAppID:            value("INTERNAL_CALLER_APP_ID", "hhc-web-api"), AdminAllowedCaller: value("ADMIN_ALLOWED_CALLER_APP_ID", "api-gateway"),
 		DaprAPIToken:   strings.TrimSpace(os.Getenv("APP_API_TOKEN")),
 		AllowDevCaller: strings.EqualFold(strings.TrimSpace(os.Getenv("ALLOW_DEV_CALLER_HEADER")), "true"),
@@ -210,6 +214,23 @@ func load(worker bool) (Config, error) {
 		},
 	}
 
+	if raw := strings.TrimSpace(os.Getenv("WEBSITE_INBOX_ENABLED")); raw != "" {
+		enabled, e := strconv.ParseBool(raw)
+		if e != nil {
+			return Config{}, fmt.Errorf("invalid WEBSITE_INBOX_ENABLED")
+		}
+		cfg.InboxEnabled = enabled
+	}
+	if cfg.InboxEnabled {
+		if (cfg.NotificationAppID != "notification-api" && cfg.NotificationAppID != "notification-api-test") || (cfg.InternalCallerAppID != "hhc-web-api" && cfg.InternalCallerAppID != "hhc-web-api-test") || (cfg.NotificationAppID == "notification-api-test") != (cfg.InternalCallerAppID == "hhc-web-api-test") {
+			return Config{}, fmt.Errorf("invalid same-environment inbox Notification identity")
+		}
+		after, e := time.Parse(time.RFC3339, strings.TrimSpace(os.Getenv("WEBSITE_INBOX_PUBLICATIONS_AFTER")))
+		if e != nil || after.IsZero() {
+			return Config{}, fmt.Errorf("WEBSITE_INBOX_PUBLICATIONS_AFTER is required when inbox is enabled")
+		}
+		cfg.InboxPublicationsAfter = after.UTC()
+	}
 	if worker {
 		cfg.DBMaxOpenConns, cfg.DBMaxIdleConns = 2, 1
 	}

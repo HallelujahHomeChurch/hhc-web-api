@@ -273,10 +273,18 @@ func (r *RecordingRepository) UpdateBroadcast(ctx context.Context, id, actor str
 		b.LiveNotificationPending = true
 	}
 	if b.LiveNotificationPending && c != nil && !value.Expired(now) && b.LiveNotificationReady(*c, now) {
+		if e = recordInboxPublication(ctx, tx, r.inboxPublicationsAfter, "recording.published", id, "", "", value.Version, now); e != nil {
+			return b, e
+		}
 		if e = enqueueRecordingNotification(ctx, tx, id, value.Title, c.ActorID, value.Version, now, true); e != nil {
 			return b, e
 		}
 		b.LiveNotificationPending = false
+	}
+	if b.InboxVODReady(value, now) {
+		if e = recordInboxPublication(ctx, tx, r.inboxPublicationsAfter, "recording.published", id, "", "", value.Version, now); e != nil {
+			return b, e
+		}
 	}
 	if e = saveBroadcast(ctx, tx, b); e != nil {
 		return b, e

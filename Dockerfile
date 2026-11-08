@@ -35,6 +35,7 @@ COPY internal/diagnostics/ ./internal/diagnostics/
 COPY internal/legal/ ./internal/legal/
 COPY internal/translation/ ./internal/translation/
 COPY internal/publication/ ./internal/publication/
+COPY internal/inboxcontent/ ./internal/inboxcontent/
 COPY internal/recordings/ ./internal/recordings/
 COPY internal/postgres/ ./internal/postgres/
 RUN --mount=type=cache,target=/root/.cache/go-build CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /hhc-web-bulletin-worker ./cmd/bulletin-watermark-worker

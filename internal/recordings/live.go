@@ -379,3 +379,9 @@ func liveCoverMode(cover *CaptureLiveCover) string {
 	}
 	return ""
 }
+
+// First inbox publication waits for the actual current playable live waterline.
+func (c Capture) InboxLiveReady(now time.Time) bool {
+	c.DeriveLiveState(now)
+	return c.Status.TerminalAt == nil && c.LiveAvailable(now) && c.Status.LiveState == "live" && c.Status.Progress.LastSequence >= 2 && c.Status.StopAcceptedAt == nil
+}

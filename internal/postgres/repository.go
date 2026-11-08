@@ -17,6 +17,7 @@ import (
 )
 
 type Repository struct {
+	inboxPublicationsAfter                                 time.Time
 	db                                                     *sql.DB
 	enableFiveLocaleBulletinNotificationsAfterFluentReview bool
 	auditOutbox                                            *AuditOutbox
@@ -870,8 +871,8 @@ func (r *Repository) Claim(ctx context.Context, now time.Time, lease time.Durati
 	err := r.db.QueryRowContext(ctx, `
 		WITH candidate AS (
 			SELECT id FROM hhc_web.outbox_event
-			WHERE (status='pending' AND next_attempt_at <= $1)
-			   OR (status='processing' AND claimed_until <= $1)
+			WHERE destination<>'engagement-inbox' AND ((status='pending' AND next_attempt_at <= $1)
+			   OR (status='processing' AND claimed_until <= $1))
 			ORDER BY next_attempt_at, created_at
 			FOR UPDATE SKIP LOCKED
 			LIMIT 1
@@ -1145,6 +1146,9 @@ func (r *Repository) CompletePublish(ctx context.Context, event publication.Even
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.outbox_event SET status='delivered',claimed_until=NULL,last_error='',updated_at=$2 WHERE id=$1`, event.ID, now); err != nil {
+		return err
+	}
+	if err := recordInboxPublication(ctx, tx, r.inboxPublicationsAfter, "bulletin.published", payload.IssueID, payload.Series, payload.Locale, issueVersion, now); err != nil {
 		return err
 	}
 	if payload.NotifySubscribers {

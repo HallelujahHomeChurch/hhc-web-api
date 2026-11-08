@@ -186,6 +186,12 @@ func (r *RecordingRepository) UpdateCapture(ctx context.Context, id string, fn f
 	if err = fn(&c); err != nil {
 		return c, err
 	}
+	now := time.Now().UTC()
+	if c.BroadcastEpoch == 0 && c.InboxLiveReady(now) {
+		if err = recordInboxPublication(ctx, tx, r.inboxPublicationsAfter, "recording.published", c.RecordingID, "", "", c.Status.RecordingVersion, now); err != nil {
+			return c, err
+		}
+	}
 	if c.LiveCover != nil && c.Status.StopAcceptedAt != nil && c.LiveCover.Settings.CoverState == "ready" {
 		c.LiveCover.AutoFrozen = true
 	}

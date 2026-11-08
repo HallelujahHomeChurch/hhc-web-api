@@ -779,6 +779,54 @@ This is a post-cutover gate, not proof of uninterrupted deployment. The separate
 PG maintenance, replica increase, full-transition observation and the historical
 Dapr port/probe failures remain separate acceptance work.
 
+## Member inbox publication and current visibility
+
+`WEBSITE_INBOX_ENABLED` defaults to false. Enabling requires an explicitly
+reviewed RFC3339 `WEBSITE_INBOX_PUBLICATIONS_AFTER` watermark. First actual PDF,
+Online edition, ready B1 live start, legacy C1 playable live start, or ordinary
+recording publication records durable source evidence in the same transaction.
+Each recording and each issue/series/locale has one first-visibility marker;
+PDF and Online share an edition marker. Markers are recorded while disabled,
+so later format changes and republishing cannot backfill. New migration 110 seeds
+historical published evidence without sending events. Legacy C1 suppression
+requires a retained live snapshot whose exact binding,
+live-enabled/terminal/stop/expiry gates and media latency were playable at its
+persisted last-advanced timestamp. Recovering, interrupted, ending/ended and
+late-start mislabeled-live snapshots do not prove past visibility and do not seed.
+The retained witness time is not a reconstruction of exact historical first-live;
+absent history cannot be reconstructed. Source markers
+survive outbox and inbox retention; their retention policy remains pending legal.
+
+The separate `engagement-inbox` outbox destination and dispatcher send only the
+Task 5 `InboxPublication` contract to `/priv/engagement/inbox-publications`.
+They neither consume nor change existing Email/Push notifications or generation.
+Retries preserve the original event ID, source version and occurredAt.
+
+`POST /priv/website/inbox-visibility` allows only the exact configured `NOTIFICATION_APP_ID` Dapr
+identity (default `notification-api`, test `notification-api-test`; select the
+same environment as `INTERNAL_CALLER_APP_ID`) and authenticated Dapr
+identity, with no development fallback. Requests require the reviewed Dapr
+transport and a nonempty app token. The current Dapr-off runtime keeps this route
+unavailable until its Notification transport is separately reviewed. Closed
+batches are at most 100. Every read checks active member qualification, cleanup fences, current edition or
+recording entitlement, enabled current legal acceptance, current publication and
+owner-bound Asset readiness. Actor qualification/entitlements/legal checks are
+shared across the batch; resource reads and Asset calls are bounded batches.
+No playback/grant/reader receipt is issued. Outages return 503; explicit denies
+carry no projection. Published VOD archives remain eligible after live ends.
+Bulletins choose the requested display locale, then Traditional Chinese and the
+existing supported edition order, only among authorized ready published editions
+in the requested series. The typed action carries exact issue/series/edition;
+`parameters.title` and canonical `parameters.issueNumber` are safe display and
+existing WWW entry-route inputs. Recordings carry no action locale.
+
+Release ordering (no activation is authorized by this source change): deploy
+Asset's additive PDF/live batch producer first, then Website's disabled producer
+and visibility endpoint, then compatible Engagement and Notification owners and
+Gateway/UI consumers. Verify those private contracts and exact Dapr policies
+before a separately reviewed cutover. Keep all inbox flags false until then;
+never enumerate historical content or advance occurredAt during retries.
+
 ## Private reader bookmarks
 
 Reader state now always includes `bookmarks`, including an empty array. The

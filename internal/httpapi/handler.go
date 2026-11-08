@@ -62,6 +62,10 @@ type Handler struct {
 	gatewayLivePrivateToken string
 	daprDisabled            bool
 	commentAuthors          commentAuthorCache
+	inboxNotificationAppID  string
+	inboxEnabled            bool
+	inboxRepo               inboxVisibilityRepository
+	inboxAssets             inboxAssetReadiness
 	memberLegalEnforcement  bool
 	legalAcceptance         legalAcceptanceChecker
 	legal                   *legal.Service
@@ -101,7 +105,7 @@ func New(service *bulletins.Service, db *sql.DB, uploads assetUploads) *Handler 
 	return NewWithContent(service, nil, db, uploads, "api-gateway", "", false)
 }
 func NewWithContent(service *bulletins.Service, contentService *content.Service, db *sql.DB, uploads assetUploads, trustedCaller, daprAPIToken string, allowDevCaller bool, engagement ...engagementProxy) *Handler {
-	handler := &Handler{service: service, content: contentService, db: db, uploads: uploads, trustedCaller: trustedCaller, daprAPIToken: daprAPIToken, allowDevCaller: allowDevCaller, translationNow: time.Now, translationTTL: 50 * time.Second}
+	handler := &Handler{inboxNotificationAppID: "notification-api", service: service, content: contentService, db: db, uploads: uploads, trustedCaller: trustedCaller, daprAPIToken: daprAPIToken, allowDevCaller: allowDevCaller, translationNow: time.Now, translationTTL: 50 * time.Second}
 	if len(engagement) > 0 {
 		handler.engagement = engagement[0]
 	}
@@ -310,6 +314,7 @@ func (h *Handler) RoutesWithMiddleware(wrap func(http.Handler) http.Handler) htt
 	private.Handle("GET /priv/line/member-access", h.privateServiceOrLegacy(http.MethodGet, lineCaller, lineAccess, lineAccess))
 	h.legalRoutes(public, admin, member, private)
 	private.Handle("POST /priv/account-cleanup", h.requirePrivateService(http.MethodPost, map[string]bool{"account-api": true}, http.HandlerFunc(h.cleanupWatermarkAccount)))
+	private.HandleFunc("POST /priv/website/inbox-visibility", h.inboxVisibility)
 	private.Handle("GET /priv/bulletins/{issueID}/notification-policy", requireServiceCaller(map[string]bool{"engagement-api": true}, h.daprAPIToken, h.allowDevCaller, http.HandlerFunc(h.bulletinNotificationPolicy)))
 	private.Handle("GET /priv/recordings/{recordingID}/notification-policy", h.requirePrivateService(http.MethodGet, map[string]bool{"engagement-api": true}, http.HandlerFunc(h.recordingNotificationPolicy)))
 	if h.gatewayLocationsToken != "" {

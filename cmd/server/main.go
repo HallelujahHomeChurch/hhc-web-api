@@ -87,7 +87,7 @@ func run() error {
 		ctx = diagnostics.WithRecorder(ctx, contention)
 	}
 	auditOutbox := postgres.NewAuditOutbox(db)
-	repository := postgres.New(db, cfg.EnableFiveLocaleBulletinNotificationsAfterFluentReview).WithAudit(auditOutbox).WithAutomaticBulletinExtraction(cfg.BulletinAutoExtractionEnabled).WithLLMBulletinExtraction(cfg.BulletinLLMExtractionEnabled)
+	repository := postgres.New(db, cfg.EnableFiveLocaleBulletinNotificationsAfterFluentReview).WithAudit(auditOutbox).WithAutomaticBulletinExtraction(cfg.BulletinAutoExtractionEnabled).WithLLMBulletinExtraction(cfg.BulletinLLMExtractionEnabled).WithInboxPublications(cfg.InboxPublicationsAfter)
 	service := bulletins.NewService(repository, time.Now)
 	contentService := content.NewService(repository, time.Now)
 	siteSettingsService := sitesettings.NewService(postgres.NewSiteSettingsRepository(db).WithAudit(auditOutbox), time.Now)
@@ -124,6 +124,7 @@ func run() error {
 		WithGatewayPrivateTokens(cfg.GatewayPrivateToken, cfg.GatewayLivePrivateToken).
 		WithoutDapr(!cfg.DaprEnabled).
 		WithBulletinEntitlements(entitlementClient).
+		WithInboxVisibility(cfg.InboxEnabled, repository, assetClient, cfg.NotificationAppID).
 		WithLegal(legal.NewService(postgres.NewLegalRepository(db)), entitlementClient).
 		WithMemberLegalEnforcement(cfg.MemberLegalEnforcementEnabled, accountClient).
 		WithAssetDownloads(assetClient).
@@ -131,7 +132,7 @@ func run() error {
 	var recordingService *recordings.Service
 	if cfg.MediaBaseURL != "" {
 		key, _ := hex.DecodeString(cfg.MediaWatermarkKeyHex)
-		recordingRepo := postgres.NewRecordingRepository(db).WithAudit(auditOutbox)
+		recordingRepo := postgres.NewRecordingRepository(db).WithAudit(auditOutbox).WithInboxPublications(cfg.InboxPublicationsAfter)
 		recordingService = recordings.NewService(recordingRepo, cfg.MediaBaseURL, key, time.Now).WithPackages(assetClient).WithPublicationAuthorizer(accountClient).WithWatermarkTrace(cfg.RecordingWatermarkTraceEnabled).WithBroadcastWriters(cfg.BroadcastWritersEnabled).WithStudioWriters(cfg.StudioWritersEnabled).WithVideoInteractions(cfg.VideoInteractionsEnabled).WithVideoAnalytics(cfg.VideoAnalyticsEnabled)
 
 		if cfg.StreamKeyEncryptionID != "" {
@@ -173,6 +174,9 @@ func run() error {
 	workers := apiWorkers{
 		publication:        worker.Run,
 		identityProjection: identityProjection.Run,
+	}
+	if cfg.InboxEnabled {
+		workers.inboxPublications = func(ctx context.Context) { publication.RunInboxPublications(ctx, repository, engagementClient) }
 	}
 	if recordingService != nil {
 		workers.recordingAutoPublication = func(ctx context.Context) { runRecordingAutoPublication(ctx, recordingService.ReconcileAutoPublication) }

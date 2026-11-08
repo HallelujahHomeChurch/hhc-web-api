@@ -24,6 +24,69 @@ servers:
   - url: https://www.alive.org.tw/api
     description: Public and admin gateway surface; api-gateway validates browser JWTs and injects trusted identity headers.
 paths:
+  /priv/website/inbox-visibility:
+    post:
+      operationId: resolveWebsiteInboxVisibility
+      servers: [{ url: / }]
+      summary: Resolve current member content authorization and safe inbox summaries
+      description: Exact configured NOTIFICATION_APP_ID Dapr identity only (default notification-api, test notification-api-test), checked identically before and after authentication; with no development caller fallback. Always no-store. Qualification, current exact entitlement, enabled legal gate, cleanup fence, publication and media readiness apply on every read. Missing or unready content returns visible false without projection. Dependency outages return unavailable. Never issues playback, reader receipts, bytes, grants or arbitrary URLs.
+      tags: [Private]
+      x-hhc-visibility: private
+      x-hhc-callers: [notification-api]
+      security: [{ daprApiToken: [], daprCallerAppId: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [actorId, locale, items]
+              properties:
+                actorId: {type: string, format: uuid}
+                locale: {type: string, enum: [zh-Hant, zh-Hans, en, ja, ko]}
+                items:
+                  type: array
+                  minItems: 1
+                  maxItems: 100
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [id, resource]
+                    properties:
+                      id: {type: string, format: uuid}
+                      resource: {$ref: '#/components/schemas/WebsiteInboxResource'}
+      responses:
+        '200':
+          description: Exactly one correlated decision per input in the existing data/meta/error envelope.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta, error]
+                properties:
+                  data:
+                    type: object
+                    required: [items]
+                    properties:
+                      items:
+                        type: array
+                        minItems: 1
+                        maxItems: 100
+                        items:
+                          type: object
+                          additionalProperties: false
+                          required: [id, visible]
+                          properties:
+                            id: {type: string, format: uuid}
+                            visible: {type: boolean}
+                            projection: {$ref: '#/components/schemas/WebsiteInboxProjection'}
+                  meta: {type: object}
+                  error: {type: 'null'}
+        '400': {description: Invalid or oversized closed JSON.}
+        '401': {description: Exact authenticated Notification identity required.}
+        '422': {description: 'Invalid actor, locale, resource or bounded batch.'}
+        '503': {description: Disabled or current authorization/readiness dependency unavailable.}
   /video-previews/{publicId}:
     parameters:
       - name: publicId
@@ -9840,6 +9903,50 @@ components:
       description: Public revalidation policy for Site Layout projections.
       schema: { type: string, const: 'public, max-age=30, must-revalidate' }
   schemas:
+    WebsiteInboxResource:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [type, id]
+          properties:
+            type: {type: string, const: recording}
+            id: {type: string, pattern: '^[a-zA-Z0-9_-]{1,128}$'}
+        - type: object
+          additionalProperties: false
+          required: [type, id, series]
+          properties:
+            type: {type: string, const: bulletin}
+            id: {type: string, pattern: '^[a-zA-Z0-9_-]{1,128}$'}
+            series: {type: string, enum: [general, children]}
+    WebsiteInboxProjection:
+      type: object
+      additionalProperties: false
+      required: [titleKey, messageKey, parameters, action]
+      properties:
+        titleKey: {type: string, enum: [notification.recording, notification.bulletin]}
+        messageKey: {type: string, const: notification.published}
+        parameters:
+          type: object
+          additionalProperties: false
+          required: [title]
+          properties:
+            title: {type: string, maxLength: 500, description: Current safe authorized title; at most 500 UTF-8 bytes.}
+            issueNumber: {type: string, pattern: '^[1-9][0-9]{0,9}$', description: Canonical positive int32 issue number for bulletin actions.}
+        action:
+          oneOf:
+            - type: object
+              additionalProperties: false
+              required: [type, resource]
+              properties:
+                type: {type: string, const: recording}
+                resource: {$ref: '#/components/schemas/WebsiteInboxResource'}
+            - type: object
+              additionalProperties: false
+              required: [type, resource, locale]
+              properties:
+                type: {type: string, const: bulletin}
+                resource: {$ref: '#/components/schemas/WebsiteInboxResource'}
+                locale: {type: string, enum: [zh-Hant, zh-Hans, en]}
     RecordingInteractionSummary:
       type: object
       additionalProperties: false
