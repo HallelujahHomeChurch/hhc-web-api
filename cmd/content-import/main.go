@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/HallelujahHomeChurch/hhc-web-api/internal/dbbudget"
 	"io"
 	"log/slog"
 	"os"
@@ -45,7 +46,7 @@ func defaultDependencies() dependencies {
 		manifest: contentmanifest.Manifest,
 		getenv:   os.Getenv,
 		readFile: os.ReadFile,
-		openDB:   sql.Open,
+		openDB:   func(_ string, dsn string) (*sql.DB, error) { return dbbudget.Open(dsn, "hhc_web_jobs", 24, 1, 1) },
 		plan:     contentseed.Plan,
 		apply:    contentseed.Apply,
 	}

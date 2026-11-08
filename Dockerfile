@@ -25,6 +25,7 @@ COPY internal/assetclient/ ./internal/assetclient/
 COPY internal/accountclient/ ./internal/accountclient/
 COPY internal/bulletinwatermark/ ./internal/bulletinwatermark/
 COPY internal/config/ ./internal/config/
+COPY internal/dbbudget/ ./internal/dbbudget/
 COPY internal/logging/ ./internal/logging/
 COPY internal/onlinebulletins/ ./internal/onlinebulletins/
 COPY internal/bulletinreader/ ./internal/bulletinreader/

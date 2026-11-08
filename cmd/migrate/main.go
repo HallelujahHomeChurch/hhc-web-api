@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"flag"
 	"fmt"
+	"github.com/HallelujahHomeChurch/hhc-web-api/internal/dbbudget"
 	"log/slog"
 	"os"
 	"strings"
@@ -32,7 +33,7 @@ func main() {
 		slog.Error("DATABASE_URL is required")
 		os.Exit(1)
 	}
-	db, err := sql.Open("pgx", databaseURL)
+	db, err := dbbudget.Open(databaseURL, "hhc_web_migrate", 1, 1, 1)
 	if err != nil {
 		slog.Error("open database", "error", err)
 		os.Exit(1)

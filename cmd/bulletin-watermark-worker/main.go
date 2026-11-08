@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"flag"
+	"github.com/HallelujahHomeChurch/hhc-web-api/internal/dbbudget"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -67,8 +68,16 @@ func loadWorkerConfig() (workerConfig, error) {
 	return workerConfig{cfg: cfg, privacy: privacy}, nil
 }
 
-func openDatabase(cfg config.Config) (*sql.DB, error) {
-	db, err := sql.Open("pgx", cfg.DatabaseURL)
+func openDatabase(cfg config.Config, once bool) (*sql.DB, error) {
+	// ACA supplies this marker for Job preflight; local --once also requires the Job login.
+	_, job := os.LookupEnv("CONTAINER_APP_JOB_NAME")
+	var db *sql.DB
+	var err error
+	if once || job {
+		db, err = dbbudget.Open(cfg.DatabaseURL, "hhc_web_jobs", 24, cfg.DBMaxOpenConns, cfg.DBMaxIdleConns)
+	} else {
+		db, err = sql.Open("pgx", cfg.DatabaseURL) // Retain the rollback App's API login.
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +101,7 @@ func preflightMain() bool {
 		return runPreflight(ctx, preflightDeps{configErr: err})
 	}
 	deps := preflightDeps{assets: assets}
-	if db, openErr := openDatabase(loaded.cfg); openErr == nil {
+	if db, openErr := openDatabase(loaded.cfg, false); openErr == nil {
 		defer db.Close()
 		deps.db = sqlPreflightDatabase{db: db}
 	}
@@ -111,7 +120,7 @@ func run(once bool) error {
 	cfg := loaded.cfg
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	db, err := openDatabase(cfg)
+	db, err := openDatabase(cfg, once)
 	if err != nil {
 		return err
 	}
