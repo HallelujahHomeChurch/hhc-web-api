@@ -128,6 +128,17 @@ func runBatch(ctx context.Context) error {
 		}
 		runner := onlinebulletins.RecognitionRunner{Client: client, Store: repository, Assets: assets}
 		worker.AutoPublish = repository.AutoPublishNextRecognition
+		worker.Update = func(ctx context.Context, job onlinebulletins.UpdateJob) (onlinebulletins.UpdateEvidence, error) {
+			return client.ResumeVerifiedUpdate(ctx, job.Input, job.SavedAttempts, func(attempt onlinebulletins.UpdateAttempt) error {
+				deadline := time.Now().Add(5 * time.Second)
+				if job.LeaseUntil.Before(deadline) {
+					deadline = job.LeaseUntil
+				}
+				persistence, cancel := context.WithDeadline(context.WithoutCancel(ctx), deadline)
+				defer cancel()
+				return repository.SaveOnlineBulletinUpdateAttempt(persistence, job, attempt, time.Now().UTC())
+			})
+		}
 		worker.Recognize = func(ctx context.Context, job onlinebulletins.ExtractionJob) (onlinebulletins.DocumentCandidate, []onlinebulletins.ReviewIssue, error) {
 			var geometry onlinebulletins.GeometryDocument
 			var pages []onlinebulletins.RecognitionPage

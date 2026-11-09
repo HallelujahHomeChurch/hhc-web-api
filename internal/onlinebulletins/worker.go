@@ -18,6 +18,7 @@ type ExtractionStore interface {
 type ExtractionWorker struct {
 	Store                  ExtractionStore
 	AutoPublish            func(context.Context, time.Time) (bool, error)
+	Update                 func(context.Context, UpdateJob) (UpdateEvidence, error)
 	Extract                func(context.Context, ExtractionJob) (DocumentCandidate, []ReviewIssue, error)
 	Recognize              func(context.Context, ExtractionJob) (DocumentCandidate, []ReviewIssue, error)
 	Classify               func(context.Context, []AmbiguousBlock) ([]Classification, error)
@@ -50,6 +51,18 @@ func (w ExtractionWorker) RunBatch(ctx context.Context) error {
 				return err
 			}
 			if published {
+				continue
+			}
+		}
+		if updates, ok := w.Store.(UpdateStore); ok && w.Update != nil {
+			job, err := updates.ClaimOnlineBulletinUpdate(ctx, time.Now().UTC(), UpdateJobTimeout, w.MaxAttempts)
+			if err != nil {
+				return err
+			}
+			if job != nil {
+				if err = w.runUpdate(ctx, updates, *job); err != nil && !errors.Is(err, ErrExtractionLease) {
+					return err
+				}
 				continue
 			}
 		}

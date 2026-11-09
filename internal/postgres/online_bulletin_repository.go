@@ -256,14 +256,23 @@ func (r *Repository) CompleteOnlineBulletinExtraction(ctx context.Context, job o
 		}
 		if !local.Valid {
 			_, err = tx.ExecContext(ctx, `UPDATE hhc_web.online_bulletin_document SET base_revision=$2,local_revision=$2,updated_at=$3 WHERE id=$1`, job.DocumentID, next, now)
-			if err == nil {
-				_, err = queueOnlineLayout(ctx, tx, job.DocumentID, next, *candidate.Document, job.Canonical.Metadata, now)
-			}
 		} else {
 			_, err = tx.ExecContext(ctx, `UPDATE hhc_web.online_bulletin_document SET incoming_revision=$2,version=version+1,updated_at=$3 WHERE id=$1`, job.DocumentID, next, now)
 		}
 		if err != nil {
 			return err
+		}
+		planned := false
+		if r.llmBulletinExtraction && job.ExtractorVersion == onlinebulletins.RecognitionExtractorVersion() {
+			planned, err = queueOnlineUpdate(ctx, tx, job, next, candidate, now)
+			if err != nil {
+				return err
+			}
+		}
+		if !local.Valid && !planned {
+			if _, err = queueOnlineLayout(ctx, tx, job.DocumentID, next, *candidate.Document, job.Canonical.Metadata, now); err != nil {
+				return err
+			}
 		}
 	} else if !local.Valid {
 		if _, err = tx.ExecContext(ctx, `UPDATE hhc_web.online_bulletin_document SET draft_status='reviewRequired',version=version+1,updated_at=$2 WHERE id=$1`, job.DocumentID, now); err != nil {

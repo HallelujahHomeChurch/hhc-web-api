@@ -123,6 +123,25 @@ func TestVerifiedUpdatePlanStopsWhenEvidenceCannotPersist(t *testing.T) {
 	}
 }
 
+func TestVerifiedUpdatePlanResumesOnlyExactSuccessfulIndependentPass(t *testing.T) {
+	input := updateFixture(t)
+	client, _ := updateServer(t, []any{readyUpdatePlan(), readyUpdatePlan()}, nil)
+	prior, err := client.PlanVerifiedUpdate(context.Background(), input, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, calls := updateServer(t, []any{readyUpdatePlan()}, nil)
+	got, err := client.ResumeVerifiedUpdate(context.Background(), input, prior.Attempts[:1], nil)
+	if err != nil || *calls != 1 || !ValidUpdateEvidence(input, got) {
+		t.Fatal("repeated paid verified work", err, *calls)
+	}
+	prior.Attempts[0].InputSHA256 = strings.Repeat("b", 64)
+	client, calls = updateServer(t, nil, nil)
+	if _, err = client.ResumeVerifiedUpdate(context.Background(), input, prior.Attempts[:1], nil); err == nil || *calls != 0 {
+		t.Fatal("reused a different input", err)
+	}
+}
+
 func TestVerifiedUpdatePlanAdoptsPDFAndRetainsOnlyAgreedCompatibleAuthoredChanges(t *testing.T) {
 	input := updateFixture(t)
 	base, local := validDocument(4), validDocument(4)

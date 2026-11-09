@@ -88,13 +88,27 @@ func (c *AzureExtractor) planUpdate(ctx context.Context, input UpdateInput) (Upd
 // Two independent passes share original evidence, never the other's answer.
 // Persist each attempt before further spending; no provider-failure cascade.
 func (c *AzureExtractor) PlanVerifiedUpdate(ctx context.Context, input UpdateInput, record func(UpdateAttempt) error) (UpdateEvidence, error) {
+	return c.ResumeVerifiedUpdate(ctx, input, nil, record)
+}
+
+func (c *AzureExtractor) ResumeVerifiedUpdate(ctx context.Context, input UpdateInput, saved []UpdateAttempt, record func(UpdateAttempt) error) (UpdateEvidence, error) {
 	var evidence UpdateEvidence
 	hash, err := updateInputSHA256(input)
 	if err != nil {
 		return evidence, err
 	}
 	evidence.InputSHA256, evidence.ProtocolSHA256 = hash, UpdateProtocolSHA256()
-	for range 2 {
+	if len(saved) > 2 {
+		return evidence, ErrUpdatePlan
+	}
+	for _, attempt := range saved {
+		u := attempt.Usage
+		if attempt.InputSHA256 != hash || attempt.ProtocolSHA256 != evidence.ProtocolSHA256 || attempt.ErrorCode != "" || u.Requests != 1 || !recognitionModelName.MatchString(u.Model) || u.InputTokens < 0 || u.OutputTokens < 0 || u.ReasoningTokens < 0 || u.ReasoningTokens > u.OutputTokens || !validUpdatePlan(input, attempt.Plan) {
+			return evidence, ErrUpdatePlan
+		}
+		evidence.Attempts = append(evidence.Attempts, attempt)
+	}
+	for len(evidence.Attempts) < 2 {
 		plan, usage, callErr := c.planUpdate(ctx, input)
 		attempt := UpdateAttempt{InputSHA256: hash, ProtocolSHA256: evidence.ProtocolSHA256, Plan: plan, Usage: usage}
 		if callErr != nil {
