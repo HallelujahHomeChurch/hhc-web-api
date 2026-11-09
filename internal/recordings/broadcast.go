@@ -1546,11 +1546,22 @@ func (b *Broadcast) requestAutomaticStart() bool {
 }
 
 // Admission needs three verified public segments and the applied member authority.
-func (b Broadcast) LiveNotificationReady(c Capture, now time.Time) bool {
+func (b Broadcast) memberLiveProjectionReady(c Capture, now time.Time) bool {
 	p := b.Projection
 	start := b.View.Boundaries.StartSequence
-	return b.View.Announced && b.View.Phase == "live" && !b.Revoked && !b.RangePending && b.MemberState == "live" &&
+	return b.View.Announced && !b.Revoked && !b.RangePending && b.MemberState == "live" &&
 		b.Epoch > 0 && start != nil && b.View.Boundaries.EndSequenceExclusive == nil && b.RangeApplied == b.View.Boundaries.Revision &&
 		p != nil && p.State == "ready" && p.Epoch == b.Epoch && p.RangeRevision == b.RangeApplied && equalSequence(p.StartSequence, start) && p.EndSequenceExclusive == nil &&
-		c.LiveAvailable(now) && c.Status.StopAcceptedAt == nil && c.Status.Progress.LastSequence-*start >= 2
+		c.LiveAvailable(now) && c.Status.Progress.LastSequence-*start >= 2
+}
+func (b Broadcast) LiveNotificationReady(c Capture, now time.Time) bool {
+	return b.View.Phase == "live" && c.Status.StopAcceptedAt == nil && b.memberLiveProjectionReady(c, now)
+}
+func (b Broadcast) InboxLiveReady(c Capture, now time.Time) bool {
+	return (b.View.Phase == "live" || b.View.Phase == "end_pending") && b.memberLiveProjectionReady(c, now)
+}
+
+// Inbox source and summaries share the member's actual applied VOD projection.
+func (b Broadcast) InboxVODReady(r Recording, now time.Time) bool {
+	return r.Visible(now) && b.MemberVODReady()
 }

@@ -1698,6 +1698,9 @@ func validateCatalogContract(document string) error {
 		case "/priv/legal/current", "/priv/legal/snapshots/resolve", "/priv/account-cleanup", "/priv/recordings/{recordingID}/notification-policy":
 			expectedPrivateSecurity = "[{ daprApiToken: [], daprCallerAppId: [] }, { cmsServiceCaller: [], cmsServiceToken: [] }]"
 		}
+		if operation.path == "/priv/website/inbox-visibility" && callers != "[notification-api]" {
+			return fmt.Errorf("%s must restrict callers to Notification", name)
+		}
 		if operation.path == "/priv/line/member-access" {
 			expectedPrivateSecurity = "[{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [] }, { cmsServiceCaller: [], cmsServiceToken: [], trustedUserId: [], trustedAuthProvider: [] }]"
 			if callers != "[hhc-line-function-bot]" {
@@ -1994,6 +1997,7 @@ func expectedCatalogRoutes() []string {
 		GET /priv/line/member-access
         GET /priv/bulletins/{}/notification-policy
 		GET /priv/recordings/{}/notification-policy
+        POST /priv/website/inbox-visibility
 		GET /admin/site-settings
 		PUT /admin/site-settings
 		POST /admin/site-settings/publish
@@ -2223,6 +2227,18 @@ func TestRecordingSearchParametersKeepPrivateIncrementalContracts(t *testing.T) 
 		}
 		if !found || op.Responses.Value("400") == nil || op.Extensions["x-hhc-cache"] != "private, no-store" {
 			t.Fatalf("missing search/private error contract %s", route)
+		}
+	}
+}
+
+func TestInboxSelectedEnvironmentContract(t *testing.T) {
+	raw, e := os.ReadFile("openapi.yaml")
+	if e != nil {
+		t.Fatal(e)
+	}
+	for _, required := range []string{"NOTIFICATION_APP_ID", "checked identically before and after authentication"} {
+		if !strings.Contains(string(raw), required) {
+			t.Fatalf("missing caller contract %q", required)
 		}
 	}
 }

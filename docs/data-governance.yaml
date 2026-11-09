@@ -2,6 +2,23 @@
 schema_version: 1
 service: hhc-web-api
 datasets:
+  - id: hhc-web.inbox-publication-source
+    owner: hhc-web-api
+    purpose: Preserve first member-visible publication evidence across retries, formats, disabled periods and outbox retention without storing recipients or titles.
+    necessity: required
+    storage: {kind: postgres, resource: hhc_web.inbox_publication_source, sources: [{path: internal/postgres/inbox_publications.go, symbol: recordInboxPublication}]}
+    subject_keys: []
+    data_classes: [activity, security]
+    fields:
+      - {name: kind, purpose: Closed recording or bulletin event identity, necessity: required, data_classes: [activity]}
+      - {name: resource_id, purpose: Bind durable deduplication to its content source, necessity: required, data_classes: [activity, security]}
+      - {name: series, purpose: Preserve exact bulletin series ownership, necessity: required, data_classes: [activity, security]}
+      - {name: locale, purpose: Bind first visibility across PDF and Online formats, necessity: required, data_classes: [activity, security]}
+      - {name: first_visible_at, purpose: Original first-publication evidence or conservative migration suppression timestamp, necessity: required, data_classes: [activity]}
+    attribution: {mode: manual, explanation: Content identifiers and publication timestamps only; no recipient, staff identity, title, playback capability or user interaction is stored.}
+    legal_basis: {status: pending_legal, reference: null}
+    retention: {status: pending_legal, rule: null, action: none}
+    cleanup: {mode: none, implementation: [], evidence: []}
   - id: "hhc-web.recording-live-cover-defaults"
     owner: "hhc-web-api"
     purpose: "Maintain immutable live thumbnail settings, actor-bound retry receipts and independent Asset reference protection before and after VOD promotion."

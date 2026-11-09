@@ -404,3 +404,44 @@ func TestFullRecognitionProducerSwitchIsExplicit(t *testing.T) {
 		})
 	}
 }
+
+func TestInboxRequiresExplicitCutover(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://example")
+	t.Setenv("WEBSITE_INBOX_ENABLED", "")
+	t.Setenv("WEBSITE_INBOX_PUBLICATIONS_AFTER", "")
+	cfg, err := Load()
+	if err != nil || cfg.InboxEnabled || !cfg.InboxPublicationsAfter.IsZero() {
+		t.Fatal("inbox default enabled", err)
+	}
+	t.Setenv("WEBSITE_INBOX_ENABLED", "true")
+	if _, err = Load(); err == nil {
+		t.Fatal("missing no-backfill watermark accepted")
+	}
+	t.Setenv("WEBSITE_INBOX_PUBLICATIONS_AFTER", "2026-10-19T00:00:00Z")
+	cfg, err = Load()
+	if err != nil || !cfg.InboxEnabled || cfg.InboxPublicationsAfter.IsZero() {
+		t.Fatal("explicit cutover rejected", err)
+	}
+	t.Setenv("WEBSITE_INBOX_ENABLED", "maybe")
+	if _, err = Load(); err == nil {
+		t.Fatal("invalid flag accepted")
+	}
+}
+
+func TestInboxSelectsMatchingNotificationEnvironment(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://example")
+	t.Setenv("WEBSITE_INBOX_ENABLED", "true")
+	t.Setenv("WEBSITE_INBOX_PUBLICATIONS_AFTER", "2026-10-19T00:00:00Z")
+	t.Setenv("INTERNAL_CALLER_APP_ID", "hhc-web-api-test")
+	t.Setenv("NOTIFICATION_APP_ID", "notification-api-test")
+	cfg, e := Load()
+	if e != nil || cfg.NotificationAppID != "notification-api-test" {
+		t.Fatal(e)
+	}
+	for _, id := range []string{"notification-api", "notification-api-test-extra"} {
+		t.Setenv("NOTIFICATION_APP_ID", id)
+		if _, e = Load(); e == nil {
+			t.Fatalf("accepted %s", id)
+		}
+	}
+}

@@ -18,13 +18,14 @@ import (
 )
 
 type RecordingRepository struct {
-	db                  *sql.DB
-	auditOutbox         *AuditOutbox
-	transactionMu       sync.Mutex
-	transactions        int
-	subjectWaiters      int
-	subjectTransactions int
-	transactionWake     chan struct{}
+	inboxPublicationsAfter time.Time
+	db                     *sql.DB
+	auditOutbox            *AuditOutbox
+	transactionMu          sync.Mutex
+	transactions           int
+	subjectWaiters         int
+	subjectTransactions    int
+	transactionWake        chan struct{}
 }
 
 func NewRecordingRepository(db *sql.DB) *RecordingRepository { return &RecordingRepository{db: db} }
@@ -252,6 +253,9 @@ func (r *RecordingRepository) mutateTx(ctx context.Context, tx *sql.Tx, id strin
 		}
 	}
 	if (action == "cms.recording.publish" || action == "cms.recording.capture.publish") && !publishedAt.Valid && !broadcast {
+		if err := recordInboxPublication(ctx, tx, r.inboxPublicationsAfter, "recording.published", id, "", "", version+1, now); err != nil {
+			return recordings.Recording{}, err
+		}
 		if err := enqueueRecordingNotification(ctx, tx, id, title, actor, version+1, now); err != nil {
 			return recordings.Recording{}, err
 		}

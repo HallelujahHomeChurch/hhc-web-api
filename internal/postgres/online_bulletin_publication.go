@@ -164,6 +164,9 @@ func (r *Repository) publishOnlineBulletinTx(ctx context.Context, tx *sql.Tx, is
 	if err = r.enqueueBulletinAudit(ctx, tx, "cms.bulletin.online.publish", result.DocumentID, actor, now); err != nil {
 		return result, err
 	}
+	if err = recordInboxPublication(ctx, tx, r.inboxPublicationsAfter, "bulletin.published", issueID, series, locale, canonicalVersion, now); err != nil {
+		return result, err
+	}
 	result.Version++
 	if locale == "zh-Hant" && r.auditOutbox != nil {
 		if err = enqueueSimplifiedRelease(ctx, tx, result, issueID, canonical, actor, now); err != nil {

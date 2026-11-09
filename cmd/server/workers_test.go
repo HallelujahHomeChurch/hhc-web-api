@@ -9,10 +9,10 @@ import (
 )
 
 func TestAPIWorkersDrainBeforeDatabaseCleanup(t *testing.T) {
-	for _, blocked := range []int{0, 1, 2, 3, 4} {
-		t.Run([]string{"publication", "identity", "auto-publication", "broadcasts", "captures"}[blocked], func(t *testing.T) {
-			started := make(chan struct{}, 5)
-			canceled := make(chan struct{}, 5)
+	for _, blocked := range []int{0, 1, 2, 3, 4, 5} {
+		t.Run([]string{"publication", "identity", "auto-publication", "broadcasts", "captures", "inbox-publications"}[blocked], func(t *testing.T) {
+			started := make(chan struct{}, 6)
+			canceled := make(chan struct{}, 6)
 			release := make(chan struct{})
 			defer close(release)
 			loop := func(index int) func(context.Context) {
@@ -28,10 +28,10 @@ func TestAPIWorkersDrainBeforeDatabaseCleanup(t *testing.T) {
 			workers := apiWorkers{
 				publication:        func(ctx context.Context) error { loop(0)(ctx); return nil },
 				identityProjection: loop(1), recordingAutoPublication: loop(2),
-				recordingBroadcasts: loop(3), recordingCaptures: loop(4),
+				recordingBroadcasts: loop(3), recordingCaptures: loop(4), inboxPublications: loop(5),
 			}
 			stop := workers.start(context.Background(), func() { t.Error("unexpected process failure") })
-			for range 5 {
+			for range 6 {
 				awaitWorkerEvent(t, started)
 			}
 			databaseClosed := make(chan struct{})
@@ -40,7 +40,7 @@ func TestAPIWorkersDrainBeforeDatabaseCleanup(t *testing.T) {
 				defer stop()
 				// Same defer order as run(), including an HTTP startup error.
 			}()
-			for range 5 {
+			for range 6 {
 				awaitWorkerEvent(t, canceled)
 			}
 			select {
