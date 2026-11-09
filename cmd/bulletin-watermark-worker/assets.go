@@ -17,6 +17,16 @@ const (
 var errAssetAuthConfig = errors.New("bulletin worker asset authentication configuration is invalid")
 
 func newAssetClient(cfg config.Config, getenv func(string) string) (*assetclient.Client, error) {
+	if cfg.AssetWorkload.Enabled {
+		if mode := strings.TrimSpace(getenv(assetAuthEnv)); mode != "internal" && mode != "workload" {
+			return nil, errAssetAuthConfig
+		}
+		client, err := assetclient.NewWorkload(strings.TrimSpace(getenv(assetBaseURLEnv)), "hhc-web-bulletin-worker", cfg.AssetWorkload.Audience, cfg.AssetWorkload.ClientID, cfg.PublicBaseURL)
+		if err != nil {
+			return nil, errAssetAuthConfig
+		}
+		return client, nil
+	}
 	switch mode := strings.TrimSpace(getenv(assetAuthEnv)); mode {
 	case "", "dapr":
 		return assetclient.New(cfg.AssetAPIBaseURL, cfg.InternalCallerAppID, cfg.PublicBaseURL), nil

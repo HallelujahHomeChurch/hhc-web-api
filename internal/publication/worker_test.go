@@ -838,21 +838,23 @@ func (n *workerNotifications) QueueBulletinNotification(_ context.Context, paylo
 }
 
 type workerAssets struct {
-	asset           Asset
-	assets          map[string]Asset
-	grant           Grant
-	grants          map[string]Grant
-	grantErrors     map[string]error
-	getError        error
-	grantError      error
-	revokeError     error
-	revokedGrant    string
-	revokedGrants   []string
-	revokeActorID   string
-	revokeRequestID string
-	deletedAsset    string
-	grantCalls      int
-	getCalls        int
+	bannerValidationError error
+	bannerValidationCalls int
+	asset                 Asset
+	assets                map[string]Asset
+	grant                 Grant
+	grants                map[string]Grant
+	grantErrors           map[string]error
+	getError              error
+	grantError            error
+	revokeError           error
+	revokedGrant          string
+	revokedGrants         []string
+	revokeActorID         string
+	revokeRequestID       string
+	deletedAsset          string
+	grantCalls            int
+	getCalls              int
 }
 
 func (a *workerAssets) Get(_ context.Context, assetID string) (Asset, error) {
@@ -1027,4 +1029,22 @@ func (r *cleanupWorkerRepository) PurgeWatermarkRecords(_ context.Context, _ tim
 		return r.removed, r.err
 	}
 	return 0, nil
+}
+
+func (a *workerAssets) ValidateHomeBanner(context.Context, string, string) error {
+	a.bannerValidationCalls++
+	return a.bannerValidationError
+}
+
+func TestWorkerDoesNotPublishUnvalidatedHomeBanner(t *testing.T) {
+	for _, validationErr := range []error{terminalError{errors.New("wrong dimensions")}, errors.New("dependency unavailable")} {
+		repo := &workerRepository{event: Event{ID: "home", EventType: "home.publish.ensure_asset", AggregateID: "page-home", AggregateVersion: 3, Payload: []byte(`{"contentId":"page-home","assetId":"banner-1","aggregateVersion":3}`), Attempts: 1}}
+		assets := &workerAssets{asset: readyHomeBanner(), bannerValidationError: validationErr}
+		if _, err := NewWorker(repo, assets, 5).processNext(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		if assets.grantCalls != 0 || assets.bannerValidationCalls != 1 || len(repo.completedContentAssets) != 0 || repo.failCount+repo.retryCount != 1 {
+			t.Fatalf("unvalidated publication: grants=%d validated=%d fail=%d retry=%d", assets.grantCalls, assets.bannerValidationCalls, repo.failCount, repo.retryCount)
+		}
+	}
 }

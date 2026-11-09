@@ -431,6 +431,9 @@ func (w *Worker) publishHome(ctx context.Context, event Event, now time.Time) er
 	if asset.ProcessingStatus != "not_required" {
 		return terminalError{fmt.Errorf("Home Banner processing status %s", asset.ProcessingStatus)}
 	}
+	if err := w.assets.ValidateHomeBanner(ctx, asset.ID, asset.ChecksumSHA256); err != nil {
+		return err
+	}
 	grant, err := w.assets.CreatePublicGrant(ctx, payload.AssetID, "home:"+payload.ContentID+":publish:v"+fmt.Sprint(payload.AggregateVersion))
 	if err != nil {
 		return compensationError{err}

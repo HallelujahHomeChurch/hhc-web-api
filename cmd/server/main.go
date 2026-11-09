@@ -98,6 +98,15 @@ func run() error {
 			return fmt.Errorf("configure Asset private HTTPS: %w", err)
 		}
 	}
+	if cfg.AssetWorkload.Enabled {
+		if !cfg.AssetPrivateHTTPS {
+			return errors.New("Asset workload authentication requires private HTTPS")
+		}
+		assetClient, err = assetclient.NewWorkload("https://asset-api.internal.gentleriver-81abd7bc.eastasia.azurecontainerapps.io", "hhc-web-api", cfg.AssetWorkload.Audience, cfg.AssetWorkload.ClientID, cfg.PublicBaseURL)
+		if err != nil {
+			return errors.New("invalid Asset workload authentication")
+		}
+	}
 	engagementClient := engagementclient.New(cfg.EngagementAPIBaseURL, cfg.InternalCallerAppID)
 	engagementClient.ConfigurePrivateHTTPS(cfg.EngagementPrivateToken)
 	accountClient := accountclient.New(cfg.AccountAPIBaseURL, cfg.InternalCallerAppID)

@@ -72,18 +72,20 @@ type RecordingGrant struct {
 	ExpiresAt          time.Time `json:"expiresAt"`
 }
 type Client struct {
-	baseURL       string
-	caller        string
-	publicBaseURL string
-	http          *http.Client
+	serviceSubject string
+	baseURL        string
+	caller         string
+	publicBaseURL  string
+	http           *http.Client
 }
 
 func New(baseURL, caller, publicBaseURL string) *Client {
 	return &Client{
-		baseURL:       strings.TrimRight(baseURL, "/"),
-		caller:        caller,
-		publicBaseURL: strings.TrimRight(publicBaseURL, "/"),
-		http:          &http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport, otelhttp.WithTracerProvider(privateTransportProvider{otel.GetTracerProvider()})), Timeout: 10 * time.Second},
+		baseURL:        strings.TrimRight(baseURL, "/"),
+		caller:         caller,
+		serviceSubject: caller,
+		publicBaseURL:  strings.TrimRight(publicBaseURL, "/"),
+		http:           &http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport, otelhttp.WithTracerProvider(privateTransportProvider{otel.GetTracerProvider()})), Timeout: 10 * time.Second},
 	}
 }
 func (c *Client) Get(ctx context.Context, id string) (Asset, error) {
@@ -167,6 +169,10 @@ func (c *Client) Upload(ctx context.Context, target UploadTarget, body io.Reader
 	for key, value := range target.Headers {
 		request.Header.Set(key, value)
 	}
+	// Signed storage targets cannot supply service identity headers.
+	for _, header := range []string{"Authorization", "X-HHC-Workload-Authorization", "X-HHC-Caller-App-Id", "X-Internal-Caller-App-Id", "Dapr-Caller-App-Id", "Dapr-Api-Token"} {
+		request.Header.Del(header)
+	}
 	_, workload := c.http.Transport.(*internalTransport)
 	uploadClient := *c.http
 	if transport, ok := uploadClient.Transport.(*internalTransport); ok {
@@ -199,7 +205,7 @@ func (c *Client) CreateServiceGrant(ctx context.Context, id, key string) (Grant,
 	return c.createServiceGrant(ctx, id, key, nil)
 }
 func (c *Client) createServiceGrant(ctx context.Context, id, key string, expiresAt *time.Time) (Grant, error) {
-	body := map[string]any{"subjectType": "service", "subjectId": c.caller, "permission": "read", "idempotencyKey": key}
+	body := map[string]any{"subjectType": "service", "subjectId": c.serviceSubject, "permission": "read", "idempotencyKey": key}
 	if expiresAt != nil {
 		body["expiresAt"] = expiresAt
 	}
@@ -230,7 +236,7 @@ func (c *Client) AuthorizedDownload(ctx context.Context, method, assetID, byteRa
 	}
 	request.Header.Set("X-Internal-Caller-App-Id", c.caller)
 	request.Header.Set("X-Asset-Subject-Type", "service")
-	request.Header.Set("X-Asset-Subject-Id", c.caller)
+	request.Header.Set("X-Asset-Subject-Id", c.serviceSubject)
 	request.Header.Set("Range", byteRange)
 	request.Header.Set("If-Range", ifRange)
 	response, err := c.http.Do(request)
