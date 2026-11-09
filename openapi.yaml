@@ -32,8 +32,8 @@ paths:
         schema: { type: string, pattern: '^[A-Za-z0-9_-]{11}$' }
     get:
       operationId: getVideoSharePreview
-      summary: Public title for one published recording
-      description: Public share allowlist only. No membership required. Draft, hidden, deleted, non-ready and expired recordings return 404. No list endpoint. noindex does not prevent bot retrieval.
+      summary: Public title for one eligible recording or announced broadcast
+      description: Public share allowlist only. No membership required. Includes announced draft broadcasts waiting for input; announcement does not grant playback access. Hidden, deleted, expired, terminal, unannounced, revoked and cancelled content returns 404; uploads and archived broadcasts still require a published, ready recording. No list endpoint. noindex does not prevent bot retrieval.
       tags: [Public]
       x-hhc-visibility: public
       x-hhc-callers: [api-gateway, hhc-web]
@@ -73,8 +73,8 @@ paths:
         schema: { type: string, pattern: '^[A-Za-z0-9_-]{11}$' }
     get:
       operationId: getVideoShareCover
-      summary: Public selected cover for one published recording
-      description: Checks current recording visibility before reading only the selected JPEG cover. No playback grant or alternative cover access. The image can be retrieved by any client and cached by sharing services.
+      summary: Public selected cover for one eligible recording or announced broadcast
+      description: Uses the same current share eligibility as the title preview, including announced draft broadcasts before capture. Automatic live covers use the fixed branding JPEG; custom covers require the selected ready image. No playback grant or alternative cover access. The image can be retrieved by any client and cached by sharing services.
       tags: [Public]
       x-hhc-visibility: public
       x-hhc-callers: [api-gateway, hhc-web]
@@ -96,8 +96,8 @@ paths:
         schema: { type: string, format: uuid }
     get:
       operationId: getRecordingSharePreview
-      summary: Public title for one published recording
-      description: Public share allowlist only. No membership required. Draft, hidden, deleted, non-ready and expired recordings return 404. No list endpoint. noindex does not prevent bot retrieval.
+      summary: Public title for one eligible recording or announced broadcast
+      description: Public share allowlist only. No membership required. Includes announced draft broadcasts waiting for input; announcement does not grant playback access. Hidden, deleted, expired, terminal, unannounced, revoked and cancelled content returns 404; uploads and archived broadcasts still require a published, ready recording. No list endpoint. noindex does not prevent bot retrieval.
       tags: [Public]
       x-hhc-visibility: public
       x-hhc-callers: [api-gateway, hhc-web]
@@ -137,8 +137,8 @@ paths:
         schema: { type: string, format: uuid }
     get:
       operationId: getRecordingShareCover
-      summary: Public selected cover for one published recording
-      description: Checks current recording visibility before reading only the selected JPEG cover. No playback grant or alternative cover access. The image can be retrieved by any client and cached by sharing services.
+      summary: Public selected cover for one eligible recording or announced broadcast
+      description: Uses the same current share eligibility as the title preview, including announced draft broadcasts before capture. Automatic live covers use the fixed branding JPEG; custom covers require the selected ready image. No playback grant or alternative cover access. The image can be retrieved by any client and cached by sharing services.
       tags: [Public]
       x-hhc-visibility: public
       x-hhc-callers: [api-gateway, hhc-web]

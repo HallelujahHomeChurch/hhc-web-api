@@ -1174,6 +1174,9 @@ fixture tests.
 
 `GET /api/recording-previews/{id}` returns only the title of a currently visible,
 published and unexpired recording; `/cover` returns its selected JPEG cover.
+Announced broadcasts also provide their title and static cover before streaming,
+including draft broadcasts waiting for an input. Unannounced drafts remain
+unavailable; automatic broadcast covers use the fixed branding JPEG.
 These fields are intentionally public for link cards. Both responses are
 no-store and noindex; external bots can still retrieve and cache them. No public
 recording list, description, playback grant or private asset URL is exposed.

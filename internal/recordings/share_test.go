@@ -26,7 +26,7 @@ func TestBroadcastShareEligibility(t *testing.T) {
 			repo := &shareBroadcastRepo{testRepo: &testRepo{recording: Recording{ID: "recording", Title: "Public title", Broadcast: true, Status: "draft"}}, broadcast: Broadcast{View: BroadcastView{Announced: true, Phase: phase}}}
 			svc := NewService(repo, "", nil, func() time.Time { return now })
 			preview, err := svc.SharePreview(context.Background(), "recording")
-			allowed := phase == "scheduled" || phase == "preview" || phase == "start_pending" || phase == "live" || phase == "end_pending" || phase == "processing"
+			allowed := phase == "draft" || phase == "scheduled" || phase == "preview" || phase == "start_pending" || phase == "live" || phase == "end_pending" || phase == "processing"
 			if allowed {
 				if err != nil || preview.Title != "Public title" {
 					t.Fatalf("eligible preview: %+v %v", preview, err)

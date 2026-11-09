@@ -35,7 +35,8 @@ func (s *Service) shareRecording(ctx context.Context, id string) (Recording, err
 			return Recording{}, ErrNotFound
 		}
 		switch b.View.Phase {
-		case "scheduled", "preview", "start_pending", "live", "end_pending", "processing":
+		// Announced direct broadcasts stay in draft until an input is bound.
+		case "draft", "scheduled", "preview", "start_pending", "live", "end_pending", "processing":
 			return v, nil
 		case "archived":
 			if v.Visible(s.now()) {
