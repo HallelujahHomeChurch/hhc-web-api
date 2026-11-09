@@ -89,8 +89,8 @@ var commonEnvironment = [
   { name: 'ENVIRONMENT', value: 'production' }
   { name: 'RELEASE', value: release }
   { name: 'OTEL_TRACES_SAMPLER_ARG', value: '0.1' }
-  { name: 'DB_MAX_OPEN_CONNS', value: '20' }
-  { name: 'DB_MAX_IDLE_CONNS', value: '10' }
+  { name: 'DB_MAX_OPEN_CONNS', value: '10' }
+  { name: 'DB_MAX_IDLE_CONNS', value: '5' }
   { name: 'DB_CONN_MAX_LIFETIME', value: '30m' }
   { name: 'ASSET_API_BASE_URL', value: 'http://localhost:3500/v1.0/invoke/asset-api/method' }
   { name: 'INTERNAL_CALLER_APP_ID', value: 'hhc-web-api' }

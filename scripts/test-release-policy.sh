@@ -10,7 +10,7 @@ for expected in 'minReplicas: 1' 'maxReplicas: 12' "name: 'cpu-scaler'" "type: '
   printf '%s\n' "$api_scale" | grep -Fq "$expected"
 done
 ! printf '%s\n' "$api_scale" | grep -Eq "http-scaler|concurrentRequests:"
-for expected in "name: 'DB_MAX_OPEN_CONNS', value: '20'" "name: 'DB_MAX_IDLE_CONNS', value: '10'"; do
+for expected in "name: 'DB_MAX_OPEN_CONNS', value: '10'" "name: 'DB_MAX_IDLE_CONNS', value: '5'"; do
   grep -Fq "$expected" infra/main.bicep
 done
 

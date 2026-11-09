@@ -294,6 +294,9 @@ func load(worker bool) (Config, error) {
 	if cfg.DBMaxIdleConns, err = positiveInt("DB_MAX_IDLE_CONNS", cfg.DBMaxIdleConns); err != nil {
 		return Config{}, err
 	}
+	if !worker && cfg.DBMaxOpenConns > 10 {
+		return Config{}, fmt.Errorf("API database pool exceeds reviewed fleet budget")
+	}
 	if cfg.DBMaxIdleConns > cfg.DBMaxOpenConns {
 		return Config{}, fmt.Errorf("DB_MAX_IDLE_CONNS cannot exceed DB_MAX_OPEN_CONNS")
 	}
