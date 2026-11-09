@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
 
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/assetclient"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/recordings"
@@ -40,6 +41,14 @@ func (r *RecordingRepository) ApplyLifecycle(ctx context.Context, v assetclient.
 		return err
 	}
 	defer finishTx()
+	if err := applyLifecycleTransaction(ctx, tx, v); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func applyLifecycleTransaction(ctx context.Context, tx *sql.Tx, v assetclient.RecordingLifecycleSnapshot) error {
 	for _, p := range v.Items {
 		terminal := p.State == "expired" || p.State == "failed"
 		if p.ReadyAt == nil {
@@ -61,7 +70,7 @@ func (r *RecordingRepository) ApplyLifecycle(ctx context.Context, v assetclient.
 			return err
 		}
 	}
-	return tx.Commit()
+	return nil
 }
 
 const lifecycleTerminalChange = `id::text=$1 AND package_id=$2 AND deleted_at IS NULL AND NOT media_terminal`
