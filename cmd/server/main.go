@@ -107,6 +107,9 @@ func run() error {
 			return errors.New("invalid Asset workload authentication")
 		}
 	}
+	if err = assetClient.ConfigureVerifiedCapabilities(cfg.AssetWorkload.OwnerContent, cfg.AssetWorkload.TrustedDerivation); err != nil {
+		return err
+	}
 	engagementClient := engagementclient.New(cfg.EngagementAPIBaseURL, cfg.InternalCallerAppID)
 	engagementClient.ConfigurePrivateHTTPS(cfg.EngagementPrivateToken)
 	accountClient := accountclient.New(cfg.AccountAPIBaseURL, cfg.InternalCallerAppID)

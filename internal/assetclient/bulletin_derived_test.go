@@ -23,7 +23,7 @@ func TestCompleteDerivedBulletinSendsSourceBindingToDedicatedContract(t *testing
 		_ = json.NewEncoder(w).Encode(Asset{ID: "output", ScanStatus: "clean", ScanSignature: "trusted-bulletin-watermark-v1"})
 	}))
 	defer server.Close()
-	asset, err := New(server.URL, "hhc-web-api", "").CompleteDerivedBulletin(context.Background(), "output", "source", "source-hash", CompleteUploadInput{SizeBytes: 123, ChecksumSHA256: "output-hash", MIMEType: "application/pdf"})
+	asset, err := New(server.URL, "hhc-web-api", "").CompleteDerivedBulletin(context.Background(), "output", "source", "source-hash", "source-etag", CompleteUploadInput{SizeBytes: 123, ChecksumSHA256: "output-hash", MIMEType: "application/pdf"})
 	if err != nil || asset.ScanSignature != "trusted-bulletin-watermark-v1" {
 		t.Fatalf("asset=%+v err=%v", asset, err)
 	}

@@ -31,22 +31,25 @@ var (
 )
 
 type Asset struct {
-	ID               string `json:"id"`
-	Namespace        string `json:"namespace"`
-	OwnerService     string `json:"ownerService"`
-	OwnerType        string `json:"ownerType"`
-	OwnerID          string `json:"ownerId"`
-	Purpose          string `json:"purpose"`
-	Locale           string `json:"locale"`
-	OriginalFileName string `json:"originalFileName"`
-	ExpectedMIMEType string `json:"expectedMimeType"`
-	UploadStatus     string `json:"uploadStatus"`
-	ScanStatus       string `json:"scanStatus"`
-	ScanSignature    string `json:"scanSignatureVersion"`
-	ProcessingStatus string `json:"processingStatus"`
-	DetectedMIMEType string `json:"detectedMimeType"`
-	Visibility       string `json:"visibility"`
-	ChecksumSHA256   string `json:"checksumSha256"`
+	ETag                string               `json:"etag"`
+	ProcessingReadiness *ProcessingReadiness `json:"processingReadiness,omitempty"`
+	SafetyEvidence      *SafetyEvidence      `json:"safetyEvidence,omitempty"`
+	ID                  string               `json:"id"`
+	Namespace           string               `json:"namespace"`
+	OwnerService        string               `json:"ownerService"`
+	OwnerType           string               `json:"ownerType"`
+	OwnerID             string               `json:"ownerId"`
+	Purpose             string               `json:"purpose"`
+	Locale              string               `json:"locale"`
+	OriginalFileName    string               `json:"originalFileName"`
+	ExpectedMIMEType    string               `json:"expectedMimeType"`
+	UploadStatus        string               `json:"uploadStatus"`
+	ScanStatus          string               `json:"scanStatus"`
+	ScanSignature       string               `json:"scanSignatureVersion"`
+	ProcessingStatus    string               `json:"processingStatus"`
+	DetectedMIMEType    string               `json:"detectedMimeType"`
+	Visibility          string               `json:"visibility"`
+	ChecksumSHA256      string               `json:"checksumSha256"`
 }
 type Grant struct {
 	ID      string `json:"id"`
@@ -72,11 +75,12 @@ type RecordingGrant struct {
 	ExpiresAt          time.Time `json:"expiresAt"`
 }
 type Client struct {
-	serviceSubject string
-	baseURL        string
-	caller         string
-	publicBaseURL  string
-	http           *http.Client
+	ownerContent, trustedDerivation bool
+	serviceSubject                  string
+	baseURL                         string
+	caller                          string
+	publicBaseURL                   string
+	http                            *http.Client
 }
 
 func New(baseURL, caller, publicBaseURL string) *Client {
@@ -146,7 +150,30 @@ func (c *Client) CompleteUpload(ctx context.Context, id string, input CompleteUp
 	return value, err
 }
 
-func (c *Client) CompleteDerivedBulletin(ctx context.Context, id, sourceID, sourceSHA256 string, input CompleteUploadInput) (Asset, error) {
+func (c *Client) CompleteDerivedBulletin(ctx context.Context, id, sourceID, sourceSHA256, sourceETag string, input CompleteUploadInput) (Asset, error) {
+	if c.trustedDerivation {
+		if sourceETag == "" {
+			return Asset{}, ErrInvalid
+		}
+		body := struct {
+			CompleteUploadInput
+			Derivation any `json:"derivation"`
+		}{input, struct {
+			SourceAssetID    string `json:"sourceAssetId"`
+			SourceSHA256     string `json:"sourceSha256"`
+			SourceETag       string `json:"sourceETag"`
+			Transform        string `json:"transform"`
+			TransformVersion string `json:"transformVersion"`
+		}{sourceID, sourceSHA256, sourceETag, "bulletin-watermark", "1"}}
+		var value Asset
+		if err := c.request(ctx, http.MethodPost, "/priv/assets/"+url.PathEscape(id)+"/complete", body, "", &value); err != nil {
+			return Asset{}, err
+		}
+		if value.ID != id || value.ProcessingReadiness == nil || value.ProcessingReadiness.State != "ready" || value.SafetyEvidence == nil || value.SafetyEvidence.Kind != "trusted-derived" {
+			return Asset{}, ErrUnavailable
+		}
+		return value, nil
+	}
 	body := struct {
 		CompleteUploadInput
 		SourceAssetID string `json:"sourceAssetId"`

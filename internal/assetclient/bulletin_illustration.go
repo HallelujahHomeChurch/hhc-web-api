@@ -16,7 +16,7 @@ import (
 const maxBulletinIllustrationBytes = 2 << 20
 
 func validBulletinIllustration(asset Asset, issueID, checksum string) bool {
-	return asset.ID != "" && asset.Namespace == "cms.weekly.image" && asset.OwnerService == "hhc-web-api" && asset.OwnerType == "bulletin_issue" && asset.OwnerID == issueID && asset.Purpose == "online_bulletin_illustration" && asset.Locale == "zh-Hant" && asset.Visibility == "private" && asset.ChecksumSHA256 == checksum && asset.DetectedMIMEType == "image/png" && asset.UploadStatus == "completed" && asset.ScanStatus == "clean" && asset.ProcessingStatus == "not_required"
+	return asset.ID != "" && asset.Namespace == "cms.weekly.image" && asset.OwnerService == "hhc-web-api" && asset.OwnerType == "bulletin_issue" && asset.OwnerID == issueID && asset.Purpose == "online_bulletin_illustration" && asset.Locale == "zh-Hant" && asset.Visibility == "private" && asset.ChecksumSHA256 == checksum && asset.DetectedMIMEType == "image/png" && asset.UploadStatus == "completed" && asset.Scanned() && asset.ProcessingStatus == "not_required"
 }
 
 // EnsureBulletinIllustration resumes the same source-bound upload across retries.
@@ -81,7 +81,12 @@ func (c *Client) ReadBulletinIllustration(ctx context.Context, issueID, assetID,
 		return nil, ErrInvalid
 	}
 	request.Header.Set("X-Internal-Caller-App-Id", c.caller)
-	response, err := c.http.Do(request)
+	var response *http.Response
+	if c.ownerContent {
+		response, err = c.OwnerContent(ctx, Asset{ID: assetID, OwnerID: issueID, OwnerType: "bulletin_issue", OwnerService: "hhc-web-api", Namespace: "cms.weekly.image", Purpose: "online_bulletin_illustration", Locale: "zh-Hant", Visibility: "private", ChecksumSHA256: checksum})
+	} else {
+		response, err = c.http.Do(request)
+	}
 	if err != nil {
 		return nil, ErrUnavailable
 	}

@@ -31,7 +31,7 @@ type DownloadWorkerAssets interface {
 	AuthorizedDownload(context.Context, string, string, string, string) (*http.Response, error)
 	CreateDerivedBulletinUpload(context.Context, string, string, string, int64, string) (assetclient.CreatedUpload, error)
 	Upload(context.Context, assetclient.UploadTarget, io.Reader, int64) error
-	CompleteDerivedBulletin(context.Context, string, string, string, assetclient.CompleteUploadInput) (assetclient.Asset, error)
+	CompleteDerivedBulletin(context.Context, string, string, string, string, assetclient.CompleteUploadInput) (assetclient.Asset, error)
 	CreateServiceGrant(context.Context, string, string) (assetclient.Grant, error)
 	Delete(context.Context, string) error
 }
@@ -208,7 +208,7 @@ func (w *DownloadWorker) process(ctx context.Context, job DownloadJob) error {
 	if err = checkpoint(88); err != nil {
 		return err
 	}
-	completed, err := w.assets.CompleteDerivedBulletin(ctx, upload.Asset.ID, job.SourceAssetID, job.SourceSHA256, assetclient.CompleteUploadInput{SizeBytes: info.Size(), ChecksumSHA256: output.Metadata.OutputSHA256, MIMEType: "application/pdf"})
+	completed, err := w.assets.CompleteDerivedBulletin(ctx, upload.Asset.ID, job.SourceAssetID, job.SourceSHA256, response.Header.Get("ETag"), assetclient.CompleteUploadInput{SizeBytes: info.Size(), ChecksumSHA256: output.Metadata.OutputSHA256, MIMEType: "application/pdf"})
 	if err != nil {
 		setPhaseAttr(ctx, "error_class", "asset")
 		return err

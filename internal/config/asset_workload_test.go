@@ -25,3 +25,25 @@ func TestAssetWorkloadConfiguration(t *testing.T) {
 		})
 	}
 }
+
+func TestVerifiedCapabilitiesRequireWorkloadAndStrictFlags(t *testing.T) {
+	for _, key := range []string{"ASSET_OWNER_CONTENT_ENABLED", "ASSET_TRUSTED_DERIVATION_ENABLED"} {
+		t.Run(key, func(t *testing.T) {
+			t.Setenv("ASSET_WORKLOAD_AUTH_ENABLED", "false")
+			t.Setenv(key, "true")
+			if _, err := loadAssetWorkload(); err == nil {
+				t.Fatal("legacy capability enabled")
+			}
+			t.Setenv("ASSET_WORKLOAD_AUTH_ENABLED", "true")
+			t.Setenv("ASSET_WORKLOAD_AUDIENCE", "api://asset")
+			t.Setenv("ASSET_WORKLOAD_CLIENT_ID", "88340bcf-5198-4219-90b4-dfca455a1ee3")
+			if _, err := loadAssetWorkload(); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv(key, "typo")
+			if _, err := loadAssetWorkload(); err == nil {
+				t.Fatal("malformed capability accepted")
+			}
+		})
+	}
+}

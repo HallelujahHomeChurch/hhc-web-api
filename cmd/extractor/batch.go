@@ -36,6 +36,9 @@ func runBatch(ctx context.Context) error {
 			return errInvalidJob
 		}
 	}
+	if err = assetClient.ConfigureVerifiedCapabilities(cfg.AssetWorkload.OwnerContent, cfg.AssetWorkload.TrustedDerivation); err != nil {
+		return errInvalidJob
+	}
 	db, err := sql.Open("pgx", cfg.DatabaseURL)
 	if err != nil {
 		return err

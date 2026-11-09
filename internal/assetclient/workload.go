@@ -119,3 +119,15 @@ func workloadOperation(method, path string) string {
 		return "asset_request"
 	}
 }
+
+// Capabilities remain independently disabled until their producer and scope exist.
+func (c *Client) ConfigureVerifiedCapabilities(ownerContent, trustedDerivation bool) error {
+	if ownerContent || trustedDerivation {
+		transport, ok := c.http.Transport.(*internalTransport)
+		if !ok || transport.credential == nil || (ownerContent && transport.service != "hhc-web-api") || (trustedDerivation && transport.service != "hhc-web-bulletin-worker") {
+			return ErrInvalid
+		}
+	}
+	c.ownerContent, c.trustedDerivation = ownerContent, trustedDerivation
+	return nil
+}
