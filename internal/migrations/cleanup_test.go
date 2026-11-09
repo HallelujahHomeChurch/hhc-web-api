@@ -28,7 +28,7 @@ func TestMigrationDetachedUnlock(t *testing.T) {
 				}
 				primary := errors.New("schema unavailable")
 				unlock := errors.New("unlock unavailable")
-				mock.ExpectExec("SELECT pg_advisory_lock").WithArgs(sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(0, 1))
+				mock.ExpectQuery("SELECT pg_try_advisory_lock").WithArgs(sqlmock.AnyArg()).WillReturnRows(sqlmock.NewRows([]string{"locked"}).AddRow(true))
 				create := mock.ExpectExec("CREATE TABLE IF NOT EXISTS public.schema_migrations")
 				switch kind {
 				case "canceled-parent":
@@ -98,7 +98,7 @@ func TestMigrationAcquireErrorDiscardsSession(t *testing.T) {
 	}
 	defer db.Close()
 	primary := errors.New("lock acknowledgement failed")
-	mock.ExpectExec("SELECT pg_advisory_lock").WithArgs(sqlmock.AnyArg()).WillReturnError(primary)
+	mock.ExpectQuery("SELECT pg_try_advisory_lock").WithArgs(sqlmock.AnyArg()).WillReturnError(primary)
 	mock.ExpectClose()
 	if err := Run(context.Background(), db); !errors.Is(err, primary) {
 		t.Errorf("error=%v", err)
@@ -135,4 +135,27 @@ func TestMigrationAcquireErrorDiscardsSession(t *testing.T) {
 	if err := next.ExpectationsWereMet(); err != nil {
 		t.Error(err)
 	}
+}
+
+func TestMigrationLockContentionHonorsContext(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		db, mock, err := sqlmock.New()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer db.Close()
+		ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+		defer cancel()
+		mock.ExpectQuery("SELECT pg_try_advisory_lock").WithArgs(sqlmock.AnyArg()).
+			WillReturnRows(sqlmock.NewRows([]string{"locked"}).AddRow(false))
+		if err := Run(ctx, db); !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("lock wait error = %v", err)
+		}
+		if db.Stats().OpenConnections != 1 {
+			t.Fatal("known unlocked session was discarded")
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Fatal(err)
+		}
+	})
 }

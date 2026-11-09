@@ -24,10 +24,22 @@ func Run(ctx context.Context, db *sql.DB) (err error) {
 	}
 	defer conn.Close()
 	const lockID int64 = 721732019260730
-	if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_lock($1)`, lockID); err != nil {
-		// Acquisition errors leave session lock ownership uncertain.
-		_ = conn.Raw(func(any) error { return driver.ErrBadConn })
-		return err
+	for {
+		var acquired bool
+		if err := conn.QueryRowContext(ctx, `SELECT pg_try_advisory_lock($1)`, lockID).Scan(&acquired); err != nil {
+			// Acquisition errors leave session lock ownership uncertain.
+			_ = conn.Raw(func(any) error { return driver.ErrBadConn })
+			return err
+		}
+		if acquired {
+			break
+		}
+		// Wait outside PostgreSQL so a contender holds no snapshot needed by a concurrent index build.
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(100 * time.Millisecond):
+		}
 	}
 	defer func() {
 		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
