@@ -15,7 +15,10 @@ import (
 //go:embed sql/*.sql
 var files embed.FS
 
-const cleanupTimeout = 10 * time.Second
+const (
+	cleanupTimeout        = 10 * time.Second
+	migrationLockID int64 = 721732019260730
+)
 
 func Run(ctx context.Context, db *sql.DB) (err error) {
 	conn, err := db.Conn(ctx)
@@ -23,10 +26,9 @@ func Run(ctx context.Context, db *sql.DB) (err error) {
 		return err
 	}
 	defer conn.Close()
-	const lockID int64 = 721732019260730
 	for {
 		var acquired bool
-		if err := conn.QueryRowContext(ctx, `SELECT pg_try_advisory_lock($1)`, lockID).Scan(&acquired); err != nil {
+		if err := conn.QueryRowContext(ctx, `SELECT pg_try_advisory_lock($1)`, migrationLockID).Scan(&acquired); err != nil {
 			// Acquisition errors leave session lock ownership uncertain.
 			_ = conn.Raw(func(any) error { return driver.ErrBadConn })
 			return err
@@ -44,7 +46,7 @@ func Run(ctx context.Context, db *sql.DB) (err error) {
 	defer func() {
 		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
 		defer cancel()
-		if _, unlockErr := conn.ExecContext(cleanup, `SELECT pg_advisory_unlock($1)`, lockID); unlockErr != nil {
+		if _, unlockErr := conn.ExecContext(cleanup, `SELECT pg_advisory_unlock($1)`, migrationLockID); unlockErr != nil {
 			err = errors.Join(err, fmt.Errorf("release migration lock: %w", unlockErr))
 			_ = conn.Raw(func(any) error { return driver.ErrBadConn })
 		}
