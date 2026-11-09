@@ -68,12 +68,15 @@ func (r *Repository) CompleteOnlineExtractionRequest(ctx context.Context, event 
 	var currentAsset string
 	var canonicalVersion int64
 	var automatic bool
-	var request string
+	var request sql.NullString
 	err = tx.QueryRowContext(ctx, `SELECT i.issue_number,i.version,v.pdf_asset_id,v.auto_publish,v.auto_publish_request FROM hhc_web.bulletin_issue i JOIN hhc_web.bulletin_version v ON v.issue_id=i.id AND v.series='general' AND v.locale='zh-Hant' WHERE i.id=$1 FOR UPDATE OF i,v`, p.IssueID).Scan(&number, &canonicalVersion, &currentAsset, &automatic, &request)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
-	if err == nil && number >= 1739 && currentAsset == p.AssetID && automatic == p.AutoPublish && request == p.RequestID && canonicalVersion >= event.AggregateVersion {
+	// Legacy uploads have no captured intent; an explicit cancellation is non-null.
+	legacyDraft := !request.Valid && !automatic && !p.AutoPublish && canonicalVersion == event.AggregateVersion
+	currentIntent := request.Valid && automatic == p.AutoPublish && request.String == p.RequestID && canonicalVersion >= event.AggregateVersion
+	if err == nil && number >= 1739 && currentAsset == p.AssetID && (legacyDraft || currentIntent) {
 		var onlineVersion int64
 		err = tx.QueryRowContext(ctx, `SELECT version FROM hhc_web.online_bulletin_document WHERE issue_id=$1 AND series='general' AND content_locale='zh-Hant' FOR UPDATE`, p.IssueID).Scan(&onlineVersion)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
