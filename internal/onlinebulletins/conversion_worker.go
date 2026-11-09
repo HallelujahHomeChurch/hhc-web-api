@@ -15,7 +15,11 @@ type ConversionStore interface {
 }
 
 func (w ExtractionWorker) runConversion(parent context.Context, store ConversionStore, job ConversionJob) error {
-	deadline := documentDeadline(parent, job.LeaseUntil, w.Timeout)
+	timeout := w.Timeout
+	if w.AssessDerived != nil && job.PublicationEventID != "" {
+		timeout = UpdateJobTimeout
+	}
+	deadline := documentDeadline(parent, job.LeaseUntil, timeout)
 	ctx, cancel := context.WithDeadline(parent, deadline)
 	defer cancel()
 	processing, stop := context.WithDeadline(ctx, deadline.Add(-10*time.Second))
@@ -33,11 +37,20 @@ func (w ExtractionWorker) runConversion(parent context.Context, store Conversion
 		if err := processing.Err(); err != nil {
 			return document, metadata, err
 		}
-		return w.Convert(processing, job)
+		document, metadata, err = w.Convert(processing, job)
+		if err == nil && w.AssessDerived != nil && job.PublicationEventID != "" {
+			err = w.AssessDerived(processing, job, document, metadata)
+		}
+		return document, metadata, err
 	}()
 	stop()
 	if err != nil {
 		code := "simplified_conversion_failed"
+		attempts := w.MaxAttempts
+		if errors.Is(err, ErrUpdateSource) {
+			code = "derived_content_not_ready"
+			attempts = 1
+		}
 		if errors.Is(err, errExtractorVersion) {
 			code = "extractor_update_required"
 		}
@@ -46,7 +59,7 @@ func (w ExtractionWorker) runConversion(parent context.Context, store Conversion
 		if errors.As(err, &located) {
 			issues = located.Issues
 		}
-		return store.FailOnlineBulletinConversion(ctx, job, code, issues, time.Now().UTC(), w.MaxAttempts)
+		return store.FailOnlineBulletinConversion(ctx, job, code, issues, time.Now().UTC(), attempts)
 	}
 	err = store.CompleteOnlineBulletinConversion(ctx, job, document, metadata, time.Now().UTC())
 	if errors.Is(err, ErrConversionStale) {

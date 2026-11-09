@@ -17,7 +17,7 @@ func updateFixture(t *testing.T) UpdateInput {
 }
 
 func readyUpdatePlan() UpdatePlan {
-	return UpdatePlan{Readiness: "ready", ChangeKind: "first", Summary: "已核對來源與保留內容。", Choices: []UpdateChoice{}, Mappings: []SemanticMappingDecision{}}
+	return UpdatePlan{MetadataChoice: "source", Readiness: "ready", ChangeKind: "first", Summary: "已核對來源與保留內容。", Choices: []UpdateChoice{}, Mappings: []SemanticMappingDecision{}}
 }
 
 func updateServer(t *testing.T, plans []any, inspect func(map[string]any)) (*AzureExtractor, *int) {
@@ -54,6 +54,7 @@ func updateServer(t *testing.T, plans []any, inspect func(map[string]any)) (*Azu
 
 func TestVerifiedUpdatePlanUsesIndependentSourceAndRecordsBeforeSpending(t *testing.T) {
 	input := updateFixture(t)
+	input.Evidence.Pages[0].Glyphs = []GeometryGlyph{{Text: "unused-glyph-catalog-marker"}}
 	plan := readyUpdatePlan()
 	saved := 0
 	client, calls := updateServer(t, []any{plan, plan}, func(payload map[string]any) {
@@ -61,8 +62,15 @@ func TestVerifiedUpdatePlanUsesIndependentSourceAndRecordsBeforeSpending(t *test
 		if !strings.Contains(string(data), "2000期") || !strings.Contains(string(data), "正文。") || strings.Contains(string(data), "previousProposal") || strings.Contains(string(data), "/assets/weekly/") {
 			t.Error("source projection/independence")
 		}
+		if strings.Contains(string(data), "unused-glyph-catalog-marker") {
+			t.Error("sent the rendering glyph catalog instead of compact source evidence")
+		}
 		if payload["store"] != false || payload["background"] != false {
 			t.Error("provider persistence")
+		}
+		metadataEnum := payload["text"].(map[string]any)["format"].(map[string]any)["schema"].(map[string]any)["properties"].(map[string]any)["metadataChoice"].(map[string]any)["enum"].([]any)
+		if len(metadataEnum) != 1 || metadataEnum[0] != "source" {
+			t.Error("offered an unavailable metadata action to the model")
 		}
 	})
 	result, err := client.PlanVerifiedUpdate(context.Background(), input, func(attempt UpdateAttempt) error {
@@ -82,8 +90,31 @@ func TestVerifiedUpdatePlanUsesIndependentSourceAndRecordsBeforeSpending(t *test
 	}
 }
 
+func TestVerifiedUpdatePlanUsesOriginalCoverForOutlinedSourceIdentity(t *testing.T) {
+	input := updateFixture(t)
+	input.SourceCoverPNG = recognitionFixture(t).PNG
+	client, calls := updateServer(t, []any{readyUpdatePlan(), readyUpdatePlan()}, func(payload map[string]any) {
+		raw, _ := json.Marshal(payload)
+		if !strings.Contains(string(raw), "input_image") || !strings.Contains(string(raw), "data:image/png;base64,") {
+			t.Error("outlined source identity lost its original image")
+		}
+	})
+	evidence, err := client.PlanVerifiedUpdate(context.Background(), input, nil)
+	if err != nil || *calls != 2 {
+		t.Fatal(err)
+	}
+	input.SourceCoverPNG = []byte("not a png")
+	if ValidUpdateEvidence(input, evidence) {
+		t.Fatal("cover replacement preserved receipt")
+	}
+	client, calls = updateServer(t, nil, nil)
+	if _, err = client.PlanVerifiedUpdate(context.Background(), input, nil); err == nil || *calls != 0 {
+		t.Fatal("unbounded/invalid image reached provider")
+	}
+}
+
 func TestVerifiedUpdatePlanRejectsUnsafeSourceAndProviderFailure(t *testing.T) {
-	for _, kind := range []string{"wrong_issue", "wrong_edition", "incomplete", "disagreement", "invented_choice", "invented_mapping", "injected_action", "provider"} {
+	for _, kind := range []string{"wrong_issue", "wrong_edition", "incomplete", "disagreement", "invented_choice", "injected_action", "provider"} {
 		t.Run(kind, func(t *testing.T) {
 			input := updateFixture(t)
 			first, second := readyUpdatePlan(), readyUpdatePlan()
@@ -94,8 +125,6 @@ func TestVerifiedUpdatePlanRejectsUnsafeSourceAndProviderFailure(t *testing.T) {
 				second.Readiness = "incomplete"
 			case "invented_choice":
 				first.Choices = []UpdateChoice{{ComponentID: "foreign", Choice: "local"}}
-			case "invented_mapping":
-				first.Mappings = []SemanticMappingDecision{{FromSentenceID: "foreign", Kind: "historical"}}
 			}
 			var a any = first
 			if kind == "provider" {
@@ -110,6 +139,28 @@ func TestVerifiedUpdatePlanRejectsUnsafeSourceAndProviderFailure(t *testing.T) {
 				t.Fatalf("unsafe source accepted: %v, calls %d", err, *calls)
 			}
 		})
+	}
+}
+
+func TestVerifiedUpdatePlanInvalidAnnotationProposalCannotBlockVerifiedSource(t *testing.T) {
+	input := updateFixture(t)
+	previous := validDocument(4)
+	input.Published = &previous
+	semanticMappingRename(&input.Incoming, "sentence-speaker", "fresh-speaker", "講員")
+	first, second := readyUpdatePlan(), readyUpdatePlan()
+	first.Mappings = []SemanticMappingDecision{{FromSentenceID: "sentence-speaker", Kind: "equivalent", ToSentenceIDs: []string{"invented"}}}
+	second.Mappings = first.Mappings
+	client, calls := updateServer(t, []any{first, second}, nil)
+	evidence, err := client.PlanVerifiedUpdate(context.Background(), input, nil)
+	if err != nil || *calls != 2 || !ValidUpdateEvidence(input, evidence) {
+		t.Fatal("annotation-only defect blocked verified source", err)
+	}
+	_, mappings, err := ApplyUpdatePlan(input, evidence.Plan)
+	if err != nil || semanticMappingFor(t, mappings, "sentence-speaker").Status != "removed" {
+		t.Fatal("unsafe mapping did not retain history", err)
+	}
+	if len(evidence.Attempts[0].Plan.Mappings) != 1 {
+		t.Fatal("lost rejected proposal evidence")
 	}
 }
 
@@ -172,6 +223,27 @@ func TestVerifiedUpdatePlanAdoptsPDFAndRetainsOnlyAgreedCompatibleAuthoredChange
 	}
 }
 
+func TestVerifiedUpdateCannotReplaceNewSourceWithUnmodifiedOldContent(t *testing.T) {
+	input := updateFixture(t)
+	base, local := validDocument(4), validDocument(4)
+	input.Base, input.Local = &base, &local
+	input.Incoming.SourceAssetChecksum = strings.Repeat("d", 64)
+	input.Evidence.SourceSHA256 = input.Incoming.SourceAssetChecksum
+	semanticMappingRename(&input.Incoming, "sentence-body-title", "sentence-body-title", "新題")
+	proposal := readyUpdatePlan()
+	proposal.ChangeKind = "correction"
+	proposal.Choices = []UpdateChoice{{ComponentID: "body", BlockID: "block-body-title", Choice: "local"}}
+	client, _ := updateServer(t, []any{proposal, proposal}, nil)
+	evidence, err := client.PlanVerifiedUpdate(context.Background(), input, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _, err := ApplyUpdatePlan(input, evidence.Plan)
+	if err != nil || got.Components[1].BodySection.Title.Sentences[0].Spans[0].Text != "新題" {
+		t.Fatal("unmodified old content overrode the newest valid source", err)
+	}
+}
+
 func TestVerifiedUpdatePlanMappingDisagreementRetainsHistoryWithoutBlockingContent(t *testing.T) {
 	input := updateFixture(t)
 	previous := validDocument(4)
@@ -188,5 +260,31 @@ func TestVerifiedUpdatePlanMappingDisagreementRetainsHistoryWithoutBlockingConte
 	got, mappings, err := ApplyUpdatePlan(input, result.Plan)
 	if err != nil || got.Components[1].BodySection.Contributors[0].Name.Sentences[0].ID != "fresh-speaker" || semanticMappingFor(t, mappings, "sentence-speaker").Status != "removed" {
 		t.Fatal("mapping uncertainty blocked content or guessed identity", err)
+	}
+}
+
+func TestVerifiedUpdateProjectionOmitsTypographyAndReferencesIdenticalSnapshots(t *testing.T) {
+	input := updateFixture(t)
+	base, local := input.Incoming, input.Incoming
+	input.Base, input.Local, input.Published = &base, &local, &base
+	client, _ := updateServer(t, []any{readyUpdatePlan(), readyUpdatePlan()}, func(payload map[string]any) {
+		content := payload["input"].([]any)[0].(map[string]any)["content"].([]any)[0].(map[string]any)["text"].(string)
+		var source map[string]any
+		if json.Unmarshal([]byte(strings.TrimPrefix(content, "SOURCE DATA:\n")), &source) != nil {
+			t.Fatal("invalid source projection")
+		}
+		raw, _ := json.Marshal(source)
+		if strings.Contains(string(raw), "fontRole") || strings.Contains(string(raw), "lineHeight") {
+			t.Error("paid for renderer typography")
+		}
+		if source["Base"] != "Incoming" || source["Local"] != "Incoming" || source["Published"] != "Incoming" {
+			t.Error("duplicated identical semantic snapshots")
+		}
+		if !strings.Contains(string(raw), "sentence-speaker") || !strings.Contains(string(raw), "正文。") {
+			t.Error("lost semantic IDs or content")
+		}
+	})
+	if _, err := client.PlanVerifiedUpdate(context.Background(), input, nil); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -322,6 +322,11 @@ func (r *Repository) queueOnlineBulletinExtractionTx(ctx context.Context, tx *sq
 	if err = r.setAutomaticBulletinIntent(ctx, tx, issueID, "general", "zh-Hant", input.AutoPublish, input.NotifySubscribers, actor, now); err != nil {
 		return result, err
 	}
+	if input.AutoPublish {
+		if err = cancelPendingSimplifiedRelease(ctx, tx, issueID, now); err != nil {
+			return result, err
+		}
+	}
 	created := result.DocumentID == ""
 	if created {
 		if input.Retry {
@@ -334,9 +339,9 @@ func (r *Repository) queueOnlineBulletinExtractionTx(ctx context.Context, tx *sq
 	}
 	var snapshot, noResult, metadataChanged bool
 	var templateSnapshot, learningRules []byte
-	err = tx.QueryRowContext(ctx, `SELECT id::text,status,attempts,last_error_code,snapshot_json IS NOT NULL,result_revision IS NULL,result_revision,(snapshot_json->'canonicalMetadata') IS DISTINCT FROM $5::jsonb FROM hhc_web.online_bulletin_extraction_job WHERE document_id=$1 AND source_asset_checksum=$2 AND template_version='v1' AND extractor_version=$3 AND source_asset_id=$4 AND NOT superseded FOR UPDATE`, result.DocumentID, input.SourceChecksum, r.bulletinExtractorVersion(), input.SourceAssetID, mustJSON(canonical)).Scan(&result.Job.ID, &result.Job.Status, &result.Job.Attempts, &result.Job.ErrorCode, &snapshot, &noResult, &result.Job.ResultRevision, &metadataChanged)
+	err = tx.QueryRowContext(ctx, `SELECT id::text,status,attempts,last_error_code,snapshot_json IS NOT NULL,result_revision IS NULL,result_revision,COALESCE(snapshot_json->'canonicalMetadata',requested_metadata) IS DISTINCT FROM $5::jsonb FROM hhc_web.online_bulletin_extraction_job WHERE document_id=$1 AND source_asset_checksum=$2 AND template_version='v1' AND extractor_version=$3 AND source_asset_id=$4 AND NOT superseded FOR UPDATE`, result.DocumentID, input.SourceChecksum, r.bulletinExtractorVersion(), input.SourceAssetID, mustJSON(canonical)).Scan(&result.Job.ID, &result.Job.Status, &result.Job.Attempts, &result.Job.ErrorCode, &snapshot, &noResult, &result.Job.ResultRevision, &metadataChanged)
 	if err == nil {
-		if result.Job.Status == "review_ready" && snapshot && metadataChanged {
+		if metadataChanged && (input.AutoPublish || result.Job.Status == "review_ready" && snapshot) {
 			// Recheck corrected metadata without modifying the old immutable evidence.
 			result.Job, input.Retry = onlinebulletins.AdminJob{}, false
 		} else if input.Retry && result.Job.Status == "failed" && r.llmBulletinExtraction {
@@ -347,37 +352,17 @@ func (r *Repository) queueOnlineBulletinExtractionTx(ctx context.Context, tx *sq
 			if changed {
 				result.Job.ID, input.Retry = "", false
 			}
+		} else if input.AutoPublish && result.Job.Status == "review_ready" && snapshot {
+			// A fresh job reuses immutable source proof under the new request.
+			result.Job, input.Retry = onlinebulletins.AdminJob{}, false
 		} else if !input.Retry {
 			if input.AutoPublish {
 				p, _ := auditclient.ProvenanceFromContext(ctx)
 				if _, err = tx.ExecContext(ctx, `UPDATE hhc_web.online_bulletin_extraction_job SET auto_publish=true,authorizer_id=$2,authorizer_request_id=$3 WHERE id=$1`, result.Job.ID, actor, p.RequestID); err != nil {
 					return result, err
 				}
-				if result.Job.Status == "review_ready" && result.Job.ResultRevision != nil {
-					var raw, revisionJSON []byte
-					if err = tx.QueryRowContext(ctx, `SELECT snapshot_json FROM hhc_web.online_bulletin_extraction_job WHERE id=$1`, result.Job.ID).Scan(&raw); err != nil {
-						return result, err
-					}
-					var evidence onlineExtractionSnapshot
-					if json.Unmarshal(raw, &evidence) != nil || evidence.Canonical != canonical {
-						return result, onlinebulletins.ErrUpdatePlan
-					}
-					if err = tx.QueryRowContext(ctx, `SELECT document_json FROM hhc_web.online_bulletin_revision WHERE document_id=$1 AND revision=$2`, result.DocumentID, *result.Job.ResultRevision).Scan(&revisionJSON); err != nil {
-						return result, err
-					}
-					if json.Unmarshal(revisionJSON, &evidence.Candidate.Document) != nil {
-						return result, onlinebulletins.ErrUpdatePlan
-					}
-					if _, err = tx.ExecContext(ctx, `UPDATE hhc_web.online_bulletin_document SET version=version+1,updated_at=$2 WHERE id=$1`, result.DocumentID, now); err != nil {
-						return result, err
-					}
-					result.Version++
-					if _, err = queueOnlineUpdate(ctx, tx, onlinebulletins.ExtractionJob{ID: result.Job.ID, DocumentID: result.DocumentID, Canonical: onlinebulletins.CanonicalIssue{IssueID: issueID, Series: "general", ContentLocale: "zh-Hant", Metadata: canonical}}, *result.Job.ResultRevision, evidence.Candidate, now); err != nil {
-						return result, err
-					}
-					if err = r.enqueueBulletinAudit(ctx, tx, "cms.bulletin.online.extract", result.DocumentID, actor, now); err != nil {
-						return result, err
-					}
+				if err = r.enqueueBulletinAudit(ctx, tx, "cms.bulletin.online.extract", result.DocumentID, actor, now); err != nil {
+					return result, err
 				}
 			}
 			return result, nil
@@ -408,7 +393,7 @@ func (r *Repository) queueOnlineBulletinExtractionTx(ctx context.Context, tx *sq
 	if err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM hhc_web.online_bulletin_extraction_job WHERE document_id=$1 AND source_asset_id=$2 AND source_asset_checksum=$3 AND NOT superseded AND status IN ('queued','parsing'))`, result.DocumentID, input.SourceAssetID, input.SourceChecksum).Scan(&active); err != nil {
 		return result, err
 	}
-	if active {
+	if active && !input.AutoPublish {
 		return result, bulletins.ErrConflict
 	}
 	// Fence every previous lease. Re-uploads never change Local, Base, Incoming,
@@ -432,9 +417,14 @@ func (r *Repository) queueOnlineBulletinExtractionTx(ctx context.Context, tx *sq
 		if p, ok := auditclient.ProvenanceFromContext(ctx); ok && p.ActorID == actor && auditclient.ValidActorRequest(p.ActorID, p.RequestID) {
 			authorizer, request = p.ActorID, p.RequestID
 		}
-		_, err = tx.ExecContext(ctx, `INSERT INTO hhc_web.online_bulletin_extraction_job(id,document_id,issue_id,series,content_locale,source_asset_id,source_asset_checksum,template_version,extractor_version,available_at,created_at,updated_at,template_snapshot_json,learning_rules_json,authorizer_id,authorizer_request_id,auto_publish) VALUES($1,$2,$3,'general','zh-Hant',$4,$5,'v1',$6,$7,$7,$7,$8,$9,$10,$11,$12)`, result.Job.ID, result.DocumentID, issueID, input.SourceAssetID, input.SourceChecksum, r.bulletinExtractorVersion(), now, templateSnapshot, learningRules, authorizer, request, input.AutoPublish)
+		_, err = tx.ExecContext(ctx, `INSERT INTO hhc_web.online_bulletin_extraction_job(id,document_id,issue_id,series,content_locale,source_asset_id,source_asset_checksum,template_version,extractor_version,available_at,created_at,updated_at,template_snapshot_json,learning_rules_json,authorizer_id,authorizer_request_id,auto_publish,requested_metadata) VALUES($1,$2,$3,'general','zh-Hant',$4,$5,'v1',$6,$7,$7,$7,$8,$9,$10,$11,$12,$13)`, result.Job.ID, result.DocumentID, issueID, input.SourceAssetID, input.SourceChecksum, r.bulletinExtractorVersion(), now, templateSnapshot, learningRules, authorizer, request, input.AutoPublish, mustJSON(canonical))
 	} else {
-		_, err = tx.ExecContext(ctx, `UPDATE hhc_web.online_bulletin_extraction_job SET status='queued',attempts=0,last_error_code='',superseded=false,source_asset_id=$2,available_at=$3,updated_at=$3,auto_publish=$4 WHERE id=$1`, result.Job.ID, input.SourceAssetID, now, input.AutoPublish)
+		p, _ := auditclient.ProvenanceFromContext(ctx)
+		var authorizer any
+		if input.AutoPublish {
+			authorizer = actor
+		}
+		_, err = tx.ExecContext(ctx, `UPDATE hhc_web.online_bulletin_extraction_job SET status='queued',attempts=0,last_error_code='',superseded=false,source_asset_id=$2,available_at=$3,updated_at=$3,auto_publish=$4,authorizer_id=CASE WHEN $4 THEN $5::text ELSE authorizer_id END,authorizer_request_id=CASE WHEN $4 THEN $6 ELSE authorizer_request_id END WHERE id=$1`, result.Job.ID, input.SourceAssetID, now, input.AutoPublish, authorizer, p.RequestID)
 	}
 	if err != nil {
 		return result, err

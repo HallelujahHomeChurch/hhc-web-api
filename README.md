@@ -1377,13 +1377,30 @@ and Simplified conversion retain their existing deadlines. Completed checkpoints
 remove proposal text while retaining request/token usage; failed/superseded
 checkpoints expire after seven days when the next Event Job runs.
 
-The fixed renderer measures the saved Local once. Automatic confirmation and
-publication share the existing transaction, audit authorizer, proof and mapping
-checks. Only an exact verified extraction -> measured Local lineage with zero
-issues, no Incoming, unchanged metadata/source and a currently published PDF can
-publish. A concurrent authored Local cannot qualify. The existing Simplified
-release continues after Traditional publication. Layout/source/mapping failures
-remain unpublished and visible in the existing staff workflow.
+Upload completion and explicit reprocessing accept optional `autoPublish` and
+`notifySubscribers`. Enabling automatic publication requires write and publish
+permissions and an audited user request for the exact current Traditional source;
+missing/false keeps a draft. Two independent source/update assessments select
+compatible authored corrections and semantic annotation correspondence. The new
+valid PDF wins source conflicts. Uncertain annotation correspondence stays in the
+old publication history without blocking valid new content.
+
+The fixed renderer measures the selected revision before publication. One bounded
+presentation-only repair can adjust located overflow without changing words or
+identities. Exact successful recognition can be reused for identical PDF bytes,
+but a new asset/reprocess request always needs fresh authority and update review.
+Each provider stage keeps bounded durable attempts; successful independent passes
+resume after a one-minute delayed Event Job retry. No converter stays resident.
+
+Automatic release uses the existing PDF publication workflow, then transactionally
+publishes only the verified, measured current online revision. Manual edits,
+restoration, draft intent and unpublishing cancel prior automatic authority;
+reuploads fence old completions. Failed or incorrect sources retain the healthy
+published projection. Simplified conversion keeps the existing OpenCC transform,
+adds two independent semantic assessments against the immutable Traditional
+publication, and composes once before its existing derived release. Notification
+deduplication and supported editions are unchanged. Private reader notes never
+enter model requests.
 
 The runtime environment manifest activates the new path and Luna consumer.
 Rollback uses the repository release/rollback workflow and the previous serving

@@ -55,7 +55,7 @@ func updateTestJSON(t *testing.T, v any) []byte {
 func verifiedUpdateForTest(t *testing.T, input onlinebulletins.UpdateInput) onlinebulletins.UpdateEvidence {
 	t.Helper()
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		plan := onlinebulletins.UpdatePlan{Readiness: "ready", ChangeKind: "layout", Summary: "核對完成", Choices: []onlinebulletins.UpdateChoice{}, Mappings: []onlinebulletins.SemanticMappingDecision{}}
+		plan := onlinebulletins.UpdatePlan{MetadataChoice: "source", Readiness: "ready", ChangeKind: "layout", Summary: "核對完成", Choices: []onlinebulletins.UpdateChoice{}, Mappings: []onlinebulletins.SemanticMappingDecision{}}
 		json.NewEncoder(w).Encode(map[string]any{"status": "completed", "model": onlinebulletins.RecognitionModelName, "usage": map[string]any{"input_tokens": 100, "output_tokens": 100}, "output": []any{map[string]any{"type": "message", "status": "completed", "content": []any{map[string]any{"type": "output_text", "text": string(updateTestJSON(t, plan))}}}}})
 	}))
 	t.Cleanup(server.Close)
@@ -126,7 +126,7 @@ func TestAutomaticUpdateLeaseAndSourceFencesRejectStaleDecision(t *testing.T) {
 			case "asset":
 				_, err = db.Exec(`UPDATE hhc_web.bulletin_version SET pdf_asset_id='new-identical-bytes' WHERE issue_id=$1`, source.Canonical.IssueID)
 			case "metadata":
-				_, err = db.Exec(`UPDATE hhc_web.bulletin_issue SET version=version+1 WHERE id=$1`, source.Canonical.IssueID)
+				_, err = db.Exec(`UPDATE hhc_web.bulletin_issue SET issue_date=issue_date+1,version=version+1 WHERE id=$1`, source.Canonical.IssueID)
 			case "local":
 				_, err = db.Exec(`UPDATE hhc_web.online_bulletin_document SET version=version+1 WHERE id=$1`, source.DocumentID)
 			case "cancelled":

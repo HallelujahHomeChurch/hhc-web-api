@@ -19,6 +19,8 @@ type ExtractionWorker struct {
 	Store                  ExtractionStore
 	AutoPublish            func(context.Context, time.Time) (bool, error)
 	Update                 func(context.Context, UpdateJob) (UpdateEvidence, error)
+	RepairLayout           func(context.Context, LayoutJob, []ReviewIssue) (LayoutResult, error)
+	AssessDerived          func(context.Context, ConversionJob, Document, CanonicalMetadata) error
 	Extract                func(context.Context, ExtractionJob) (DocumentCandidate, []ReviewIssue, error)
 	Recognize              func(context.Context, ExtractionJob) (DocumentCandidate, []ReviewIssue, error)
 	Classify               func(context.Context, []AmbiguousBlock) ([]Classification, error)
@@ -77,7 +79,11 @@ func (w ExtractionWorker) RunBatch(ctx context.Context) error {
 			continue
 		}
 		if conversions, ok := w.Store.(ConversionStore); ok && w.Convert != nil {
-			job, err := conversions.ClaimOnlineBulletinConversion(ctx, time.Now().UTC(), w.Timeout, w.MaxAttempts)
+			lease := w.Timeout
+			if w.AssessDerived != nil {
+				lease = UpdateJobTimeout
+			}
+			job, err := conversions.ClaimOnlineBulletinConversion(ctx, time.Now().UTC(), lease, w.MaxAttempts)
 			if err != nil {
 				return err
 			}
@@ -135,7 +141,20 @@ func (w ExtractionWorker) runLayout(parent context.Context, job LayoutJob) error
 		if err := processing.Err(); err != nil {
 			return result, err
 		}
-		return w.Validate(processing, job.Document, job.Canonical)
+		result, err = w.Validate(processing, job.Document, job.Canonical)
+		if err != nil && job.Automatic && w.RepairLayout != nil {
+			issues := layoutReviewIssues(err)
+			if len(repairableBlocks(job, issues)) > 0 {
+				repaired, repairErr := w.RepairLayout(processing, job, issues)
+				if repairErr == nil {
+					return repaired, nil
+				}
+				if errors.Is(repairErr, ErrLayoutLease) {
+					return LayoutResult{}, repairErr
+				}
+			}
+		}
+		return result, err
 	}()
 	stop()
 	if err != nil {

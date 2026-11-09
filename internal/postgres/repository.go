@@ -169,6 +169,9 @@ func (r *Repository) UpdateIssue(ctx context.Context, id string, expected int64,
 	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.bulletin_issue SET issue_number=$2,issue_date=$3,version=version+1,updated_by=$4,updated_at=$5 WHERE id=$1`, id, input.IssueNumber, input.IssueDate, actor, now); err != nil {
 		return bulletins.Issue{}, mapConflict(err)
 	}
+	if err := r.setAutomaticBulletinIntent(ctx, tx, id, "general", "zh-Hant", false, false, actor, now); err != nil {
+		return bulletins.Issue{}, err
+	}
 	issue, err := loadIssue(ctx, tx, id)
 	if err != nil {
 		return bulletins.Issue{}, err
@@ -333,6 +336,11 @@ func (r *Repository) PutVersion(ctx context.Context, id string, expected int64, 
 	if err := r.setAutomaticBulletinIntent(ctx, tx, id, input.Series, input.Locale, input.AutoPublish, input.NotifySubscribers, actor, now); err != nil {
 		return bulletins.Issue{}, err
 	}
+	if input.Series == "general" && input.Locale == "zh-Hant" {
+		if err := cancelPendingSimplifiedRelease(ctx, tx, id, now); err != nil {
+			return bulletins.Issue{}, err
+		}
+	}
 	if r.automaticBulletinExtraction && issue.IssueNumber != nil && *issue.IssueNumber >= 1739 && input.Series == "general" && input.Locale == "zh-Hant" {
 		if err := enqueueUploadExtraction(ctx, tx, issue, input.PDFAssetID, input.AutoPublish, input.NotifySubscribers, actor, now); err != nil {
 			return bulletins.Issue{}, err
@@ -365,6 +373,9 @@ func (r *Repository) UpdateVersion(ctx context.Context, id, series, locale strin
 		return bulletins.Issue{}, bulletins.ErrConflict
 	}
 	if err != nil {
+		return bulletins.Issue{}, err
+	}
+	if err := r.setAutomaticBulletinIntent(ctx, tx, id, series, locale, false, false, actor, now); err != nil {
 		return bulletins.Issue{}, err
 	}
 	if err := r.enqueueBulletinAudit(ctx, tx, "cms.bulletin.version.update", versionID, actor, now); err != nil {
@@ -556,6 +567,9 @@ func (r *Repository) RestoreIssueRevision(ctx context.Context, id string, revisi
 	}
 	if hasOnlineHistory {
 		return bulletins.Issue{}, bulletins.ErrOnlineDocumentExists
+	}
+	if err := r.setAutomaticBulletinIntent(ctx, tx, id, "general", "zh-Hant", false, false, actor, now); err != nil {
+		return bulletins.Issue{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM hhc_web.bulletin_version WHERE issue_id=$1`+missingClause, args...); err != nil {
 		return bulletins.Issue{}, err

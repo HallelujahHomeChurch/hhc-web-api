@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"image/png"
 	"slices"
 	"strings"
 	"unicode/utf8"
@@ -16,12 +17,17 @@ var ErrUpdateSource = errors.New("bulletin_update_source_not_ready")
 
 // Only CMS-owned content enters a decision. Reader notes are never inputs.
 type UpdateInput struct {
-	Canonical CanonicalIssue   `json:"canonical"`
-	Incoming  Document         `json:"incoming"`
-	Base      *Document        `json:"base,omitempty"`
-	Local     *Document        `json:"local,omitempty"`
-	Published *Document        `json:"published,omitempty"`
-	Evidence  GeometryDocument `json:"evidence"`
+	LocalMetadata   *CanonicalMetadata   `json:"localMetadata,omitempty"`
+	DerivedSource   *Document            `json:"derivedSource,omitempty"`
+	DerivedMetadata *CanonicalMetadata   `json:"derivedMetadata,omitempty"`
+	SourceCoverPNG  []byte               `json:"sourceCoverPng,omitempty"`
+	Recognition     *RecognitionEvidence `json:"recognition,omitempty"`
+	Canonical       CanonicalIssue       `json:"canonical"`
+	Incoming        Document             `json:"incoming"`
+	Base            *Document            `json:"base,omitempty"`
+	Local           *Document            `json:"local,omitempty"`
+	Published       *Document            `json:"published,omitempty"`
+	Evidence        GeometryDocument     `json:"evidence"`
 }
 
 type UpdateChoice struct {
@@ -32,11 +38,12 @@ type UpdateChoice struct {
 
 // No replacement text, coordinates, URLs, authorization or publication actions.
 type UpdatePlan struct {
-	Readiness  string                    `json:"readiness"`
-	ChangeKind string                    `json:"changeKind"`
-	Summary    string                    `json:"summary"`
-	Choices    []UpdateChoice            `json:"choices"`
-	Mappings   []SemanticMappingDecision `json:"mappings"`
+	MetadataChoice string                    `json:"metadataChoice"`
+	Readiness      string                    `json:"readiness"`
+	ChangeKind     string                    `json:"changeKind"`
+	Summary        string                    `json:"summary"`
+	Choices        []UpdateChoice            `json:"choices"`
+	Mappings       []SemanticMappingDecision `json:"mappings"`
 }
 
 type UpdateAttempt struct {
@@ -54,9 +61,30 @@ type UpdateEvidence struct {
 	Plan           UpdatePlan      `json:"plan"`
 }
 
-func updateInputSHA256(input UpdateInput) (string, error) {
+func UpdateInputSHA256(input UpdateInput) (string, error) {
 	d := input.Incoming
-	if input.Canonical.IssueID != d.IssueID || input.Canonical.Series != d.Series || input.Canonical.ContentLocale != d.ContentLocale || input.Canonical.Metadata.IssueNumber < 1 || input.Evidence.SourceSHA256 != d.SourceAssetChecksum || len(input.Evidence.Pages) == 0 || (input.Base == nil) != (input.Local == nil) {
+	if (input.DerivedSource == nil) != (input.DerivedMetadata == nil) {
+		return "", ErrUpdatePlan
+	}
+	if input.DerivedSource != nil && !validDerivedPair(*input.DerivedSource, *input.DerivedMetadata, d, input.Canonical.Metadata) {
+		return "", ErrUpdatePlan
+	}
+	if input.LocalMetadata != nil && (input.DerivedSource == nil || input.LocalMetadata.IssueNumber != input.Canonical.Metadata.IssueNumber || input.LocalMetadata.Date != input.Canonical.Metadata.Date || !boundedText(input.LocalMetadata.Title, true) || !boundedText(input.LocalMetadata.Subtitle, false)) {
+		return "", ErrUpdatePlan
+	}
+	if len(input.SourceCoverPNG) > 0 {
+		if len(input.SourceCoverPNG) > 4<<20 {
+			return "", ErrUpdatePlan
+		}
+		pixels, err := png.DecodeConfig(bytes.NewReader(input.SourceCoverPNG))
+		if err != nil || pixels.Width < 1 || pixels.Height < 1 || int64(pixels.Width)*int64(pixels.Height) > 16_000_000 {
+			return "", ErrUpdatePlan
+		}
+	}
+	if input.Recognition != nil && !ValidRecognitionEvidence(input.Recognition, d) {
+		return "", ErrUpdatePlan
+	}
+	if input.Canonical.IssueID != d.IssueID || input.Canonical.Series != d.Series || input.Canonical.ContentLocale != d.ContentLocale || input.Canonical.Metadata.IssueNumber < 1 || input.Evidence.SourceSHA256 != d.SourceAssetChecksum || (len(input.Evidence.Pages) == 0 && input.DerivedSource == nil) || (input.Base == nil) != (input.Local == nil) {
 		return "", ErrUpdatePlan
 	}
 	for _, document := range []*Document{&d, input.Base, input.Local, input.Published} {
@@ -77,6 +105,9 @@ func updateInputSHA256(input UpdateInput) (string, error) {
 func updateHash(raw []byte) string { sum := sha256.Sum256(raw); return hex.EncodeToString(sum[:]) }
 
 func mergeUpdatePlan(input UpdateInput, plan UpdatePlan) (Document, error) {
+	if !slices.Contains([]string{"source", "local"}, plan.MetadataChoice) || plan.MetadataChoice == "local" && input.LocalMetadata == nil {
+		return Document{}, ErrUpdatePlan
+	}
 	if !slices.Contains([]string{"ready", "wrong_issue", "wrong_edition", "incomplete", "unsupported"}, plan.Readiness) || !slices.Contains([]string{"first", "unchanged", "layout", "correction", "structure"}, plan.ChangeKind) || strings.TrimSpace(plan.Summary) == "" || !utf8.ValidString(plan.Summary) || utf8.RuneCountInString(plan.Summary) > 800 || len(plan.Choices) > 4096 || len(plan.Mappings) > 4096 {
 		return Document{}, ErrUpdatePlan
 	}
@@ -123,7 +154,7 @@ func mergeUpdatePlan(input UpdateInput, plan UpdatePlan) (Document, error) {
 }
 
 func ApplyUpdatePlan(input UpdateInput, plan UpdatePlan) (Document, []SentenceMapping, error) {
-	if _, err := updateInputSHA256(input); err != nil {
+	if _, err := UpdateInputSHA256(input); err != nil {
 		return Document{}, nil, err
 	}
 	document, err := mergeUpdatePlan(input, plan)
@@ -144,14 +175,9 @@ func ApplyUpdatePlan(input UpdateInput, plan UpdatePlan) (Document, []SentenceMa
 }
 
 func validUpdatePlan(input UpdateInput, plan UpdatePlan) bool {
-	document, err := mergeUpdatePlan(input, plan)
-	if err != nil {
-		return false
-	}
-	if input.Published == nil {
-		return len(plan.Mappings) == 0
-	}
-	_, _, err = ApplySemanticMappings(*input.Published, document, plan.Mappings)
+	// Annotation defects cannot grant a mapping or veto independent source
+	// acceptance. Consensus validates them separately and falls back to history.
+	_, err := mergeUpdatePlan(input, plan)
 	return err == nil
 }
 
@@ -163,9 +189,23 @@ func updateConsensus(input UpdateInput, first, second UpdatePlan) (UpdatePlan, e
 		return UpdatePlan{}, ErrUpdateSource
 	}
 	result := second
+	result.MetadataChoice = "source"
+	if first.MetadataChoice == "local" && second.MetadataChoice == "local" {
+		result.MetadataChoice = "local"
+	}
 	result.Choices, result.Mappings = []UpdateChoice{}, []SemanticMappingDecision{}
+	eligibleLocal := map[string]bool{}
+	if input.Local != nil {
+		units, err := CompareDocuments(*input.Base, *input.Local, input.Incoming)
+		if err != nil {
+			return UpdatePlan{}, err
+		}
+		for _, unit := range units {
+			eligibleLocal[unit.ComponentID+"/"+unit.BlockID] = unit.Suggestion == "local" || unit.Suggestion == "conflict"
+		}
+	}
 	for _, choice := range first.Choices {
-		if choice.Choice == "local" && slices.Contains(second.Choices, choice) {
+		if choice.Choice == "local" && eligibleLocal[choice.ComponentID+"/"+choice.BlockID] && slices.Contains(second.Choices, choice) {
 			result.Choices = append(result.Choices, choice)
 		}
 	}
@@ -188,7 +228,7 @@ func updateConsensus(input UpdateInput, first, second UpdatePlan) (UpdatePlan, e
 }
 
 func ValidUpdateEvidence(input UpdateInput, evidence UpdateEvidence) bool {
-	hash, err := updateInputSHA256(input)
+	hash, err := UpdateInputSHA256(input)
 	if err != nil || evidence.InputSHA256 != hash || evidence.ProtocolSHA256 != UpdateProtocolSHA256() || len(evidence.Attempts) != 2 {
 		return false
 	}

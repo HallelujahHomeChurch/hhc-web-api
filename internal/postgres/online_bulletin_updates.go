@@ -32,7 +32,7 @@ func queueOnlineUpdate(ctx context.Context, tx *sql.Tx, job onlinebulletins.Extr
 	if err := tx.QueryRowContext(ctx, `SELECT i.version,d.version,d.base_revision,d.local_revision,(SELECT max(p.revision) FROM hhc_web.online_bulletin_publication p WHERE p.document_id=d.id) FROM hhc_web.online_bulletin_document d JOIN hhc_web.bulletin_issue i ON i.id=d.issue_id WHERE d.id=$1`, job.DocumentID).Scan(&canonicalVersion, &version, &base, &local, &published); err != nil {
 		return false, err
 	}
-	input := onlinebulletins.UpdateInput{Canonical: job.Canonical, Incoming: *candidate.Document, Evidence: candidate.Evidence}
+	input := onlinebulletins.UpdateInput{Canonical: job.Canonical, Incoming: *candidate.Document, Evidence: candidate.Evidence, SourceCoverPNG: candidate.SourceCoverPNG, Recognition: candidate.Recognition}
 	for _, snapshot := range []struct {
 		revision sql.NullInt64
 		target   **onlinebulletins.Document
@@ -47,6 +47,9 @@ func queueOnlineUpdate(ctx context.Context, tx *sql.Tx, job onlinebulletins.Extr
 		if json.Unmarshal(raw, snapshot.target) != nil {
 			return false, onlinebulletins.ErrUpdatePlan
 		}
+	}
+	if base.Valid && local.Valid && base.Int64 == incomingRevision && local.Int64 == incomingRevision {
+		input.Base, input.Local = nil, nil
 	}
 	raw, err := json.Marshal(input)
 	if err != nil {
@@ -68,10 +71,12 @@ const currentUpdateSource = ` FROM hhc_web.online_bulletin_update_job u
  JOIN hhc_web.bulletin_issue i ON i.id=d.issue_id
  JOIN hhc_web.bulletin_version v ON v.issue_id=i.id AND v.series=d.series AND v.locale=d.content_locale`
 
+// Other editions may advance the issue counter. Exact source/metadata, Local
+// version and revocable request identity remain the update's authority.
 const validUpdateSource = ` AND e.auto_publish AND NOT e.superseded AND e.status='review_ready'
  AND v.auto_publish AND v.auto_publish_request=e.authorizer_request_id
  AND e.source_asset_id=v.pdf_asset_id AND e.source_asset_checksum=v.pdf_sha256
- AND i.version=u.canonical_version AND d.version=u.online_version
+ AND i.version>=u.canonical_version AND d.version=u.online_version
  AND u.input_json->'canonical'->'metadata'=jsonb_build_object('title',v.title,'subtitle',v.subtitle,'issueNumber',i.issue_number,'date',i.issue_date::text)`
 
 func (r *Repository) ClaimOnlineBulletinUpdate(ctx context.Context, now time.Time, lease time.Duration, maxAttempts int) (*onlinebulletins.UpdateJob, error) {
@@ -89,12 +94,12 @@ func (r *Repository) ClaimOnlineBulletinUpdate(ctx context.Context, now time.Tim
 	if _, err = tx.ExecContext(ctx, `UPDATE hhc_web.online_bulletin_update_job SET status='superseded',lease_token=NULL,lease_until=NULL,updated_at=$1 WHERE status IN ('queued','planning') AND id NOT IN (SELECT u.id`+currentUpdateSource+` WHERE true`+validUpdateSource+` AND u.protocol_sha256=$2)`, now, onlinebulletins.UpdateProtocolSHA256()); err != nil {
 		return nil, err
 	}
-	if _, err = tx.ExecContext(ctx, `UPDATE hhc_web.online_bulletin_update_job SET status='failed',last_error_code='attempt_limit',lease_token=NULL,lease_until=NULL,updated_at=$1 WHERE attempts >= $2 AND (status='queued' OR (status='planning' AND lease_until<=$1))`, now, maxAttempts); err != nil {
+	if _, err = tx.ExecContext(ctx, `UPDATE hhc_web.online_bulletin_update_job SET status='failed',last_error_code='attempt_limit',lease_token=NULL,lease_until=NULL,updated_at=$1 WHERE (attempts >= LEAST($2,3) OR jsonb_array_length(attempt_history_json)>=6) AND (status='queued' OR (status='planning' AND lease_until<=$1))`, now, maxAttempts); err != nil {
 		return nil, err
 	}
 	var job onlinebulletins.UpdateJob
 	var raw, attempts []byte
-	err = tx.QueryRowContext(ctx, `WITH next AS (SELECT id FROM hhc_web.online_bulletin_update_job WHERE attempts<$4 AND available_at<=$1 AND (status='queued' OR (status='planning' AND lease_until<=$1)) ORDER BY available_at,created_at,id FOR UPDATE SKIP LOCKED LIMIT 1)
+	err = tx.QueryRowContext(ctx, `WITH next AS (SELECT id FROM hhc_web.online_bulletin_update_job WHERE attempts<LEAST($4,3) AND jsonb_array_length(attempt_history_json)<6 AND available_at<=$1 AND (status='queued' OR (status='planning' AND lease_until<=$1)) ORDER BY available_at,created_at,id FOR UPDATE SKIP LOCKED LIMIT 1)
  UPDATE hhc_web.online_bulletin_update_job u SET status='planning',attempts=u.attempts+1,lease_token=$2,lease_until=$3,updated_at=$1 FROM next WHERE u.id=next.id RETURNING u.id::text,u.document_id::text,u.extraction_job_id::text,u.lease_token::text,u.lease_until,u.attempts,u.canonical_version,u.online_version,u.source_revision,u.input_json,u.checkpoint_json`, now, platform.NewID(), now.Add(lease), maxAttempts).Scan(&job.ID, &job.DocumentID, &job.ExtractionJobID, &job.LeaseToken, &job.LeaseUntil, &job.Attempts, &job.CanonicalVersion, &job.OnlineVersion, &job.SourceRevision, &raw, &attempts)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, tx.Commit()
@@ -120,7 +125,7 @@ func (r *Repository) SaveOnlineBulletinUpdateAttempt(ctx context.Context, job on
 	if err != nil {
 		return onlinebulletins.ErrUpdatePlan
 	}
-	result, err := r.db.ExecContext(ctx, `UPDATE hhc_web.online_bulletin_update_job SET checkpoint_json=checkpoint_json || jsonb_build_array($3::jsonb),updated_at=$4 WHERE id=$1 AND lease_token=$2 AND status='planning' AND lease_until>$4 AND input_json=$5::jsonb AND jsonb_array_length(checkpoint_json)<2 AND id IN (SELECT u.id`+currentUpdateSource+` WHERE true`+validUpdateSource+`)`, job.ID, job.LeaseToken, raw, now, input)
+	result, err := r.db.ExecContext(ctx, `UPDATE hhc_web.online_bulletin_update_job SET attempt_history_json=attempt_history_json || jsonb_build_array($3::jsonb),checkpoint_json=CASE WHEN $6 THEN checkpoint_json || jsonb_build_array($3::jsonb) ELSE checkpoint_json END,updated_at=$4 WHERE id=$1 AND lease_token=$2 AND status='planning' AND lease_until>$4 AND input_json=$5::jsonb AND jsonb_array_length(checkpoint_json)<2 AND jsonb_array_length(attempt_history_json)<6 AND id IN (SELECT u.id`+currentUpdateSource+` WHERE true`+validUpdateSource+`)`, job.ID, job.LeaseToken, raw, now, input, attempt.ErrorCode == "")
 	return updateLeaseResult(result, err)
 }
 
@@ -142,9 +147,9 @@ func (r *Repository) FailOnlineBulletinUpdate(ctx context.Context, job onlinebul
 	if now.IsZero() || !extractionErrorCode.MatchString(code) || maxAttempts < 1 || maxAttempts > 10 {
 		return onlinebulletins.ErrUpdatePlan
 	}
-	// Semantic/source failures are terminal. A crash resumes persisted passes under
-	// the lease/attempt budget rather than blindly repeating paid requests.
-	result, err := r.db.ExecContext(ctx, `UPDATE hhc_web.online_bulletin_update_job SET status='failed',last_error_code=$3,lease_token=NULL,lease_until=NULL,updated_at=$4 WHERE id=$1 AND lease_token=$2 AND status='planning' AND lease_until>$4`, job.ID, job.LeaseToken, code, now)
+	// Source/semantic failures are terminal; provider retries yield the Event Job
+	// and reuse successful passes, bounded by three leases and six paid requests.
+	result, err := r.db.ExecContext(ctx, `UPDATE hhc_web.online_bulletin_update_job SET status=CASE WHEN $3='provider_unavailable' AND attempts<LEAST($5,3) AND jsonb_array_length(attempt_history_json)<6 THEN 'queued' ELSE 'failed' END,available_at=$4+interval '1 minute',last_error_code=$3,lease_token=NULL,lease_until=NULL,updated_at=$4 WHERE id=$1 AND lease_token=$2 AND status='planning' AND lease_until>$4`, job.ID, job.LeaseToken, code, now, maxAttempts)
 	return updateLeaseResult(result, err)
 }
 

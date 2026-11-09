@@ -3,9 +3,11 @@ package postgres
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/HallelujahHomeChurch/hhc-web-api/internal/auditclient"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/bulletins"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/onlinebulletins"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/publication"
@@ -43,6 +45,86 @@ func TestUploadCapturesExactAutomaticPublicationIntentAndDraftCancelsIt(t *testi
 	}
 	if err = db.QueryRow(`SELECT auto_publish FROM hhc_web.bulletin_version WHERE issue_id=$1 AND series='general' AND locale='zh-Hant'`, issue.ID).Scan(&enabled); err != nil || enabled {
 		t.Fatal("explicit draft retained intent", err)
+	}
+}
+
+func TestCanonicalEditsCancelEarlierPublisherIntent(t *testing.T) {
+	for _, scenario := range []string{"title", "issue", "aba"} {
+		t.Run(scenario, func(t *testing.T) {
+			db := accessDB(t)
+			now := time.Now().UTC()
+			repo, source := seedAutomaticUpdate(t, db, now)
+			t.Cleanup(func() {
+				_, _ = db.Exec(`DELETE FROM hhc_web.bulletin_revision WHERE issue_id=$1`, source.Canonical.IssueID)
+			})
+			var err error
+			if scenario == "title" || scenario == "aba" {
+				_, err = repo.UpdateVersion(bulletinAuditContext(), source.Canonical.IssueID, "general", "zh-Hant", 1, "writer's new title", "", postgresBulletinAuditActor, now)
+				if err == nil && scenario == "aba" {
+					_, err = repo.UpdateVersion(bulletinAuditContext(), source.Canonical.IssueID, "general", "zh-Hant", 2, source.Canonical.Metadata.Title, source.Canonical.Metadata.Subtitle, postgresBulletinAuditActor, now)
+				}
+			} else {
+				_, err = repo.UpdateIssue(bulletinAuditContext(), source.Canonical.IssueID, 1, bulletins.UpdateIssueInput{IssueNumber: 987655, IssueDate: "2099-12-31"}, postgresBulletinAuditActor, now)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			var automatic bool
+			if err = db.QueryRow(`SELECT auto_publish FROM hhc_web.bulletin_version WHERE issue_id=$1 AND series='general' AND locale='zh-Hant'`, source.Canonical.IssueID).Scan(&automatic); err != nil || automatic {
+				t.Fatal("write-only metadata change reused prior publication authority", err)
+			}
+		})
+	}
+}
+
+func TestOtherEditionUpdateDoesNotInvalidateAuthorizedSource(t *testing.T) {
+	db := accessDB(t)
+	ctx, now := context.Background(), time.Now().UTC()
+	repo, source := seedAutomaticUpdate(t, db, now)
+	t.Cleanup(func() {
+		_, _ = db.Exec(`DELETE FROM hhc_web.bulletin_revision WHERE issue_id=$1`, source.Canonical.IssueID)
+	})
+	if _, err := repo.PutVersion(bulletinAuditContext(), source.Canonical.IssueID, 1, bulletins.PutVersionInput{Series: "general", Locale: "en", Title: "English", PDFAssetID: "english-source", PDFFileName: "weekly.pdf"}, postgresBulletinAuditActor, now); err != nil {
+		t.Fatal(err)
+	}
+	job, err := repo.ClaimOnlineBulletinUpdate(ctx, now, time.Minute, 3)
+	if err != nil || job == nil {
+		t.Fatal("unrelated edition invalidated exact source/metadata authority", err)
+	}
+	evidence := verifiedUpdateForTest(t, job.Input)
+	for _, a := range evidence.Attempts {
+		if err = repo.SaveOnlineBulletinUpdateAttempt(ctx, *job, a, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err = repo.CompleteOnlineBulletinUpdate(ctx, *job, evidence, now); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPendingRecognitionRenewalKeepsCurrentPublisherAuthority(t *testing.T) {
+	db := accessDB(t)
+	ctx, now := context.Background(), time.Now().UTC()
+	seedOnlineExtraction(t, db, now)
+	var issue string
+	if err := db.QueryRow(`SELECT id::text FROM hhc_web.bulletin_issue WHERE issue_number=987654`).Scan(&issue); err != nil {
+		t.Fatal(err)
+	}
+	repo := New(db).WithAudit(NewAuditOutbox(db)).WithLLMBulletinExtraction(true).WithAutomaticBulletinExtraction(true)
+	input := onlinebulletins.QueueExtractionInput{CanonicalVersion: 1, OnlineVersion: 1, SourceAssetID: "test-asset", SourceChecksum: strings.Repeat("a", 64), AutoPublish: true}
+	first, err := repo.QueueOnlineBulletinExtraction(bulletinAuditContext(), issue, input, postgresBulletinAuditActor, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.OnlineVersion = first.Version
+	renewed, err := repo.QueueOnlineBulletinExtraction(auditclient.WithProvenance(ctx, postgresBulletinAuditActor, "renewed-request"), issue, input, postgresBulletinAuditActor, now)
+	if err != nil || renewed.Job.ID != first.Job.ID {
+		t.Fatal("same pending source was not reused", err)
+	}
+	var enabled bool
+	var request string
+	if err = db.QueryRow(`SELECT auto_publish,authorizer_request_id FROM hhc_web.online_bulletin_extraction_job WHERE id=$1`, first.Job.ID).Scan(&enabled, &request); err != nil || !enabled || request != "renewed-request" {
+		t.Fatal("pending renewal revoked or mismatched authority", enabled, request, err)
 	}
 }
 

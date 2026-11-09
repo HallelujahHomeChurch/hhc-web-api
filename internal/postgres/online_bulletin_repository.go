@@ -39,7 +39,7 @@ func (r *Repository) ClaimOnlineBulletinExtraction(ctx context.Context, now time
 		return nil, err
 	}
 	defer tx.Rollback()
-	if _, err = tx.ExecContext(ctx, `UPDATE hhc_web.online_bulletin_extraction_job SET status='failed',last_error_code='attempt_limit',lease_token=NULL,lease_until=NULL,updated_at=$1 WHERE NOT superseded AND attempts >= $2 AND (status='queued' OR (status='parsing' AND lease_until <= $1))`, now, maxAttempts); err != nil {
+	if _, err = tx.ExecContext(ctx, `UPDATE hhc_web.online_bulletin_extraction_job SET status='failed',last_error_code='attempt_limit',lease_token=NULL,lease_until=NULL,updated_at=$1 WHERE NOT superseded AND attempts >= CASE WHEN auto_publish THEN LEAST($2,3) ELSE $2 END AND (status='queued' OR (status='parsing' AND lease_until <= $1))`, now, maxAttempts); err != nil {
 		return nil, err
 	}
 	var job onlinebulletins.ExtractionJob
@@ -47,7 +47,7 @@ func (r *Repository) ClaimOnlineBulletinExtraction(ctx context.Context, now time
 	err = tx.QueryRowContext(ctx, `
 		WITH next AS (
 		 SELECT id FROM hhc_web.online_bulletin_extraction_job
-		 WHERE NOT superseded AND attempts < $4 AND available_at <= $1
+		 WHERE NOT superseded AND attempts < CASE WHEN auto_publish THEN LEAST($4,3) ELSE $4 END AND available_at <= $1
 		 AND (status='queued' OR (status='parsing' AND lease_until <= $1))
 		 ORDER BY available_at,created_at,id FOR UPDATE SKIP LOCKED LIMIT 1
 		), claimed AS (
@@ -89,8 +89,8 @@ func (r *Repository) FailOnlineBulletinExtraction(ctx context.Context, job onlin
 		return onlinebulletins.ErrExtractionJob
 	}
 	result, err := r.db.ExecContext(ctx, `UPDATE hhc_web.online_bulletin_extraction_job
-		SET status=CASE WHEN extractor_version=$5 AND $3='extraction_timeout' AND attempts<$6 THEN 'queued' ELSE 'failed' END,
-		last_error_code=$3,available_at=CASE WHEN extractor_version=$5 AND $3='extraction_timeout' AND attempts<$6 THEN $4::timestamptz+interval '10 seconds' ELSE $4 END,lease_token=NULL,lease_until=NULL,updated_at=$4
+		SET status=CASE WHEN extractor_version=$5 AND attempts<CASE WHEN auto_publish THEN LEAST($6,3) ELSE $6 END AND ($3='extraction_timeout' OR auto_publish AND $3 IN ('recognition_failed','extraction_failed')) THEN 'queued' ELSE 'failed' END,
+		last_error_code=$3,available_at=$4::timestamptz+CASE WHEN auto_publish THEN interval '1 minute' ELSE interval '10 seconds' END,lease_token=NULL,lease_until=NULL,updated_at=$4
 		WHERE id=$1 AND lease_token=$2 AND status='parsing' AND lease_until>$4 AND NOT superseded`, job.ID, job.LeaseToken, code, now, onlinebulletins.RecognitionExtractorVersion(), maxAttempts)
 	if err != nil {
 		return err

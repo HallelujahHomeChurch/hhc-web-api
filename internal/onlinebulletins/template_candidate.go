@@ -21,6 +21,7 @@ type CanonicalIssue struct {
 // Evidence has already passed the exclusion boundary. An unsupported source
 // has no document: never fabricate an empty component to make it publishable.
 type DocumentCandidate struct {
+	SourceCoverPNG       []byte                 `json:"sourceCoverPng,omitempty"`
 	Recognition          *RecognitionEvidence   `json:"recognition,omitempty"`
 	SourceImages         map[string]SourceImage `json:"sourceImages,omitempty"`
 	Document             *Document              `json:"document,omitempty"`

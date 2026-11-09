@@ -2,6 +2,7 @@ package onlinebulletins
 
 import (
 	"context"
+	"errors"
 	"time"
 )
 
@@ -39,8 +40,15 @@ func (w ExtractionWorker) runUpdate(parent context.Context, store UpdateStore, j
 	stop()
 	if err != nil {
 		code := "update_plan_failed"
-		if err == ErrUpdateSource {
+		if errors.Is(err, ErrExtractionLease) {
+			return err
+		}
+		if errors.Is(err, ErrUpdateSource) {
 			code = "source_not_ready"
+		} else if errors.Is(err, ErrRecognition) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			code = "provider_unavailable"
+		} else if !errors.Is(err, ErrUpdatePlan) {
+			return err
 		}
 		return store.FailOnlineBulletinUpdate(ctx, job, code, time.Now().UTC(), w.MaxAttempts)
 	}

@@ -250,6 +250,14 @@ func TestRestoreIssueRevisionAllowsDraftMetadataChange(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
 	mock.ExpectQuery("SELECT EXISTS.*online_bulletin_document").WithArgs(issueID, "general", "zh-Hant").
 		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
+	mock.ExpectQuery("UPDATE hhc_web.publication_workflow w SET status='cancelled'").WithArgs(issueID, "general", "zh-Hant", now).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+	mock.ExpectExec("UPDATE hhc_web.bulletin_version SET auto_publish").WithArgs(issueID, "general", "zh-Hant", false, false, "").
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("UPDATE hhc_web.online_bulletin_extraction_job SET auto_publish=false").WithArgs(issueID, "general", "zh-Hant").
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("UPDATE hhc_web.online_bulletin_update_job SET status='superseded'").WithArgs(issueID, "general", "zh-Hant", now).
+		WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec("DELETE FROM hhc_web.bulletin_version").WithArgs(issueID, "general", "zh-Hant").
 		WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec("INSERT INTO hhc_web.bulletin_version").

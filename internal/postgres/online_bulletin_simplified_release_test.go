@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/HallelujahHomeChurch/hhc-web-api/internal/bulletins"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/onlinebulletins"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/publication"
 )
@@ -22,13 +23,16 @@ func claimSimplifiedRelease(t *testing.T, db *sql.DB, id string, now time.Time) 
 }
 
 func TestPublishedSimplifiedReleaseUsesFrozenSourceAndPublishesOnce(t *testing.T) {
-	for _, scenario := range []string{"clean", "republished-source", "superseded-failure", "draft-edit", "metadata-edit", "unpublished", "layout-failed", "lease-fenced", "audit-failure", "source-withdrawn-before-conversion", "retagged-claim", "retry-conversion", "retry-layout"} {
+	for _, scenario := range []string{"clean", "llm-assessed", "llm-missing-assessment", "reuploaded-before-assessment", "republished-source", "superseded-failure", "draft-edit", "metadata-edit", "unpublished", "layout-failed", "lease-fenced", "audit-failure", "source-withdrawn-before-conversion", "retagged-claim", "retry-conversion", "retry-layout"} {
 		t.Run(scenario, func(t *testing.T) {
 			db := accessDB(t)
 			now := time.Now().UTC()
 			ctx := bulletinAuditContext()
 			repo, source := seedSimplifiedSource(t, db, now)
 			repo = repo.WithAudit(NewAuditOutbox(db))
+			if scenario == "llm-assessed" || scenario == "llm-missing-assessment" {
+				repo.WithLLMBulletinExtraction(true)
+			}
 			t.Cleanup(func() {
 				for _, query := range []string{
 					`UPDATE hhc_web.online_bulletin_document SET published_revision=NULL WHERE issue_id=$1`,
@@ -191,7 +195,43 @@ func TestPublishedSimplifiedReleaseUsesFrozenSourceAndPublishesOnce(t *testing.T
 			draft.TemplateVersion = "v2"
 			draft.LayoutManifest.TemplateVersion = "v2"
 			draft.LayoutManifest.RendererVersion = "v2"
+			if scenario == "reuploaded-before-assessment" {
+				state, err := repo.OnlineBulletinState(ctx, source.Canonical.IssueID, "general", "zh-Hant")
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() {
+					_, _ = db.Exec(`DELETE FROM hhc_web.bulletin_revision WHERE issue_id=$1`, source.Canonical.IssueID)
+				})
+				if _, err = repo.PutVersion(ctx, source.Canonical.IssueID, state.CanonicalVersion, bulletins.PutVersionInput{Series: "general", Locale: "zh-Hant", Title: "replacement", PDFAssetID: "new-source", PDFFileName: "weekly.pdf"}, postgresBulletinAuditActor, now); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if scenario == "llm-assessed" {
+				input, err := onlinebulletins.SimplifiedAssessmentInput(conversion.Source, conversion.SourceMetadata, draft, conversion.SourceMetadata)
+				if err != nil {
+					t.Fatal(err)
+				}
+				proof := verifiedUpdateForTest(t, input)
+				for _, attempt := range proof.Attempts {
+					if err = repo.SaveOnlineBulletinConversionAssessment(ctx, *conversion, input, attempt, now); err != nil {
+						t.Fatal("record assessment", err)
+					}
+				}
+			}
 			err = repo.CompleteOnlineBulletinConversion(ctx, *conversion, draft, conversion.SourceMetadata, now)
+			if scenario == "reuploaded-before-assessment" {
+				if !errors.Is(err, onlinebulletins.ErrConversionStale) && !errors.Is(err, onlinebulletins.ErrExtractionLease) {
+					t.Fatal("new PDF retained old derived publication authority", err)
+				}
+				return
+			}
+			if scenario == "llm-missing-assessment" {
+				if !errors.Is(err, onlinebulletins.ErrUpdatePlan) {
+					t.Fatal("unassessed generated content entered automatic publication", err)
+				}
+				return
+			}
 			if scenario == "source-withdrawn-before-conversion" {
 				if !errors.Is(err, onlinebulletins.ErrConversionStale) {
 					t.Fatal("withdrawn source accepted", err)

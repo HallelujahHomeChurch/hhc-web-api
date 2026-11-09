@@ -24,6 +24,9 @@ func (r *Repository) PublishOnlineBulletin(ctx context.Context, issueID, series,
 	if err != nil {
 		return result, err
 	}
+	if err = cancelOnlineAutomaticIntent(ctx, tx, result.DocumentID, now); err != nil {
+		return result, err
+	}
 	return result, tx.Commit()
 }
 

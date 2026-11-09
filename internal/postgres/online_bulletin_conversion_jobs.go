@@ -13,7 +13,7 @@ import (
 )
 
 func (r *Repository) ClaimOnlineBulletinConversion(ctx context.Context, now time.Time, lease time.Duration, maxAttempts int) (*onlinebulletins.ConversionJob, error) {
-	if now.IsZero() || lease <= 0 || lease > 120*time.Second || maxAttempts < 1 || maxAttempts > 10 {
+	if now.IsZero() || lease <= 0 || lease > onlinebulletins.UpdateJobTimeout || maxAttempts < 1 || maxAttempts > 10 {
 		return nil, onlinebulletins.ErrExtractionJob
 	}
 	tx, err := r.db.BeginTx(ctx, nil)
@@ -21,16 +21,16 @@ func (r *Repository) ClaimOnlineBulletinConversion(ctx context.Context, now time
 		return nil, err
 	}
 	defer tx.Rollback()
-	if _, err = tx.ExecContext(ctx, `UPDATE hhc_web.online_bulletin_conversion_job SET status='failed',last_error_code='attempt_limit',lease_token=NULL,lease_until=NULL,updated_at=$1 WHERE attempts >= $2 AND (status='queued' OR (status='converting' AND lease_until<=$1))`, now, maxAttempts); err != nil {
+	if _, err = tx.ExecContext(ctx, `UPDATE hhc_web.online_bulletin_conversion_job SET status='failed',last_error_code='attempt_limit',lease_token=NULL,lease_until=NULL,updated_at=$1 WHERE (attempts >= CASE WHEN publication_event_id IS NULL THEN $2 ELSE LEAST($2,3) END OR publication_event_id IS NOT NULL AND jsonb_array_length(assessment_json)>=6) AND (status='queued' OR (status='converting' AND lease_until<=$1))`, now, maxAttempts); err != nil {
 		return nil, err
 	}
 	var job onlinebulletins.ConversionJob
-	var document, source, target []byte
+	var document, source, target, assessment []byte
 	err = tx.QueryRowContext(ctx, `WITH next AS (
- SELECT id FROM hhc_web.online_bulletin_conversion_job WHERE attempts<$4 AND available_at<=$1 AND (status='queued' OR (status='converting' AND lease_until<=$1)) ORDER BY available_at,created_at,id FOR UPDATE SKIP LOCKED LIMIT 1
- ), claimed AS (UPDATE hhc_web.online_bulletin_conversion_job j SET status='converting',attempts=j.attempts+1,lease_until=$2,lease_token=$3,last_error_code='',updated_at=$1 FROM next WHERE j.id=next.id RETURNING j.*)
- SELECT j.id::text,j.document_id::text,j.issue_id::text,j.lease_token::text,j.lease_until,j.attempts,j.converter_version,r.document_json,j.source_metadata,j.target_metadata,j.initializes_metadata,COALESCE(j.publication_event_id::text,'')
- FROM claimed j JOIN hhc_web.online_bulletin_revision r ON r.document_id=j.source_document_id AND r.revision=j.source_revision`, now, now.Add(lease), platform.NewID(), maxAttempts).Scan(&job.ID, &job.DocumentID, &job.IssueID, &job.LeaseToken, &job.LeaseUntil, &job.Attempts, &job.ConverterVersion, &document, &source, &target, &job.InitializesMetadata, &job.PublicationEventID)
+ SELECT id FROM hhc_web.online_bulletin_conversion_job WHERE attempts<CASE WHEN publication_event_id IS NULL THEN $4 ELSE LEAST($4,3) END AND (publication_event_id IS NULL OR jsonb_array_length(assessment_json)<6) AND available_at<=$1 AND (status='queued' OR (status='converting' AND lease_until<=$1)) ORDER BY available_at,created_at,id FOR UPDATE SKIP LOCKED LIMIT 1
+ ), claimed AS (UPDATE hhc_web.online_bulletin_conversion_job j SET status='converting',attempts=j.attempts+1,lease_until=CASE WHEN publication_event_id IS NULL THEN LEAST($2,$1+interval '120 seconds') ELSE $2 END,lease_token=$3,last_error_code='',updated_at=$1 FROM next WHERE j.id=next.id RETURNING j.*)
+ SELECT j.id::text,j.document_id::text,j.issue_id::text,j.lease_token::text,j.lease_until,j.attempts,j.converter_version,r.document_json,j.source_metadata,j.target_metadata,j.initializes_metadata,COALESCE(j.publication_event_id::text,''),j.assessment_json
+ FROM claimed j JOIN hhc_web.online_bulletin_revision r ON r.document_id=j.source_document_id AND r.revision=j.source_revision`, now, now.Add(lease), platform.NewID(), maxAttempts).Scan(&job.ID, &job.DocumentID, &job.IssueID, &job.LeaseToken, &job.LeaseUntil, &job.Attempts, &job.ConverterVersion, &document, &source, &target, &job.InitializesMetadata, &job.PublicationEventID, &assessment)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, tx.Commit()
 	}
@@ -39,6 +39,9 @@ func (r *Repository) ClaimOnlineBulletinConversion(ctx context.Context, now time
 	}
 	if json.Unmarshal(document, &job.Source) != nil || json.Unmarshal(source, &job.SourceMetadata) != nil || json.Unmarshal(target, &job.TargetMetadata) != nil {
 		return nil, onlinebulletins.ErrExtractionJob
+	}
+	if json.Unmarshal(assessment, &job.AssessmentAttempts) != nil {
+		return nil, onlinebulletins.ErrUpdatePlan
 	}
 	if err = tx.Commit(); err != nil {
 		return nil, err
@@ -108,12 +111,12 @@ func (r *Repository) CompleteOnlineBulletinConversion(ctx context.Context, job o
 		return err
 	}
 	var expectedSourceVersion, expectedSourceRevision, expectedCanonical, expectedTarget int64
-	var savedSource, savedTarget []byte
+	var savedSource, savedTarget, assessmentJSON []byte
 	var expectedSourceID, expectedHash, status, converter, actor, publicationEventID string
 	var token sql.NullString
 	var until sql.NullTime
 	var initializes bool
-	err = tx.QueryRowContext(ctx, `SELECT source_document_id::text,source_revision,source_online_version,source_content_hash,source_metadata,canonical_version,target_online_version,target_metadata,status,lease_token::text,lease_until,initializes_metadata,converter_version,created_by,COALESCE(publication_event_id::text,'') FROM hhc_web.online_bulletin_conversion_job WHERE id=$1 AND document_id=$2 FOR UPDATE`, job.ID, job.DocumentID).Scan(&expectedSourceID, &expectedSourceRevision, &expectedSourceVersion, &expectedHash, &savedSource, &expectedCanonical, &expectedTarget, &savedTarget, &status, &token, &until, &initializes, &converter, &actor, &publicationEventID)
+	err = tx.QueryRowContext(ctx, `SELECT source_document_id::text,source_revision,source_online_version,source_content_hash,source_metadata,canonical_version,target_online_version,target_metadata,status,lease_token::text,lease_until,initializes_metadata,converter_version,created_by,COALESCE(publication_event_id::text,''),assessment_json FROM hhc_web.online_bulletin_conversion_job WHERE id=$1 AND document_id=$2 FOR UPDATE`, job.ID, job.DocumentID).Scan(&expectedSourceID, &expectedSourceRevision, &expectedSourceVersion, &expectedHash, &savedSource, &expectedCanonical, &expectedTarget, &savedTarget, &status, &token, &until, &initializes, &converter, &actor, &publicationEventID, &assessmentJSON)
 	if err != nil {
 		return err
 	}
@@ -147,7 +150,26 @@ func (r *Repository) CompleteOnlineBulletinConversion(ctx context.Context, job o
 			return onlinebulletins.ErrConversionStale
 		}
 	}
-	if initializes && !local.Valid {
+	useConvertedMetadata := initializes && !local.Valid
+	if r.llmBulletinExtraction && publicationEventID != "" {
+		input, err := onlinebulletins.SimplifiedAssessmentInput(job.Source, sourceMetadata, draft, converted)
+		if err != nil {
+			return err
+		}
+		if !initializes {
+			input.LocalMetadata = &expectedMetadata
+		}
+		var attempts []onlinebulletins.UpdateAttempt
+		if json.Unmarshal(assessmentJSON, &attempts) != nil {
+			return onlinebulletins.ErrUpdatePlan
+		}
+		proof, err := onlinebulletins.CompletedUpdateEvidence(input, successfulAssessmentAttempts(attempts))
+		if err != nil {
+			return err
+		}
+		useConvertedMetadata = proof.Plan.MetadataChoice != "local"
+	}
+	if useConvertedMetadata {
 		targetMetadata = converted
 		if _, err = tx.ExecContext(ctx, `UPDATE hhc_web.bulletin_version SET title=$2,subtitle=$3,version=version+1,updated_at=$4 WHERE issue_id=$1 AND series='general' AND locale='zh-Hans'`, job.IssueID, converted.Title, converted.Subtitle, now); err != nil {
 			return err

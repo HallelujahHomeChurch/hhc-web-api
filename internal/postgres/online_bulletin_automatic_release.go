@@ -31,8 +31,8 @@ const recognitionReleaseFrom = ` FROM hhc_web.online_bulletin_update_job u
  AND r.source_asset_checksum=e.source_asset_checksum AND r.review_issues='[]'::jsonb
  AND u.input_json->'canonical'->'metadata'=l.canonical_metadata
  AND l.canonical_metadata=jsonb_build_object('title',v.title,'subtitle',v.subtitle,'issueNumber',i.issue_number,'date',i.issue_date::text)
- AND ((u.pdf_workflow_id IS NULL AND i.version=u.canonical_version)
-   OR EXISTS(SELECT 1 FROM hhc_web.publication_workflow w WHERE w.id=u.pdf_workflow_id AND w.aggregate_version=i.version AND w.asset_id=v.pdf_asset_id AND w.status='completed'))
+ AND ((u.pdf_workflow_id IS NULL AND i.version>=u.canonical_version)
+   OR EXISTS(SELECT 1 FROM hhc_web.publication_workflow w WHERE w.id=u.pdf_workflow_id AND w.aggregate_version<=i.version AND w.asset_id=v.pdf_asset_id AND w.status='completed'))
  AND (v.status='draft' AND u.pdf_workflow_id IS NULL OR v.status='published' AND EXISTS(SELECT 1 FROM hhc_web.bulletin_published_version p WHERE p.issue_id=i.id AND p.series=v.series AND p.locale=v.locale AND p.asset_id=v.pdf_asset_id AND p.title=v.title AND p.subtitle=v.subtitle))`
 
 func (r *Repository) AutoPublishNextRecognition(ctx context.Context, now time.Time) (bool, error) {
