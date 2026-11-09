@@ -417,7 +417,7 @@ func TestOnlineExtractionStartTrustsOnlyVerifiedCurrentSource(t *testing.T) {
 	for _, scenario := range []struct {
 		name   string
 		status int
-	}{{"valid", 202}, {"retry-prior-parser", 202}, {"read-only", 403}, {"missing-cas", 428}, {"stale", 409}, {"unscanned", 404}, {"asset-unavailable", 503}, {"injected-source", 400}, {"trailing-json", 400}} {
+	}{{"valid", 202}, {"retry-prior-parser", 202}, {"auto-publisher", 202}, {"auto-writer", 403}, {"draft-notification", 400}, {"read-only", 403}, {"missing-cas", 428}, {"stale", 409}, {"unscanned", 404}, {"asset-unavailable", 503}, {"injected-source", 400}, {"trailing-json", 400}} {
 		t.Run(scenario.name, func(t *testing.T) {
 			issue := bulletinIssue()
 			issue.ID, issue.Version = "018f47d2-e5d1-4f3f-8f18-6c8e32621f73", 5
@@ -426,6 +426,10 @@ func TestOnlineExtractionStartTrustsOnlyVerifiedCurrentSource(t *testing.T) {
 			uploads := &apiUploads{completed: assetclient.Asset{ID: "current-source", OwnerID: issue.ID, OwnerService: "hhc-web-api", OwnerType: "bulletin_issue", Namespace: "cms.weekly.pdf", Purpose: "weekly_bulletin", Locale: "zh-Hant", Visibility: "private", UploadStatus: "completed", ScanStatus: "clean", ProcessingStatus: "ready", DetectedMIMEType: "application/pdf", ChecksumSHA256: strings.Repeat("a", 64)}}
 			body := `{"canonicalVersion":5,"retry":false}`
 			switch scenario.name {
+			case "auto-publisher", "auto-writer":
+				body = `{"canonicalVersion":5,"autoPublish":true,"notifySubscribers":true}`
+			case "draft-notification":
+				body = `{"canonicalVersion":5,"notifySubscribers":true}`
 			case "retry-prior-parser":
 				body = `{"canonicalVersion":5,"retry":true}`
 			case "stale":
@@ -443,6 +447,9 @@ func TestOnlineExtractionStartTrustsOnlyVerifiedCurrentSource(t *testing.T) {
 			request := httptest.NewRequest("POST", "/api/admin/bulletins/"+issue.ID+"/online/general/zh-Hant/extractions", strings.NewReader(body))
 			request.Header.Set("If-Match", `"3"`)
 			trustedBulletinAudit(request, "cms:bulletins:write")
+			if scenario.name == "auto-publisher" {
+				trustedBulletinAudit(request, "cms:bulletins:write cms:bulletins:publish")
+			}
 			if scenario.name == "read-only" {
 				trustedBulletinAudit(request, "cms:bulletins:read")
 			}
@@ -459,6 +466,9 @@ func TestOnlineExtractionStartTrustsOnlyVerifiedCurrentSource(t *testing.T) {
 			}
 			if scenario.status == 202 && (repo.queueInput.SourceAssetID != "current-source" || repo.queueInput.SourceChecksum != strings.Repeat("a", 64) || repo.queueInput.OnlineVersion != 3 || repo.queueInput.CanonicalVersion != 5 || repo.queueInput.Retry != (scenario.name == "retry-prior-parser") || response.Header().Get("ETag") != `"4"`) {
 				t.Fatal("unverified source or wrong CAS")
+			}
+			if scenario.name == "auto-publisher" && (!repo.queueInput.AutoPublish || !repo.queueInput.NotifySubscribers) {
+				t.Fatal("lost publisher intent")
 			}
 			if scenario.status == 409 && (!strings.Contains(response.Body.String(), `"currentVersion":3`) || !strings.Contains(response.Body.String(), `"canonicalVersion":5`)) {
 				t.Fatal("missing actionable conflict metadata")

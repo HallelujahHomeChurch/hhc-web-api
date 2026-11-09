@@ -18,6 +18,9 @@ import (
 func seedAutomaticUpdate(t *testing.T, db *sql.DB, now time.Time) (*Repository, onlinebulletins.ExtractionJob) {
 	t.Helper()
 	id := seedOnlineExtraction(t, db, now)
+	if _, err := db.Exec(`UPDATE hhc_web.bulletin_version SET auto_publish=true,auto_publish_request='autopilot-test' WHERE issue_id=(SELECT issue_id FROM hhc_web.online_bulletin_extraction_job WHERE id=$1)`, id); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := db.Exec(`UPDATE hhc_web.online_bulletin_extraction_job SET extractor_version=$2,auto_publish=true,authorizer_id=$3,authorizer_request_id='autopilot-test',template_snapshot_json=$4 WHERE id=$1`, id, onlinebulletins.RecognitionExtractorVersion(), postgresBulletinAuditActor, updateTestJSON(t, onlinebulletins.ConversionTemplateSettings())); err != nil {
 		t.Fatal(err)
 	}

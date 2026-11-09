@@ -3067,7 +3067,7 @@ paths:
     post:
       operationId: startOnlineBulletinExtraction
       summary: Queue current source extraction or explicitly retry a failed job
-      description: Source asset and checksum are verified server-side. Initial If-Match is the quoted Online version zero; later calls use the current Online ETag. canonicalVersion independently fences PDF or metadata replacement. Identical source/template/extractor identities reuse the existing job without another audit mutation. retry=true resets only a failed job without an immutable snapshot. After a parser upgrade, retrying a non-superseded failed same-source job without a snapshot creates a new current-parser job under the same version fences. Re-upload never overwrites Base, Local, Incoming, or publication. A superseded completed snapshot cannot be rerun; edit or restore the existing revision instead.
+      description: Source asset and checksum are verified server-side. Initial If-Match is the quoted Online version zero; later calls use the current Online ETag. canonicalVersion independently fences PDF or metadata replacement. Identical source/template/extractor identities reuse the existing job without another audit mutation. retry=true resets only a failed job without an immutable snapshot. After a parser upgrade, retrying a non-superseded failed same-source job without a snapshot creates a new current-parser job under the same version fences. Without autoPublish, re-upload preserves the existing manual comparison workflow. autoPublish captures publisher authorization for verified semantic adoption, historical annotation fallback and fresh layout before PDF/online publication. Inference never grants authority. A superseded completed snapshot cannot be rerun; edit or restore the existing revision instead.
       tags: [Admin]
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
@@ -13824,6 +13824,8 @@ components:
       properties:
         canonicalVersion: { type: integer, format: int64, minimum: 1 }
         retry: { type: boolean, default: false }
+        autoPublish: { type: boolean, default: false, description: Authorize verified current-source PDF and online publication; requires cms:bulletins:publish in addition to write. Explicit draft or unpublish cancels this intent. }
+        notifySubscribers: { type: boolean, default: false, description: Requires autoPublish; retains existing once-per-issue notification policy. }
     OnlineBulletinQueuedExtractionEnvelope:
       type: object
       required: [data, meta, error]
@@ -13957,11 +13959,32 @@ components:
         sourceOnlineVersion: { type: integer, format: int64, minimum: 1 }
         sourceRevision: { type: integer, format: int64, minimum: 1 }
         retry: { type: boolean, default: false }
+    OnlineBulletinAutomation:
+      type: object
+      additionalProperties: false
+      required: [autoPublish, update, summary, changeKind]
+      properties:
+        autoPublish: { type: boolean }
+        summary: { type: string, maxLength: 800 }
+        changeKind: { type: string, enum: ['', first, unchanged, layout, correction, structure] }
+        update:
+          oneOf:
+            - { type: 'null' }
+            - type: object
+              additionalProperties: false
+              required: [id, status, attempts, errorCode, resultRevision]
+              properties:
+                id: { type: string, format: uuid }
+                status: { type: string, enum: [queued, planning, ready, failed, superseded] }
+                attempts: { type: integer, minimum: 0, maximum: 10 }
+                errorCode: { type: string }
+                resultRevision: { type: [integer, 'null'], format: int64, minimum: 1 }
     OnlineBulletinAdminState:
       type: object
       additionalProperties: false
       required: [issueId, series, contentLocale, canonicalVersion, canonicalMetadata, pdfStatus, documentId, version, draftStatus, baseRevision, local, incomingRevision, publishedRevision, publishedMetadata, metadataSyncPending, confirmed, extraction, layout]
       properties:
+        automation: { $ref: '#/components/schemas/OnlineBulletinAutomation' }
         issueId: { type: string, format: uuid }
         series: { type: string, enum: [general] }
         contentLocale: { type: string, enum: [zh-Hant, zh-Hans] }
@@ -16080,6 +16103,8 @@ components:
       additionalProperties: false
       required: [locale, title, subtitle, fileName, mimeType, sizeBytes, checksumSha256]
       properties:
+        autoPublish: { type: boolean, default: false, description: General Traditional bulletin only; requires publisher capability. Process and publish only after source and layout verification. }
+        notifySubscribers: { type: boolean, default: false, description: Requires autoPublish; retains existing notification deduplication. }
         series: { $ref: '#/components/schemas/BulletinSeries', default: general }
         locale: { $ref: '#/components/schemas/BulletinLocale' }
         title: { type: string, minLength: 1 }

@@ -185,7 +185,8 @@ func (r *Repository) UnpublishOnlineBulletin(ctx context.Context, issueID, serie
 	defer tx.Rollback()
 	var canonical int64
 	var published sql.NullInt64
-	err = tx.QueryRowContext(ctx, `SELECT d.id::text,d.version,i.version,d.published_revision FROM hhc_web.online_bulletin_document d JOIN hhc_web.bulletin_issue i ON i.id=d.issue_id WHERE d.issue_id=$1 AND d.series=$2 AND d.content_locale=$3 FOR UPDATE OF i,d`, issueID, series, locale).Scan(&result.DocumentID, &result.Version, &canonical, &published)
+	var automatic bool
+	err = tx.QueryRowContext(ctx, `SELECT d.id::text,d.version,i.version,d.published_revision,v.auto_publish FROM hhc_web.online_bulletin_document d JOIN hhc_web.bulletin_issue i ON i.id=d.issue_id JOIN hhc_web.bulletin_version v ON v.issue_id=i.id AND v.series=d.series AND v.locale=d.content_locale WHERE d.issue_id=$1 AND d.series=$2 AND d.content_locale=$3 FOR UPDATE OF i,v,d`, issueID, series, locale).Scan(&result.DocumentID, &result.Version, &canonical, &published, &automatic)
 	if errors.Is(err, sql.ErrNoRows) {
 		return result, bulletins.ErrNotFound
 	}
@@ -195,7 +196,19 @@ func (r *Repository) UnpublishOnlineBulletin(ctx context.Context, issueID, serie
 	if canonical != canonicalVersion || result.Version != onlineVersion {
 		return result, bulletins.ErrPrecondition
 	}
+	if err = cancelOnlineAutomaticIntent(ctx, tx, result.DocumentID, now); err != nil {
+		return result, err
+	}
 	if !published.Valid {
+		if automatic {
+			if _, err = tx.ExecContext(ctx, `UPDATE hhc_web.online_bulletin_document SET version=version+1,updated_at=$2 WHERE id=$1`, result.DocumentID, now); err != nil {
+				return result, err
+			}
+			result.Version++
+			if err = r.enqueueBulletinAudit(ctx, tx, "cms.bulletin.online.unpublish", result.DocumentID, actor, now); err != nil {
+				return result, err
+			}
+		}
 		return result, tx.Commit()
 	}
 	if err = r.clearOnlinePublication(ctx, tx, result.DocumentID, actor, now); err != nil {
@@ -208,6 +221,9 @@ func (r *Repository) UnpublishOnlineBulletin(ctx context.Context, issueID, serie
 // Both independent and explicitly paired unpublish use the caller's existing
 // transaction and locked document. Failure cannot leave half an action visible.
 func (r *Repository) clearOnlinePublication(ctx context.Context, tx *sql.Tx, documentID, actor string, now time.Time) error {
+	if err := cancelOnlineAutomaticIntent(ctx, tx, documentID, now); err != nil {
+		return err
+	}
 	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.outbox_event e SET status='failed',claimed_until=NULL,last_error='publication_withdrawn',updated_at=$2 WHERE e.event_type='bulletin.online.publish_simplified' AND e.status IN ('pending','processing','failed') AND (e.aggregate_id=$1 OR e.payload_json->>'issueId'=(SELECT issue_id::text FROM hhc_web.online_bulletin_document WHERE id=$1 AND content_locale='zh-Hans'))`, documentID, now); err != nil {
 		return err
 	}

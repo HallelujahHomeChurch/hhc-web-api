@@ -69,6 +69,7 @@ const currentUpdateSource = ` FROM hhc_web.online_bulletin_update_job u
  JOIN hhc_web.bulletin_version v ON v.issue_id=i.id AND v.series=d.series AND v.locale=d.content_locale`
 
 const validUpdateSource = ` AND e.auto_publish AND NOT e.superseded AND e.status='review_ready'
+ AND v.auto_publish AND v.auto_publish_request=e.authorizer_request_id
  AND e.source_asset_id=v.pdf_asset_id AND e.source_asset_checksum=v.pdf_sha256
  AND i.version=u.canonical_version AND d.version=u.online_version
  AND u.input_json->'canonical'->'metadata'=jsonb_build_object('title',v.title,'subtitle',v.subtitle,'issueNumber',i.issue_number,'date',i.issue_date::text)`
