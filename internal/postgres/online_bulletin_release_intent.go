@@ -25,6 +25,12 @@ func (r *Repository) setAutomaticBulletinIntent(ctx context.Context, tx *sql.Tx,
 	if err := cancelAutomaticPDFPublication(ctx, tx, issue, series, locale, now); err != nil {
 		return err
 	}
+	if enabled {
+		// The new source owner composes after semantic selection; older draft layout must not advance Local meanwhile.
+		if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.online_bulletin_layout_job SET status='superseded',lease_token=NULL,lease_until=NULL,updated_at=$4 WHERE document_id IN(SELECT id FROM hhc_web.online_bulletin_document WHERE issue_id=$1 AND series=$2 AND content_locale=$3) AND status IN('queued','validating')`, issue, series, locale, now); err != nil {
+			return err
+		}
+	}
 	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.bulletin_version SET auto_publish=$4,auto_notify=$5,auto_publish_request=$6 WHERE issue_id=$1 AND series=$2 AND locale=$3`, issue, series, locale, enabled, notify, request); err != nil {
 		return err
 	}
