@@ -223,7 +223,7 @@ func TestWaitingAutomaticBroadcastShareWorksWithoutCaptureOrAsset(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, phase := range []string{"scheduled", "preview", "start_pending"} {
+	for _, phase := range []string{"draft", "scheduled", "preview", "start_pending"} {
 		for _, publicID := range []string{"_FFgZxgQ_ft", "Ab_012-xyzQ"} {
 			t.Run(phase+"/"+publicID, func(t *testing.T) {
 				repo := &waitingShareRepository{shareRecordingRepository: shareRecordingRepository{value: recordings.Recording{ID: "0199a000-0000-4000-8000-000000000003", PublicID: publicID, Title: "Saved public title", Description: "PRIVATE description", Broadcast: true, Status: "draft"}}, broadcast: recordings.Broadcast{View: recordings.BroadcastView{Phase: phase, Announced: true}, CoverSnapshot: recordings.CaptureLiveCover{Settings: recordings.LiveCoverSettings{Selection: recordings.LiveCoverSelection{Mode: "auto"}, CoverState: "waiting"}}}}
