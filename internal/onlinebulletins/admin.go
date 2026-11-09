@@ -8,6 +8,7 @@ const ExtractorVersion = "poppler-" + PopplerVersion + "-weekly-v1.23"
 // Source fields are verified by the API's Asset lookup, never decoded from an
 // Admin request body. Canonical and Online versions are independent CAS values.
 type QueueExtractionInput struct {
+	AutoPublish, NotifySubscribers  bool
 	CanonicalVersion, OnlineVersion int64
 	SourceAssetID, SourceChecksum   string
 	Retry                           bool
@@ -117,6 +118,7 @@ type ConfirmedRevision struct {
 // AdminState keeps canonical CMS metadata separate from the frozen publication.
 // Revision pointers and version belong only to this exact issue/series/locale.
 type AdminState struct {
+	Automation          *AdminAutomation   `json:"automation,omitempty"`
 	IssueID             string             `json:"issueId"`
 	Series              string             `json:"series"`
 	ContentLocale       string             `json:"contentLocale"`
@@ -137,6 +139,13 @@ type AdminState struct {
 	Layout              *AdminJob          `json:"layout"`
 	Conversion          *AdminJob          `json:"conversion,omitempty"`
 	Derivation          *AdminDerivation   `json:"derivation,omitempty"`
+}
+
+type AdminAutomation struct {
+	AutoPublish bool      `json:"autoPublish"`
+	Update      *AdminJob `json:"update"`
+	Summary     string    `json:"summary"`
+	ChangeKind  string    `json:"changeKind"`
 }
 
 // Provenance belongs only to the Admin projection, never member content.

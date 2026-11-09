@@ -17,12 +17,12 @@ import (
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/publication"
 )
 
-func enqueueUploadExtraction(ctx context.Context, tx *sql.Tx, issue bulletins.Issue, assetID, actor string, now time.Time) error {
+func enqueueUploadExtraction(ctx context.Context, tx *sql.Tx, issue bulletins.Issue, assetID string, autoPublish, notify bool, actor string, now time.Time) error {
 	p, ok := auditclient.ProvenanceFromContext(ctx)
 	if !ok || p.ActorType != "user" || p.ActorID != actor || !auditclient.ValidActorRequest(p.ActorID, p.RequestID) {
 		return bulletins.ErrAuditUnavailable
 	}
-	payload, err := json.Marshal(publication.BulletinExtractionPayload{IssueID: issue.ID, AssetID: assetID, ActorID: p.ActorID, RequestID: p.RequestID})
+	payload, err := json.Marshal(publication.BulletinExtractionPayload{IssueID: issue.ID, AssetID: assetID, ActorID: p.ActorID, RequestID: p.RequestID, AutoPublish: autoPublish, NotifySubscribers: notify})
 	if err != nil {
 		return err
 	}
@@ -67,11 +67,16 @@ func (r *Repository) CompleteOnlineExtractionRequest(ctx context.Context, event 
 	var number int
 	var currentAsset string
 	var canonicalVersion int64
-	err = tx.QueryRowContext(ctx, `SELECT i.issue_number,i.version,v.pdf_asset_id FROM hhc_web.bulletin_issue i JOIN hhc_web.bulletin_version v ON v.issue_id=i.id AND v.series='general' AND v.locale='zh-Hant' WHERE i.id=$1 FOR UPDATE OF i,v`, p.IssueID).Scan(&number, &canonicalVersion, &currentAsset)
+	var automatic bool
+	var request sql.NullString
+	err = tx.QueryRowContext(ctx, `SELECT i.issue_number,i.version,v.pdf_asset_id,v.auto_publish,v.auto_publish_request FROM hhc_web.bulletin_issue i JOIN hhc_web.bulletin_version v ON v.issue_id=i.id AND v.series='general' AND v.locale='zh-Hant' WHERE i.id=$1 FOR UPDATE OF i,v`, p.IssueID).Scan(&number, &canonicalVersion, &currentAsset, &automatic, &request)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
-	if err == nil && number >= 1739 && currentAsset == p.AssetID {
+	// Legacy uploads have no captured intent; an explicit cancellation is non-null.
+	legacyDraft := !request.Valid && !automatic && !p.AutoPublish && canonicalVersion == event.AggregateVersion
+	currentIntent := request.Valid && automatic == p.AutoPublish && request.String == p.RequestID && canonicalVersion >= event.AggregateVersion
+	if err == nil && number >= 1739 && currentAsset == p.AssetID && (legacyDraft || currentIntent) {
 		var onlineVersion int64
 		err = tx.QueryRowContext(ctx, `SELECT version FROM hhc_web.online_bulletin_document WHERE issue_id=$1 AND series='general' AND content_locale='zh-Hant' FOR UPDATE`, p.IssueID).Scan(&onlineVersion)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -81,7 +86,7 @@ func (r *Repository) CompleteOnlineExtractionRequest(ctx context.Context, event 
 		if err = r.validateBulletinAudit(ctx, p.ActorID); err != nil {
 			return err
 		}
-		_, err = r.queueOnlineBulletinExtractionTx(ctx, tx, p.IssueID, onlinebulletins.QueueExtractionInput{CanonicalVersion: canonicalVersion, OnlineVersion: onlineVersion, SourceAssetID: p.AssetID, SourceChecksum: checksum}, p.ActorID, now)
+		_, err = r.queueOnlineBulletinExtractionTx(ctx, tx, p.IssueID, onlinebulletins.QueueExtractionInput{CanonicalVersion: canonicalVersion, OnlineVersion: onlineVersion, SourceAssetID: p.AssetID, SourceChecksum: checksum, AutoPublish: p.AutoPublish, NotifySubscribers: p.NotifySubscribers}, p.ActorID, now)
 		if err != nil {
 			return err
 		}

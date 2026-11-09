@@ -75,6 +75,7 @@ func (r *Repository) queueOnlineBulletinConversionTx(ctx context.Context, tx *sq
 		return result, err
 	}
 	sourceJSON, _ := json.Marshal(sourceMetadata)
+	assessmentRequired := false
 	if result.DocumentID != "" {
 		err = tx.QueryRowContext(ctx, `SELECT id::text,status,attempts,last_error_code FROM hhc_web.online_bulletin_conversion_job WHERE document_id=$1 AND source_document_id=$2 AND source_revision=$3 AND source_content_hash=$4 AND converter_version=$5 AND source_metadata=$6::jsonb ORDER BY created_at DESC LIMIT 1 FOR UPDATE`, result.DocumentID, sourceID, sourceRevision, sourceHash, onlinebulletins.SimplifiedConverterVersion, sourceJSON).Scan(&result.Job.ID, &result.Job.Status, &result.Job.Attempts, &result.Job.ErrorCode)
 		if err == nil && publicationEventID != "" && result.Job.Status == "failed" {
@@ -86,6 +87,14 @@ func (r *Repository) queueOnlineBulletinConversionTx(ctx context.Context, tx *sq
 				return result, e
 			}
 			input.Retry = failed
+		}
+		if err == nil && r.llmBulletinExtraction && publicationEventID != "" && result.Job.Status == "review_ready" {
+			verified, e := validConversionAssessmentTx(ctx, tx, result.Job.ID)
+			if e != nil {
+				return result, e
+			}
+			assessmentRequired = !verified
+			input.Retry = input.Retry || assessmentRequired
 		}
 		// Re-run a legacy Incoming result through the derived-only workflow.
 		if err == nil && !input.Retry && !(incoming.Valid && result.Job.Status == "review_ready") {
@@ -104,7 +113,7 @@ func (r *Repository) queueOnlineBulletinConversionTx(ctx context.Context, tx *sq
 	if canonicalVersion != input.CanonicalVersion || result.Version != input.TargetOnlineVersion {
 		return result, bulletins.ErrPrecondition
 	}
-	if input.Retry && result.Job.Status == "review_ready" && !incoming.Valid {
+	if input.Retry && result.Job.Status == "review_ready" && !incoming.Valid && !assessmentRequired {
 		var revision int64
 		var raw []byte
 		metadata := sourceMetadata
@@ -137,7 +146,7 @@ func (r *Repository) queueOnlineBulletinConversionTx(ctx context.Context, tx *sq
 		result.Version++
 		return result, nil
 	}
-	if input.Retry && (result.Job.ID == "" || result.Job.Status != "failed") {
+	if input.Retry && (result.Job.ID == "" || result.Job.Status != "failed") && !assessmentRequired {
 		return result, bulletins.ErrConflict
 	}
 	var targetMetadata onlinebulletins.CanonicalMetadata
@@ -176,7 +185,7 @@ func (r *Repository) queueOnlineBulletinConversionTx(ctx context.Context, tx *sq
 		result.Job.ID = platform.NewID()
 		_, err = tx.ExecContext(ctx, `INSERT INTO hhc_web.online_bulletin_conversion_job(id,issue_id,document_id,source_document_id,source_revision,source_online_version,source_content_hash,source_metadata,requested_canonical_version,canonical_version,target_online_version,target_metadata,initializes_metadata,converter_version,created_by,available_at,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$16,$16)`, result.Job.ID, issueID, result.DocumentID, sourceID, sourceRevision, sourceVersion, sourceHash, sourceJSON, input.CanonicalVersion, canonicalVersion, result.Version, targetJSON, initializes, onlinebulletins.SimplifiedConverterVersion, actor, now)
 	} else {
-		_, err = tx.ExecContext(ctx, `UPDATE hhc_web.online_bulletin_conversion_job SET status='queued',attempts=0,last_error_code='',canonical_version=$2,target_online_version=$3,initializes_metadata=initializes_metadata AND target_metadata=$4::jsonb,target_metadata=$4,available_at=$5,updated_at=$5,source_online_version=$6 WHERE id=$1`, result.Job.ID, canonicalVersion, result.Version, targetJSON, now, sourceVersion)
+		_, err = tx.ExecContext(ctx, `UPDATE hhc_web.online_bulletin_conversion_job SET status='queued',assessment_json=CASE WHEN target_metadata=$4::jsonb THEN COALESCE((SELECT jsonb_agg(a) FROM jsonb_array_elements(assessment_json) a WHERE COALESCE(a->>'errorCode','')='' AND a->>'protocolSha256'=$7 AND a->'plan'->>'readiness'='ready'),'[]'::jsonb) ELSE '[]'::jsonb END,attempts=0,last_error_code='',canonical_version=$2,target_online_version=$3,initializes_metadata=initializes_metadata AND target_metadata=$4::jsonb,target_metadata=$4,available_at=$5,updated_at=$5,source_online_version=$6 WHERE id=$1`, result.Job.ID, canonicalVersion, result.Version, targetJSON, now, sourceVersion, onlinebulletins.UpdateProtocolSHA256())
 	}
 	if err != nil {
 		return result, err

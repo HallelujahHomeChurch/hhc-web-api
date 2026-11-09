@@ -23,11 +23,12 @@ func (r *Repository) NextOnlineBulletinWork(ctx context.Context) (time.Time, err
  SELECT CASE WHEN status='queued' THEN available_at ELSE lease_until END AS ready_at FROM hhc_web.online_bulletin_extraction_job WHERE NOT superseded AND status IN ('queued','parsing')
  UNION ALL SELECT CASE WHEN status='queued' THEN available_at ELSE lease_until END FROM hhc_web.online_bulletin_layout_job WHERE status IN ('queued','validating')
  UNION ALL SELECT CASE WHEN status='queued' THEN available_at ELSE lease_until END FROM hhc_web.online_bulletin_conversion_job WHERE status IN ('queued','converting')
+ UNION ALL SELECT CASE WHEN status='queued' THEN available_at ELSE lease_until END FROM hhc_web.online_bulletin_update_job WHERE status IN ('queued','planning')
  ) pending`
 	args := []any{}
 	if r.llmBulletinExtraction {
 		query = `SELECT min(ready_at) FROM (` + query + ` UNION ALL SELECT now()` + recognitionReleaseFrom + `) all_work(ready_at)`
-		args = append(args, onlinebulletins.RecognitionExtractorVersion())
+		args = append(args, onlinebulletins.RecognitionExtractorVersion(), onlinebulletins.UpdateProtocolSHA256())
 	}
 	err := r.db.QueryRowContext(ctx, query, args...).Scan(&next)
 	return next.Time, err

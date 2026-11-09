@@ -13,10 +13,12 @@ import (
 )
 
 type BulletinExtractionPayload struct {
-	IssueID   string `json:"issueId"`
-	AssetID   string `json:"assetId"`
-	ActorID   string `json:"actorId"`
-	RequestID string `json:"requestId"`
+	AutoPublish       bool   `json:"autoPublish,omitempty"`
+	NotifySubscribers bool   `json:"notifySubscribers,omitempty"`
+	IssueID           string `json:"issueId"`
+	AssetID           string `json:"assetId"`
+	ActorID           string `json:"actorId"`
+	RequestID         string `json:"requestId"`
 }
 
 func (w *Worker) ensureBulletinExtraction(ctx context.Context, event Event) error {

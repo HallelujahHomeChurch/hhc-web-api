@@ -87,6 +87,7 @@ func (r RecognitionRunner) Run(ctx context.Context, job ExtractionJob, source Ge
 		return DocumentCandidate{}, nil, err
 	}
 	candidate.Recognition = receipt
+	candidate.SourceCoverPNG = append([]byte{}, inputs[0].PNG...)
 	if !ValidRecognitionEvidence(receipt, *candidate.Document) {
 		return DocumentCandidate{}, nil, ErrRecognition
 	}

@@ -183,6 +183,9 @@ func (r *Repository) saveOnlineLocal(ctx context.Context, issueID, series, local
 	if err != nil {
 		return result, err
 	}
+	if err = cancelOnlineAutomaticIntent(ctx, tx, result.DocumentID, now); err != nil {
+		return result, err
+	}
 	action := "cms.bulletin.online.update"
 	if restoreRevision > 0 {
 		action = "cms.bulletin.online.restore"
@@ -316,6 +319,14 @@ func (r *Repository) queueOnlineBulletinExtractionTx(ctx context.Context, tx *sq
 	if result.Version != input.OnlineVersion {
 		return result, bulletins.ErrPrecondition
 	}
+	if err = r.setAutomaticBulletinIntent(ctx, tx, issueID, "general", "zh-Hant", input.AutoPublish, input.NotifySubscribers, actor, now); err != nil {
+		return result, err
+	}
+	if input.AutoPublish {
+		if err = cancelPendingSimplifiedRelease(ctx, tx, issueID, now); err != nil {
+			return result, err
+		}
+	}
 	created := result.DocumentID == ""
 	if created {
 		if input.Retry {
@@ -328,9 +339,9 @@ func (r *Repository) queueOnlineBulletinExtractionTx(ctx context.Context, tx *sq
 	}
 	var snapshot, noResult, metadataChanged bool
 	var templateSnapshot, learningRules []byte
-	err = tx.QueryRowContext(ctx, `SELECT id::text,status,attempts,last_error_code,snapshot_json IS NOT NULL,result_revision IS NULL,result_revision,(snapshot_json->'canonicalMetadata') IS DISTINCT FROM $5::jsonb FROM hhc_web.online_bulletin_extraction_job WHERE document_id=$1 AND source_asset_checksum=$2 AND template_version='v1' AND extractor_version=$3 AND source_asset_id=$4 AND NOT superseded FOR UPDATE`, result.DocumentID, input.SourceChecksum, r.bulletinExtractorVersion(), input.SourceAssetID, mustJSON(canonical)).Scan(&result.Job.ID, &result.Job.Status, &result.Job.Attempts, &result.Job.ErrorCode, &snapshot, &noResult, &result.Job.ResultRevision, &metadataChanged)
+	err = tx.QueryRowContext(ctx, `SELECT id::text,status,attempts,last_error_code,snapshot_json IS NOT NULL,result_revision IS NULL,result_revision,COALESCE(snapshot_json->'canonicalMetadata',requested_metadata) IS DISTINCT FROM $5::jsonb FROM hhc_web.online_bulletin_extraction_job WHERE document_id=$1 AND source_asset_checksum=$2 AND template_version='v1' AND extractor_version=$3 AND source_asset_id=$4 AND NOT superseded FOR UPDATE`, result.DocumentID, input.SourceChecksum, r.bulletinExtractorVersion(), input.SourceAssetID, mustJSON(canonical)).Scan(&result.Job.ID, &result.Job.Status, &result.Job.Attempts, &result.Job.ErrorCode, &snapshot, &noResult, &result.Job.ResultRevision, &metadataChanged)
 	if err == nil {
-		if result.Job.Status == "review_ready" && snapshot && metadataChanged {
+		if metadataChanged && (input.AutoPublish || result.Job.Status == "review_ready" && snapshot) {
 			// Recheck corrected metadata without modifying the old immutable evidence.
 			result.Job, input.Retry = onlinebulletins.AdminJob{}, false
 		} else if input.Retry && result.Job.Status == "failed" && r.llmBulletinExtraction {
@@ -341,7 +352,19 @@ func (r *Repository) queueOnlineBulletinExtractionTx(ctx context.Context, tx *sq
 			if changed {
 				result.Job.ID, input.Retry = "", false
 			}
+		} else if input.AutoPublish && result.Job.Status == "review_ready" && snapshot {
+			// A fresh job reuses immutable source proof under the new request.
+			result.Job, input.Retry = onlinebulletins.AdminJob{}, false
 		} else if !input.Retry {
+			if input.AutoPublish {
+				p, _ := auditclient.ProvenanceFromContext(ctx)
+				if _, err = tx.ExecContext(ctx, `UPDATE hhc_web.online_bulletin_extraction_job SET auto_publish=true,authorizer_id=$2,authorizer_request_id=$3 WHERE id=$1`, result.Job.ID, actor, p.RequestID); err != nil {
+					return result, err
+				}
+				if err = r.enqueueBulletinAudit(ctx, tx, "cms.bulletin.online.extract", result.DocumentID, actor, now); err != nil {
+					return result, err
+				}
+			}
 			return result, nil
 		} else if result.Job.Status == "review_ready" && snapshot && noResult {
 			// A blocked snapshot stays immutable; an explicit retry creates fresh evidence.
@@ -370,7 +393,7 @@ func (r *Repository) queueOnlineBulletinExtractionTx(ctx context.Context, tx *sq
 	if err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM hhc_web.online_bulletin_extraction_job WHERE document_id=$1 AND source_asset_id=$2 AND source_asset_checksum=$3 AND NOT superseded AND status IN ('queued','parsing'))`, result.DocumentID, input.SourceAssetID, input.SourceChecksum).Scan(&active); err != nil {
 		return result, err
 	}
-	if active {
+	if active && !input.AutoPublish {
 		return result, bulletins.ErrConflict
 	}
 	// Fence every previous lease. Re-uploads never change Local, Base, Incoming,
@@ -394,9 +417,14 @@ func (r *Repository) queueOnlineBulletinExtractionTx(ctx context.Context, tx *sq
 		if p, ok := auditclient.ProvenanceFromContext(ctx); ok && p.ActorID == actor && auditclient.ValidActorRequest(p.ActorID, p.RequestID) {
 			authorizer, request = p.ActorID, p.RequestID
 		}
-		_, err = tx.ExecContext(ctx, `INSERT INTO hhc_web.online_bulletin_extraction_job(id,document_id,issue_id,series,content_locale,source_asset_id,source_asset_checksum,template_version,extractor_version,available_at,created_at,updated_at,template_snapshot_json,learning_rules_json,authorizer_id,authorizer_request_id) VALUES($1,$2,$3,'general','zh-Hant',$4,$5,'v1',$6,$7,$7,$7,$8,$9,$10,$11)`, result.Job.ID, result.DocumentID, issueID, input.SourceAssetID, input.SourceChecksum, r.bulletinExtractorVersion(), now, templateSnapshot, learningRules, authorizer, request)
+		_, err = tx.ExecContext(ctx, `INSERT INTO hhc_web.online_bulletin_extraction_job(id,document_id,issue_id,series,content_locale,source_asset_id,source_asset_checksum,template_version,extractor_version,available_at,created_at,updated_at,template_snapshot_json,learning_rules_json,authorizer_id,authorizer_request_id,auto_publish,requested_metadata) VALUES($1,$2,$3,'general','zh-Hant',$4,$5,'v1',$6,$7,$7,$7,$8,$9,$10,$11,$12,$13)`, result.Job.ID, result.DocumentID, issueID, input.SourceAssetID, input.SourceChecksum, r.bulletinExtractorVersion(), now, templateSnapshot, learningRules, authorizer, request, input.AutoPublish, mustJSON(canonical))
 	} else {
-		_, err = tx.ExecContext(ctx, `UPDATE hhc_web.online_bulletin_extraction_job SET status='queued',attempts=0,last_error_code='',superseded=false,source_asset_id=$2,available_at=$3,updated_at=$3 WHERE id=$1`, result.Job.ID, input.SourceAssetID, now)
+		p, _ := auditclient.ProvenanceFromContext(ctx)
+		var authorizer any
+		if input.AutoPublish {
+			authorizer = actor
+		}
+		_, err = tx.ExecContext(ctx, `UPDATE hhc_web.online_bulletin_extraction_job SET status='queued',attempts=0,last_error_code='',superseded=false,source_asset_id=$2,available_at=$3,updated_at=$3,auto_publish=$4,authorizer_id=CASE WHEN $4 THEN $5::text ELSE authorizer_id END,authorizer_request_id=CASE WHEN $4 THEN $6 ELSE authorizer_request_id END WHERE id=$1`, result.Job.ID, input.SourceAssetID, now, input.AutoPublish, authorizer, p.RequestID)
 	}
 	if err != nil {
 		return result, err
@@ -422,7 +450,7 @@ func (r *Repository) queueOnlineBulletinExtractionTx(ctx context.Context, tx *sq
 
 func (r *Repository) OnlineBulletinState(ctx context.Context, issueID, series, locale string) (onlinebulletins.AdminState, error) {
 	state := onlinebulletins.AdminState{IssueID: issueID, Series: series, ContentLocale: locale}
-	var local, publication, extraction, layout, conversion, derivation []byte
+	var local, publication, extraction, layout, conversion, derivation, automation []byte
 	// One statement gives a consistent MVCC snapshot, including in-flight worker
 	// changes, without locking the editor's read against the worker or publisher.
 	err := r.db.QueryRowContext(ctx, `SELECT i.version,v.title,v.subtitle,i.issue_number,i.issue_date::text,v.status,
@@ -443,12 +471,18 @@ func (r *Repository) OnlineBulletinState(ctx context.Context, issueID, series, l
      FROM (SELECT e.* FROM hhc_web.outbox_event e JOIN hhc_web.online_bulletin_document sd ON sd.id=e.aggregate_id
       WHERE e.event_type='bulletin.online.publish_simplified' AND sd.issue_id=i.id AND v.locale='zh-Hans' AND e.aggregate_version=sd.published_revision
       ORDER BY e.created_at DESC,e.id DESC LIMIT 1) e
-     WHERE e.status IN ('pending','processing','failed') AND COALESCE(e.last_error,'') NOT IN ('source_publication_changed','publication_withdrawn')),cj.job),cj.derivation
+     WHERE e.status IN ('pending','processing','failed') AND COALESCE(e.last_error,'') NOT IN ('source_publication_changed','publication_withdrawn')),cj.job),cj.derivation,
+     CASE WHEN v.series='general' AND v.locale='zh-Hant' THEN jsonb_build_object('autoPublish',v.auto_publish,'update',uj.job,'summary',COALESCE(uj.summary,''),'changeKind',COALESCE(uj.change_kind,'')) END
 	 FROM hhc_web.bulletin_issue i
 	 JOIN hhc_web.bulletin_version v ON v.issue_id=i.id AND v.series=$2 AND v.locale=$3
 	 LEFT JOIN hhc_web.online_bulletin_document d ON d.issue_id=i.id AND d.series=v.series AND d.content_locale=v.locale
 	 LEFT JOIN hhc_web.online_bulletin_revision rev ON rev.document_id=d.id AND rev.revision=d.local_revision
 	 LEFT JOIN hhc_web.online_bulletin_publication pub ON pub.document_id=d.id AND pub.revision=d.published_revision
+	 LEFT JOIN LATERAL (
+	  SELECT jsonb_build_object('id',u.id,'status',u.status,'attempts',u.attempts,'errorCode',u.last_error_code) AS job,u.evidence_json#>>'{plan,summary}' AS summary,u.evidence_json#>>'{plan,changeKind}' AS change_kind
+	  FROM hhc_web.online_bulletin_update_job u JOIN hhc_web.online_bulletin_extraction_job e ON e.id=u.extraction_job_id
+	  WHERE u.document_id=d.id AND e.source_asset_id=v.pdf_asset_id AND e.source_asset_checksum=v.pdf_sha256 AND NOT e.superseded ORDER BY u.created_at DESC,u.id DESC LIMIT 1
+	 ) uj ON true
 	 LEFT JOIN LATERAL (
 	  SELECT jsonb_build_object('id',j.id,'status',j.status,'attempts',j.attempts,'errorCode',j.last_error_code,'reviewIssues',CASE WHEN j.status='review_ready' THEN '[]'::jsonb ELSE j.review_issues END) AS job,
 	   jsonb_build_object('sourceDocumentId',j.source_document_id,'sourceRevision',j.source_revision,'sourceContentHash',j.source_content_hash,
@@ -462,7 +496,7 @@ func (r *Repository) OnlineBulletinState(ctx context.Context, issueID, series, l
 	  WHERE j.document_id=d.id AND j.status<>'superseded' ORDER BY j.created_at DESC,j.id DESC LIMIT 1
 	 ) cj ON true
 	 WHERE i.id=$1`, issueID, series, locale).Scan(&state.CanonicalVersion, &state.CanonicalMetadata.Title, &state.CanonicalMetadata.Subtitle, &state.CanonicalMetadata.IssueNumber, &state.CanonicalMetadata.Date, &state.PDFStatus,
-		&state.DocumentID, &state.Version, &state.DraftStatus, &state.BaseRevision, &state.IncomingRevision, &state.PublishedRevision, &state.MetadataSyncPending, &local, &publication, &state.Confirmed, &extraction, &layout, &conversion, &derivation)
+		&state.DocumentID, &state.Version, &state.DraftStatus, &state.BaseRevision, &state.IncomingRevision, &state.PublishedRevision, &state.MetadataSyncPending, &local, &publication, &state.Confirmed, &extraction, &layout, &conversion, &derivation, &automation)
 	if errors.Is(err, sql.ErrNoRows) {
 		return state, bulletins.ErrNotFound
 	}
@@ -472,7 +506,7 @@ func (r *Repository) OnlineBulletinState(ctx context.Context, issueID, series, l
 	for _, value := range []struct {
 		raw []byte
 		to  any
-	}{{local, &state.Local}, {publication, &state.PublishedMetadata}, {extraction, &state.Extraction}, {layout, &state.Layout}, {conversion, &state.Conversion}, {derivation, &state.Derivation}} {
+	}{{local, &state.Local}, {publication, &state.PublishedMetadata}, {extraction, &state.Extraction}, {layout, &state.Layout}, {conversion, &state.Conversion}, {derivation, &state.Derivation}, {automation, &state.Automation}} {
 		if len(value.raw) > 0 {
 			if err = json.Unmarshal(value.raw, value.to); err != nil {
 				return state, err

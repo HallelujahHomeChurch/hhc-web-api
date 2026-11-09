@@ -408,14 +408,16 @@ type createUploadInput struct {
 	SizeBytes int64  `json:"sizeBytes"`
 }
 type completeUploadInput struct {
-	Series         string `json:"series,omitempty"`
-	Locale         string `json:"locale"`
-	Title          string `json:"title"`
-	Subtitle       string `json:"subtitle"`
-	FileName       string `json:"fileName"`
-	MIMEType       string `json:"mimeType"`
-	SizeBytes      int64  `json:"sizeBytes"`
-	ChecksumSHA256 string `json:"checksumSha256"`
+	AutoPublish       bool   `json:"autoPublish,omitempty"`
+	NotifySubscribers bool   `json:"notifySubscribers,omitempty"`
+	Series            string `json:"series,omitempty"`
+	Locale            string `json:"locale"`
+	Title             string `json:"title"`
+	Subtitle          string `json:"subtitle"`
+	FileName          string `json:"fileName"`
+	MIMEType          string `json:"mimeType"`
+	SizeBytes         int64  `json:"sizeBytes"`
+	ChecksumSHA256    string `json:"checksumSha256"`
 }
 type updateVersionInput struct {
 	Title    string `json:"title"`
@@ -482,6 +484,9 @@ func (h *Handler) adminCompleteUpload(w http.ResponseWriter, r *http.Request) {
 		handleError(w, bulletins.ErrInvalid)
 		return
 	}
+	if !allowBulletinAutomaticPublish(w, r, input.AutoPublish, input.NotifySubscribers, string(edition.Series), input.Locale) {
+		return
+	}
 	_, err := h.service.GetIssue(r.Context(), r.PathValue("issueID"))
 	if err != nil {
 		handleError(w, err)
@@ -514,7 +519,7 @@ func (h *Handler) adminCompleteUpload(w http.ResponseWriter, r *http.Request) {
 	if fileName == "" {
 		fileName = input.FileName
 	}
-	value, err := h.service.PutVersion(r.Context(), r.PathValue("issueID"), expected, bulletins.PutVersionInput{Series: string(edition.Series), Locale: input.Locale, Title: input.Title, Subtitle: input.Subtitle, PDFAssetID: asset.ID, PDFFileName: fileName}, actor(r))
+	value, err := h.service.PutVersion(r.Context(), r.PathValue("issueID"), expected, bulletins.PutVersionInput{Series: string(edition.Series), Locale: input.Locale, Title: input.Title, Subtitle: input.Subtitle, PDFAssetID: asset.ID, PDFFileName: fileName, AutoPublish: input.AutoPublish, NotifySubscribers: input.NotifySubscribers}, actor(r))
 	if err != nil {
 		handleError(w, err)
 		return

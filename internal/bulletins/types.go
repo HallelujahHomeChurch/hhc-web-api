@@ -117,12 +117,14 @@ type UpdateIssueInput struct {
 	IssueDate   string `json:"issueDate"`
 }
 type PutVersionInput struct {
-	Series      string `json:"series,omitempty"`
-	Locale      string `json:"locale"`
-	Title       string `json:"title"`
-	Subtitle    string `json:"subtitle"`
-	PDFAssetID  string `json:"pdfAssetId"`
-	PDFFileName string `json:"pdfFileName"`
+	AutoPublish       bool   `json:"autoPublish,omitempty"`
+	NotifySubscribers bool   `json:"notifySubscribers,omitempty"`
+	Series            string `json:"series,omitempty"`
+	Locale            string `json:"locale"`
+	Title             string `json:"title"`
+	Subtitle          string `json:"subtitle"`
+	PDFAssetID        string `json:"pdfAssetId"`
+	PDFFileName       string `json:"pdfFileName"`
 }
 type UpdateVersionInput struct {
 	Title    string `json:"title"`

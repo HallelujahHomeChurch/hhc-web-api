@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-func TestRecognitionAutomaticReleaseRequiresExactVerifiedLineage(t *testing.T) {
+func TestRecognitionWithoutExplicitIntentNeverAutomaticallyPublishes(t *testing.T) {
 	for _, scenario := range []string{"clean", "edited-local", "incoming", "metadata", "source", "unpublished", "unverified", "semantic-receipt", "issue", "disabled"} {
 		t.Run(scenario, func(t *testing.T) {
 			db := accessDB(t)
@@ -118,29 +118,12 @@ func TestRecognitionAutomaticReleaseRequiresExactVerifiedLineage(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			next, err := repo.NextOnlineBulletinWork(ctx)
-			if err != nil {
+			if _, err := repo.NextOnlineBulletinWork(ctx); err != nil {
 				t.Fatal("wake", err)
 			}
-			if scenario == "clean" && next.IsZero() {
-				t.Fatal("automatic release not included in wake")
-			}
 			published, err := repo.AutoPublishNextRecognition(ctx, now)
-			if scenario != "clean" {
-				if published {
-					t.Fatal("unsafe automatic publication", scenario)
-				}
-				return
-			}
-			if err != nil || !published {
-				t.Fatal("automatic release", published, err)
-			}
-			if published, err = repo.AutoPublishNextRecognition(ctx, now); err != nil || published {
-				t.Fatal("non-idempotent publication", published, err)
-			}
-			var publications, learning, derived int
-			if err = db.QueryRow(`SELECT (SELECT count(*) FROM hhc_web.online_bulletin_publication WHERE document_id=$1),(SELECT count(*) FROM hhc_web.outbox_event WHERE aggregate_id=$1 AND event_type='bulletin.online.learn_confirmed'),(SELECT count(*) FROM hhc_web.outbox_event WHERE aggregate_id=$1 AND event_type='bulletin.online.publish_simplified')`, job.DocumentID).Scan(&publications, &learning, &derived); err != nil || publications != 1 || learning != 0 || derived != 1 {
-				t.Fatal("publication side effects", publications, learning, derived, err)
+			if err != nil || published {
+				t.Fatal("draft/legacy source acquired automatic publication authority", scenario, published, err)
 			}
 		})
 	}

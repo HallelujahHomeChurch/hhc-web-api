@@ -80,6 +80,9 @@ func TestRecognitionRunnerResumesWithoutRepeatingPaidPages(t *testing.T) {
 		if err != nil || candidate.Document == nil || !ValidRecognitionEvidence(candidate.Recognition, *candidate.Document) || len(issues) != 0 {
 			t.Fatal("whole-source run failed", issues, err)
 		}
+		if string(candidate.SourceCoverPNG) != string(pages[0].PNG) {
+			t.Fatal("source identity lost original cover evidence")
+		}
 	}
 	if calls != 8 || store.attempts != 8 || len(store.pages) != 4 || store.canceledPersistence {
 		t.Fatal("completed pages were billed again", calls, store.attempts, len(store.pages))

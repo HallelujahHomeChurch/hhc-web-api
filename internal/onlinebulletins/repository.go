@@ -24,6 +24,8 @@ type ExtractionJob struct {
 }
 
 type LayoutJob struct {
+	Automatic                                                       bool
+	Repair                                                          *LayoutRepairEvidence
 	ID, DocumentID, LeaseToken, ContentHash, RendererArtifactSHA256 string
 	Revision                                                        int64
 	Attempts                                                        int
@@ -33,6 +35,7 @@ type LayoutJob struct {
 }
 
 type ConversionJob struct {
+	AssessmentAttempts                                    []UpdateAttempt
 	PublicationEventID                                    string
 	ID, DocumentID, IssueID, LeaseToken, ConverterVersion string
 	Attempts                                              int

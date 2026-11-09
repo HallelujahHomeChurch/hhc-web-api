@@ -94,15 +94,15 @@ func (r *Repository) ClaimOnlineBulletinLayout(ctx context.Context, now time.Tim
 		return nil, err
 	}
 	var job onlinebulletins.LayoutJob
-	var canonical, document []byte
+	var canonical, document, repair []byte
 	err = tx.QueryRowContext(ctx, `WITH next AS (
 	 SELECT id FROM hhc_web.online_bulletin_layout_job WHERE attempts<$4 AND available_at<=$1
 	 AND (status='queued' OR (status='validating' AND lease_until<=$1))
 	 ORDER BY available_at,created_at,id FOR UPDATE SKIP LOCKED LIMIT 1
 	), claimed AS (
 	 UPDATE hhc_web.online_bulletin_layout_job j SET status='validating',attempts=j.attempts+1,lease_until=$2,lease_token=$3,last_error_code='',updated_at=$1 FROM next WHERE j.id=next.id RETURNING j.*
-	) SELECT j.id::text,j.document_id::text,j.source_revision,j.lease_token::text,j.lease_until,j.attempts,j.content_hash,j.renderer_artifact_sha256,j.canonical_metadata,r.document_json
-	 FROM claimed j JOIN hhc_web.online_bulletin_revision r ON r.document_id=j.document_id AND r.revision=j.source_revision`, now, now.Add(lease), platform.NewID(), maxAttempts).Scan(&job.ID, &job.DocumentID, &job.Revision, &job.LeaseToken, &job.LeaseUntil, &job.Attempts, &job.ContentHash, &job.RendererArtifactSHA256, &canonical, &document)
+	) SELECT j.id::text,j.document_id::text,j.source_revision,j.lease_token::text,j.lease_until,j.attempts,j.content_hash,j.renderer_artifact_sha256,j.canonical_metadata,r.document_json,j.repair_json,EXISTS(SELECT 1`+automaticLayoutSource+`)
+	 FROM claimed j JOIN hhc_web.online_bulletin_revision r ON r.document_id=j.document_id AND r.revision=j.source_revision`, now, now.Add(lease), platform.NewID(), maxAttempts).Scan(&job.ID, &job.DocumentID, &job.Revision, &job.LeaseToken, &job.LeaseUntil, &job.Attempts, &job.ContentHash, &job.RendererArtifactSHA256, &canonical, &document, &repair, &job.Automatic)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, tx.Commit()
 	}
@@ -110,6 +110,10 @@ func (r *Repository) ClaimOnlineBulletinLayout(ctx context.Context, now time.Tim
 		return nil, err
 	}
 	if json.Unmarshal(canonical, &job.Canonical) != nil || json.Unmarshal(document, &job.Document) != nil {
+		return nil, onlinebulletins.ErrLayoutJob
+	}
+	job.Automatic = job.Automatic && r.llmBulletinExtraction
+	if len(repair) > 0 && json.Unmarshal(repair, &job.Repair) != nil {
 		return nil, onlinebulletins.ErrLayoutJob
 	}
 	if err = tx.Commit(); err != nil {

@@ -64,13 +64,18 @@ func (h *Handler) adminOnlineExtract(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input struct {
-		CanonicalVersion int64 `json:"canonicalVersion"`
-		Retry            bool  `json:"retry"`
+		CanonicalVersion  int64 `json:"canonicalVersion"`
+		Retry             bool  `json:"retry"`
+		AutoPublish       bool  `json:"autoPublish"`
+		NotifySubscribers bool  `json:"notifySubscribers"`
 	}
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
 	decoder.DisallowUnknownFields()
 	if decoder.Decode(&input) != nil || decoder.Decode(new(any)) != io.EOF || input.CanonicalVersion < 1 {
 		handleError(w, bulletins.ErrInvalid)
+		return
+	}
+	if !allowBulletinAutomaticPublish(w, r, input.AutoPublish, input.NotifySubscribers, series, locale) {
 		return
 	}
 	issue, err := h.service.GetIssue(r.Context(), issueID)
@@ -106,7 +111,7 @@ func (h *Handler) adminOnlineExtract(w http.ResponseWriter, r *http.Request) {
 		handleError(w, bulletins.ErrNotFound)
 		return
 	}
-	queued, err := h.service.QueueOnlineExtraction(r.Context(), issueID, series, locale, onlinebulletins.QueueExtractionInput{CanonicalVersion: input.CanonicalVersion, OnlineVersion: expected, SourceAssetID: assetID, SourceChecksum: asset.ChecksumSHA256, Retry: input.Retry}, actor(r))
+	queued, err := h.service.QueueOnlineExtraction(r.Context(), issueID, series, locale, onlinebulletins.QueueExtractionInput{CanonicalVersion: input.CanonicalVersion, OnlineVersion: expected, SourceAssetID: assetID, SourceChecksum: asset.ChecksumSHA256, Retry: input.Retry, AutoPublish: input.AutoPublish, NotifySubscribers: input.NotifySubscribers}, actor(r))
 	if err != nil {
 		h.onlineWriteError(w, r, err)
 		return
@@ -117,6 +122,22 @@ func (h *Handler) adminOnlineExtract(w http.ResponseWriter, r *http.Request) {
 		status = http.StatusOK
 	}
 	writeData(w, status, queued, nil)
+}
+
+func allowBulletinAutomaticPublish(w http.ResponseWriter, r *http.Request, enabled, notify bool, series, locale string) bool {
+	if notify && !enabled || enabled && (series != "general" || locale != "zh-Hant") {
+		handleError(w, bulletins.ErrInvalid)
+		return false
+	}
+	if !enabled {
+		return true
+	}
+	p, ok := r.Context().Value(principalKey{}).(principal)
+	if !ok || (!p.Scopes["cms:bulletins:publish"] && !p.Scopes["*"]) {
+		writeError(w, http.StatusForbidden, "forbidden", "The required capability is missing.")
+		return false
+	}
+	return true
 }
 
 func (h *Handler) adminOnlineConfirm(w http.ResponseWriter, r *http.Request) {

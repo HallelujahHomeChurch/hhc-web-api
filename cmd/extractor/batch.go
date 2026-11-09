@@ -90,12 +90,7 @@ func runBatch(ctx context.Context) error {
 				document.LayoutManifest.RendererArtifactSha256 = rendererV8ArtifactSHA256
 			}
 			document.LayoutManifest.Assets = v2Assets
-			canonical := job.TargetMetadata
-			if job.InitializesMetadata {
-				canonical = metadata
-			}
-			layout, err := compose(ctx, document, canonical)
-			return layout.Document, metadata, err
+			return document, metadata, nil
 		},
 		Extract: func(ctx context.Context, job onlinebulletins.ExtractionJob) (candidate onlinebulletins.DocumentCandidate, issues []onlinebulletins.ReviewIssue, err error) {
 			source := assetclient.Asset{ID: job.SourceAssetID, OwnerID: job.Canonical.IssueID, Locale: job.Canonical.ContentLocale, ChecksumSHA256: job.SourceAssetChecksum}
@@ -128,12 +123,95 @@ func runBatch(ctx context.Context) error {
 		}
 		runner := onlinebulletins.RecognitionRunner{Client: client, Store: repository, Assets: assets}
 		worker.AutoPublish = repository.AutoPublishNextRecognition
+		worker.AssessDerived = func(ctx context.Context, job onlinebulletins.ConversionJob, document onlinebulletins.Document, metadata onlinebulletins.CanonicalMetadata) error {
+			input, err := onlinebulletins.SimplifiedAssessmentInput(job.Source, job.SourceMetadata, document, metadata)
+			if err != nil {
+				return err
+			}
+			if !job.InitializesMetadata {
+				input.LocalMetadata = &job.TargetMetadata
+			}
+			var saved []onlinebulletins.UpdateAttempt
+			for _, attempt := range job.AssessmentAttempts {
+				if attempt.ErrorCode == "" {
+					saved = append(saved, attempt)
+				}
+			}
+			_, err = client.ResumeVerifiedUpdate(ctx, input, saved, func(attempt onlinebulletins.UpdateAttempt) error {
+				deadline := time.Now().Add(5 * time.Second)
+				if job.LeaseUntil.Before(deadline) {
+					deadline = job.LeaseUntil
+				}
+				persistence, cancel := context.WithDeadline(context.WithoutCancel(ctx), deadline)
+				defer cancel()
+				return repository.SaveOnlineBulletinConversionAssessment(persistence, job, input, attempt, time.Now().UTC())
+			})
+			return err
+		}
+		worker.RepairLayout = func(ctx context.Context, job onlinebulletins.LayoutJob, issues []onlinebulletins.ReviewIssue) (onlinebulletins.LayoutResult, error) {
+			var evidence onlinebulletins.LayoutRepairEvidence
+			if job.Repair != nil {
+				evidence = *job.Repair
+			} else {
+				inference, cancel := context.WithTimeout(ctx, 20*time.Second)
+				var err error
+				evidence, err = client.PlanLayoutRepair(inference, job, issues)
+				cancel()
+				if evidence.InputSHA256 != "" {
+					persistence, stop := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+					saveErr := repository.SaveOnlineBulletinLayoutRepair(persistence, job, evidence, time.Now().UTC())
+					stop()
+					if saveErr != nil {
+						return onlinebulletins.LayoutResult{}, saveErr
+					}
+				}
+				if err != nil {
+					return onlinebulletins.LayoutResult{}, err
+				}
+			}
+			repaired, err := onlinebulletins.ApplyLayoutRepairEvidence(job, issues, evidence)
+			if err != nil {
+				return onlinebulletins.LayoutResult{}, err
+			}
+			return compose(ctx, repaired, job.Canonical)
+		}
+		worker.Update = func(ctx context.Context, job onlinebulletins.UpdateJob) (onlinebulletins.UpdateEvidence, error) {
+			return client.ResumeVerifiedUpdate(ctx, job.Input, job.SavedAttempts, func(attempt onlinebulletins.UpdateAttempt) error {
+				deadline := time.Now().Add(5 * time.Second)
+				if job.LeaseUntil.Before(deadline) {
+					deadline = job.LeaseUntil
+				}
+				persistence, cancel := context.WithDeadline(context.WithoutCancel(ctx), deadline)
+				defer cancel()
+				return repository.SaveOnlineBulletinUpdateAttempt(persistence, job, attempt, time.Now().UTC())
+			})
+		}
 		worker.Recognize = func(ctx context.Context, job onlinebulletins.ExtractionJob) (onlinebulletins.DocumentCandidate, []onlinebulletins.ReviewIssue, error) {
+			source := assetclient.Asset{ID: job.SourceAssetID, OwnerID: job.Canonical.IssueID, Locale: job.Canonical.ContentLocale, ChecksumSHA256: job.SourceAssetChecksum}
+			cached, issues, err := repository.LoadReusableRecognition(ctx, job, time.Now().UTC())
+			if err != nil {
+				return onlinebulletins.DocumentCandidate{}, nil, err
+			}
+			if cached != nil {
+				if len(cached.SourceCoverPNG) == 0 {
+					err = assetClient.WithBulletinSource(ctx, source, job.ID, job.Attempts, func(path string) error {
+						pages, err := onlinebulletins.PrepareRecognitionSource(ctx, path)
+						if err != nil {
+							return err
+						}
+						cached.SourceCoverPNG = append([]byte{}, pages[0].PNG...)
+						return nil
+					})
+					if err != nil {
+						return onlinebulletins.DocumentCandidate{}, nil, err
+					}
+				}
+				return *cached, issues, nil
+			}
 			var geometry onlinebulletins.GeometryDocument
 			var pages []onlinebulletins.RecognitionPage
 			images := map[string]onlinebulletins.SourceImage{}
-			source := assetclient.Asset{ID: job.SourceAssetID, OwnerID: job.Canonical.IssueID, Locale: job.Canonical.ContentLocale, ChecksumSHA256: job.SourceAssetChecksum}
-			err := assetClient.WithBulletinSource(ctx, source, job.ID, job.Attempts, func(path string) error {
+			err = assetClient.WithBulletinSource(ctx, source, job.ID, job.Attempts, func(path string) error {
 				var err error
 				geometry, err = onlinebulletins.ParseRecognitionPDFWithSourceImages(ctx, path, func(part onlinebulletins.SourcePart, png []byte) error {
 					asset, _, err := assetClient.EnsureBulletinIllustration(ctx, job.Canonical.IssueID, part.ID, png)

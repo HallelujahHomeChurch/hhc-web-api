@@ -351,6 +351,33 @@ func TestPublishDefaultsNotificationIntentOff(t *testing.T) {
 	}
 }
 
+func TestAutomaticUploadRequiresPublisherBeforeAssetMutation(t *testing.T) {
+	for _, publisher := range []bool{false, true} {
+		t.Run(map[bool]string{false: "writer", true: "publisher"}[publisher], func(t *testing.T) {
+			repo := &apiRepository{issue: bulletinIssue()}
+			uploads := &apiUploads{completed: assetclient.Asset{ID: "asset-1", Namespace: "cms.weekly.pdf", OwnerService: "hhc-web-api", OwnerType: "bulletin_issue", OwnerID: "issue-1", Locale: "zh-Hant", OriginalFileName: "weekly.pdf"}}
+			request := httptest.NewRequest(http.MethodPost, "/api/admin/bulletins/issue-1/assets/asset-1/complete", strings.NewReader(`{"locale":"zh-Hant","title":"週報","fileName":"weekly.pdf","mimeType":"application/pdf","sizeBytes":128,"checksumSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","autoPublish":true,"notifySubscribers":true}`))
+			scope := "cms:bulletins:write"
+			if publisher {
+				scope += " cms:bulletins:publish"
+			}
+			trusted(request, scope)
+			request.Header.Set("If-Match", `"1"`)
+			response := httptest.NewRecorder()
+			testHandlerWithUploads(repo, uploads).ServeHTTP(response, request)
+			if !publisher {
+				if response.Code != 403 || uploads.completeCalls != 0 || uploads.getCalls != 0 || repo.put.AutoPublish {
+					t.Fatal("writer acquired publication authority", response.Code)
+				}
+				return
+			}
+			if response.Code != 200 || !repo.put.AutoPublish || !repo.put.NotifySubscribers {
+				t.Fatal("publisher intent lost", response.Code, response.Body.String())
+			}
+		})
+	}
+}
+
 func TestDeleteIssueRequiresWriteScopeAndVersion(t *testing.T) {
 	repo := &apiRepository{issue: bulletinIssue()}
 	handler := testHandler(repo)

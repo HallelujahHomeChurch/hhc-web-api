@@ -152,6 +152,16 @@ func (r *Repository) CompleteSimplifiedRelease(ctx context.Context, event public
 	if conversionStatus != "review_ready" || layoutStatus != "ready" {
 		return wait()
 	}
+	if r.llmBulletinExtraction {
+		verified, e := validConversionAssessmentTx(ctx, tx, p.JobID)
+		if e != nil {
+			return e
+		}
+		if !verified {
+			p.JobID = ""
+			return wait()
+		}
+	}
 	var measuredRevision int64
 	if err = tx.QueryRowContext(ctx, `SELECT result_revision FROM hhc_web.online_bulletin_layout_job WHERE document_id=$1 AND source_revision=$2 AND status='ready' ORDER BY created_at DESC,id DESC LIMIT 1`, targetID, result).Scan(&measuredRevision); err != nil {
 		return err
