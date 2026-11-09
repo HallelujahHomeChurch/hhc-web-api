@@ -79,7 +79,7 @@ func TestAutomaticReprocessReusesVerifiedSourceUnderFreshAuthority(t *testing.T)
 
 func TestAutomaticUpdateProviderRetryKeepsSuccessfulPassAndUsesDelayedWake(t *testing.T) {
 	db := accessDB(t)
-	ctx, now := context.Background(), time.Now().UTC()
+	ctx, now := context.Background(), time.Now().UTC().Truncate(time.Microsecond)
 	repo, _ := seedAutomaticUpdate(t, db, now)
 	job, err := repo.ClaimOnlineBulletinUpdate(ctx, now, time.Minute, 2)
 	if err != nil || job == nil {

@@ -16,12 +16,11 @@ func (r *Repository) setAutomaticBulletinIntent(ctx context.Context, tx *sql.Tx,
 		return bulletins.ErrInvalid
 	}
 	request := ""
-	if enabled {
-		p, ok := auditclient.ProvenanceFromContext(ctx)
-		if !ok || p.ActorType != "user" || p.ActorID != actor || !auditclient.ValidActorRequest(actor, p.RequestID) {
-			return bulletins.ErrAuditUnavailable
-		}
+	p, ok := auditclient.ProvenanceFromContext(ctx)
+	if ok && p.ActorType == "user" && p.ActorID == actor && auditclient.ValidActorRequest(actor, p.RequestID) {
 		request = p.RequestID
+	} else if enabled {
+		return bulletins.ErrAuditUnavailable
 	}
 	if err := cancelAutomaticPDFPublication(ctx, tx, issue, series, locale, now); err != nil {
 		return err

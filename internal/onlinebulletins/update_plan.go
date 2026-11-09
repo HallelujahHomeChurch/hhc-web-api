@@ -209,17 +209,52 @@ func updateConsensus(input UpdateInput, first, second UpdatePlan) (UpdatePlan, e
 			result.Choices = append(result.Choices, choice)
 		}
 	}
+	owned := map[string]bool{}
+	if input.Published != nil {
+		for _, component := range input.Published.Components {
+			for _, block := range componentBlocks(&component) {
+				for _, sentence := range block.Sentences {
+					owned[sentence.ID] = !strings.HasPrefix(sentence.ID, "canonical-")
+				}
+			}
+		}
+	}
+	uncertain, agreed := map[string]bool{}, map[string]bool{}
+	for _, proposals := range [][]SemanticMappingDecision{first.Mappings, second.Mappings} {
+		for _, mapping := range proposals {
+			if owned[mapping.FromSentenceID] {
+				uncertain[mapping.FromSentenceID] = true
+			}
+		}
+	}
 	for _, mapping := range first.Mappings {
 		for _, other := range second.Mappings {
-			if bytes.Equal(comparisonJSON(mapping), comparisonJSON(other)) {
+			if owned[mapping.FromSentenceID] && bytes.Equal(comparisonJSON(mapping), comparisonJSON(other)) {
 				result.Mappings = append(result.Mappings, mapping)
+				agreed[mapping.FromSentenceID] = true
 				break
 			}
 		}
 	}
-	// Intersecting merge groups or choosing the PDF may invalidate optional mappings.
+	ids := make([]string, 0, len(uncertain))
+	for id := range uncertain {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	historical := func(id string) SemanticMappingDecision {
+		return SemanticMappingDecision{FromSentenceID: id, Kind: "historical", ToSentenceIDs: []string{}}
+	}
+	for _, id := range ids {
+		if !agreed[id] {
+			result.Mappings = append(result.Mappings, historical(id))
+		}
+	}
+	// Disputed or malformed correspondence cannot silently recover same-ID notes.
 	if _, _, err := ApplyUpdatePlan(input, result); err != nil {
 		result.Mappings = []SemanticMappingDecision{}
+		for _, id := range ids {
+			result.Mappings = append(result.Mappings, historical(id))
+		}
 		if _, _, err = ApplyUpdatePlan(input, result); err != nil {
 			return UpdatePlan{}, err
 		}

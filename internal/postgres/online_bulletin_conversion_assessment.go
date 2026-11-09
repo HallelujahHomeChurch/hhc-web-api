@@ -2,7 +2,9 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/onlinebulletins"
@@ -44,4 +46,36 @@ func successfulAssessmentAttempts(attempts []onlinebulletins.UpdateAttempt) []on
 		}
 	}
 	return result
+}
+
+// A completed legacy/manual conversion is not semantic publication evidence.
+func validConversionAssessmentTx(ctx context.Context, tx *sql.Tx, jobID string) (bool, error) {
+	var sourceJSON, sourceMetadataJSON, targetJSON, convertedJSON, localMetadataJSON, attemptsJSON []byte
+	var initializes bool
+	err := tx.QueryRowContext(ctx, `SELECT sr.document_json,j.source_metadata,tr.document_json,j.converted_metadata,j.target_metadata,j.initializes_metadata,j.assessment_json
+ FROM hhc_web.online_bulletin_conversion_job j
+ JOIN hhc_web.online_bulletin_revision sr ON sr.document_id=j.source_document_id AND sr.revision=j.source_revision
+ JOIN hhc_web.online_bulletin_revision tr ON tr.document_id=j.document_id AND tr.revision=j.result_revision
+ WHERE j.id=$1`, jobID).Scan(&sourceJSON, &sourceMetadataJSON, &targetJSON, &convertedJSON, &localMetadataJSON, &initializes, &attemptsJSON)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	var source, target onlinebulletins.Document
+	var metadata, converted, local onlinebulletins.CanonicalMetadata
+	var attempts []onlinebulletins.UpdateAttempt
+	if json.Unmarshal(sourceJSON, &source) != nil || json.Unmarshal(targetJSON, &target) != nil || json.Unmarshal(sourceMetadataJSON, &metadata) != nil || json.Unmarshal(convertedJSON, &converted) != nil || json.Unmarshal(localMetadataJSON, &local) != nil || json.Unmarshal(attemptsJSON, &attempts) != nil {
+		return false, nil
+	}
+	input, err := onlinebulletins.SimplifiedAssessmentInput(source, metadata, target, converted)
+	if err != nil {
+		return false, nil
+	}
+	if !initializes {
+		input.LocalMetadata = &local
+	}
+	_, err = onlinebulletins.CompletedUpdateEvidence(input, successfulAssessmentAttempts(attempts))
+	return err == nil, nil
 }

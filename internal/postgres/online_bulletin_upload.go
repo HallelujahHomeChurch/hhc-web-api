@@ -73,7 +73,7 @@ func (r *Repository) CompleteOnlineExtractionRequest(ctx context.Context, event 
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
-	if err == nil && number >= 1739 && currentAsset == p.AssetID && (!p.AutoPublish || (automatic && request == p.RequestID && canonicalVersion == event.AggregateVersion)) {
+	if err == nil && number >= 1739 && currentAsset == p.AssetID && automatic == p.AutoPublish && request == p.RequestID && canonicalVersion >= event.AggregateVersion {
 		var onlineVersion int64
 		err = tx.QueryRowContext(ctx, `SELECT version FROM hhc_web.online_bulletin_document WHERE issue_id=$1 AND series='general' AND content_locale='zh-Hant' FOR UPDATE`, p.IssueID).Scan(&onlineVersion)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
