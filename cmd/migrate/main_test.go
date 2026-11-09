@@ -25,7 +25,7 @@ func TestMigrationPoolBoundary(t *testing.T) {
 				cancel()
 				want = context.Canceled
 			} else {
-				mock.ExpectExec("SELECT pg_advisory_lock").WithArgs(sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(0, 1))
+				mock.ExpectQuery("SELECT pg_try_advisory_lock").WithArgs(sqlmock.AnyArg()).WillReturnRows(sqlmock.NewRows([]string{"locked"}).AddRow(true))
 				create := mock.ExpectExec("CREATE TABLE IF NOT EXISTS public.schema_migrations")
 				if kind == "failure" {
 					want = errors.New("schema unavailable")
