@@ -43,6 +43,7 @@ type Config struct {
 	AssetPrivateHTTPS                                      bool
 	StreamKeyEncryptionID                                  string
 	StreamKeyEncryptionKeys                                map[string][]byte
+	RecordingLifecycleReconcileEnabled                     bool
 	VideoInteractionsEnabled                               bool
 	VideoAnalyticsEnabled                                  bool
 	BroadcastWritersEnabled                                bool
@@ -169,12 +170,13 @@ func LoadWorker() (Config, error) {
 
 func load(worker bool) (Config, error) {
 	cfg := Config{
-		VideoInteractionsEnabled:      strings.EqualFold(strings.TrimSpace(os.Getenv("VIDEO_INTERACTIONS_ENABLED")), "true"),
-		VideoAnalyticsEnabled:         strings.EqualFold(strings.TrimSpace(os.Getenv("VIDEO_ANALYTICS_ENABLED")), "true"),
-		StudioWritersEnabled:          strings.EqualFold(strings.TrimSpace(os.Getenv("STUDIO_WRITERS_ENABLED")), "true"),
-		BroadcastWritersEnabled:       strings.EqualFold(strings.TrimSpace(os.Getenv("BROADCAST_WRITERS_ENABLED")), "true"),
-		MemberLegalEnforcementEnabled: strings.EqualFold(strings.TrimSpace(os.Getenv("MEMBER_LEGAL_ENFORCEMENT_ENABLED")), "true"),
-		Port:                          value("PORT", "8082"), DatabaseURL: strings.TrimSpace(os.Getenv("DATABASE_URL")),
+		RecordingLifecycleReconcileEnabled: strings.EqualFold(strings.TrimSpace(os.Getenv("RECORDING_LIFECYCLE_RECONCILE_ENABLED")), "true"),
+		VideoInteractionsEnabled:           strings.EqualFold(strings.TrimSpace(os.Getenv("VIDEO_INTERACTIONS_ENABLED")), "true"),
+		VideoAnalyticsEnabled:              strings.EqualFold(strings.TrimSpace(os.Getenv("VIDEO_ANALYTICS_ENABLED")), "true"),
+		StudioWritersEnabled:               strings.EqualFold(strings.TrimSpace(os.Getenv("STUDIO_WRITERS_ENABLED")), "true"),
+		BroadcastWritersEnabled:            strings.EqualFold(strings.TrimSpace(os.Getenv("BROADCAST_WRITERS_ENABLED")), "true"),
+		MemberLegalEnforcementEnabled:      strings.EqualFold(strings.TrimSpace(os.Getenv("MEMBER_LEGAL_ENFORCEMENT_ENABLED")), "true"),
+		Port:                               value("PORT", "8082"), DatabaseURL: strings.TrimSpace(os.Getenv("DATABASE_URL")),
 		DiagnosticsEnabled: true,
 		DBMaxOpenConns:     10, DBMaxIdleConns: 5, DBConnMaxLifetime: 30 * time.Minute,
 		Environment: value("ENVIRONMENT", "development"), ShutdownTimeout: 10 * time.Second, AssetAPIBaseURL: value("ASSET_API_BASE_URL", "http://127.0.0.1:8083"),

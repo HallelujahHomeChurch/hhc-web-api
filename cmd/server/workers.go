@@ -14,6 +14,7 @@ type apiWorkers struct {
 	recordingAutoPublication func(context.Context)
 	recordingBroadcasts      func(context.Context)
 	recordingCaptures        func(context.Context)
+	recordingLifecycle       func(context.Context)
 }
 
 func (w apiWorkers) start(ctx context.Context, stopProcess func()) func() {
@@ -28,7 +29,7 @@ func (w apiWorkers) start(ctx context.Context, stopProcess func()) func() {
 			stopProcess()
 		}
 	}()
-	for _, run := range []func(context.Context){w.identityProjection, w.recordingAutoPublication, w.recordingBroadcasts, w.recordingCaptures} {
+	for _, run := range []func(context.Context){w.identityProjection, w.recordingAutoPublication, w.recordingBroadcasts, w.recordingCaptures, w.recordingLifecycle} {
 		if run == nil {
 			continue
 		}

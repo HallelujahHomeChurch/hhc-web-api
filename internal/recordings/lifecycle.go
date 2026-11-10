@@ -44,8 +44,16 @@ func (s *Service) syncLifecycleBindings(ctx context.Context, repo LifecycleRepos
 	if err != nil {
 		return empty, err
 	}
+	if err := validateLifecycleSnapshot(v, bindings, sources, s.now()); err != nil {
+		return empty, err
+	}
+
+	return v, repo.ApplyLifecycle(ctx, v)
+}
+
+func validateLifecycleSnapshot(v assetclient.RecordingLifecycleSnapshot, bindings []assetclient.RecordingLifecycleBinding, sources []assetclient.RecordingSourceLifecycleBinding, now time.Time) error {
 	if v.Policy.RetentionDays < 1 || v.Policy.RetentionDays > 365 || v.Policy.Revision < 1 || len(v.Items) != len(bindings) {
-		return empty, ErrConflict
+		return ErrConflict
 	}
 	wanted := make(map[string]string, len(bindings))
 	for _, b := range bindings {
@@ -53,23 +61,23 @@ func (s *Service) syncLifecycleBindings(ctx context.Context, repo LifecycleRepos
 	}
 	for _, p := range v.Items {
 		if wanted[p.PackageID] == "" || wanted[p.PackageID] != p.RecordingID || p.SessionID != p.PackageID || p.RetentionRevision < 1 || p.RetentionRevision > v.Policy.Revision {
-			return empty, ErrConflict
+			return ErrConflict
 		}
 		delete(wanted, p.PackageID)
 		if !p.ProcessingProgress.Valid() {
-			return empty, ErrConflict
+			return ErrConflict
 		}
 		switch p.State {
 		case "uploading", "freezing", "validating", "failed", "expired":
 		case "ready":
-			if p.UploadedAt == nil || p.ReadyAt == nil || p.MediaExpiresAt == nil || p.UploadedAt.IsZero() || p.UploadedAt.After(*p.ReadyAt) || p.ReadyAt.After(s.now()) {
-				return empty, ErrConflict
+			if p.UploadedAt == nil || p.ReadyAt == nil || p.MediaExpiresAt == nil || p.UploadedAt.IsZero() || p.UploadedAt.After(*p.ReadyAt) || p.ReadyAt.After(now) {
+				return ErrConflict
 			}
 			if v.Policy.ActivatedAt != nil && (!p.MediaExpiresAt.Equal(p.UploadedAt.Add(time.Duration(v.Policy.RetentionDays)*24*time.Hour)) || p.RetentionRevision != v.Policy.Revision) {
-				return empty, ErrConflict
+				return ErrConflict
 			}
 		default:
-			return empty, ErrConflict
+			return ErrConflict
 		}
 	}
 	wantedSources := make(map[string]string, len(sources))
@@ -78,20 +86,20 @@ func (s *Service) syncLifecycleBindings(ctx context.Context, repo LifecycleRepos
 	}
 	// Old producers omit sourceItems. This means unknown progress, not failure.
 	if len(v.SourceItems) != 0 && len(v.SourceItems) != len(sources) {
-		return empty, ErrConflict
+		return ErrConflict
 	}
 	for _, source := range v.SourceItems {
 		if wantedSources[source.SourceID] == "" || wantedSources[source.SourceID] != source.RecordingID || !source.ProcessingProgress.Valid() {
-			return empty, ErrConflict
+			return ErrConflict
 		}
 		delete(wantedSources, source.SourceID)
 		switch source.State {
 		case "uploading", "finalizing", "queued", "processing", "ready", "failed", "expired":
 		default:
-			return empty, ErrConflict
+			return ErrConflict
 		}
 	}
-	return v, repo.ApplyLifecycle(ctx, v)
+	return nil
 }
 
 func (s *Service) GetRetentionPolicy(ctx context.Context) (assetclient.RecordingRetentionPolicy, error) {

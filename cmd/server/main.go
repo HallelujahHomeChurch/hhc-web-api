@@ -190,6 +190,9 @@ func run() error {
 		workers.recordingAutoPublication = func(ctx context.Context) { runRecordingAutoPublication(ctx, recordingService.ReconcileAutoPublication) }
 		workers.recordingBroadcasts = func(ctx context.Context) { runRecordingBroadcasts(ctx, recordingService) }
 		workers.recordingCaptures = func(ctx context.Context) { runRecordingCaptures(ctx, recordingService) }
+		if cfg.RecordingLifecycleReconcileEnabled {
+			workers.recordingLifecycle = func(ctx context.Context) { runRecordingLifecycle(ctx, recordingService) }
+		}
 	}
 	// All fallible construction is complete. Cancel and join every owned worker
 	// before the earlier database-close defer runs, including HTTP startup errors.

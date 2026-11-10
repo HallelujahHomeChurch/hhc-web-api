@@ -2,9 +2,10 @@ package main
 
 import (
 	"context"
-	"github.com/HallelujahHomeChurch/hhc-web-api/internal/recordings"
 	"log/slog"
 	"time"
+
+	"github.com/HallelujahHomeChurch/hhc-web-api/internal/recordings"
 )
 
 func runRecordingBroadcasts(ctx context.Context, recordingService *recordings.Service) {
@@ -63,6 +64,28 @@ func runRecordingCaptures(ctx context.Context, recordingService *recordings.Serv
 			slog.Error("recording completion reconciliation failed", "error", err)
 		}
 		cancel()
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func runRecordingLifecycle(ctx context.Context, service *recordings.Service) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for {
+		result, err := service.ReconcileLifecycle(ctx)
+		if ctx.Err() != nil {
+			return
+		}
+		if err != nil {
+			slog.Error("recording lifecycle reconciliation failed")
+		}
+		if result.Outstanding > 0 {
+			slog.Warn("recording lifecycle repair pending", "count", result.Outstanding, "oldest_failure_at", result.OldestFailureAt)
+		}
 		select {
 		case <-ctx.Done():
 			return
