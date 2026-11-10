@@ -12,6 +12,7 @@ import (
 )
 
 type ExtractorConfig struct {
+	AssetWorkload                                               AssetWorkloadConfig
 	LLMEnabled                                                  bool
 	Enabled                                                     bool
 	QueueURL, PoisonQueueURL                                    string
@@ -41,6 +42,10 @@ func LoadExtractor() (ExtractorConfig, error) {
 	cfg.DatabaseURL = read("DATABASE_URL")
 	cfg.QueueURL, cfg.PoisonQueueURL = read("BULLETIN_EXTRACTION_QUEUE_URL"), read("BULLETIN_EXTRACTION_POISON_QUEUE_URL")
 	cfg.AssetAPIBaseURL = read("ASSET_API_BASE_URL")
+	cfg.AssetWorkload, err = loadAssetWorkload()
+	if err != nil {
+		return cfg, err
+	}
 	cfg.AzureClientID = read("AZURE_CLIENT_ID")
 	cfg.AzureEndpoint = read("AZURE_OPENAI_ENDPOINT")
 	cfg.AzureDeployment = read("AZURE_OPENAI_DEPLOYMENT")

@@ -31,6 +31,7 @@ type TranslationConfig struct {
 }
 
 type Config struct {
+	AssetWorkload                                          AssetWorkloadConfig
 	GatewayLocationsToken                                  string
 	PrivateServiceTokens                                   map[string]string
 	GatewayPrivateToken                                    string
@@ -340,6 +341,10 @@ func load(worker bool) (Config, error) {
 		if !cfg.AuditPrivateHTTPS && cfg.DaprHTTPPort == 0 || cfg.AuditAppID != "audit-log" && cfg.AuditAppID != "audit-log-test" || cfg.AuditToken == "" || strings.ContainsAny(cfg.AuditToken, "\r\n") {
 			return Config{}, fmt.Errorf("invalid audit dispatch configuration")
 		}
+	}
+	cfg.AssetWorkload, err = loadAssetWorkload()
+	if err != nil {
+		return Config{}, err
 	}
 	return cfg, nil
 }

@@ -30,6 +30,12 @@ func runBatch(ctx context.Context) error {
 	if err != nil {
 		return errInvalidJob
 	}
+	if cfg.AssetWorkload.Enabled {
+		assetClient, err = assetclient.NewWorkload(cfg.AssetAPIBaseURL, "hhc-web-extractor", cfg.AssetWorkload.Audience, cfg.AssetWorkload.ClientID, "")
+		if err != nil {
+			return errInvalidJob
+		}
+	}
 	db, err := sql.Open("pgx", cfg.DatabaseURL)
 	if err != nil {
 		return err

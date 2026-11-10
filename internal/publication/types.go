@@ -126,6 +126,7 @@ type Repository interface {
 	Complete(context.Context, string, time.Time) error
 }
 type AssetClient interface {
+	ValidateHomeBanner(context.Context, string, string) error
 	Get(context.Context, string) (Asset, error)
 	CreatePublicGrant(context.Context, string, string) (Grant, error)
 	RevokeGrant(context.Context, string, string) error

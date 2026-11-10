@@ -18,7 +18,7 @@ func TestWorkloadUploadsToBlobWithoutServiceCredential(t *testing.T) {
 	defer redirect.Close()
 	blob := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		blobRequests++
-		if r.Header.Get("Authorization") != "" || r.Header.Get("X-HHC-Caller-App-Id") != "" {
+		if r.Header.Get("Authorization") != "" || r.Header.Get("X-HHC-Caller-App-Id") != "" || r.Header.Get("X-HHC-Workload-Authorization") != "" {
 			t.Error("service credential sent to blob")
 		}
 		data, _ := io.ReadAll(r.Body)
@@ -47,7 +47,7 @@ func TestWorkloadUploadsToBlobWithoutServiceCredential(t *testing.T) {
 		t.Fatal(err)
 	}
 	client.http.Transport.(*internalTransport).base = asset.Client().Transport
-	target := UploadTarget{URL: blob.URL + "/image?sig=synthetic", Method: http.MethodPut, Headers: map[string]string{"x-ms-blob-type": "BlockBlob"}}
+	target := UploadTarget{URL: blob.URL + "/image?sig=synthetic", Method: http.MethodPut, Headers: map[string]string{"x-ms-blob-type": "BlockBlob", "X-HHC-Workload-Authorization": "Bearer echoed", "Authorization": "echoed", "X-HHC-Caller-App-Id": "echoed"}}
 	if err := client.Upload(context.Background(), target, strings.NewReader("image"), 5); err != nil {
 		t.Fatalf("blob upload failed: %v", err)
 	}

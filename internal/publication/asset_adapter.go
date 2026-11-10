@@ -25,7 +25,7 @@ func (a *AssetAdapter) Get(ctx context.Context, id string) (Asset, error) {
 		ScanStatus:       value.ScanStatus,
 		ProcessingStatus: value.ProcessingStatus,
 		DetectedMIMEType: value.DetectedMIMEType,
-		ChecksumSHA256: value.ChecksumSHA256,
+		ChecksumSHA256:   value.ChecksumSHA256,
 	}, err
 }
 func (a *AssetAdapter) CreatePublicGrant(ctx context.Context, id, key string) (Grant, error) {
@@ -45,3 +45,11 @@ func (a *AssetAdapter) Delete(ctx context.Context, id string) error {
 func (a *AssetAdapter) PublicURL(id string) string { return a.client.PublicURL(id) }
 
 var _ AssetClient = (*AssetAdapter)(nil)
+
+func (a *AssetAdapter) ValidateHomeBanner(ctx context.Context, id, checksum string) error {
+	err := a.client.ValidateHomeBanner(ctx, id, checksum)
+	if errors.Is(err, assetclient.ErrInvalid) {
+		return terminalError{err}
+	}
+	return err
+}
