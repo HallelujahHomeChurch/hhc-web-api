@@ -242,7 +242,7 @@ func (a *concurrentBulletinAssets) CreateDerivedBulletinUpload(_ context.Context
 func (a *concurrentBulletinAssets) Upload(context.Context, assetclient.UploadTarget, io.Reader, int64) error {
 	return nil
 }
-func (a *concurrentBulletinAssets) CompleteDerivedBulletin(_ context.Context, id, _, _ string, _ assetclient.CompleteUploadInput) (assetclient.Asset, error) {
+func (a *concurrentBulletinAssets) CompleteDerivedBulletin(_ context.Context, id, _, _, _ string, _ assetclient.CompleteUploadInput) (assetclient.Asset, error) {
 	if _, ok := a.failOnce.LoadAndDelete(id); ok {
 		return assetclient.Asset{}, fmt.Errorf("%w: injected asset 503", assetclient.ErrUnavailable)
 	}

@@ -9,14 +9,27 @@ import (
 )
 
 type AssetWorkloadConfig struct {
-	Enabled            bool
-	Audience, ClientID string
+	Enabled                         bool
+	OwnerContent, TrustedDerivation bool
+	Audience, ClientID              string
 }
 
 func loadAssetWorkload() (AssetWorkloadConfig, error) {
 	var cfg AssetWorkloadConfig
+	for key, target := range map[string]*bool{"ASSET_OWNER_CONTENT_ENABLED": &cfg.OwnerContent, "ASSET_TRUSTED_DERIVATION_ENABLED": &cfg.TrustedDerivation} {
+		switch value(key, "false") {
+		case "true":
+			*target = true
+		case "false":
+		default:
+			return cfg, fmt.Errorf("%s must be true or false", key)
+		}
+	}
 	switch value("ASSET_WORKLOAD_AUTH_ENABLED", "false") {
 	case "false":
+		if cfg.OwnerContent || cfg.TrustedDerivation {
+			return cfg, fmt.Errorf("Asset capabilities require verified workload authentication")
+		}
 		return cfg, nil
 	case "true":
 		cfg.Enabled = true

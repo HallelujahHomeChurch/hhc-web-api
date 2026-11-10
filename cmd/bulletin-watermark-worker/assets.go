@@ -25,6 +25,9 @@ func newAssetClient(cfg config.Config, getenv func(string) string) (*assetclient
 		if err != nil {
 			return nil, errAssetAuthConfig
 		}
+		if err = client.ConfigureVerifiedCapabilities(cfg.AssetWorkload.OwnerContent, cfg.AssetWorkload.TrustedDerivation); err != nil {
+			return nil, errAssetAuthConfig
+		}
 		return client, nil
 	}
 	switch mode := strings.TrimSpace(getenv(assetAuthEnv)); mode {

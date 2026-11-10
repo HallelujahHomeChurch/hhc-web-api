@@ -41,7 +41,7 @@ func (c *Client) WithBulletinSource(ctx context.Context, source Asset, jobID str
 		return err
 	}
 	stage = "metadata_validation"
-	if actual.ID != source.ID || actual.OwnerService != c.caller || actual.OwnerType != "bulletin_issue" || actual.OwnerID != source.OwnerID || actual.Namespace != "cms.weekly.pdf" || actual.Purpose != "weekly_bulletin" || actual.Locale != source.Locale || actual.Visibility != "private" || actual.ChecksumSHA256 != source.ChecksumSHA256 || actual.UploadStatus != "completed" || actual.ScanStatus != "clean" || (actual.ProcessingStatus != "ready" && actual.ProcessingStatus != "not_required") || actual.DetectedMIMEType != "application/pdf" {
+	if actual.ID != source.ID || actual.OwnerService != c.caller || actual.OwnerType != "bulletin_issue" || actual.OwnerID != source.OwnerID || actual.Namespace != "cms.weekly.pdf" || actual.Purpose != "weekly_bulletin" || actual.Locale != source.Locale || actual.Visibility != "private" || actual.ChecksumSHA256 != source.ChecksumSHA256 || actual.UploadStatus != "completed" || !actual.Scanned() || (actual.ProcessingStatus != "ready" && actual.ProcessingStatus != "not_required") || actual.DetectedMIMEType != "application/pdf" {
 		return ErrInvalid
 	}
 	expiresAt := time.Now().UTC().Add(time.Hour)

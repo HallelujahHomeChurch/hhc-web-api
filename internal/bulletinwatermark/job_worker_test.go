@@ -131,7 +131,7 @@ func (a *downloadWorkerAssetStub) Upload(context.Context, assetclient.UploadTarg
 	a.uploaded = true
 	return nil
 }
-func (a *downloadWorkerAssetStub) CompleteDerivedBulletin(context.Context, string, string, string, assetclient.CompleteUploadInput) (assetclient.Asset, error) {
+func (a *downloadWorkerAssetStub) CompleteDerivedBulletin(context.Context, string, string, string, string, assetclient.CompleteUploadInput) (assetclient.Asset, error) {
 	if a.completion != nil {
 		return *a.completion, nil
 	}
