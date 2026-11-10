@@ -201,7 +201,14 @@ See [bootstrap and rollback](infra/README.md#isolated-bulletin-extraction).
 
 ## Manual PostgreSQL jobs
 
-`hhc-web-migrate`, `hhc-web-content-import` and `hhc-web-home-v2-migrate` each cap their own pool at one open and one idle connection. Migration cleanup runs before the CLI reports an error and exits. A detached ten-second cleanup context bounds advisory unlock; failed acquisition/unlock discards the physical session. This is a per-process cap, not a bound on concurrent executions or total bootstrap/retry/drain time.
+`hhc-web-migrate`, `hhc-web-content-import` and `hhc-web-home-v2-migrate` each cap their own pool at one open and one idle connection. Migration lock contenders poll outside PostgreSQL so they release their snapshots between attempts. Migration cleanup runs before the CLI reports an error and exits. A detached ten-second cleanup context bounds advisory unlock; failed acquisition/unlock discards the physical session. This is a per-process cap, not a bound on concurrent executions or total bootstrap/retry/drain time.
+
+Before the first release with the polling migrator, drain every older
+migration execution and prevent older release runs and manual starts
+during the transition. An older blocking contender can hold a snapshot while
+a newer runner builds a concurrent index. Keep the polling migration artifact
+available for later migration work, including after a compatible runtime
+rollback.
 
 ## Runtime images
 
