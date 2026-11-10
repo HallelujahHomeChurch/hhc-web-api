@@ -45,7 +45,7 @@ func (r *RecordingRepository) PublishCapture(ctx context.Context, id string, che
 		if e != nil {
 			return e
 		}
-		if b.Revoked || b.RangePending || b.Projection == nil || b.Projection.State != "ready" || b.View.Boundaries.EndSequenceExclusive == nil {
+		if b.Revoked || b.PublicationWithdrawn || b.RangePending || b.Projection == nil || b.Projection.State != "ready" || b.View.Boundaries.EndSequenceExclusive == nil {
 			return recordings.ErrConflict
 		}
 	}

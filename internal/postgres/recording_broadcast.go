@@ -488,7 +488,7 @@ func (r *RecordingRepository) withRecordingSubject(ctx context.Context, user str
 	}
 	return tx.Commit()
 }
-func closeBroadcastPublicationTx(ctx context.Context, tx *sql.Tx, id string) error {
+func closeBroadcastPublicationTx(ctx context.Context, tx *sql.Tx, id string, reversible bool) error {
 	b, e := scanBroadcast(tx.QueryRowContext(ctx, `SELECT b.payload_json,r.title_override,r.description,b.source_managed FROM hhc_web.member_recording_broadcast b JOIN hhc_web.member_recording r ON r.id=b.recording_id WHERE r.id::text=$1 FOR UPDATE OF b`, id))
 	if errors.Is(e, recordings.ErrNotFound) {
 		return nil
@@ -496,7 +496,20 @@ func closeBroadcastPublicationTx(ctx context.Context, tx *sql.Tx, id string) err
 	if e != nil {
 		return e
 	}
-	b.RevokePublic()
+	// Only retained, completed VOD withdrawal is reversible; deletion and live closure stay terminal.
+	var retained bool
+	if reversible && !b.Revoked && b.Projection != nil && b.Projection.State == "ready" && b.View.Boundaries.StartSequence != nil && b.View.Boundaries.EndSequenceExclusive != nil {
+		e = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM hhc_web.member_recording r WHERE r.id::text=$1 AND r.deleted_at IS NULL AND NOT r.media_terminal AND r.package_id IS NOT NULL AND r.uploaded_at IS NOT NULL AND r.expires_at>clock_timestamp() AND NOT EXISTS(SELECT 1 FROM hhc_web.member_recording_capture c WHERE c.id::text=$2 AND c.payload_json->'Status'->>'state' IN ('failed','expired','aborted')))`, id, b.CaptureIntentID).Scan(&retained)
+		if e != nil {
+			return e
+		}
+	}
+	if retained {
+		b.PublicationWithdrawn = true
+		b.View.Archive = recordings.BroadcastArchive{State: "ready"}
+	} else {
+		b.RevokePublic()
+	}
 	b.MemberState = "blocked"
 	b.RangePending = b.CaptureIntentID != ""
 	b.View.Boundaries.Revision++
@@ -563,7 +576,7 @@ func (r *RecordingRepository) ListBroadcastReconciliation(ctx context.Context, n
  JOIN hhc_web.member_recording r ON r.id=b.recording_id
  WHERE b.payload_json->>'RangePending'='true'
  OR (b.payload_json->>'CaptureIntentID'<>'' AND (
-   (b.payload_json->>'Revoked'='false' AND b.payload_json->'View'->>'phase' NOT IN ('archived','cancelled','failed'))
+   (b.payload_json->>'Revoked'='false' AND COALESCE(b.payload_json->>'PublicationWithdrawn','false')<>'true' AND b.payload_json->'View'->>'phase' NOT IN ('archived','cancelled','failed'))
    OR (b.payload_json->>'MemberState'<>'blocked' AND (r.deleted_at IS NOT NULL OR r.media_terminal OR r.expires_at<=$2 OR (r.status='draft' AND b.payload_json->'View'->>'phase'='archived')))))
  OR (b.payload_json->>'Revoked'='false' AND b.payload_json->'CoverSnapshot'->'Settings'->'selection'->>'mode'='custom' AND b.payload_json->'CoverSnapshot'->'Settings'->>'coverState'<>'ready')
  ORDER BY b.checked_at NULLS FIRST,b.recording_id LIMIT $1 FOR UPDATE OF b SKIP LOCKED) UPDATE hhc_web.member_recording_broadcast b SET checked_at=$2 FROM picked,hhc_web.member_recording r WHERE b.recording_id=picked.recording_id AND r.id=b.recording_id RETURNING b.payload_json,r.title_override,r.description,b.source_managed`, limit, now)
@@ -601,6 +614,7 @@ func publishBroadcastAuthorityTx(ctx context.Context, tx *sql.Tx, id string) err
 	if b.Revoked || b.Projection == nil || b.Projection.State != "ready" || b.View.Boundaries.EndSequenceExclusive == nil {
 		return recordings.ErrConflict
 	}
+	b.PublicationWithdrawn = false
 	b.MemberState = "vod"
 	b.RangePending = true
 	b.View.Boundaries.Revision++

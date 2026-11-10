@@ -46,6 +46,7 @@ type Config struct {
 	VideoInteractionsEnabled                               bool
 	VideoAnalyticsEnabled                                  bool
 	BroadcastWritersEnabled                                bool
+	RecordingVODRepublishEnabled                           bool
 	StudioWritersEnabled                                   bool
 	MemberLegalEnforcementEnabled                          bool
 	Port                                                   string
@@ -183,6 +184,7 @@ func load(worker bool) (Config, error) {
 		MediaBaseURL:                   strings.TrimSpace(os.Getenv("VIDEO_MEDIA_BASE_URL")),
 		MediaWatermarkKeyHex:           strings.TrimSpace(os.Getenv("VIDEO_WATERMARK_KEY_HEX")),
 		RecordingWatermarkTraceEnabled: strings.EqualFold(strings.TrimSpace(os.Getenv("RECORDING_WATERMARK_TRACE_ENABLED")), "true"),
+		RecordingVODRepublishEnabled:   strings.EqualFold(strings.TrimSpace(os.Getenv("RECORDING_VOD_REPUBLISH_ENABLED")), "true"),
 		InternalCallerAppID:            value("INTERNAL_CALLER_APP_ID", "hhc-web-api"), AdminAllowedCaller: value("ADMIN_ALLOWED_CALLER_APP_ID", "api-gateway"),
 		DaprAPIToken:   strings.TrimSpace(os.Getenv("APP_API_TOKEN")),
 		AllowDevCaller: strings.EqualFold(strings.TrimSpace(os.Getenv("ALLOW_DEV_CALLER_HEADER")), "true"),

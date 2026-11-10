@@ -246,8 +246,8 @@ func (r *RecordingRepository) ListPendingCaptures(ctx context.Context, now time.
 	}
 	return result, rows.Err()
 }
-func closeCapturePublicationTx(ctx context.Context, tx *sql.Tx, id string, deletedAt ...time.Time) error {
-	if err := closeBroadcastPublicationTx(ctx, tx, id); err != nil {
+func closeCapturePublicationTx(ctx context.Context, tx *sql.Tx, id string, reversible bool, deletedAt ...time.Time) error {
+	if err := closeBroadcastPublicationTx(ctx, tx, id, reversible && len(deletedAt) == 0); err != nil {
 		return err
 	}
 	rows, err := tx.QueryContext(ctx, `SELECT payload_json FROM hhc_web.member_recording_capture WHERE recording_id::text=$1 FOR UPDATE`, id)

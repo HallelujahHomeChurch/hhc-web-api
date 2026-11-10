@@ -404,3 +404,14 @@ func TestFullRecognitionProducerSwitchIsExplicit(t *testing.T) {
 		})
 	}
 }
+
+func TestVODRepublishRequiresExplicitRolloutEnablement(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://example")
+	for _, value := range []string{"", "false", "invalid", "true"} {
+		t.Setenv("RECORDING_VOD_REPUBLISH_ENABLED", value)
+		cfg, err := Load()
+		if err != nil || cfg.RecordingVODRepublishEnabled != (value == "true") {
+			t.Fatalf("VOD republish enablement %q: %v", value, err)
+		}
+	}
+}
