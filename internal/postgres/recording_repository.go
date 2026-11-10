@@ -18,6 +18,7 @@ import (
 )
 
 type RecordingRepository struct {
+	vodRepublishEnabled bool
 	db                  *sql.DB
 	auditOutbox         *AuditOutbox
 	transactionMu       sync.Mutex
@@ -28,6 +29,11 @@ type RecordingRepository struct {
 }
 
 func NewRecordingRepository(db *sql.DB) *RecordingRepository { return &RecordingRepository{db: db} }
+func (r *RecordingRepository) WithVODRepublish(enabled bool) *RecordingRepository {
+	r.vodRepublishEnabled = enabled
+	return r
+}
+
 func (r *RecordingRepository) WithAudit(outbox *AuditOutbox) *RecordingRepository {
 	r.auditOutbox = outbox
 	return r
@@ -242,7 +248,7 @@ func (r *RecordingRepository) mutateTx(ctx context.Context, tx *sql.Tx, id strin
 		}
 	}
 	if action == "cms.recording.unpublish" {
-		if err := closeCapturePublicationTx(ctx, tx, id); err != nil {
+		if err := closeCapturePublicationTx(ctx, tx, id, r.vodRepublishEnabled); err != nil {
 			return recordings.Recording{}, err
 		}
 	}

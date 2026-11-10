@@ -46,6 +46,7 @@ type Config struct {
 	VideoInteractionsEnabled                               bool
 	VideoAnalyticsEnabled                                  bool
 	BroadcastWritersEnabled                                bool
+	RecordingVODRepublishEnabled                           bool
 	StudioWritersEnabled                                   bool
 	MemberLegalEnforcementEnabled                          bool
 	Port                                                   string
@@ -171,6 +172,7 @@ func load(worker bool) (Config, error) {
 		VideoInteractionsEnabled:      strings.EqualFold(strings.TrimSpace(os.Getenv("VIDEO_INTERACTIONS_ENABLED")), "true"),
 		VideoAnalyticsEnabled:         strings.EqualFold(strings.TrimSpace(os.Getenv("VIDEO_ANALYTICS_ENABLED")), "true"),
 		StudioWritersEnabled:          strings.EqualFold(strings.TrimSpace(os.Getenv("STUDIO_WRITERS_ENABLED")), "true"),
+		RecordingVODRepublishEnabled:  strings.EqualFold(strings.TrimSpace(os.Getenv("RECORDING_VOD_REPUBLISH_ENABLED")), "true"),
 		BroadcastWritersEnabled:       strings.EqualFold(strings.TrimSpace(os.Getenv("BROADCAST_WRITERS_ENABLED")), "true"),
 		MemberLegalEnforcementEnabled: strings.EqualFold(strings.TrimSpace(os.Getenv("MEMBER_LEGAL_ENFORCEMENT_ENABLED")), "true"),
 		Port:                          value("PORT", "8082"), DatabaseURL: strings.TrimSpace(os.Getenv("DATABASE_URL")),

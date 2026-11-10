@@ -41,7 +41,7 @@ func (r *RecordingRepository) Delete(ctx context.Context, id string, expected in
 	if _, err = tx.ExecContext(ctx, `UPDATE hhc_web.member_recording SET deleted_at=$2,human_edit_generation=human_edit_generation+1,version=version+1,updated_by=$3,updated_at=$2 WHERE id::text=$1`, id, now, actor); err != nil {
 		return err
 	}
-	if err = closeCapturePublicationTx(ctx, tx, id, now); err != nil {
+	if err = closeCapturePublicationTx(ctx, tx, id, false, now); err != nil {
 		return err
 	}
 	if err = clearDeletedBroadcastSourceTarget(ctx, tx); err != nil {

@@ -1416,3 +1416,11 @@ owner against this field without guessing a range or issuing per-card reads.
 Unknown/ineligible versions remain null; legacy responses can omit the field.
 This read-only projection never claims an owner, rewrites live history or maps
 unknown historical live coordinates onto VOD.
+
+## Broadcast VOD withdrawal and republishing
+
+`RECORDING_VOD_REPUBLISH_ENABLED` defaults to false. After all CMS writers and
+reconcilers are upgraded, an explicitly enabled completed-VOD withdrawal retains
+ready media authority while blocking member access; a fresh manual publish can
+restore it. Deletion, live termination and irreversible revocation remain fenced.
+See [rollout, rollback and historical-record limits](docs/operations/broadcast-vod-republish.md).

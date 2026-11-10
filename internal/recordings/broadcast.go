@@ -158,6 +158,7 @@ type Broadcast struct {
 	StreamKeyHash            string
 	StreamKeySuffix          string
 	AutoPublicationActivated bool
+	PublicationWithdrawn     bool
 	View                     BroadcastView
 	Epoch                    int64
 	CaptureIntentID          string
@@ -807,7 +808,7 @@ func (s *Service) ReconcileBroadcasts(ctx context.Context, limit int) error {
 							c.Status.LiveEnabled = true
 						} else {
 							if c.NormalEnd && c.Status.State == "ready" {
-								if !b.AutoPublicationActivated {
+								if !b.AutoPublicationActivated && !b.PublicationWithdrawn {
 									cancelled := false
 									for _, op := range c.Operations {
 										if op.Operation == "cancel_auto_publish" {
@@ -1478,7 +1479,7 @@ func (s *Service) reconcileBroadcastCover(ctx context.Context, b Broadcast) erro
 // Member access is independent of raw capture readiness. Every change advances
 // the Worker authority revision and independently gates member access.
 func broadcastMemberState(b Broadcast, r Recording, now time.Time) string {
-	if b.Revoked || r.Expired(now) || b.View.Boundaries.StartSequence == nil {
+	if b.Revoked || b.PublicationWithdrawn || r.Expired(now) || b.View.Boundaries.StartSequence == nil {
 		return "blocked"
 	}
 	if r.Visible(now) && b.View.Boundaries.EndSequenceExclusive != nil {
@@ -1510,6 +1511,9 @@ func prepareBroadcastPolicy(b *Broadcast, r *Recording, now time.Time) {
 func (b *Broadcast) updateArchivePublication(r Recording, c Capture) {
 	b.View.Archive = BroadcastArchive{State: "ready"}
 	b.View.Phase = "processing"
+	if b.PublicationWithdrawn {
+		return
+	}
 	if c.Status.AutoPublish == "published" || r.Status == "published" {
 		b.View.Archive.State = "published"
 		b.View.Phase = "archived"
