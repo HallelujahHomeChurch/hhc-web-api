@@ -18,6 +18,7 @@ func TestManualPDFPreservesAutomaticOnlinePublication(t *testing.T) {
 			db := accessDB(t)
 			ctx, now := context.Background(), time.Now().UTC()
 			repo, source := seedAutomaticUpdate(t, db, now)
+			repo.WithExplicitOnlinePublication(true)
 			t.Cleanup(func() {
 				_, _ = db.Exec(`UPDATE hhc_web.online_bulletin_document SET published_revision=NULL WHERE issue_id=$1`, source.Canonical.IssueID)
 				_, _ = db.Exec(`DELETE FROM hhc_web.online_bulletin_publication WHERE document_id IN(SELECT id FROM hhc_web.online_bulletin_document WHERE issue_id=$1)`, source.Canonical.IssueID)
@@ -56,7 +57,7 @@ func TestManualPDFPreservesAutomaticOnlinePublication(t *testing.T) {
 			if phase == "layout" || phase == "layout-notify" {
 				finishUpdate()
 			}
-			if _, err = repo.StartPublish(bulletinAuditContext(), source.Canonical.IssueID, "general", "zh-Hant", 1, phase == "layout-notify", postgresBulletinAuditActor, now); err != nil {
+			if _, err = repo.StartPublishSelection(bulletinAuditContext(), source.Canonical.IssueID, bulletins.PublishInput{Series: "general", Locale: "zh-Hant", OnlinePublication: "continue_automatic", NotifySubscribers: phase == "layout-notify"}, 1, postgresBulletinAuditActor, now); err != nil {
 				t.Fatal(err)
 			}
 			if _, err = repo.StartPublish(bulletinAuditContext(), source.Canonical.IssueID, "general", "zh-Hant", 1, false, postgresBulletinAuditActor, now); !errors.Is(err, bulletins.ErrPrecondition) {
@@ -130,9 +131,14 @@ func TestDelayedBulletinFailurePreservesTerminalAndNewClaims(t *testing.T) {
 			db := accessDB(t)
 			ctx, now := context.Background(), time.Now().UTC()
 			repo, source := seedAutomaticUpdate(t, db, now)
+			repo.WithExplicitOnlinePublication(true)
 			t.Cleanup(func() {
 				_, _ = db.Exec(`DELETE FROM hhc_web.publication_workflow WHERE resource_id=$1`, source.Canonical.IssueID)
 			})
+			// This fixture is an independent manual PDF workflow, not an active automatic plan.
+			if _, err := db.Exec(`UPDATE hhc_web.bulletin_version SET auto_publish=false WHERE issue_id=$1`, source.Canonical.IssueID); err != nil {
+				t.Fatal(err)
+			}
 			workflow, err := repo.StartPublish(bulletinAuditContext(), source.Canonical.IssueID, "general", "zh-Hant", 1, false, postgresBulletinAuditActor, now)
 			if err != nil {
 				t.Fatal(err)
@@ -212,7 +218,7 @@ func TestManualPDFBeforeRecognitionDoesNotCreateOrCancelAuthority(t *testing.T) 
 				t.Fatal(err)
 			}
 			repo := New(db).WithAudit(NewAuditOutbox(db))
-			if _, err := repo.StartPublish(bulletinAuditContext(), issue, "general", "zh-Hant", 1, false, postgresBulletinAuditActor, now); err != nil {
+			if _, err := repo.StartPublish(bulletinAuditContext(), issue, "general", "zh-Hant", 1, false, postgresBulletinAuditActor, now); enabled && !errors.Is(err, bulletins.ErrAutomaticPublicationActive) || !enabled && err != nil {
 				t.Fatal(err)
 			}
 			var versionIntent, jobIntent bool
@@ -230,6 +236,7 @@ func TestManualAndAutomaticPDFPublicationSerializeInBothOrders(t *testing.T) {
 			db := accessDB(t)
 			ctx, now := context.Background(), time.Now().UTC()
 			repo, source := seedAutomaticUpdate(t, db, now)
+			repo.WithExplicitOnlinePublication(true)
 			t.Cleanup(func() {
 				_, _ = db.Exec(`DELETE FROM hhc_web.publication_workflow WHERE resource_id=$1`, source.Canonical.IssueID)
 			})
@@ -254,7 +261,7 @@ func TestManualAndAutomaticPDFPublicationSerializeInBothOrders(t *testing.T) {
 				t.Fatal(err)
 			}
 			manual := func() error {
-				_, e := repo.StartPublish(bulletinAuditContext(), source.Canonical.IssueID, "general", "zh-Hant", 1, false, postgresBulletinAuditActor, now)
+				_, e := repo.StartPublishSelection(bulletinAuditContext(), source.Canonical.IssueID, bulletins.PublishInput{Series: "general", Locale: "zh-Hant", OnlinePublication: "continue_automatic"}, 1, postgresBulletinAuditActor, now)
 				return e
 			}
 			automatic := func() error { _, e := repo.AutoPublishNextRecognition(ctx, now); return e }

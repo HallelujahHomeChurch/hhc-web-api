@@ -306,12 +306,19 @@ func TestFailedIntentIsTerminalEvenWhenLegacyFlagRemainsTrue(t *testing.T) {
 	if err = repo.FailOnlineBulletinExtraction(context.Background(), *job, "invalid_source", now, 1); err != nil {
 		t.Fatal(err)
 	}
-	workflow, err := repo.StartPublishSelection(bulletinAuditContext(), state.IssueID, bulletins.PublishInput{Series: "general", Locale: "zh-Hant", OnlinePublication: "continue_automatic"}, state.CanonicalVersion, postgresBulletinAuditActor, now)
-	if err != nil {
-		t.Fatal(err)
+	before := publicationInterlockSnapshot(t, repo, state.IssueID)
+	if _, err = repo.StartPublishSelection(bulletinAuditContext(), state.IssueID, bulletins.PublishInput{Series: "general", Locale: "zh-Hant", OnlinePublication: "continue_automatic"}, state.CanonicalVersion, postgresBulletinAuditActor, now); !errors.Is(err, bulletins.ErrConflict) {
+		t.Fatal("failed plan incorrectly accepted as healthy early PDF", err)
 	}
-	if workflow.OnlinePublication == nil || workflow.OnlinePublication.Outcome != "terminal" || workflow.OnlinePublication.Disposition.Status != "failed" {
-		t.Fatal("terminal disposition advertised as preserved authority", workflow.OnlinePublication)
+	if _, err = repo.StartPublish(bulletinAuditContext(), state.IssueID, "general", "zh-Hant", state.CanonicalVersion, false, postgresBulletinAuditActor, now); !errors.Is(err, bulletins.ErrAutomaticPublicationActive) {
+		t.Fatal("ordinary request bypassed retained authority", err)
+	}
+	if after := publicationInterlockSnapshot(t, repo, state.IssueID); after != before {
+		t.Fatal("blocked requests altered failed intent")
+	}
+	current, err := repo.OnlineBulletinState(ctx, state.IssueID, "general", "zh-Hant")
+	if err != nil || current.Automation.Disposition == nil || current.Automation.Disposition.Status != "failed" || !current.Automation.AutoPublish {
+		t.Fatal("failed disposition or durable authority changed", err)
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 )
 
 var ErrOnlinePublicationUnavailable = errors.New("explicit online publication unavailable")
+var ErrAutomaticPublicationActive = errors.New("automatic publication active")
 
 type OnlinePublicationOutcome struct {
 	Outcome     string                                  `json:"outcome"`

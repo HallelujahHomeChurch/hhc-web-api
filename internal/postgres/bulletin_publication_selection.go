@@ -41,6 +41,14 @@ func (r *Repository) StartPublishSelection(ctx context.Context, issue string, in
 	if canonical != expected {
 		return bulletins.Workflow{}, bulletins.ErrPrecondition
 	}
+	if enabled && input.OnlinePublication == "" {
+		return bulletins.Workflow{}, bulletins.ErrAutomaticPublicationActive
+	}
+	if enabled && input.OnlinePublication == "continue_automatic" {
+		if err = r.preflightEarlyBulletinPDF(ctx, tx, issue, input.Series, input.Locale); err != nil {
+			return bulletins.Workflow{}, err
+		}
+	}
 	outcome := "absent"
 	if enabled {
 		outcome = "preserved"

@@ -1,8 +1,9 @@
 # Bulletin publication controls
 
-The existing default PDF action preserves already-authorized exact-source online
-work. It never grants disabled authority. Explicit `pdf_only` and saved-draft
-recovery require `BULLETIN_EXPLICIT_ONLINE_PUBLICATION_ENABLED=true`; the default
+The ordinary PDF action rejects an active automatic publication plan with HTTP
+409 `automatic_publication_active`, including when the capability flag is off.
+It never silently cancels that plan. Explicit `continue_automatic`, `pdf_only`
+and saved-draft recovery require `BULLETIN_EXPLICIT_ONLINE_PUBLICATION_ENABLED=true`; the default
 is false. No runtime manifest or deployment enables it in this change.
 
 Before activation, release every HTTP/extraction/publication worker with epoch
@@ -42,3 +43,21 @@ commit with publication; original extraction authorizer/evidence stay immutable.
 Replaying the exact actor/key/input returns the original outcome after withdrawal
 without republishing. Changed payload conflicts. Qualification failures expose
 only allowlisted blocker codes; they never remeasure or manufacture qualification.
+
+Explicit `continue_automatic` can publish the PDF early only when the server can
+prove the current automatic request, source, metadata and epoch still own a
+healthy extraction/update/layout chain. Scan-stage or unknown work, a stale or
+failed current plan, or any PDF workflow already bound to that current update
+returns 409 without side effects. An unrelated historical failure does not block
+a new healthy plan. The action neither joins nor repairs an owned workflow and
+does not promise later recognition will succeed. Disabled or absent authority
+remains disabled or absent. Clients refresh after conflicts and follow the
+current workflow rather than silently retrying with a newer version.
+
+The early-PDF UI requests `notifySubscribers:false`; the original automatic
+notification preference remains unchanged. An explicit true request still uses
+the existing generation-zero notification deduplication. PDF-only means a real
+change of plan and cancellation, not early PDF with automatic work retained.
+Human confirmed manual Online publication and qualified saved-draft recovery
+remain explicit atomic takeovers; neither has a blanket active-plan rejection.
+Recovery receipt replay remains read-only even after a later authorization.

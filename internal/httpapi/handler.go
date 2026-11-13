@@ -856,6 +856,8 @@ func handleError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusServiceUnavailable, "asset_service_unavailable", "Asset uploads are unavailable.")
 	case errors.Is(err, bulletins.ErrAuditUnavailable):
 		writeError(w, http.StatusServiceUnavailable, "audit_unavailable", "Audit recording is unavailable.")
+	case errors.Is(err, bulletins.ErrAutomaticPublicationActive):
+		writeError(w, http.StatusConflict, "automatic_publication_active", "Automatic publication is active for this edition. Follow its progress or review the available explicit actions.")
 	case errors.Is(err, bulletins.ErrOnlinePublicationUnavailable):
 		writeError(w, http.StatusServiceUnavailable, "online_publication_unavailable", "Online publication controls are not enabled.")
 	case errors.Is(err, bulletins.ErrInvalid):
