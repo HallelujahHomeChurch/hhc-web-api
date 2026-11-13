@@ -24,7 +24,10 @@ func (r *Repository) PublishOnlineBulletin(ctx context.Context, issueID, series,
 	if err != nil {
 		return result, err
 	}
-	if err = cancelOnlineAutomaticIntent(ctx, tx, result.DocumentID, now); err != nil {
+	if err = r.changeBulletinIntent(ctx, tx, issueID, series, locale, "completed", "manual_published", actor, now, ""); err != nil {
+		return result, err
+	}
+	if err = r.cancelOnlineAutomaticIntent(ctx, tx, result.DocumentID, now); err != nil {
 		return result, err
 	}
 	return result, tx.Commit()
@@ -199,7 +202,10 @@ func (r *Repository) UnpublishOnlineBulletin(ctx context.Context, issueID, serie
 	if canonical != canonicalVersion || result.Version != onlineVersion {
 		return result, bulletins.ErrPrecondition
 	}
-	if err = cancelOnlineAutomaticIntent(ctx, tx, result.DocumentID, now); err != nil {
+	if err = r.changeBulletinIntent(ctx, tx, issueID, series, locale, "cancelled", "unpublished", actor, now, ""); err != nil {
+		return result, err
+	}
+	if err = r.cancelOnlineAutomaticIntent(ctx, tx, result.DocumentID, now); err != nil {
 		return result, err
 	}
 	if !published.Valid {
@@ -224,7 +230,7 @@ func (r *Repository) UnpublishOnlineBulletin(ctx context.Context, issueID, serie
 // Both independent and explicitly paired unpublish use the caller's existing
 // transaction and locked document. Failure cannot leave half an action visible.
 func (r *Repository) clearOnlinePublication(ctx context.Context, tx *sql.Tx, documentID, actor string, now time.Time) error {
-	if err := cancelOnlineAutomaticIntent(ctx, tx, documentID, now); err != nil {
+	if err := r.cancelOnlineAutomaticIntent(ctx, tx, documentID, now); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.outbox_event e SET status='failed',claimed_until=NULL,last_error='publication_withdrawn',updated_at=$2 WHERE e.event_type='bulletin.online.publish_simplified' AND e.status IN ('pending','processing','failed') AND (e.aggregate_id=$1 OR e.payload_json->>'issueId'=(SELECT issue_id::text FROM hhc_web.online_bulletin_document WHERE id=$1 AND content_locale='zh-Hans'))`, documentID, now); err != nil {

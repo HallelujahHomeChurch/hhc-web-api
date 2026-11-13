@@ -415,3 +415,20 @@ func TestVODRepublishRequiresExplicitRolloutEnablement(t *testing.T) {
 		}
 	}
 }
+
+func TestExplicitBulletinPublicationCapabilityDefaultsOff(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://example")
+	for _, value := range []string{"", "false", "true", "invalid"} {
+		t.Setenv("BULLETIN_EXPLICIT_ONLINE_PUBLICATION_ENABLED", value)
+		cfg, err := Load()
+		if value == "invalid" {
+			if err == nil {
+				t.Fatal("invalid capability value accepted")
+			}
+			continue
+		}
+		if err != nil || cfg.BulletinExplicitOnlinePublicationEnabled != (value == "true") {
+			t.Fatal("capability activation drift", value, err)
+		}
+	}
+}

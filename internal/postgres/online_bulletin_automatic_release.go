@@ -24,6 +24,7 @@ const recognitionReleaseFrom = ` FROM hhc_web.online_bulletin_update_job u
  JOIN hhc_web.online_bulletin_revision r ON r.document_id=d.id AND r.revision=d.local_revision
  WHERE u.status='ready' AND u.protocol_sha256=$2 AND e.extractor_version=$1
  AND e.status='review_ready' AND NOT e.superseded AND e.auto_publish AND v.auto_publish
+ AND (v.online_intent_epoch=0 OR e.publication_intent_id=v.online_intent_id AND e.publication_intent_epoch=v.online_intent_epoch AND (SELECT t.status IN ('authorized','running') FROM hhc_web.online_bulletin_intent_transition t WHERE t.intent_id=v.online_intent_id ORDER BY t.sequence DESC LIMIT 1))
  AND e.authorizer_id IS NOT NULL AND e.authorizer_request_id=v.auto_publish_request
  AND d.series='general' AND d.content_locale='zh-Hant' AND d.incoming_revision IS NULL
  AND d.published_revision IS DISTINCT FROM d.local_revision
@@ -47,6 +48,12 @@ func (r *Repository) AutoPublishNextRecognition(ctx context.Context, now time.Ti
 		return false, err
 	}
 	defer tx.Rollback()
+	if changed, err := r.reconcileFailedBulletinIntent(ctx, tx, now); err != nil {
+		return false, err
+	} else if changed {
+		return true, tx.Commit()
+	}
+
 	var issue, actor, request, id, pdfStatus string
 	var canonicalVersion, onlineVersion, revision int64
 	var raw, snapshot, inputJSON, evidenceJSON, mappingsJSON []byte
@@ -68,6 +75,9 @@ func (r *Repository) AutoPublishNextRecognition(ctx context.Context, now time.Ti
 	}
 	ctx = auditclient.WithProvenance(ctx, actor, request)
 	if pdfStatus == "draft" {
+		if err = r.changeBulletinIntent(ctx, tx, issue, "general", "zh-Hant", "running", "automatic_running", actor, now, ""); err != nil {
+			return false, err
+		}
 		workflow, err := r.startBulletinPublishTx(ctx, tx, issue, "general", "zh-Hant", canonicalVersion, notify, actor, now)
 		if err != nil {
 			return false, err
@@ -99,7 +109,10 @@ func (r *Repository) AutoPublishNextRecognition(ctx context.Context, now time.Ti
 			return false, err
 		}
 	}
-	if err = cancelOnlineAutomaticIntent(ctx, tx, confirmed.DocumentID, now); err != nil {
+	if err = r.changeBulletinIntent(ctx, tx, issue, "general", "zh-Hant", "completed", "automatic_published", actor, now, ""); err != nil {
+		return false, err
+	}
+	if err = r.cancelOnlineAutomaticIntent(ctx, tx, confirmed.DocumentID, now); err != nil {
 		return false, err
 	}
 	return true, tx.Commit()

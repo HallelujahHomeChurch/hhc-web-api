@@ -17,6 +17,7 @@ import (
 )
 
 type Repository struct {
+	explicitOnlinePublication                              bool
 	db                                                     *sql.DB
 	enableFiveLocaleBulletinNotificationsAfterFluentReview bool
 	auditOutbox                                            *AuditOutbox
@@ -30,6 +31,12 @@ func New(db *sql.DB, enableFiveLocaleBulletinNotificationsAfterFluentReview ...b
 		enabled = enableFiveLocaleBulletinNotificationsAfterFluentReview[0]
 	}
 	return &Repository{db: db, enableFiveLocaleBulletinNotificationsAfterFluentReview: enabled}
+}
+
+// Enable only after all publishing and worker writers support intent epochs.
+func (r *Repository) WithExplicitOnlinePublication(enabled bool) *Repository {
+	r.explicitOnlinePublication = enabled
+	return r
 }
 
 func (r *Repository) WithAudit(outbox *AuditOutbox) *Repository {
@@ -169,7 +176,7 @@ func (r *Repository) UpdateIssue(ctx context.Context, id string, expected int64,
 	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.bulletin_issue SET issue_number=$2,issue_date=$3,version=version+1,updated_by=$4,updated_at=$5 WHERE id=$1`, id, input.IssueNumber, input.IssueDate, actor, now); err != nil {
 		return bulletins.Issue{}, mapConflict(err)
 	}
-	if err := r.setAutomaticBulletinIntent(ctx, tx, id, "general", "zh-Hant", false, false, actor, now); err != nil {
+	if err := r.setAutomaticBulletinIntentReason(ctx, tx, id, "general", "zh-Hant", false, false, actor, now, "canonical_edited"); err != nil {
 		return bulletins.Issue{}, err
 	}
 	issue, err := loadIssue(ctx, tx, id)
@@ -311,7 +318,7 @@ func (r *Repository) PutVersion(ctx context.Context, id string, expected int64, 
 		ON CONFLICT(issue_id,series,locale) DO UPDATE SET
 			retiring_asset_id=CASE WHEN hhc_web.bulletin_version.status='published' THEN hhc_web.bulletin_version.pdf_asset_id ELSE hhc_web.bulletin_version.retiring_asset_id END,
 			retiring_grant_id=CASE WHEN hhc_web.bulletin_version.status='published' THEN hhc_web.bulletin_version.public_grant_id ELSE hhc_web.bulletin_version.retiring_grant_id END,
-			title=EXCLUDED.title,subtitle=EXCLUDED.subtitle,pdf_asset_id=EXCLUDED.pdf_asset_id,pdf_file_name=EXCLUDED.pdf_file_name,status='draft',
+			title=EXCLUDED.title,subtitle=EXCLUDED.subtitle,pdf_sha256=CASE WHEN hhc_web.bulletin_version.pdf_asset_id=EXCLUDED.pdf_asset_id THEN hhc_web.bulletin_version.pdf_sha256 ELSE '' END,pdf_asset_id=EXCLUDED.pdf_asset_id,pdf_file_name=EXCLUDED.pdf_file_name,status='draft',
 			version=hhc_web.bulletin_version.version+1,updated_by=EXCLUDED.updated_by,updated_at=EXCLUDED.updated_at
 		RETURNING id::text`, platform.NewID(), id, input.Series, input.Locale, input.Title, input.Subtitle, input.PDFAssetID, input.PDFFileName, actor, now).Scan(&versionID)
 	if err != nil {
@@ -333,7 +340,7 @@ func (r *Repository) PutVersion(ctx context.Context, id string, expected int64, 
 	if input.AutoPublish && (issue.IssueNumber == nil || *issue.IssueNumber < 1739) {
 		return bulletins.Issue{}, bulletins.ErrInvalid
 	}
-	if err := r.setAutomaticBulletinIntent(ctx, tx, id, input.Series, input.Locale, input.AutoPublish, input.NotifySubscribers, actor, now); err != nil {
+	if err := r.setAutomaticBulletinIntentReason(ctx, tx, id, input.Series, input.Locale, input.AutoPublish, input.NotifySubscribers, actor, now, "source_replaced"); err != nil {
 		return bulletins.Issue{}, err
 	}
 	if input.Series == "general" && input.Locale == "zh-Hant" {
@@ -375,7 +382,7 @@ func (r *Repository) UpdateVersion(ctx context.Context, id, series, locale strin
 	if err != nil {
 		return bulletins.Issue{}, err
 	}
-	if err := r.setAutomaticBulletinIntent(ctx, tx, id, series, locale, false, false, actor, now); err != nil {
+	if err := r.setAutomaticBulletinIntentReason(ctx, tx, id, series, locale, false, false, actor, now, "canonical_edited"); err != nil {
 		return bulletins.Issue{}, err
 	}
 	if err := r.enqueueBulletinAudit(ctx, tx, "cms.bulletin.version.update", versionID, actor, now); err != nil {
@@ -410,6 +417,9 @@ func (r *Repository) DeleteVersion(ctx context.Context, id, series, locale strin
 	}
 	if status != "draft" && status != "unpublished" || publicGrantID != "" || retiringGrantID != "" {
 		return bulletins.Issue{}, bulletins.ErrConflict
+	}
+	if err := r.changeBulletinIntent(ctx, tx, id, series, locale, "cancelled", "manual_state_change", actor, now, ""); err != nil {
+		return bulletins.Issue{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM hhc_web.bulletin_version WHERE issue_id=$1 AND series=$2 AND locale=$3`, id, series, locale); err != nil {
 		return bulletins.Issue{}, err
@@ -568,7 +578,7 @@ func (r *Repository) RestoreIssueRevision(ctx context.Context, id string, revisi
 	if hasOnlineHistory {
 		return bulletins.Issue{}, bulletins.ErrOnlineDocumentExists
 	}
-	if err := r.setAutomaticBulletinIntent(ctx, tx, id, "general", "zh-Hant", false, false, actor, now); err != nil {
+	if err := r.setAutomaticBulletinIntentReason(ctx, tx, id, "general", "zh-Hant", false, false, actor, now, "canonical_edited"); err != nil {
 		return bulletins.Issue{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM hhc_web.bulletin_version WHERE issue_id=$1`+missingClause, args...); err != nil {
@@ -629,24 +639,11 @@ func validStoredIssueDate(value string) bool {
 }
 
 func (r *Repository) StartPublish(ctx context.Context, id, series, locale string, expected int64, notifySubscribers bool, actor string, now time.Time) (bulletins.Workflow, error) {
-	if err := r.validateBulletinAudit(ctx, actor); err != nil {
-		return bulletins.Workflow{}, err
-	}
-	if _, ok := bulletins.NormalizeBulletinEdition(series, locale); !ok {
+	edition, ok := bulletins.NormalizeBulletinEdition(series, locale)
+	if !ok {
 		return bulletins.Workflow{}, bulletins.ErrInvalid
 	}
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return bulletins.Workflow{}, err
-	}
-	defer tx.Rollback()
-	workflow, err := r.startBulletinPublishTx(ctx, tx, id, series, locale, expected, notifySubscribers, actor, now)
-	if err != nil {
-		return bulletins.Workflow{}, err
-	}
-	// Publishing the PDF preserves an existing exact-source online authorization.
-	// Only explicit cancellation/source or authored mutations revoke that intent.
-	return workflow, tx.Commit()
+	return r.StartPublishSelection(ctx, id, bulletins.PublishInput{Series: string(edition.Series), Locale: locale, NotifySubscribers: notifySubscribers}, expected, actor, now)
 }
 
 func (r *Repository) startBulletinPublishTx(ctx context.Context, tx *sql.Tx, id, series, locale string, expected int64, notifySubscribers bool, actor string, now time.Time) (bulletins.Workflow, error) {
@@ -761,7 +758,7 @@ func (r *Repository) unpublishBulletin(ctx context.Context, id, series, locale s
 	}
 	next := current + 1
 	workflowID := platform.NewID()
-	if err := r.setAutomaticBulletinIntent(ctx, tx, canonicalID, series, locale, false, false, actor, now); err != nil {
+	if err := r.setAutomaticBulletinIntentReason(ctx, tx, canonicalID, series, locale, false, false, actor, now, "unpublished"); err != nil {
 		return bulletins.Issue{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.bulletin_version SET status='unpublishing',version=version+1,updated_by=$4,updated_at=$5 WHERE issue_id=$1 AND series=$2 AND locale=$3`, canonicalID, series, locale, actor, now); err != nil {
@@ -828,6 +825,9 @@ func (r *Repository) DeleteIssue(ctx context.Context, id string, expected int64,
 		return err
 	}
 	if err := enqueueAssetDeletes(ctx, tx, "bulletin", canonicalID, current, assetIDs, now); err != nil {
+		return err
+	}
+	if err := r.changeBulletinIntent(ctx, tx, canonicalID, "general", "zh-Hant", "cancelled", "manual_state_change", actor, now, ""); err != nil {
 		return err
 	}
 	if result, err := tx.ExecContext(ctx, `DELETE FROM hhc_web.bulletin_issue WHERE id=$1`, canonicalID); err != nil {

@@ -118,6 +118,8 @@ type ConfirmedRevision struct {
 // AdminState keeps canonical CMS metadata separate from the frozen publication.
 // Revision pointers and version belong only to this exact issue/series/locale.
 type AdminState struct {
+	Production          *AdminProduction   `json:"production,omitempty"`
+	Capabilities        *AdminCapabilities `json:"capabilities,omitempty"`
 	Automation          *AdminAutomation   `json:"automation,omitempty"`
 	IssueID             string             `json:"issueId"`
 	Series              string             `json:"series"`
@@ -142,10 +144,11 @@ type AdminState struct {
 }
 
 type AdminAutomation struct {
-	AutoPublish bool      `json:"autoPublish"`
-	Update      *AdminJob `json:"update"`
-	Summary     string    `json:"summary"`
-	ChangeKind  string    `json:"changeKind"`
+	Disposition *PublicationDisposition `json:"disposition,omitempty"`
+	AutoPublish bool                    `json:"autoPublish"`
+	Update      *AdminJob               `json:"update"`
+	Summary     string                  `json:"summary"`
+	ChangeKind  string                  `json:"changeKind"`
 }
 
 // Provenance belongs only to the Admin projection, never member content.

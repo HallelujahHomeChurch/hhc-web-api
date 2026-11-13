@@ -95,10 +95,11 @@ type Version struct {
 }
 
 type Workflow struct {
-	ID               string    `json:"id"`
-	Status           string    `json:"status"`
-	AggregateVersion int64     `json:"aggregateVersion"`
-	CreatedAt        time.Time `json:"createdAt"`
+	OnlinePublication *OnlinePublicationOutcome `json:"onlinePublication,omitempty"`
+	ID                string                    `json:"id"`
+	Status            string                    `json:"status"`
+	AggregateVersion  int64                     `json:"aggregateVersion"`
+	CreatedAt         time.Time                 `json:"createdAt"`
 }
 
 type Revision struct {
@@ -131,15 +132,19 @@ type UpdateVersionInput struct {
 	Subtitle string `json:"subtitle"`
 }
 type PublishInput struct {
+	OnlinePublication string `json:"onlinePublication,omitempty"`
+	OnlineVersion     *int64 `json:"onlineVersion,omitempty"`
 	Series            string `json:"series,omitempty"`
 	Locale            string `json:"locale"`
 	NotifySubscribers bool   `json:"notifySubscribers,omitempty"`
 }
 
 type UnpublishInput struct {
-	PublishInput
-	UnpublishOnline bool   `json:"unpublishOnline,omitempty"`
-	OnlineVersion   *int64 `json:"onlineVersion,omitempty"`
+	Series            string `json:"series,omitempty"`
+	Locale            string `json:"locale"`
+	NotifySubscribers bool   `json:"notifySubscribers,omitempty"`
+	UnpublishOnline   bool   `json:"unpublishOnline,omitempty"`
+	OnlineVersion     *int64 `json:"onlineVersion,omitempty"`
 }
 type Page struct {
 	Items    []Issue `json:"items"`

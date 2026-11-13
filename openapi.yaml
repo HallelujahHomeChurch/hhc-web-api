@@ -3908,6 +3908,55 @@ paths:
         '403': { $ref: '#/components/responses/AdminForbidden' }
         '200': { $ref: '#/components/responses/BulletinIssue' }
         '412': { $ref: '#/components/responses/Error' }
+  /admin/bulletins/{issueId}/online/general/zh-Hant/recover-publication:
+    post:
+      operationId: recoverOnlineBulletinPublication
+      summary: Publish an existing qualified Traditional online draft
+      description: Capability-gated synchronous CMS transaction. Requires current human publication scope, exact source/canonical/Local and immutable semantic and measured layout evidence. Never queues extraction or layout, never creates notifications, and preserves original authorizer evidence. Successful recovery may trigger the existing Simplified derivation. The same actor/key/input replays its original receipt after withdrawal without republishing; changed input conflicts. Qualification conflicts return sanitized meta.blockers. All responses are private, no-store.
+      tags: [Admin]
+      x-hhc-visibility: admin
+      x-hhc-callers: [api-gateway]
+      x-hhc-cache: 'private, no-store'
+      x-required-scopes: [cms:bulletins:publish]
+      security: [{ daprApiToken: [], daprCallerAppId: [], trustedUserId: [], trustedAuthProvider: [], trustedScopes: [] }]
+      servers: [{ url: https://admin.alive.org.tw/api }]
+      parameters:
+        - { name: issueId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: If-Match, in: header, required: true, schema: { type: string, pattern: '^"[1-9][0-9]*"$' } }
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OnlineBulletinRecoveryInput' }
+      responses:
+        '200':
+          description: Immutable recovery receipt and original publication outcome
+          headers:
+            ETag: { schema: { type: string } }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta, error]
+                properties:
+                  data: { $ref: '#/components/schemas/OnlineBulletinRecoveryResult' }
+                  meta: { type: object, additionalProperties: true }
+                  error: { type: 'null' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/AdminUnauthorized' }
+        '403': { $ref: '#/components/responses/AdminForbidden' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409':
+          description: CAS/key conflict or sanitized saved-draft qualification blockers
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - { $ref: '#/components/schemas/OnlineBulletinRecoveryBlockedEnvelope' }
+                  - { $ref: '#/components/schemas/ErrorEnvelope' }
+        '428': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
   /admin/bulletins/{issueId}/publish:
     post:
       operationId: publishBulletin
@@ -13964,6 +14013,7 @@ components:
       additionalProperties: false
       required: [autoPublish, update, summary, changeKind]
       properties:
+        disposition: { $ref: '#/components/schemas/PublicationDisposition' }
         autoPublish: { type: boolean }
         summary: { type: string, maxLength: 800 }
         changeKind: { type: string, enum: ['', first, unchanged, layout, correction, structure] }
@@ -13984,6 +14034,8 @@ components:
       additionalProperties: false
       required: [issueId, series, contentLocale, canonicalVersion, canonicalMetadata, pdfStatus, documentId, version, draftStatus, baseRevision, local, incomingRevision, publishedRevision, publishedMetadata, metadataSyncPending, confirmed, extraction, layout]
       properties:
+        capabilities: { $ref: '#/components/schemas/OnlineBulletinCapabilities' }
+        production: { $ref: '#/components/schemas/OnlineBulletinProduction' }
         automation: { $ref: '#/components/schemas/OnlineBulletinAutomation' }
         issueId: { type: string, format: uuid }
         series: { type: string, enum: [general] }
@@ -16044,6 +16096,7 @@ components:
       type: object
       required: [id, status, aggregateVersion, createdAt]
       properties:
+        onlinePublication: { $ref: '#/components/schemas/BulletinOnlinePublicationOutcome' }
         id: { type: string, format: uuid }
         status: { type: string }
         aggregateVersion: { type: integer, format: int64 }
@@ -16177,6 +16230,110 @@ components:
         - properties:
             unpublishOnline: { const: false }
             onlineVersion: { not: {} }
+    BulletinOnlinePublicationOutcome:
+      type: object
+      additionalProperties: false
+      required: [outcome]
+      properties:
+        outcome: { type: string, enum: [preserved, absent, terminal, cancelled] }
+        disposition: { $ref: '#/components/schemas/PublicationDisposition' }
+    OnlineBulletinCapabilities:
+      type: object
+      additionalProperties: false
+      required: [explicitOnlinePublication, qualifiedDraftRecovery]
+      properties:
+        explicitOnlinePublication: { type: boolean, description: Inactive until every publisher and worker supports durable intent epochs. }
+        qualifiedDraftRecovery: { type: boolean }
+    PublicationDisposition:
+      type: object
+      additionalProperties: false
+      description: Latest append-only disposition for a known intent. Omitted for legacy history without evidence; a false autoPublish flag never implies a historical cancellation reason.
+      required: [intentId, epoch, status, reasonCode, changedAt, canonicalVersion, sourceAssetId, sourceChecksum]
+      properties:
+        intentId: { type: string, format: uuid }
+        epoch: { type: integer, format: int64, minimum: 1 }
+        status: { type: string, enum: [authorized, running, completed, cancelled, superseded, failed] }
+        reasonCode: { type: string, enum: [automatic_authorized, automatic_running, automatic_published, pdf_only, source_replaced, canonical_edited, draft_edited, explicit_draft, unpublished, manual_published, recovery_authorized, recovery_started, recovery_published, processing_failed, manual_state_change] }
+        changedAt: { type: string, format: date-time }
+        canonicalVersion: { type: integer, format: int64, minimum: 1 }
+        sourceAssetId: { type: string }
+        sourceChecksum: { type: string, pattern: '^([0-9a-f]{64})?$' }
+        documentId: { type: string, format: uuid }
+        revision: { type: integer, format: int64, minimum: 1 }
+        receiptId: { type: string, format: uuid }
+    OnlineBulletinRecoveryBlocker:
+      type: string
+      enum: [missing_local, pdf_not_published, source_changed, stale_metadata, review_required, incompatible_proof, layout_not_ready, semantic_proof_missing]
+    OnlineBulletinRecoveryBlockedEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, meta, error]
+      properties:
+        data: { type: 'null' }
+        meta:
+          type: object
+          additionalProperties: false
+          required: [blockers]
+          properties:
+            blockers: { type: array, minItems: 1, maxItems: 8, uniqueItems: true, items: { $ref: '#/components/schemas/OnlineBulletinRecoveryBlocker' } }
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message]
+          properties:
+            code: { const: recovery_blocked, type: string }
+            message: { type: string }
+    OnlineBulletinRecoveryInput:
+      type: object
+      additionalProperties: false
+      required: [canonicalVersion, revision, layoutValidationHash]
+      properties:
+        canonicalVersion: { type: integer, format: int64, minimum: 1 }
+        revision: { type: integer, format: int64, minimum: 1 }
+        layoutValidationHash: { type: string, pattern: '^[0-9a-f]{64}$' }
+    OnlineBulletinRecoveryReceipt:
+      type: object
+      additionalProperties: false
+      required: [id, operationKey, documentId, revision, canonicalVersion, onlineVersion, layoutValidationHash, outcome, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        operationKey: { type: string, minLength: 1, maxLength: 128 }
+        documentId: { type: string, format: uuid }
+        revision: { type: integer, format: int64, minimum: 1 }
+        canonicalVersion: { type: integer, format: int64, minimum: 1 }
+        onlineVersion: { type: integer, format: int64, minimum: 1 }
+        layoutValidationHash: { type: string, pattern: '^[0-9a-f]{64}$' }
+        outcome: { type: string, enum: [published] }
+        createdAt: { type: string, format: date-time }
+    OnlineBulletinRecoveryResult:
+      type: object
+      additionalProperties: false
+      required: [receipt, publication, replayed]
+      properties:
+        receipt: { $ref: '#/components/schemas/OnlineBulletinRecoveryReceipt' }
+        publication: { $ref: '#/components/schemas/OnlineBulletinConfirmedRevision' }
+        replayed: { type: boolean, description: Returns the immutable original outcome after withdrawal without publishing again. }
+    OnlineBulletinProduction:
+      type: object
+      description: Admin-only progress currently reports scan, recognition and reconciliation. Layout and publication enum values are reserved; existing layout/publication fields remain the authority for later stages. Verification subphase is reserved. Progress never qualifies content for publication.
+      additionalProperties: false
+      required: [sourceIdentity, jobId, attemptId, progressVersion, phase, status, totalPages, currentPage, verifiedPages, subphase, startedAt, lastProgressAt, heartbeatAt, observedAt, verifiedReuseCount]
+      properties:
+        sourceIdentity: { type: string, pattern: '^[0-9a-f]{64}$' }
+        jobId: { type: string, format: uuid }
+        attemptId: { type: string }
+        progressVersion: { type: integer, format: int64, minimum: 1 }
+        phase: { type: string, enum: [scan, recognition, reconciliation, layout, publication] }
+        status: { type: string, enum: [queued, running, waiting, completed, failed, cancelled, superseded] }
+        totalPages: { type: [integer, 'null'], minimum: 1, maximum: 40 }
+        currentPage: { type: [integer, 'null'], minimum: 1, maximum: 40 }
+        verifiedPages: { type: integer, minimum: 0, maximum: 40 }
+        subphase: { type: string, enum: ['', source, recognition, verification, verified, checkpoint_reuse, snapshot_reuse] }
+        startedAt: { type: [string, 'null'], format: date-time }
+        lastProgressAt: { type: [string, 'null'], format: date-time }
+        heartbeatAt: { type: [string, 'null'], format: date-time }
+        observedAt: { type: string, format: date-time }
+        verifiedReuseCount: { type: integer, minimum: 0, maximum: 40 }
     PublicationInput:
       type: object
       additionalProperties: false
@@ -16184,6 +16341,11 @@ components:
       properties:
         series: { $ref: '#/components/schemas/BulletinSeries', default: general }
         locale: { $ref: '#/components/schemas/BulletinLocale' }
+        onlinePublication:
+          type: string
+          enum: [continue_automatic, pdf_only]
+          description: Capability-gated explicit choice. Omission or continue_automatic preserves existing exact-source authority only. pdf_only cancels pending automatic online work before starting the independent PDF workflow; existing online publication remains available.
+        onlineVersion: { type: integer, format: int64, minimum: 0, description: Only valid and required with pdf_only; zero means no online document exists. }
         notifySubscribers:
           type: boolean
           default: false
