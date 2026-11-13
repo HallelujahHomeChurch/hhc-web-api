@@ -644,9 +644,8 @@ func (r *Repository) StartPublish(ctx context.Context, id, series, locale string
 	if err != nil {
 		return bulletins.Workflow{}, err
 	}
-	if err := r.setAutomaticBulletinIntent(ctx, tx, id, series, locale, false, false, actor, now); err != nil {
-		return bulletins.Workflow{}, err
-	}
+	// Publishing the PDF preserves an existing exact-source online authorization.
+	// Only explicit cancellation/source or authored mutations revoke that intent.
 	return workflow, tx.Commit()
 }
 
@@ -985,6 +984,12 @@ func (r *Repository) FailPublish(ctx context.Context, event publication.Event, a
 		return err
 	}
 	defer tx.Rollback()
+	if event.EventType == "bulletin.publish.ensure_asset" {
+		current, err := lockBulletinPublicationClaim(ctx, tx, event, now)
+		if err != nil || !current {
+			return err
+		}
+	}
 	if err := failEvent(ctx, tx, event, detail, now); err != nil {
 		return err
 	}
@@ -1041,6 +1046,12 @@ func (r *Repository) FailContentPublish(ctx context.Context, event publication.E
 }
 
 func failEvent(ctx context.Context, tx *sql.Tx, event publication.Event, detail string, now time.Time) error {
+	if event.EventType == "bulletin.publish.ensure_asset" {
+		current, err := lockBulletinPublicationClaim(ctx, tx, event, now)
+		if err != nil || !current {
+			return err
+		}
+	}
 	var payload publication.PublishPayload
 	_ = json.Unmarshal(event.Payload, &payload)
 	if edition, ok := bulletins.NormalizeBulletinEdition(payload.Series, payload.Locale); ok {
@@ -1141,13 +1152,6 @@ func (r *Repository) CompletePublish(ctx context.Context, event publication.Even
 		return err
 	}
 	defer tx.Rollback()
-	delivered, err := eventDelivered(ctx, tx, event.ID)
-	if err != nil {
-		return err
-	}
-	if delivered {
-		return nil
-	}
 	var issueDate, issueStatus, title, subtitle, versionStatus, retiringAssetID, retiringGrantID string
 	var issueNumber sql.NullInt64
 	var issueVersion int64
@@ -1159,6 +1163,21 @@ func (r *Repository) CompletePublish(ctx context.Context, event publication.Even
 		WHERE i.id=$1 FOR UPDATE OF i,v`, payload.IssueID, payload.Series, payload.Locale).
 		Scan(&issueNumber, &issueDate, &issueStatus, &issueVersion, &title, &subtitle, &versionStatus, &retiringAssetID, &retiringGrantID); err != nil {
 		return err
+	}
+	// Lock canonical rows before the event, matching explicit cancellation.
+	current, err := lockBulletinPublicationClaim(ctx, tx, event, now)
+	if err != nil {
+		return err
+	}
+	if !current {
+		delivered, err := eventDelivered(ctx, tx, event.ID)
+		if err != nil {
+			return err
+		}
+		if delivered {
+			return nil
+		}
+		return publication.ErrStalePublication
 	}
 	if issueVersion != payload.AggregateVersion || issueStatus != "publishing" || versionStatus != "publishing" {
 		return publication.ErrStalePublication
@@ -1179,27 +1198,7 @@ func (r *Repository) CompletePublish(ctx context.Context, event publication.Even
 		return err
 	}
 	if payload.NotifySubscribers {
-		versions, err := queryVersions(ctx, tx, payload.IssueID)
-		if err != nil {
-			return err
-		}
-		notification := buildBulletinNotification(payload.IssueID, payload.Series, issueNumber, payload.ActorID, versions)
-		notificationID := platform.NewID()
-		key := fmt.Sprintf("notification:v2:bulletin:%s:%s:g0", payload.IssueID, payload.Series)
-		notification.RequestID, notification.IdempotencyKey = notificationID, key
-		encodedNotification, err := json.Marshal(notification)
-		if err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO hhc_web.outbox_event(id,destination,event_type,aggregate_type,aggregate_id,aggregate_version,payload_json,idempotency_key,status,next_attempt_at,created_at,updated_at)
-			SELECT $1,'engagement-api','bulletin.notification.submit','bulletin',$2,$3,$4,$5,'pending',$6,$6,$6
-			WHERE NOT EXISTS (
-				SELECT 1 FROM hhc_web.outbox_event
-				WHERE aggregate_type='bulletin' AND aggregate_id=$2 AND event_type='bulletin.notification.submit'
-				  AND COALESCE(payload_json#>>'{source,series}','general')=$7
-			)
-			ON CONFLICT(destination,idempotency_key) DO NOTHING`, notificationID, payload.IssueID, issueVersion, encodedNotification, key, now, payload.Series); err != nil {
+		if err := enqueueBulletinPublicationNotification(ctx, tx, payload.IssueID, payload.Series, issueNumber, payload.ActorID, issueVersion, now); err != nil {
 			return err
 		}
 	}
@@ -1468,4 +1467,33 @@ func mapConflict(err error) error {
 		return bulletins.ErrConflict
 	}
 	return err
+}
+
+// Caller holds the issue lock. Both PDF and authorized online completion share
+// this immutable generation-zero command; Engagement owns actual delivery.
+func enqueueBulletinPublicationNotification(ctx context.Context, tx *sql.Tx, issueID, series string, issueNumber sql.NullInt64, actor string, issueVersion int64, now time.Time) error {
+	versions, err := queryVersions(ctx, tx, issueID)
+	if err != nil {
+		return err
+	}
+	notification := buildBulletinNotification(issueID, series, issueNumber, actor, versions)
+	notificationID := platform.NewID()
+	key := fmt.Sprintf("notification:v2:bulletin:%s:%s:g0", issueID, series)
+	notification.RequestID, notification.IdempotencyKey = notificationID, key
+	encodedNotification, err := json.Marshal(notification)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+			INSERT INTO hhc_web.outbox_event(id,destination,event_type,aggregate_type,aggregate_id,aggregate_version,payload_json,idempotency_key,status,next_attempt_at,created_at,updated_at)
+			SELECT $1,'engagement-api','bulletin.notification.submit','bulletin',$2,$3,$4,$5,'pending',$6,$6,$6
+			WHERE NOT EXISTS (
+				SELECT 1 FROM hhc_web.outbox_event
+				WHERE aggregate_type='bulletin' AND aggregate_id=$2 AND event_type='bulletin.notification.submit'
+				  AND COALESCE(payload_json#>>'{source,series}','general')=$7
+			)
+			ON CONFLICT(destination,idempotency_key) DO NOTHING`, notificationID, issueID, issueVersion, encodedNotification, key, now, series); err != nil {
+		return err
+	}
+	return nil
 }

@@ -90,6 +90,15 @@ func (r *Repository) AutoPublishNextRecognition(ctx context.Context, now time.Ti
 	if _, err = r.publishOnlineBulletinTx(ctx, tx, issue, "general", "zh-Hant", onlinebulletins.PublishInput{CanonicalVersion: canonicalVersion, OnlineVersion: confirmed.Version, Revision: revision, Mappings: decisions}, actor, now, nil); err != nil {
 		return false, err
 	}
+	if notify {
+		var number sql.NullInt64
+		if err = tx.QueryRowContext(ctx, `SELECT issue_number FROM hhc_web.bulletin_issue WHERE id=$1`, issue).Scan(&number); err != nil {
+			return false, err
+		}
+		if err = enqueueBulletinPublicationNotification(ctx, tx, issue, "general", number, actor, canonicalVersion, now); err != nil {
+			return false, err
+		}
+	}
 	if err = cancelOnlineAutomaticIntent(ctx, tx, confirmed.DocumentID, now); err != nil {
 		return false, err
 	}
