@@ -49,6 +49,7 @@ func (r *Repository) StartPublishSelection(ctx context.Context, issue string, in
 			return bulletins.Workflow{}, err
 		}
 	}
+	var completed *bulletins.Workflow
 	outcome := "absent"
 	if enabled {
 		outcome = "preserved"
@@ -63,8 +64,28 @@ func (r *Repository) StartPublishSelection(ctx context.Context, issue string, in
 		if online != *input.OnlineVersion {
 			return bulletins.Workflow{}, bulletins.ErrPrecondition
 		}
-		if err = r.setAutomaticBulletinIntentReason(ctx, tx, issue, input.Series, input.Locale, false, false, actor, now, "pdf_only"); err != nil {
+		completed, err = completedPublishedBulletinPDF(ctx, tx, issue, input.Series, input.Locale)
+		if err != nil {
 			return bulletins.Workflow{}, err
+		}
+		// A completed publication needs only a deliberate plan change. Disabled
+		// authority is already terminal/absent; do not invent another cancellation.
+		if completed == nil || enabled {
+			if err = r.setAutomaticBulletinIntentReason(ctx, tx, issue, input.Series, input.Locale, false, false, actor, now, "pdf_only"); err != nil {
+				return bulletins.Workflow{}, err
+			}
+		}
+		if completed != nil && enabled {
+			if _, err = tx.ExecContext(ctx, `UPDATE hhc_web.bulletin_issue SET version=version+1,updated_by=$2,updated_at=$3 WHERE id=$1`, issue, actor, now); err != nil {
+				return bulletins.Workflow{}, err
+			}
+			var editionID string
+			if err = tx.QueryRowContext(ctx, `UPDATE hhc_web.bulletin_version SET version=version+1,updated_by=$4,updated_at=$5 WHERE issue_id=$1 AND series=$2 AND locale=$3 RETURNING id::text`, issue, input.Series, input.Locale, actor, now).Scan(&editionID); err != nil {
+				return bulletins.Workflow{}, err
+			}
+			if err = r.enqueueBulletinAudit(ctx, tx, "cms.bulletin.version.update", editionID, actor, now); err != nil {
+				return bulletins.Workflow{}, err
+			}
 		}
 		if enabled {
 			outcome = "cancelled"
@@ -73,9 +94,14 @@ func (r *Repository) StartPublishSelection(ctx context.Context, issue string, in
 			return bulletins.Workflow{}, err
 		}
 	}
-	workflow, err := r.startBulletinPublishTx(ctx, tx, issue, input.Series, input.Locale, canonical, input.NotifySubscribers, actor, now)
-	if err != nil {
-		return workflow, err
+	var workflow bulletins.Workflow
+	if completed != nil {
+		workflow = *completed
+	} else {
+		workflow, err = r.startBulletinPublishTx(ctx, tx, issue, input.Series, input.Locale, canonical, input.NotifySubscribers, actor, now)
+		if err != nil {
+			return workflow, err
+		}
 	}
 	// Legacy response remains readable; known terminal history never implies an
 	// active grant. The request itself cannot turn disabled authority on.
@@ -90,4 +116,32 @@ func (r *Repository) StartPublishSelection(ctx context.Context, issue string, in
 		workflow.OnlinePublication = &bulletins.OnlinePublicationOutcome{Outcome: outcome, Disposition: disposition}
 	}
 	return workflow, tx.Commit()
+}
+
+// Reuse only a real completed workflow which produced the current published PDF.
+// The caller holds i/v/d and has checked both CAS values. No workflow/outbox lock
+// is needed for terminal evidence; all publication writers serialize through i/v.
+func completedPublishedBulletinPDF(ctx context.Context, tx *sql.Tx, issue, series, locale string) (*bulletins.Workflow, error) {
+	var issueStatus, versionStatus string
+	if err := tx.QueryRowContext(ctx, `SELECT i.status,v.status FROM hhc_web.bulletin_issue i JOIN hhc_web.bulletin_version v ON v.issue_id=i.id AND v.series=$2 AND v.locale=$3 WHERE i.id=$1`, issue, series, locale).Scan(&issueStatus, &versionStatus); err != nil {
+		return nil, err
+	}
+	if versionStatus != "published" {
+		return nil, nil
+	}
+	if issueStatus == "publishing" || issueStatus == "unpublishing" {
+		return nil, bulletins.ErrConflict
+	}
+	var workflow bulletins.Workflow
+	err := tx.QueryRowContext(ctx, `SELECT w.id::text,w.status,w.aggregate_version,w.created_at
+ FROM hhc_web.bulletin_version v JOIN hhc_web.bulletin_published_version p ON p.issue_id=v.issue_id AND p.series=v.series AND p.locale=v.locale
+ JOIN hhc_web.publication_workflow w ON w.resource_id=p.issue_id AND w.resource_type='bulletin' AND w.workflow_type='bulletin_publish' AND w.series=p.series AND w.locale=p.locale AND w.asset_id=p.asset_id AND w.aggregate_version=p.version AND w.status='completed'
+ WHERE v.issue_id=$1 AND v.series=$2 AND v.locale=$3 AND p.asset_id=v.pdf_asset_id AND p.title=v.title AND p.subtitle=v.subtitle`, issue, series, locale).Scan(&workflow.ID, &workflow.Status, &workflow.AggregateVersion, &workflow.CreatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, bulletins.ErrConflict
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &workflow, nil
 }

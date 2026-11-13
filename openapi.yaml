@@ -3961,7 +3961,7 @@ paths:
     post:
       operationId: publishBulletin
       summary: Publish bulletin
-      description: Ordinary PDF publication rejects current automatic authority with 409 automatic_publication_active, including with the capability disabled. Explicit continue_automatic requires a provably healthy current automatic chain without an owned PDF workflow; unknown, stale, failed or already-owned work returns 409 without mutation. It preserves the original automatic notification preference. PDF-only is a separate deliberate cancellation, not early PDF with automatic work retained.
+      description: Ordinary PDF publication rejects current automatic authority with 409 automatic_publication_active, including with the capability disabled. Explicit continue_automatic requires a provably healthy current automatic chain without an owned PDF workflow; unknown, stale, failed or already-owned work returns 409 without mutation. It preserves the original automatic notification preference. PDF-only is a separate deliberate cancellation, not early PDF with automatic work retained. For an already-published exact PDF with matching completed workflow evidence, it cancels only the pending automatic plan and returns that original completed workflow without republishing or notifying. Its aggregateVersion is historical; refresh the issue for the current canonical version.
       tags: [Admin]
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
@@ -16346,7 +16346,7 @@ components:
         onlinePublication:
           type: string
           enum: [continue_automatic, pdf_only]
-          description: Capability-gated explicit choice. Omission rejects active automatic authority. continue_automatic preserves existing exact-source authority only and requires a provably healthy current chain without an owned PDF workflow; otherwise it returns 409. It never grants disabled or absent authority. pdf_only cancels pending automatic online work before starting the independent PDF workflow; existing online publication remains available.
+          description: Capability-gated explicit choice. Omission rejects active automatic authority. continue_automatic preserves existing exact-source authority only and requires a provably healthy current chain without an owned PDF workflow; otherwise it returns 409. It never grants disabled or absent authority. pdf_only cancels pending automatic online work before starting the independent PDF workflow; if the exact PDF is already published with matching completed workflow evidence, it returns that original completed workflow without republishing or notifying. Existing online publication remains available.
         onlineVersion: { type: integer, format: int64, minimum: 0, description: Only valid and required with pdf_only; zero means no online document exists. }
         notifySubscribers:
           type: boolean

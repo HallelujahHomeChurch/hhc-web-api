@@ -29,7 +29,15 @@ must contain no personal/member content.
 
 PDF-only checks canonical and online versions, including zero for no document,
 then cancels old automatic work before starting the independent PDF workflow in
-one transaction. It leaves an existing online publication available; withdrawal
+one transaction. When that exact PDF is already published, the action instead
+requires its matching published projection and real completed workflow. It cancels
+only the pending automatic plan and returns that original completed workflow,
+without another PDF, Asset or notification command. Its aggregateVersion remains
+the original publication version; refresh the issue for the current canonical
+version. A real plan change advances canonical and edition versions and records
+a version-update audit. For an already-published PDF, already-disabled plans are
+read-only no-ops; stale CAS or unavailable publication proof rejects the operation.
+It leaves an existing online publication available; withdrawal
 uses the separate unpublish operation. Its notification checkbox governs the PDF
 action; existing generation-zero notification deduplication remains unchanged.
 
