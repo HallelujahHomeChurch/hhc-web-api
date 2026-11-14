@@ -78,6 +78,9 @@ func (r *Repository) ClaimOnlineBulletinExtraction(ctx context.Context, now time
 	if err != nil {
 		return nil, err
 	}
+	if err = recordProductionClaim(ctx, tx, job, now); err != nil {
+		return nil, err
+	}
 	if err = tx.Commit(); err != nil {
 		return nil, err
 	}
@@ -88,7 +91,16 @@ func (r *Repository) FailOnlineBulletinExtraction(ctx context.Context, job onlin
 	if !extractionErrorCode.MatchString(code) || now.IsZero() || maxAttempts < 1 || maxAttempts > 10 {
 		return onlinebulletins.ErrExtractionJob
 	}
-	result, err := r.db.ExecContext(ctx, `UPDATE hhc_web.online_bulletin_extraction_job
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var ignored string
+	if err = tx.QueryRowContext(ctx, `SELECT id::text FROM hhc_web.bulletin_issue WHERE id=$1 FOR UPDATE`, job.Canonical.IssueID).Scan(&ignored); err != nil {
+		return err
+	}
+	result, err := tx.ExecContext(ctx, `UPDATE hhc_web.online_bulletin_extraction_job
 		SET status=CASE WHEN extractor_version=$5 AND attempts<CASE WHEN auto_publish THEN LEAST($6,3) ELSE $6 END AND ($3='extraction_timeout' OR auto_publish AND $3 IN ('recognition_failed','extraction_failed')) THEN 'queued' ELSE 'failed' END,
 		last_error_code=$3,available_at=$4::timestamptz+CASE WHEN auto_publish THEN interval '1 minute' ELSE interval '10 seconds' END,lease_token=NULL,lease_until=NULL,updated_at=$4
 		WHERE id=$1 AND lease_token=$2 AND status='parsing' AND lease_until>$4 AND NOT superseded`, job.ID, job.LeaseToken, code, now, onlinebulletins.RecognitionExtractorVersion(), maxAttempts)
@@ -102,7 +114,16 @@ func (r *Repository) FailOnlineBulletinExtraction(ctx context.Context, job onlin
 	if count != 1 {
 		return onlinebulletins.ErrExtractionLease
 	}
-	return nil
+	var status string
+	if err = tx.QueryRowContext(ctx, `SELECT status FROM hhc_web.online_bulletin_extraction_job WHERE id=$1`, job.ID).Scan(&status); err != nil {
+		return err
+	}
+	if status == "failed" {
+		if err = r.recordBulletinJobFailure(ctx, tx, job.ID, now); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // The candidate is produced only by the privacy-filtered extractor, never by

@@ -250,6 +250,8 @@ func TestRestoreIssueRevisionAllowsDraftMetadataChange(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
 	mock.ExpectQuery("SELECT EXISTS.*online_bulletin_document").WithArgs(issueID, "general", "zh-Hant").
 		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
+	mock.ExpectQuery("SELECT COALESCE\\(v.online_intent_id::text").WithArgs(issueID, "general", "zh-Hant").
+		WillReturnRows(sqlmock.NewRows([]string{"intent_id", "epoch", "asset", "checksum", "canonical", "enabled", "history"}).AddRow("", 0, "asset-1", "", 3, false, false))
 	mock.ExpectQuery("UPDATE hhc_web.publication_workflow w SET status='cancelled'").WithArgs(issueID, "general", "zh-Hant", now).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}))
 	mock.ExpectExec("UPDATE hhc_web.bulletin_version SET auto_publish").WithArgs(issueID, "general", "zh-Hant", false, false, "").

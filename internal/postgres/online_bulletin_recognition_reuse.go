@@ -53,5 +53,8 @@ func (r *Repository) LoadReusableRecognition(ctx context.Context, job onlinebull
 	if _, err = tx.ExecContext(ctx, `UPDATE hhc_web.online_bulletin_extraction_job SET recognition_reused_from=$2 WHERE id=$1`, job.ID, id); err != nil {
 		return nil, nil, err
 	}
+	if err = recordProductionSnapshotReuse(ctx, tx, job, candidate.Document.SourcePageCount, hash, now); err != nil {
+		return nil, nil, err
+	}
 	return &candidate, snapshot.Issues, tx.Commit()
 }

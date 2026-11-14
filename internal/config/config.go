@@ -31,6 +31,8 @@ type TranslationConfig struct {
 }
 
 type Config struct {
+	BulletinExplicitOnlinePublicationEnabled               bool
+	BulletinSimplifiedPublicationRecoveryEnabled           bool
 	AssetWorkload                                          AssetWorkloadConfig
 	GatewayLocationsToken                                  string
 	PrivateServiceTokens                                   map[string]string
@@ -246,6 +248,20 @@ func load(worker bool) (Config, error) {
 			return Config{}, fmt.Errorf("invalid BULLETIN_AUTO_EXTRACTION_ENABLED")
 		}
 		cfg.BulletinAutoExtractionEnabled = enabled
+	}
+	if raw := strings.TrimSpace(os.Getenv("BULLETIN_EXPLICIT_ONLINE_PUBLICATION_ENABLED")); raw != "" {
+		enabled, err := strconv.ParseBool(raw)
+		if err != nil {
+			return Config{}, fmt.Errorf("invalid BULLETIN_EXPLICIT_ONLINE_PUBLICATION_ENABLED")
+		}
+		cfg.BulletinExplicitOnlinePublicationEnabled = enabled
+	}
+	if raw := strings.TrimSpace(os.Getenv("BULLETIN_SIMPLIFIED_PUBLICATION_RECOVERY_ENABLED")); raw != "" {
+		enabled, err := strconv.ParseBool(raw)
+		if err != nil {
+			return Config{}, fmt.Errorf("invalid BULLETIN_SIMPLIFIED_PUBLICATION_RECOVERY_ENABLED")
+		}
+		cfg.BulletinSimplifiedPublicationRecoveryEnabled = enabled
 	}
 	if raw := strings.TrimSpace(os.Getenv("BULLETIN_LLM_EXTRACTION_ENABLED")); raw != "" {
 		enabled, err := strconv.ParseBool(raw)

@@ -17,6 +17,8 @@ import (
 )
 
 type Repository struct {
+	simplifiedPublicationRecovery                          bool
+	explicitOnlinePublication                              bool
 	db                                                     *sql.DB
 	enableFiveLocaleBulletinNotificationsAfterFluentReview bool
 	auditOutbox                                            *AuditOutbox
@@ -30,6 +32,12 @@ func New(db *sql.DB, enableFiveLocaleBulletinNotificationsAfterFluentReview ...b
 		enabled = enableFiveLocaleBulletinNotificationsAfterFluentReview[0]
 	}
 	return &Repository{db: db, enableFiveLocaleBulletinNotificationsAfterFluentReview: enabled}
+}
+
+// Enable only after all publishing and worker writers support intent epochs.
+func (r *Repository) WithExplicitOnlinePublication(enabled bool) *Repository {
+	r.explicitOnlinePublication = enabled
+	return r
 }
 
 func (r *Repository) WithAudit(outbox *AuditOutbox) *Repository {
@@ -169,7 +177,7 @@ func (r *Repository) UpdateIssue(ctx context.Context, id string, expected int64,
 	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.bulletin_issue SET issue_number=$2,issue_date=$3,version=version+1,updated_by=$4,updated_at=$5 WHERE id=$1`, id, input.IssueNumber, input.IssueDate, actor, now); err != nil {
 		return bulletins.Issue{}, mapConflict(err)
 	}
-	if err := r.setAutomaticBulletinIntent(ctx, tx, id, "general", "zh-Hant", false, false, actor, now); err != nil {
+	if err := r.setAutomaticBulletinIntentReason(ctx, tx, id, "general", "zh-Hant", false, false, actor, now, "canonical_edited"); err != nil {
 		return bulletins.Issue{}, err
 	}
 	issue, err := loadIssue(ctx, tx, id)
@@ -311,7 +319,7 @@ func (r *Repository) PutVersion(ctx context.Context, id string, expected int64, 
 		ON CONFLICT(issue_id,series,locale) DO UPDATE SET
 			retiring_asset_id=CASE WHEN hhc_web.bulletin_version.status='published' THEN hhc_web.bulletin_version.pdf_asset_id ELSE hhc_web.bulletin_version.retiring_asset_id END,
 			retiring_grant_id=CASE WHEN hhc_web.bulletin_version.status='published' THEN hhc_web.bulletin_version.public_grant_id ELSE hhc_web.bulletin_version.retiring_grant_id END,
-			title=EXCLUDED.title,subtitle=EXCLUDED.subtitle,pdf_asset_id=EXCLUDED.pdf_asset_id,pdf_file_name=EXCLUDED.pdf_file_name,status='draft',
+			title=EXCLUDED.title,subtitle=EXCLUDED.subtitle,pdf_sha256=CASE WHEN hhc_web.bulletin_version.pdf_asset_id=EXCLUDED.pdf_asset_id THEN hhc_web.bulletin_version.pdf_sha256 ELSE '' END,pdf_asset_id=EXCLUDED.pdf_asset_id,pdf_file_name=EXCLUDED.pdf_file_name,status='draft',
 			version=hhc_web.bulletin_version.version+1,updated_by=EXCLUDED.updated_by,updated_at=EXCLUDED.updated_at
 		RETURNING id::text`, platform.NewID(), id, input.Series, input.Locale, input.Title, input.Subtitle, input.PDFAssetID, input.PDFFileName, actor, now).Scan(&versionID)
 	if err != nil {
@@ -333,7 +341,7 @@ func (r *Repository) PutVersion(ctx context.Context, id string, expected int64, 
 	if input.AutoPublish && (issue.IssueNumber == nil || *issue.IssueNumber < 1739) {
 		return bulletins.Issue{}, bulletins.ErrInvalid
 	}
-	if err := r.setAutomaticBulletinIntent(ctx, tx, id, input.Series, input.Locale, input.AutoPublish, input.NotifySubscribers, actor, now); err != nil {
+	if err := r.setAutomaticBulletinIntentReason(ctx, tx, id, input.Series, input.Locale, input.AutoPublish, input.NotifySubscribers, actor, now, "source_replaced"); err != nil {
 		return bulletins.Issue{}, err
 	}
 	if input.Series == "general" && input.Locale == "zh-Hant" {
@@ -375,7 +383,7 @@ func (r *Repository) UpdateVersion(ctx context.Context, id, series, locale strin
 	if err != nil {
 		return bulletins.Issue{}, err
 	}
-	if err := r.setAutomaticBulletinIntent(ctx, tx, id, series, locale, false, false, actor, now); err != nil {
+	if err := r.setAutomaticBulletinIntentReason(ctx, tx, id, series, locale, false, false, actor, now, "canonical_edited"); err != nil {
 		return bulletins.Issue{}, err
 	}
 	if err := r.enqueueBulletinAudit(ctx, tx, "cms.bulletin.version.update", versionID, actor, now); err != nil {
@@ -410,6 +418,9 @@ func (r *Repository) DeleteVersion(ctx context.Context, id, series, locale strin
 	}
 	if status != "draft" && status != "unpublished" || publicGrantID != "" || retiringGrantID != "" {
 		return bulletins.Issue{}, bulletins.ErrConflict
+	}
+	if err := r.changeBulletinIntent(ctx, tx, id, series, locale, "cancelled", "manual_state_change", actor, now, ""); err != nil {
+		return bulletins.Issue{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM hhc_web.bulletin_version WHERE issue_id=$1 AND series=$2 AND locale=$3`, id, series, locale); err != nil {
 		return bulletins.Issue{}, err
@@ -568,7 +579,7 @@ func (r *Repository) RestoreIssueRevision(ctx context.Context, id string, revisi
 	if hasOnlineHistory {
 		return bulletins.Issue{}, bulletins.ErrOnlineDocumentExists
 	}
-	if err := r.setAutomaticBulletinIntent(ctx, tx, id, "general", "zh-Hant", false, false, actor, now); err != nil {
+	if err := r.setAutomaticBulletinIntentReason(ctx, tx, id, "general", "zh-Hant", false, false, actor, now, "canonical_edited"); err != nil {
 		return bulletins.Issue{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM hhc_web.bulletin_version WHERE issue_id=$1`+missingClause, args...); err != nil {
@@ -629,25 +640,11 @@ func validStoredIssueDate(value string) bool {
 }
 
 func (r *Repository) StartPublish(ctx context.Context, id, series, locale string, expected int64, notifySubscribers bool, actor string, now time.Time) (bulletins.Workflow, error) {
-	if err := r.validateBulletinAudit(ctx, actor); err != nil {
-		return bulletins.Workflow{}, err
-	}
-	if _, ok := bulletins.NormalizeBulletinEdition(series, locale); !ok {
+	edition, ok := bulletins.NormalizeBulletinEdition(series, locale)
+	if !ok {
 		return bulletins.Workflow{}, bulletins.ErrInvalid
 	}
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return bulletins.Workflow{}, err
-	}
-	defer tx.Rollback()
-	workflow, err := r.startBulletinPublishTx(ctx, tx, id, series, locale, expected, notifySubscribers, actor, now)
-	if err != nil {
-		return bulletins.Workflow{}, err
-	}
-	if err := r.setAutomaticBulletinIntent(ctx, tx, id, series, locale, false, false, actor, now); err != nil {
-		return bulletins.Workflow{}, err
-	}
-	return workflow, tx.Commit()
+	return r.StartPublishSelection(ctx, id, bulletins.PublishInput{Series: string(edition.Series), Locale: locale, NotifySubscribers: notifySubscribers}, expected, actor, now)
 }
 
 func (r *Repository) startBulletinPublishTx(ctx context.Context, tx *sql.Tx, id, series, locale string, expected int64, notifySubscribers bool, actor string, now time.Time) (bulletins.Workflow, error) {
@@ -762,7 +759,7 @@ func (r *Repository) unpublishBulletin(ctx context.Context, id, series, locale s
 	}
 	next := current + 1
 	workflowID := platform.NewID()
-	if err := r.setAutomaticBulletinIntent(ctx, tx, canonicalID, series, locale, false, false, actor, now); err != nil {
+	if err := r.setAutomaticBulletinIntentReason(ctx, tx, canonicalID, series, locale, false, false, actor, now, "unpublished"); err != nil {
 		return bulletins.Issue{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.bulletin_version SET status='unpublishing',version=version+1,updated_by=$4,updated_at=$5 WHERE issue_id=$1 AND series=$2 AND locale=$3`, canonicalID, series, locale, actor, now); err != nil {
@@ -829,6 +826,9 @@ func (r *Repository) DeleteIssue(ctx context.Context, id string, expected int64,
 		return err
 	}
 	if err := enqueueAssetDeletes(ctx, tx, "bulletin", canonicalID, current, assetIDs, now); err != nil {
+		return err
+	}
+	if err := r.changeBulletinIntent(ctx, tx, canonicalID, "general", "zh-Hant", "cancelled", "manual_state_change", actor, now, ""); err != nil {
 		return err
 	}
 	if result, err := tx.ExecContext(ctx, `DELETE FROM hhc_web.bulletin_issue WHERE id=$1`, canonicalID); err != nil {
@@ -908,10 +908,10 @@ func (r *Repository) Claim(ctx context.Context, now time.Time, lease time.Durati
 			LIMIT 1
 		)
 		UPDATE hhc_web.outbox_event e
-		SET status='processing',attempts=e.attempts+1,claimed_until=$2,updated_at=$1
+		SET status='processing',attempts=e.attempts+1,claimed_until=$2,updated_at=$1,simplified_claim_token=CASE WHEN e.event_type='bulletin.online.publish_simplified' THEN $3::uuid END
 		FROM candidate
 		WHERE e.id=candidate.id
-		RETURNING e.id::text,e.event_type,e.aggregate_id::text,e.aggregate_version,e.payload_json,e.attempts,e.created_at,e.claimed_until,
+		RETURNING e.id::text,e.event_type,e.aggregate_id::text,e.aggregate_version,e.payload_json,e.attempts,e.created_at,e.claimed_until,COALESCE(e.simplified_claim_token::text,''),
 			COALESCE(NULLIF(e.payload_json->>'actorId',''),CASE WHEN e.event_type='news.unpublish.revoke_asset' THEN COALESCE((
 				SELECT updated_by FROM hhc_web.content_entry
 				WHERE id=e.aggregate_id AND version=e.aggregate_version AND status='unpublishing'
@@ -945,8 +945,8 @@ func (r *Repository) Claim(ctx context.Context, now time.Time, lease time.Durati
  AND NOT EXISTS (SELECT 1 FROM hhc_web.news_item n WHERE n.public_grant_id=e.payload_json->>'grantId' OR n.home_public_grant_id=e.payload_json->>'grantId')
  AND NOT EXISTS (SELECT 1 FROM hhc_web.page_item pg WHERE pg.banner_public_grant_id=e.payload_json->>'grantId')
  AND NOT EXISTS (SELECT 1 FROM hhc_web.content_published_asset a WHERE a.grant_id=e.payload_json->>'grantId')
- ),'') WHEN e.event_type='bulletin.unpublish.revoke_asset' THEN COALESCE((SELECT created_by FROM hhc_web.publication_workflow WHERE id::text=e.payload_json->>'workflowId' AND resource_id=e.aggregate_id AND aggregate_version=e.aggregate_version AND workflow_type='bulletin_unpublish'),'') ELSE '' END)`, now, now.Add(lease)).Scan(
-		&event.ID, &event.EventType, &event.AggregateID, &event.AggregateVersion, &event.Payload, &event.Attempts, &event.CreatedAt, &event.ClaimedUntil, &event.ActorID,
+ ),'') WHEN e.event_type='bulletin.unpublish.revoke_asset' THEN COALESCE((SELECT created_by FROM hhc_web.publication_workflow WHERE id::text=e.payload_json->>'workflowId' AND resource_id=e.aggregate_id AND aggregate_version=e.aggregate_version AND workflow_type='bulletin_unpublish'),'') ELSE '' END)`, now, now.Add(lease), platform.NewID()).Scan(
+		&event.ID, &event.EventType, &event.AggregateID, &event.AggregateVersion, &event.Payload, &event.Attempts, &event.CreatedAt, &event.ClaimedUntil, &event.SimplifiedClaimToken, &event.ActorID,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return publication.Event{}, false, nil
@@ -985,6 +985,12 @@ func (r *Repository) FailPublish(ctx context.Context, event publication.Event, a
 		return err
 	}
 	defer tx.Rollback()
+	if event.EventType == "bulletin.publish.ensure_asset" {
+		current, err := lockBulletinPublicationClaim(ctx, tx, event, now)
+		if err != nil || !current {
+			return err
+		}
+	}
 	if err := failEvent(ctx, tx, event, detail, now); err != nil {
 		return err
 	}
@@ -1041,6 +1047,12 @@ func (r *Repository) FailContentPublish(ctx context.Context, event publication.E
 }
 
 func failEvent(ctx context.Context, tx *sql.Tx, event publication.Event, detail string, now time.Time) error {
+	if event.EventType == "bulletin.publish.ensure_asset" {
+		current, err := lockBulletinPublicationClaim(ctx, tx, event, now)
+		if err != nil || !current {
+			return err
+		}
+	}
 	var payload publication.PublishPayload
 	_ = json.Unmarshal(event.Payload, &payload)
 	if edition, ok := bulletins.NormalizeBulletinEdition(payload.Series, payload.Locale); ok {
@@ -1141,13 +1153,6 @@ func (r *Repository) CompletePublish(ctx context.Context, event publication.Even
 		return err
 	}
 	defer tx.Rollback()
-	delivered, err := eventDelivered(ctx, tx, event.ID)
-	if err != nil {
-		return err
-	}
-	if delivered {
-		return nil
-	}
 	var issueDate, issueStatus, title, subtitle, versionStatus, retiringAssetID, retiringGrantID string
 	var issueNumber sql.NullInt64
 	var issueVersion int64
@@ -1159,6 +1164,21 @@ func (r *Repository) CompletePublish(ctx context.Context, event publication.Even
 		WHERE i.id=$1 FOR UPDATE OF i,v`, payload.IssueID, payload.Series, payload.Locale).
 		Scan(&issueNumber, &issueDate, &issueStatus, &issueVersion, &title, &subtitle, &versionStatus, &retiringAssetID, &retiringGrantID); err != nil {
 		return err
+	}
+	// Lock canonical rows before the event, matching explicit cancellation.
+	current, err := lockBulletinPublicationClaim(ctx, tx, event, now)
+	if err != nil {
+		return err
+	}
+	if !current {
+		delivered, err := eventDelivered(ctx, tx, event.ID)
+		if err != nil {
+			return err
+		}
+		if delivered {
+			return nil
+		}
+		return publication.ErrStalePublication
 	}
 	if issueVersion != payload.AggregateVersion || issueStatus != "publishing" || versionStatus != "publishing" {
 		return publication.ErrStalePublication
@@ -1179,27 +1199,7 @@ func (r *Repository) CompletePublish(ctx context.Context, event publication.Even
 		return err
 	}
 	if payload.NotifySubscribers {
-		versions, err := queryVersions(ctx, tx, payload.IssueID)
-		if err != nil {
-			return err
-		}
-		notification := buildBulletinNotification(payload.IssueID, payload.Series, issueNumber, payload.ActorID, versions)
-		notificationID := platform.NewID()
-		key := fmt.Sprintf("notification:v2:bulletin:%s:%s:g0", payload.IssueID, payload.Series)
-		notification.RequestID, notification.IdempotencyKey = notificationID, key
-		encodedNotification, err := json.Marshal(notification)
-		if err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO hhc_web.outbox_event(id,destination,event_type,aggregate_type,aggregate_id,aggregate_version,payload_json,idempotency_key,status,next_attempt_at,created_at,updated_at)
-			SELECT $1,'engagement-api','bulletin.notification.submit','bulletin',$2,$3,$4,$5,'pending',$6,$6,$6
-			WHERE NOT EXISTS (
-				SELECT 1 FROM hhc_web.outbox_event
-				WHERE aggregate_type='bulletin' AND aggregate_id=$2 AND event_type='bulletin.notification.submit'
-				  AND COALESCE(payload_json#>>'{source,series}','general')=$7
-			)
-			ON CONFLICT(destination,idempotency_key) DO NOTHING`, notificationID, payload.IssueID, issueVersion, encodedNotification, key, now, payload.Series); err != nil {
+		if err := enqueueBulletinPublicationNotification(ctx, tx, payload.IssueID, payload.Series, issueNumber, payload.ActorID, issueVersion, now); err != nil {
 			return err
 		}
 	}
@@ -1468,4 +1468,33 @@ func mapConflict(err error) error {
 		return bulletins.ErrConflict
 	}
 	return err
+}
+
+// Caller holds the issue lock. Both PDF and authorized online completion share
+// this immutable generation-zero command; Engagement owns actual delivery.
+func enqueueBulletinPublicationNotification(ctx context.Context, tx *sql.Tx, issueID, series string, issueNumber sql.NullInt64, actor string, issueVersion int64, now time.Time) error {
+	versions, err := queryVersions(ctx, tx, issueID)
+	if err != nil {
+		return err
+	}
+	notification := buildBulletinNotification(issueID, series, issueNumber, actor, versions)
+	notificationID := platform.NewID()
+	key := fmt.Sprintf("notification:v2:bulletin:%s:%s:g0", issueID, series)
+	notification.RequestID, notification.IdempotencyKey = notificationID, key
+	encodedNotification, err := json.Marshal(notification)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+			INSERT INTO hhc_web.outbox_event(id,destination,event_type,aggregate_type,aggregate_id,aggregate_version,payload_json,idempotency_key,status,next_attempt_at,created_at,updated_at)
+			SELECT $1,'engagement-api','bulletin.notification.submit','bulletin',$2,$3,$4,$5,'pending',$6,$6,$6
+			WHERE NOT EXISTS (
+				SELECT 1 FROM hhc_web.outbox_event
+				WHERE aggregate_type='bulletin' AND aggregate_id=$2 AND event_type='bulletin.notification.submit'
+				  AND COALESCE(payload_json#>>'{source,series}','general')=$7
+			)
+			ON CONFLICT(destination,idempotency_key) DO NOTHING`, notificationID, issueID, issueVersion, encodedNotification, key, now, series); err != nil {
+		return err
+	}
+	return nil
 }
