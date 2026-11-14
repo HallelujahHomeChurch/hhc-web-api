@@ -118,29 +118,31 @@ type ConfirmedRevision struct {
 // AdminState keeps canonical CMS metadata separate from the frozen publication.
 // Revision pointers and version belong only to this exact issue/series/locale.
 type AdminState struct {
-	Production          *AdminProduction   `json:"production,omitempty"`
-	Capabilities        *AdminCapabilities `json:"capabilities,omitempty"`
-	Automation          *AdminAutomation   `json:"automation,omitempty"`
-	IssueID             string             `json:"issueId"`
-	Series              string             `json:"series"`
-	ContentLocale       string             `json:"contentLocale"`
-	CanonicalVersion    int64              `json:"canonicalVersion"`
-	CanonicalMetadata   CanonicalMetadata  `json:"canonicalMetadata"`
-	PDFStatus           string             `json:"pdfStatus"`
-	DocumentID          string             `json:"documentId"`
-	Version             int64              `json:"version"`
-	DraftStatus         string             `json:"draftStatus"`
-	BaseRevision        *int64             `json:"baseRevision"`
-	Local               *AdminRevision     `json:"local"`
-	IncomingRevision    *int64             `json:"incomingRevision"`
-	PublishedRevision   *int64             `json:"publishedRevision"`
-	PublishedMetadata   *CanonicalMetadata `json:"publishedMetadata"`
-	MetadataSyncPending bool               `json:"metadataSyncPending"`
-	Confirmed           bool               `json:"confirmed"`
-	Extraction          *AdminJob          `json:"extraction"`
-	Layout              *AdminJob          `json:"layout"`
-	Conversion          *AdminJob          `json:"conversion,omitempty"`
-	Derivation          *AdminDerivation   `json:"derivation,omitempty"`
+	DerivedPublication  *AdminDerivedPublication  `json:"derivedPublication,omitempty"`
+	Notification        *AdminInitialNotification `json:"notification,omitempty"`
+	Production          *AdminProduction          `json:"production,omitempty"`
+	Capabilities        *AdminCapabilities        `json:"capabilities,omitempty"`
+	Automation          *AdminAutomation          `json:"automation,omitempty"`
+	IssueID             string                    `json:"issueId"`
+	Series              string                    `json:"series"`
+	ContentLocale       string                    `json:"contentLocale"`
+	CanonicalVersion    int64                     `json:"canonicalVersion"`
+	CanonicalMetadata   CanonicalMetadata         `json:"canonicalMetadata"`
+	PDFStatus           string                    `json:"pdfStatus"`
+	DocumentID          string                    `json:"documentId"`
+	Version             int64                     `json:"version"`
+	DraftStatus         string                    `json:"draftStatus"`
+	BaseRevision        *int64                    `json:"baseRevision"`
+	Local               *AdminRevision            `json:"local"`
+	IncomingRevision    *int64                    `json:"incomingRevision"`
+	PublishedRevision   *int64                    `json:"publishedRevision"`
+	PublishedMetadata   *CanonicalMetadata        `json:"publishedMetadata"`
+	MetadataSyncPending bool                      `json:"metadataSyncPending"`
+	Confirmed           bool                      `json:"confirmed"`
+	Extraction          *AdminJob                 `json:"extraction"`
+	Layout              *AdminJob                 `json:"layout"`
+	Conversion          *AdminJob                 `json:"conversion,omitempty"`
+	Derivation          *AdminDerivation          `json:"derivation,omitempty"`
 }
 
 type AdminAutomation struct {

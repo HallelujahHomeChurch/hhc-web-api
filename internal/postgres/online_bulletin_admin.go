@@ -464,7 +464,7 @@ func (r *Repository) queueOnlineBulletinExtractionTx(ctx context.Context, tx *sq
 
 func (r *Repository) OnlineBulletinState(ctx context.Context, issueID, series, locale string) (onlinebulletins.AdminState, error) {
 	state := onlinebulletins.AdminState{IssueID: issueID, Series: series, ContentLocale: locale}
-	var local, publication, extraction, layout, conversion, derivation, automation, production []byte
+	var local, publication, extraction, layout, conversion, derivation, automation, production, derivedPublication, notification []byte
 	// One statement gives a consistent MVCC snapshot, including in-flight worker
 	// changes, without locking the editor's read against the worker or publisher.
 	err := r.db.QueryRowContext(ctx, `SELECT i.version,v.title,v.subtitle,i.issue_number,i.issue_date::text,v.status,
@@ -481,12 +481,8 @@ func (r *Repository) OnlineBulletinState(ctx context.Context, issueID, series, l
 	 (SELECT jsonb_build_object('id',j.id,'status',j.status,'attempts',j.attempts,'errorCode',j.last_error_code,'reviewIssues',CASE WHEN j.status='ready' THEN '[]'::jsonb ELSE j.review_issues END)
 	  FROM hhc_web.online_bulletin_layout_job j WHERE j.document_id=d.id AND j.status<>'superseded'
 	  AND (j.source_revision=d.local_revision OR j.result_revision=d.local_revision) ORDER BY j.created_at DESC,j.id DESC LIMIT 1),
-    COALESCE((SELECT jsonb_build_object('id',e.id,'status',CASE WHEN e.status='failed' THEN 'failed' ELSE 'queued' END,'attempts',e.attempts,'errorCode',e.last_error,'reviewIssues','[]'::jsonb)
-     FROM (SELECT e.* FROM hhc_web.outbox_event e JOIN hhc_web.online_bulletin_document sd ON sd.id=e.aggregate_id
-      WHERE e.event_type='bulletin.online.publish_simplified' AND sd.issue_id=i.id AND v.locale='zh-Hans' AND e.aggregate_version=sd.published_revision
-      ORDER BY e.created_at DESC,e.id DESC LIMIT 1) e
-     WHERE e.status IN ('pending','processing','failed') AND COALESCE(e.last_error,'') NOT IN ('source_publication_changed','publication_withdrawn')),cj.job),cj.derivation,
-     CASE WHEN v.series='general' AND v.locale='zh-Hant' THEN jsonb_build_object('autoPublish',v.auto_publish,'update',uj.job,'summary',COALESCE(uj.summary,''),'changeKind',COALESCE(uj.change_kind,''),'disposition',`+dispositionJSON+`) END, `+onlineBulletinProductionProjectionSQL+`
+    cj.job,cj.derivation,
+     CASE WHEN v.series='general' AND v.locale='zh-Hant' THEN jsonb_build_object('autoPublish',v.auto_publish,'update',uj.job,'summary',COALESCE(uj.summary,''),'changeKind',COALESCE(uj.change_kind,''),'disposition',`+dispositionJSON+`) END, `+onlineBulletinProductionProjectionSQL+`, `+simplifiedPublicationProjectionSQL+`, `+initialNotificationProjectionSQL+`
 	 FROM hhc_web.bulletin_issue i
 	 JOIN hhc_web.bulletin_version v ON v.issue_id=i.id AND v.series=$2 AND v.locale=$3
 	 LEFT JOIN hhc_web.online_bulletin_document d ON d.issue_id=i.id AND d.series=v.series AND d.content_locale=v.locale
@@ -509,8 +505,8 @@ func (r *Repository) OnlineBulletinState(ctx context.Context, issueID, series, l
 	  LEFT JOIN hhc_web.bulletin_version sv ON sv.issue_id=i.id AND sv.series='general' AND sv.locale='zh-Hant'
 	  WHERE j.document_id=d.id AND j.status<>'superseded' ORDER BY j.created_at DESC,j.id DESC LIMIT 1
 	 ) cj ON true
-	 WHERE i.id=$1`, issueID, series, locale).Scan(&state.CanonicalVersion, &state.CanonicalMetadata.Title, &state.CanonicalMetadata.Subtitle, &state.CanonicalMetadata.IssueNumber, &state.CanonicalMetadata.Date, &state.PDFStatus,
-		&state.DocumentID, &state.Version, &state.DraftStatus, &state.BaseRevision, &state.IncomingRevision, &state.PublishedRevision, &state.MetadataSyncPending, &local, &publication, &state.Confirmed, &extraction, &layout, &conversion, &derivation, &automation, &production)
+	 WHERE i.id=$1`, issueID, series, locale, r.llmBulletinExtraction).Scan(&state.CanonicalVersion, &state.CanonicalMetadata.Title, &state.CanonicalMetadata.Subtitle, &state.CanonicalMetadata.IssueNumber, &state.CanonicalMetadata.Date, &state.PDFStatus,
+		&state.DocumentID, &state.Version, &state.DraftStatus, &state.BaseRevision, &state.IncomingRevision, &state.PublishedRevision, &state.MetadataSyncPending, &local, &publication, &state.Confirmed, &extraction, &layout, &conversion, &derivation, &automation, &production, &derivedPublication, &notification)
 	if errors.Is(err, sql.ErrNoRows) {
 		return state, bulletins.ErrNotFound
 	}
@@ -520,14 +516,17 @@ func (r *Repository) OnlineBulletinState(ctx context.Context, issueID, series, l
 	for _, value := range []struct {
 		raw []byte
 		to  any
-	}{{local, &state.Local}, {publication, &state.PublishedMetadata}, {extraction, &state.Extraction}, {layout, &state.Layout}, {conversion, &state.Conversion}, {derivation, &state.Derivation}, {automation, &state.Automation}, {production, &state.Production}} {
+	}{{local, &state.Local}, {publication, &state.PublishedMetadata}, {extraction, &state.Extraction}, {layout, &state.Layout}, {conversion, &state.Conversion}, {derivation, &state.Derivation}, {automation, &state.Automation}, {production, &state.Production}, {derivedPublication, &state.DerivedPublication}, {notification, &state.Notification}} {
 		if len(value.raw) > 0 {
 			if err = json.Unmarshal(value.raw, value.to); err != nil {
 				return state, err
 			}
 		}
 	}
-	state.Capabilities = &onlinebulletins.AdminCapabilities{ExplicitOnlinePublication: r.explicitOnlinePublication, QualifiedDraftRecovery: r.explicitOnlinePublication}
+	if state.Notification != nil && !initialNotificationEvidenceKnown(notification) {
+		state.Notification.Status = "unknown"
+	}
+	state.Capabilities = &onlinebulletins.AdminCapabilities{ExplicitOnlinePublication: r.explicitOnlinePublication, QualifiedDraftRecovery: r.explicitOnlinePublication, SimplifiedPublicationRecovery: r.simplifiedPublicationRecovery}
 	// The last attempt can fail without a revision ever having been produced.
 	if state.Local == nil && state.Extraction != nil && (state.Extraction.Status == "failed" || state.Extraction.Status == "review_ready") {
 		state.DraftStatus = "extractionFailed"

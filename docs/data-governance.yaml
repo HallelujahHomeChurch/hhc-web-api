@@ -458,13 +458,54 @@ datasets:
     owner: hhc-web-api
     purpose: "Prevent an uncertain recovery response or replay after withdrawal from publishing twice."
     necessity: required
-    storage: {kind: postgres, resource: hhc_web.online_bulletin_recovery_receipt, sources: [{path: internal/postgres/bulletin_qualified_recovery.go, symbol: Repository.RecoverOnlineBulletinPublication}]}
+    storage: {kind: postgres, resource: hhc_web.online_bulletin_recovery_receipt, sources: [{path: internal/postgres/bulletin_qualified_recovery.go, symbol: Repository.RecoverOnlineBulletinPublication}, {path: internal/postgres/simplified_publication_recovery.go, symbol: Repository.RecoverSimplifiedOnlineBulletinPublication}]}
     subject_keys: [{kind: user_id, field: actor_id, evidence: [{path: internal/postgres/bulletin_qualified_recovery.go, symbol: Repository.RecoverOnlineBulletinPublication}]}]
     data_classes: [identity, activity, security]
     fields:
-      - {name: "id, issue_id, operation_key, input_json, result_json", purpose: "Retain bounded actor-bound key, CAS/hash fingerprint and immutable original result; no bulletin text, bytes or URLs.", necessity: required, data_classes: [activity, security]}
+      - {name: "id, issue_id, operation_key, input_json, result_json", purpose: "Retain bounded actor-bound global key, route kind/locale/target/source and full CAS/proof fingerprint plus immutable original result for Traditional or Simplified recovery; no bulletin text, bytes or URLs.", necessity: required, data_classes: [activity, security]}
       - {name: "actor_id, request_id, created_at", purpose: "Bind replay to the original current publisher and actual recovery request.", necessity: required, data_classes: [identity, activity, security]}
     attribution: {mode: direct, explanation: "Receipts contain human publisher UUIDs and sanitized operation provenance."}
+    legal_basis: {status: pending_legal, reference: null}
+    retention: {status: pending_legal, rule: null, action: none}
+    cleanup: {mode: manual, implementation: [], evidence: []}
+  - id: hhc-web.simplified-publication-operations
+    owner: hhc-web-api
+    purpose: "Keep bounded sanitized automatic release diagnostics truthful across retries and cancellation without retaining source bytes or raw worker errors."
+    necessity: required
+    storage: {kind: postgres, resource: hhc_web.online_bulletin_simplified_operation, sources: [{path: internal/migrations/sql/116_simplified_publication_journey.sql, symbol: hhc_web.track_simplified_publication}]}
+    subject_keys: []
+    data_classes: [activity, security]
+    fields:
+      - {name: "operation_id, source_document_id, source_revision, source_publication_version, source_content_hash, source_metadata_hash", purpose: "Bind history to the exact automatic authorization and immutable Published source tuple; legacy missing evidence stays unknown.", necessity: required, data_classes: [activity, security]}
+      - {name: "coverage, failure_count, history_count, last_failure_json, failures_json", purpose: "Retain the newest twenty sanitized transitions and last failure with truthful lifetime tracked counts; healthy waits append no history.", necessity: required, data_classes: [activity, security]}
+    attribution: {mode: indirect, explanation: "Operation identities inherit existing CMS publisher audit provenance; no new reader/member attribution."}
+    legal_basis: {status: pending_legal, reference: null}
+    retention: {status: pending_legal, rule: null, action: none}
+    cleanup: {mode: manual, implementation: [], evidence: []}
+  - id: hhc-web.simplified-publication-authorizations
+    owner: hhc-web-api
+    purpose: "Record a distinct immutable human grant for saved Simplified publication evidence while retaining original automatic authorizer and cancellation history."
+    necessity: required
+    storage: {kind: postgres, resource: hhc_web.online_bulletin_simplified_authorization, sources: [{path: internal/postgres/simplified_publication_recovery.go, symbol: Repository.RecoverSimplifiedOnlineBulletinPublication}]}
+    subject_keys: [{kind: user_id, field: actor_id, evidence: [{path: internal/postgres/simplified_publication_recovery.go, symbol: Repository.RecoverSimplifiedOnlineBulletinPublication}]}]
+    data_classes: [identity, activity, security]
+    fields:
+      - {name: "id, operation_id, receipt_id", purpose: "Link new human authority to old automatic history and the shared immutable receipt namespace without rewriting prior authority.", necessity: required, data_classes: [activity, security]}
+      - {name: "actor_id, request_id, created_at", purpose: "Preserve current human publisher provenance separately from the original automatic request.", necessity: required, data_classes: [identity, activity, security]}
+    attribution: {mode: direct, explanation: "Human publisher UUIDs are CMS security history and never exposed by the Admin operation summary."}
+    legal_basis: {status: pending_legal, reference: null}
+    retention: {status: pending_legal, rule: null, action: none}
+    cleanup: {mode: manual, implementation: [], evidence: []}
+  - id: hhc-web.simplified-publication-claim
+    owner: hhc-web-api
+    purpose: "Fence old automatic Simplified workers when healthy waits or explicit retries recreate the same timestamp and retry-budget count."
+    necessity: required
+    storage: {kind: postgres, resource: hhc_web.outbox_event, sources: [{path: internal/postgres/repository.go, symbol: Repository.Claim}]}
+    subject_keys: []
+    data_classes: [security]
+    fields:
+      - {name: simplified_claim_token, purpose: "Opaque per-claim identity checked only by the Simplified release worker; never exposed to Admin, receipts or logs.", necessity: required, data_classes: [security]}
+    attribution: {mode: none, explanation: "Transient worker ownership marker with no subject identity."}
     legal_basis: {status: pending_legal, reference: null}
     retention: {status: pending_legal, rule: null, action: none}
     cleanup: {mode: manual, implementation: [], evidence: []}

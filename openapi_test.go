@@ -2018,6 +2018,7 @@ func expectedCatalogRoutes() []string {
 		POST /admin/bulletins/{}/online/{}/{}/compare
 		POST /admin/bulletins/{}/online/{}/{}/confirm
 		POST /admin/bulletins/{}/online/general/zh-Hant/recover-publication
+		POST /admin/bulletins/{}/online/general/zh-Hans/recover-publication
 		POST /admin/bulletins/{}/online/{}/{}/publish
 		POST /admin/bulletins/{}/online/{}/{}/unpublish
 		POST /admin/bulletins/{}/online/{}/{}/revisions/{}/restore

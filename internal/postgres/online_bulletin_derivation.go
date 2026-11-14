@@ -232,14 +232,27 @@ func (r *Repository) retrySimplifiedReleaseTx(ctx context.Context, tx *sql.Tx, i
 	if !revision.Valid || revision.Int64 != input.SourceRevision {
 		return nil, nil
 	}
+	var ambiguous bool
+	if err = tx.QueryRowContext(ctx, `SELECT count(*)>1 AND COALESCE(bool_or(o.source_publication_version IS NULL),false) FROM hhc_web.outbox_event e LEFT JOIN hhc_web.online_bulletin_simplified_operation o ON o.operation_id=e.id WHERE e.aggregate_id=$1 AND e.aggregate_version=$2 AND e.event_type='bulletin.online.publish_simplified'`, sourceID, revision.Int64).Scan(&ambiguous); err != nil {
+		return nil, err
+	}
+	if ambiguous {
+		return nil, bulletins.ErrConflict
+	}
 	var id, status, code string
+	var recovered bool
 	var raw []byte
-	err = tx.QueryRowContext(ctx, `SELECT id::text,payload_json,status,COALESCE(last_error,'') FROM hhc_web.outbox_event WHERE event_type='bulletin.online.publish_simplified' AND aggregate_id=$1 AND aggregate_version=$2 ORDER BY created_at DESC,id DESC LIMIT 1 FOR UPDATE`, sourceID, revision.Int64).Scan(&id, &raw, &status, &code)
+	err = tx.QueryRowContext(ctx, `SELECT e.id::text,e.payload_json,e.status,COALESCE(e.last_error,''),EXISTS(SELECT 1 FROM hhc_web.online_bulletin_simplified_authorization a WHERE a.operation_id=e.id) FROM hhc_web.outbox_event e LEFT JOIN hhc_web.online_bulletin_simplified_operation o ON o.operation_id=e.id WHERE e.event_type='bulletin.online.publish_simplified' AND e.aggregate_id=$1 AND e.aggregate_version=$2 ORDER BY o.source_publication_version DESC NULLS LAST,e.created_at DESC,e.id DESC LIMIT 1 FOR UPDATE OF e`, sourceID, revision.Int64).Scan(&id, &raw, &status, &code, &recovered)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
+	}
+	// A completed human grant cannot hand authority back to its old worker,
+	// including a previously failed event whose historical reason is retained.
+	if recovered || code == "publication_authority_superseded" {
+		return nil, bulletins.ErrConflict
 	}
 	if (status != "pending" && status != "processing" && status != "failed") || code == "source_publication_changed" || code == "publication_withdrawn" {
 		return nil, nil
@@ -250,6 +263,14 @@ func (r *Repository) retrySimplifiedReleaseTx(ctx context.Context, tx *sql.Tx, i
 	var p simplifiedReleasePayload
 	if json.Unmarshal(raw, &p) != nil || !auditclient.ValidActorRequest(p.ActorID, p.RequestID) {
 		return nil, bulletins.ErrConflict
+	}
+	// This path mutates authorization/queue state even when conversion is reused.
+	var targetVersion int64
+	if err = tx.QueryRowContext(ctx, `SELECT COALESCE((SELECT version FROM hhc_web.online_bulletin_document WHERE issue_id=$1 AND series='general' AND content_locale='zh-Hans' FOR UPDATE),0)`, issueID).Scan(&targetVersion); err != nil {
+		return nil, err
+	}
+	if targetVersion != input.TargetOnlineVersion {
+		return nil, bulletins.ErrPrecondition
 	}
 	// Queueing recovers failed conversion/layout jobs, and reuses completed proofs.
 	input.Retry = false

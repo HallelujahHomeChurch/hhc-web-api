@@ -209,6 +209,9 @@ func (r *Repository) UnpublishOnlineBulletin(ctx context.Context, issueID, serie
 		return result, err
 	}
 	if !published.Valid {
+		if err = cancelSimplifiedReleaseTx(ctx, tx, result.DocumentID, now); err != nil {
+			return result, err
+		}
 		if automatic {
 			if _, err = tx.ExecContext(ctx, `UPDATE hhc_web.online_bulletin_document SET version=version+1,updated_at=$2 WHERE id=$1`, result.DocumentID, now); err != nil {
 				return result, err
@@ -233,7 +236,7 @@ func (r *Repository) clearOnlinePublication(ctx context.Context, tx *sql.Tx, doc
 	if err := r.cancelOnlineAutomaticIntent(ctx, tx, documentID, now); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.outbox_event e SET status='failed',claimed_until=NULL,last_error='publication_withdrawn',updated_at=$2 WHERE e.event_type='bulletin.online.publish_simplified' AND e.status IN ('pending','processing','failed') AND (e.aggregate_id=$1 OR e.payload_json->>'issueId'=(SELECT issue_id::text FROM hhc_web.online_bulletin_document WHERE id=$1 AND content_locale='zh-Hans'))`, documentID, now); err != nil {
+	if err := cancelSimplifiedReleaseTx(ctx, tx, documentID, now); err != nil {
 		return err
 	}
 

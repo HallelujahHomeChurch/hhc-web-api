@@ -20,6 +20,10 @@ func (h *Handler) adminOnlineRecoverPublication(w http.ResponseWriter, r *http.R
 		handleError(w, bulletins.ErrInvalid)
 		return
 	}
+	if r.PathValue("contentLocale") == "zh-Hans" {
+		h.adminSimplifiedRecoverPublication(w, r, expected)
+		return
+	}
 	var input onlinebulletins.RecoveryInput
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
 	decoder.DisallowUnknownFields()
@@ -29,6 +33,32 @@ func (h *Handler) adminOnlineRecoverPublication(w http.ResponseWriter, r *http.R
 	}
 	input.OnlineVersion = expected
 	result, err := h.service.RecoverOnlinePublication(r.Context(), r.PathValue("issueID"), r.PathValue("series"), r.PathValue("contentLocale"), input, r.Header.Get("Idempotency-Key"), actor(r))
+	if err != nil {
+		var blocked *onlinebulletins.RecoveryBlockedError
+		if errors.As(err, &blocked) {
+			recordErrorCode(w, "recovery_blocked")
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			_ = json.NewEncoder(w).Encode(envelope{Data: nil, Meta: map[string]any{"blockers": blocked.Blockers}, Error: map[string]string{"code": "recovery_blocked", "message": "The saved draft needs explicit review before publication."}})
+			return
+		}
+		h.onlineWriteError(w, r, err)
+		return
+	}
+	w.Header().Set("ETag", fmt.Sprintf(`"%d"`, result.Publication.Version))
+	writeData(w, http.StatusOK, result, nil)
+}
+
+func (h *Handler) adminSimplifiedRecoverPublication(w http.ResponseWriter, r *http.Request, expected int64) {
+	var input onlinebulletins.SimplifiedRecoveryInput
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
+	decoder.DisallowUnknownFields()
+	if decoder.Decode(&input) != nil || decoder.Decode(new(any)) != io.EOF {
+		handleError(w, bulletins.ErrInvalid)
+		return
+	}
+	input.OnlineVersion = expected
+	result, err := h.service.RecoverSimplifiedOnlinePublication(r.Context(), r.PathValue("issueID"), r.PathValue("series"), r.PathValue("contentLocale"), input, r.Header.Get("Idempotency-Key"), actor(r))
 	if err != nil {
 		var blocked *onlinebulletins.RecoveryBlockedError
 		if errors.As(err, &blocked) {

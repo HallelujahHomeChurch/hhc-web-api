@@ -432,3 +432,20 @@ func TestExplicitBulletinPublicationCapabilityDefaultsOff(t *testing.T) {
 		}
 	}
 }
+
+func TestSimplifiedRecoveryCapabilityDefaultsOff(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://example")
+	for _, value := range []string{"", "false", "true", "invalid"} {
+		t.Setenv("BULLETIN_SIMPLIFIED_PUBLICATION_RECOVERY_ENABLED", value)
+		cfg, err := Load()
+		if value == "invalid" {
+			if err == nil {
+				t.Fatal("invalid capability")
+			}
+			continue
+		}
+		if err != nil || cfg.BulletinSimplifiedPublicationRecoveryEnabled != (value == "true") {
+			t.Fatal(value, err)
+		}
+	}
+}

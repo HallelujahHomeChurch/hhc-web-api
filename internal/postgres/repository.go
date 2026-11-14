@@ -17,6 +17,7 @@ import (
 )
 
 type Repository struct {
+	simplifiedPublicationRecovery                          bool
 	explicitOnlinePublication                              bool
 	db                                                     *sql.DB
 	enableFiveLocaleBulletinNotificationsAfterFluentReview bool
@@ -907,10 +908,10 @@ func (r *Repository) Claim(ctx context.Context, now time.Time, lease time.Durati
 			LIMIT 1
 		)
 		UPDATE hhc_web.outbox_event e
-		SET status='processing',attempts=e.attempts+1,claimed_until=$2,updated_at=$1
+		SET status='processing',attempts=e.attempts+1,claimed_until=$2,updated_at=$1,simplified_claim_token=CASE WHEN e.event_type='bulletin.online.publish_simplified' THEN $3::uuid END
 		FROM candidate
 		WHERE e.id=candidate.id
-		RETURNING e.id::text,e.event_type,e.aggregate_id::text,e.aggregate_version,e.payload_json,e.attempts,e.created_at,e.claimed_until,
+		RETURNING e.id::text,e.event_type,e.aggregate_id::text,e.aggregate_version,e.payload_json,e.attempts,e.created_at,e.claimed_until,COALESCE(e.simplified_claim_token::text,''),
 			COALESCE(NULLIF(e.payload_json->>'actorId',''),CASE WHEN e.event_type='news.unpublish.revoke_asset' THEN COALESCE((
 				SELECT updated_by FROM hhc_web.content_entry
 				WHERE id=e.aggregate_id AND version=e.aggregate_version AND status='unpublishing'
@@ -944,8 +945,8 @@ func (r *Repository) Claim(ctx context.Context, now time.Time, lease time.Durati
  AND NOT EXISTS (SELECT 1 FROM hhc_web.news_item n WHERE n.public_grant_id=e.payload_json->>'grantId' OR n.home_public_grant_id=e.payload_json->>'grantId')
  AND NOT EXISTS (SELECT 1 FROM hhc_web.page_item pg WHERE pg.banner_public_grant_id=e.payload_json->>'grantId')
  AND NOT EXISTS (SELECT 1 FROM hhc_web.content_published_asset a WHERE a.grant_id=e.payload_json->>'grantId')
- ),'') WHEN e.event_type='bulletin.unpublish.revoke_asset' THEN COALESCE((SELECT created_by FROM hhc_web.publication_workflow WHERE id::text=e.payload_json->>'workflowId' AND resource_id=e.aggregate_id AND aggregate_version=e.aggregate_version AND workflow_type='bulletin_unpublish'),'') ELSE '' END)`, now, now.Add(lease)).Scan(
-		&event.ID, &event.EventType, &event.AggregateID, &event.AggregateVersion, &event.Payload, &event.Attempts, &event.CreatedAt, &event.ClaimedUntil, &event.ActorID,
+ ),'') WHEN e.event_type='bulletin.unpublish.revoke_asset' THEN COALESCE((SELECT created_by FROM hhc_web.publication_workflow WHERE id::text=e.payload_json->>'workflowId' AND resource_id=e.aggregate_id AND aggregate_version=e.aggregate_version AND workflow_type='bulletin_unpublish'),'') ELSE '' END)`, now, now.Add(lease), platform.NewID()).Scan(
+		&event.ID, &event.EventType, &event.AggregateID, &event.AggregateVersion, &event.Payload, &event.Attempts, &event.CreatedAt, &event.ClaimedUntil, &event.SimplifiedClaimToken, &event.ActorID,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return publication.Event{}, false, nil

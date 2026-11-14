@@ -5,8 +5,9 @@ import "time"
 // New controls are advertised only after all CMS/worker writers participate in
 // the durable intent epoch. Absence/false never grants publication authority.
 type AdminCapabilities struct {
-	ExplicitOnlinePublication bool `json:"explicitOnlinePublication"`
-	QualifiedDraftRecovery    bool `json:"qualifiedDraftRecovery"`
+	SimplifiedPublicationRecovery bool `json:"simplifiedPublicationRecovery"`
+	ExplicitOnlinePublication     bool `json:"explicitOnlinePublication"`
+	QualifiedDraftRecovery        bool `json:"qualifiedDraftRecovery"`
 }
 type PublicationDisposition struct {
 	IntentID         string    `json:"intentId"`

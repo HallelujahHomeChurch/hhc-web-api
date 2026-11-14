@@ -1431,3 +1431,23 @@ reconcilers are upgraded, an explicitly enabled completed-VOD withdrawal retains
 ready media authority while blocking member access; a fresh manual publish can
 restore it. Deletion, live termination and irreversible revocation remain fenced.
 See [rollout, rollback and historical-record limits](docs/operations/broadcast-vod-republish.md).
+
+## Simplified publication status and saved-proof recovery
+
+Admin `derivedPublication` reports the source-bound automatic operation separately
+from conversion/layout evidence and the current published edition. It retains at
+most twenty sanitized transitions, a separate last failure, and explicit legacy
+coverage; healthy waits add no failure history. `notification` describes only the
+initial generation-zero command. `accepted` means the downstream service accepted
+that command, not that email or push reached a recipient. Missing request evidence
+stays unknown; later manual generations do not replace the initial command.
+
+`BULLETIN_SIMPLIFIED_PUBLICATION_RECOVERY_ENABLED` defaults to false. The private,
+publish-scope Simplified recovery route can publish exact saved qualified proof
+under a distinct human grant without conversion, OCR, layout, Asset or notification
+work. Exact actor/key/payload replay reads its immutable receipt before live source,
+Local and capability gates; a historical receipt never establishes current
+availability. A same-key Traditional publication replay leaves an existing derived
+grant unchanged. See [proof requirements, retry distinctions and compatible-writer
+rollout/rollback](docs/operations/bulletin-simplified-publication.md). No runtime
+manifest activation follows from this source change.
