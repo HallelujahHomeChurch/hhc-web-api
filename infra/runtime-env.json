@@ -6,6 +6,12 @@
       },
       "AZURE_OPENAI_DEPLOYMENT": {
         "value": "hhc-content-ai"
+      },
+      "BULLETIN_EXPLICIT_ONLINE_PUBLICATION_ENABLED": {
+        "value": "true"
+      },
+      "BULLETIN_SIMPLIFIED_PUBLICATION_RECOVERY_ENABLED": {
+        "value": "true"
       }
     },
     "hhc-web-bulletin-worker": {},
