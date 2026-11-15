@@ -10,8 +10,8 @@ import (
 const simplifiedPublicationProjectionSQL = `(SELECT jsonb_build_object(
  'operationId',e.id,
  'recovery',` + simplifiedRecoverySummaryProjectionSQL + `,
- 'source',jsonb_build_object('documentId',e.aggregate_id,'revision',e.aggregate_version,'contentHash',o.source_content_hash,'metadataHash',o.source_metadata_hash),
- 'sourceCurrent',CASE WHEN sd.published_revision IS DISTINCT FROM e.aggregate_version THEN false WHEN o.source_content_hash IS NULL OR o.source_metadata_hash IS NULL THEN NULL ELSE sr.content_hash=o.source_content_hash AND encode(sha256(convert_to(sp.canonical_metadata::text,'UTF8')),'hex')=o.source_metadata_hash END,
+ 'source',jsonb_build_object('documentId',e.aggregate_id,'revision',e.aggregate_version,'contentHash',COALESCE(o.source_content_hash,legacy.content_hash),'metadataHash',COALESCE(o.source_metadata_hash,legacy.metadata_hash)),
+ 'sourceCurrent',CASE WHEN sd.published_revision IS DISTINCT FROM e.aggregate_version THEN false WHEN COALESCE(o.source_content_hash,legacy.content_hash) IS NULL OR COALESCE(o.source_metadata_hash,legacy.metadata_hash) IS NULL THEN NULL ELSE sr.content_hash=COALESCE(o.source_content_hash,legacy.content_hash) AND encode(sha256(convert_to(sp.canonical_metadata::text,'UTF8')),'hex')=COALESCE(o.source_metadata_hash,legacy.metadata_hash) END,
  'status',CASE WHEN e.last_error='publication_authority_superseded' THEN 'superseded' WHEN e.last_error='publication_withdrawn' THEN 'cancelled' WHEN e.last_error='source_publication_changed' THEN 'superseded' WHEN e.status='delivered' THEN 'completed' WHEN e.status IN('pending','processing','failed') THEN e.status ELSE 'unknown' END,
  'phase',CASE WHEN e.status='delivered' THEN 'complete' WHEN e.status='failed' THEN COALESCE(o.failures_json->0->>'phase','unknown') WHEN c.id IS NULL THEN 'waiting' WHEN c.status<>'review_ready' THEN 'conversion' WHEN $4 AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements(c.assessment_json) a WHERE COALESCE(a->>'errorCode','')='' AND a->'plan'->>'readiness'='ready') THEN 'assessment' WHEN l.status IS DISTINCT FROM 'ready' THEN 'layout' ELSE 'publication' END,
  'conversionJobId',c.id,'resultRevision',l.result_revision,
@@ -28,7 +28,26 @@ const simplifiedPublicationProjectionSQL = `(SELECT jsonb_build_object(
  LEFT JOIN hhc_web.online_bulletin_publication sp ON sp.document_id=sd.id AND sp.revision=sd.published_revision
  LEFT JOIN hhc_web.online_bulletin_simplified_operation o ON o.operation_id=e.id
  LEFT JOIN hhc_web.online_bulletin_conversion_job c ON c.id::text=e.payload_json->>'jobId' AND c.publication_event_id=e.id
- LEFT JOIN LATERAL(SELECT j.status,j.result_revision FROM hhc_web.online_bulletin_layout_job j WHERE j.document_id=c.document_id AND j.source_revision=c.result_revision ORDER BY j.created_at DESC,j.id DESC LIMIT 1) l ON true
+ LEFT JOIN LATERAL(SELECT j.id,j.status,j.result_revision FROM hhc_web.online_bulletin_layout_job j WHERE j.document_id=c.document_id AND j.source_revision=c.result_revision ORDER BY j.created_at DESC,j.id DESC LIMIT 1) l ON true
+
+ -- Legacy history stays unknown. Only an exact saved conversion/layout proof
+ -- can supply missing source facts; recorded hashes are never overwritten.
+ LEFT JOIN LATERAL(SELECT c.source_content_hash AS content_hash,
+  encode(sha256(convert_to(c.source_metadata::text,'UTF8')),'hex') AS metadata_hash
+  FROM hhc_web.online_bulletin_layout_job pl
+  JOIN hhc_web.online_bulletin_revision pr ON pr.document_id=pl.document_id AND pr.revision=pl.result_revision
+  WHERE pl.id=l.id AND c.document_id=d.id AND c.status='review_ready'
+   AND c.source_document_id=e.aggregate_id AND c.source_revision=e.aggregate_version
+   AND sd.published_revision=c.source_revision AND c.source_content_hash=sr.content_hash
+   AND c.source_metadata=sp.canonical_metadata
+   AND e.payload_json->>'issueId'=i.id::text AND e.payload_json->'sourceRevision'=to_jsonb(c.source_revision)
+   AND e.payload_json->'sourceMetadata'=sp.canonical_metadata
+   AND EXISTS(SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(c.assessment_json)='array' THEN c.assessment_json ELSE '[]'::jsonb END) a WHERE COALESCE(a->>'errorCode','')='' AND a->'plan'->>'readiness'='ready')
+   AND pl.status='ready' AND pl.source_revision=c.result_revision AND pl.result_revision=d.local_revision
+   AND pl.canonical_metadata=c.converted_metadata
+   AND pl.measurement_json->>'layoutValidationHash'=pr.layout_validation_hash
+   AND pl.renderer_artifact_sha256=pr.renderer_artifact_sha256
+ ) legacy ON true
  WHERE v.series='general' AND v.locale='zh-Hans' AND e.event_type='bulletin.online.publish_simplified' AND (o.source_publication_version IS NOT NULL AND NOT EXISTS(SELECT 1 FROM hhc_web.outbox_event other LEFT JOIN hhc_web.online_bulletin_simplified_operation other_op ON other_op.operation_id=other.id WHERE other.aggregate_id=e.aggregate_id AND other.event_type=e.event_type AND other.id<>e.id AND other_op.source_publication_version IS NULL AND (other.aggregate_version=e.aggregate_version OR e.aggregate_version IS DISTINCT FROM sd.published_revision)) OR o.source_publication_version IS NULL AND NOT EXISTS(SELECT 1 FROM hhc_web.outbox_event other WHERE other.aggregate_id=e.aggregate_id AND other.event_type=e.event_type AND other.id<>e.id AND (other.aggregate_version=e.aggregate_version OR e.aggregate_version IS DISTINCT FROM sd.published_revision))) ORDER BY o.source_publication_version DESC NULLS LAST,e.created_at DESC,e.id DESC LIMIT 1)`
 
 // aggregate_version is deliberately never used: automatic and manual commands

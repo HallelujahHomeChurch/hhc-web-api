@@ -478,7 +478,7 @@ func (r *Repository) OnlineBulletinState(ctx context.Context, issueID, series, l
 	   WHERE e.status IN ('pending','processing','failed') AND v.series='general' AND v.locale='zh-Hant' AND i.issue_number>=1739),
 	  (SELECT jsonb_build_object('id',j.id,'status',j.status,'attempts',j.attempts,'errorCode',j.last_error_code,'resultRevision',j.result_revision,'reviewIssues',COALESCE(j.snapshot_json->'issues','[]'::jsonb))
 	   FROM hhc_web.online_bulletin_extraction_job j WHERE j.document_id=d.id AND j.source_asset_id=v.pdf_asset_id AND NOT j.superseded ORDER BY j.created_at DESC,j.id DESC LIMIT 1)),
-	 (SELECT jsonb_build_object('id',j.id,'status',j.status,'attempts',j.attempts,'errorCode',j.last_error_code,'reviewIssues',CASE WHEN j.status='ready' THEN '[]'::jsonb ELSE j.review_issues END)
+	 (SELECT jsonb_build_object('id',j.id,'status',j.status,'attempts',j.attempts,'errorCode',j.last_error_code,'resultRevision',j.result_revision,'reviewIssues',CASE WHEN j.status='ready' THEN '[]'::jsonb ELSE j.review_issues END)
 	  FROM hhc_web.online_bulletin_layout_job j WHERE j.document_id=d.id AND j.status<>'superseded'
 	  AND (j.source_revision=d.local_revision OR j.result_revision=d.local_revision) ORDER BY j.created_at DESC,j.id DESC LIMIT 1),
     cj.job,cj.derivation,
