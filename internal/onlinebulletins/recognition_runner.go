@@ -25,6 +25,18 @@ func (r RecognitionRunner) Run(ctx context.Context, job ExtractionJob, source Ge
 	}
 	var results []RecognitionResult
 	inputs = append([]RecognitionPage(nil), inputs...)
+	progress, reportsProgress := r.Store.(RecognitionProgressStore)
+	// Persist totals only after every prepared input matches the validated source.
+	for index, input := range inputs {
+		if input.Page != index+1 || input.TotalPages != len(source.Pages) || input.SourceSHA256 != source.SourceSHA256 || !validRecognitionPage(input) {
+			return DocumentCandidate{}, nil, ErrRecognition
+		}
+	}
+	if reportsProgress {
+		if err := progress.BeginRecognitionProgress(ctx, job, len(inputs), time.Now().UTC()); err != nil {
+			return DocumentCandidate{}, nil, err
+		}
+	}
 	receipt := &RecognitionEvidence{ProtocolSHA256: RecognitionProtocolSHA256(), Deployment: r.Client.deployment, ModelVersion: RecognitionModelVersion, SourceSHA256: source.SourceSHA256}
 	var continuation *RecognitionContinuation
 	for index, input := range inputs {
@@ -42,6 +54,11 @@ func (r RecognitionRunner) Run(ctx context.Context, job ExtractionJob, source Ge
 		}
 		sum := sha256.Sum256(raw)
 		key := RecognitionCheckpoint{Canonical: job.Canonical.Metadata, Page: input.Page, Phase: "verified", InputSHA256: hex.EncodeToString(sum[:]), ProtocolSHA256: receipt.ProtocolSHA256, Deployment: receipt.Deployment, ModelVersion: RecognitionModelVersion}
+		if reportsProgress {
+			if err := progress.StartRecognitionPage(ctx, job, input, time.Now().UTC()); err != nil {
+				return DocumentCandidate{}, nil, err
+			}
+		}
 		saved, err := r.Store.LoadRecognitionCheckpoint(ctx, job, key, time.Now().UTC())
 		if err != nil {
 			return DocumentCandidate{}, nil, err
@@ -74,6 +91,11 @@ func (r RecognitionRunner) Run(ctx context.Context, job ExtractionJob, source Ge
 		continuation, err = NextRecognitionContinuation(input, result)
 		if err != nil {
 			return DocumentCandidate{}, nil, err
+		}
+		if reportsProgress {
+			if err := progress.CompleteRecognitionPage(ctx, job, input, result, saved != nil, time.Now().UTC()); err != nil {
+				return DocumentCandidate{}, nil, err
+			}
 		}
 		inputs[index] = input
 		results = append(results, result)

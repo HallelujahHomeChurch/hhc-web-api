@@ -75,6 +75,7 @@ const currentUpdateSource = ` FROM hhc_web.online_bulletin_update_job u
 // version and revocable request identity remain the update's authority.
 const validUpdateSource = ` AND e.auto_publish AND NOT e.superseded AND e.status='review_ready'
  AND v.auto_publish AND v.auto_publish_request=e.authorizer_request_id
+ AND (v.online_intent_epoch=0 OR e.publication_intent_id=v.online_intent_id AND e.publication_intent_epoch=v.online_intent_epoch AND (SELECT t.status IN ('authorized','running') FROM hhc_web.online_bulletin_intent_transition t WHERE t.intent_id=v.online_intent_id ORDER BY t.sequence DESC LIMIT 1))
  AND e.source_asset_id=v.pdf_asset_id AND e.source_asset_checksum=v.pdf_sha256
  AND i.version>=u.canonical_version AND d.version=u.online_version
  AND u.input_json->'canonical'->'metadata'=jsonb_build_object('title',v.title,'subtitle',v.subtitle,'issueNumber',i.issue_number,'date',i.issue_date::text)`
@@ -149,8 +150,29 @@ func (r *Repository) FailOnlineBulletinUpdate(ctx context.Context, job onlinebul
 	}
 	// Source/semantic failures are terminal; provider retries yield the Event Job
 	// and reuse successful passes, bounded by three leases and six paid requests.
-	result, err := r.db.ExecContext(ctx, `UPDATE hhc_web.online_bulletin_update_job SET status=CASE WHEN $3='provider_unavailable' AND attempts<LEAST($5,3) AND jsonb_array_length(attempt_history_json)<6 THEN 'queued' ELSE 'failed' END,available_at=$4+interval '1 minute',last_error_code=$3,lease_token=NULL,lease_until=NULL,updated_at=$4 WHERE id=$1 AND lease_token=$2 AND status='planning' AND lease_until>$4`, job.ID, job.LeaseToken, code, now, maxAttempts)
-	return updateLeaseResult(result, err)
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var ignored string
+	if err = tx.QueryRowContext(ctx, `SELECT id::text FROM hhc_web.bulletin_issue WHERE id=$1 FOR UPDATE`, job.Input.Canonical.IssueID).Scan(&ignored); err != nil {
+		return err
+	}
+	result, err := tx.ExecContext(ctx, `UPDATE hhc_web.online_bulletin_update_job SET status=CASE WHEN $3='provider_unavailable' AND attempts<LEAST($5,3) AND jsonb_array_length(attempt_history_json)<6 THEN 'queued' ELSE 'failed' END,available_at=$4+interval '1 minute',last_error_code=$3,lease_token=NULL,lease_until=NULL,updated_at=$4 WHERE id=$1 AND lease_token=$2 AND status='planning' AND lease_until>$4`, job.ID, job.LeaseToken, code, now, maxAttempts)
+	if err = updateLeaseResult(result, err); err != nil {
+		return err
+	}
+	var status string
+	if err = tx.QueryRowContext(ctx, `SELECT status FROM hhc_web.online_bulletin_update_job WHERE id=$1`, job.ID).Scan(&status); err != nil {
+		return err
+	}
+	if status == "failed" {
+		if err = r.recordBulletinJobFailure(ctx, tx, job.ExtractionJobID, now); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func (r *Repository) CompleteOnlineBulletinUpdate(ctx context.Context, job onlinebulletins.UpdateJob, evidence onlinebulletins.UpdateEvidence, now time.Time) error {

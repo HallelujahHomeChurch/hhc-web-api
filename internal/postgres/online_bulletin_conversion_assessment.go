@@ -50,6 +50,13 @@ func successfulAssessmentAttempts(attempts []onlinebulletins.UpdateAttempt) []on
 
 // A completed legacy/manual conversion is not semantic publication evidence.
 func validConversionAssessmentTx(ctx context.Context, tx *sql.Tx, jobID string) (bool, error) {
+	metadata, err := conversionAssessmentMetadataTx(ctx, tx, jobID)
+	return metadata != nil, err
+}
+
+// The verified assessment selects either generated or preserved local metadata.
+// Recovery must publish the exact choice that was subsequently measured.
+func conversionAssessmentMetadataTx(ctx context.Context, tx *sql.Tx, jobID string) (*onlinebulletins.CanonicalMetadata, error) {
 	var sourceJSON, sourceMetadataJSON, targetJSON, convertedJSON, localMetadataJSON, attemptsJSON []byte
 	var initializes bool
 	err := tx.QueryRowContext(ctx, `SELECT sr.document_json,j.source_metadata,tr.document_json,j.converted_metadata,j.target_metadata,j.initializes_metadata,j.assessment_json
@@ -58,24 +65,30 @@ func validConversionAssessmentTx(ctx context.Context, tx *sql.Tx, jobID string) 
  JOIN hhc_web.online_bulletin_revision tr ON tr.document_id=j.document_id AND tr.revision=j.result_revision
  WHERE j.id=$1`, jobID).Scan(&sourceJSON, &sourceMetadataJSON, &targetJSON, &convertedJSON, &localMetadataJSON, &initializes, &attemptsJSON)
 	if errors.Is(err, sql.ErrNoRows) {
-		return false, nil
+		return nil, nil
 	}
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	var source, target onlinebulletins.Document
 	var metadata, converted, local onlinebulletins.CanonicalMetadata
 	var attempts []onlinebulletins.UpdateAttempt
 	if json.Unmarshal(sourceJSON, &source) != nil || json.Unmarshal(targetJSON, &target) != nil || json.Unmarshal(sourceMetadataJSON, &metadata) != nil || json.Unmarshal(convertedJSON, &converted) != nil || json.Unmarshal(localMetadataJSON, &local) != nil || json.Unmarshal(attemptsJSON, &attempts) != nil {
-		return false, nil
+		return nil, nil
 	}
 	input, err := onlinebulletins.SimplifiedAssessmentInput(source, metadata, target, converted)
 	if err != nil {
-		return false, nil
+		return nil, nil
 	}
 	if !initializes {
 		input.LocalMetadata = &local
 	}
-	_, err = onlinebulletins.CompletedUpdateEvidence(input, successfulAssessmentAttempts(attempts))
-	return err == nil, nil
+	proof, err := onlinebulletins.CompletedUpdateEvidence(input, successfulAssessmentAttempts(attempts))
+	if err != nil {
+		return nil, nil
+	}
+	if proof.Plan.MetadataChoice == "local" {
+		return &local, nil
+	}
+	return &converted, nil
 }

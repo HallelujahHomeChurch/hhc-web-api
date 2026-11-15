@@ -17,6 +17,7 @@ type Event struct {
 	Attempts                   int
 	CreatedAt                  time.Time
 	ClaimedUntil               time.Time
+	SimplifiedClaimToken       string
 }
 type PublishPayload struct {
 	WorkflowID        string `json:"workflowId"`

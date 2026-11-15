@@ -12,6 +12,13 @@ import (
 // The authenticated HTTP boundary checks publisher capability. Only its audited
 // request can authorize this exact source; cancellation also fences in-flight work.
 func (r *Repository) setAutomaticBulletinIntent(ctx context.Context, tx *sql.Tx, issue, series, locale string, enabled, notify bool, actor string, now time.Time) error {
+	reason := "explicit_draft"
+	if enabled {
+		reason = "automatic_authorized"
+	}
+	return r.setAutomaticBulletinIntentReason(ctx, tx, issue, series, locale, enabled, notify, actor, now, reason)
+}
+func (r *Repository) setAutomaticBulletinIntentReason(ctx context.Context, tx *sql.Tx, issue, series, locale string, enabled, notify bool, actor string, now time.Time, reason string) error {
 	if notify && !enabled || enabled && (series != "general" || locale != "zh-Hant" || !r.llmBulletinExtraction || !r.automaticBulletinExtraction) {
 		return bulletins.ErrInvalid
 	}
@@ -21,6 +28,13 @@ func (r *Repository) setAutomaticBulletinIntent(ctx context.Context, tx *sql.Tx,
 		request = p.RequestID
 	} else if enabled {
 		return bulletins.ErrAuditUnavailable
+	}
+	status := "cancelled"
+	if enabled {
+		status = "authorized"
+	}
+	if err := r.changeBulletinIntent(ctx, tx, issue, series, locale, status, reason, actor, now, ""); err != nil {
+		return err
 	}
 	if err := cancelAutomaticPDFPublication(ctx, tx, issue, series, locale, now); err != nil {
 		return err
@@ -41,10 +55,16 @@ func (r *Repository) setAutomaticBulletinIntent(ctx context.Context, tx *sql.Tx,
 	return err
 }
 
-func cancelOnlineAutomaticIntent(ctx context.Context, tx *sql.Tx, documentID string, now time.Time) error {
+func (r *Repository) cancelOnlineAutomaticIntent(ctx context.Context, tx *sql.Tx, documentID string, now time.Time) error {
 	var issue, series, locale string
 	if err := tx.QueryRowContext(ctx, `SELECT issue_id::text,series,content_locale FROM hhc_web.online_bulletin_document WHERE id=$1`, documentID).Scan(&issue, &series, &locale); err != nil {
 		return err
+	}
+	p, ok := auditclient.ProvenanceFromContext(ctx)
+	if ok {
+		if err := r.changeBulletinIntent(ctx, tx, issue, series, locale, "cancelled", "manual_state_change", p.ActorID, now, ""); err != nil {
+			return err
+		}
 	}
 	if err := cancelAutomaticPDFPublication(ctx, tx, issue, series, locale, now); err != nil {
 		return err

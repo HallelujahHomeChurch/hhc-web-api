@@ -9,13 +9,14 @@ import (
 
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/bulletins"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/onlinebulletins"
+	"github.com/HallelujahHomeChurch/hhc-web-api/internal/platform"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/publication"
 )
 
 func claimSimplifiedRelease(t *testing.T, db *sql.DB, id string, now time.Time) publication.Event {
 	t.Helper()
 	var e publication.Event
-	err := db.QueryRow(`UPDATE hhc_web.outbox_event SET status='processing',attempts=attempts+1,claimed_until=$2 WHERE id=$1 AND status IN ('pending','processing') RETURNING id::text,event_type,aggregate_id::text,aggregate_version,payload_json,attempts,created_at,claimed_until`, id, now.Add(time.Minute)).Scan(&e.ID, &e.EventType, &e.AggregateID, &e.AggregateVersion, &e.Payload, &e.Attempts, &e.CreatedAt, &e.ClaimedUntil)
+	err := db.QueryRow(`UPDATE hhc_web.outbox_event SET status='processing',attempts=attempts+1,claimed_until=$2,simplified_claim_token=$3 WHERE id=$1 AND status IN ('pending','processing') RETURNING id::text,event_type,aggregate_id::text,aggregate_version,payload_json,attempts,created_at,claimed_until,simplified_claim_token::text`, id, now.Add(time.Minute), platform.NewID()).Scan(&e.ID, &e.EventType, &e.AggregateID, &e.AggregateVersion, &e.Payload, &e.Attempts, &e.CreatedAt, &e.ClaimedUntil, &e.SimplifiedClaimToken)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -23,7 +24,7 @@ func claimSimplifiedRelease(t *testing.T, db *sql.DB, id string, now time.Time) 
 }
 
 func TestPublishedSimplifiedReleaseUsesFrozenSourceAndPublishesOnce(t *testing.T) {
-	for _, scenario := range []string{"clean", "llm-assessed", "llm-missing-assessment", "reuploaded-before-assessment", "republished-source", "superseded-failure", "draft-edit", "metadata-edit", "unpublished", "layout-failed", "lease-fenced", "audit-failure", "source-withdrawn-before-conversion", "retagged-claim", "retry-conversion", "retry-layout"} {
+	for _, scenario := range []string{"clean", "llm-assessed", "llm-missing-assessment", "reuploaded-before-assessment", "republished-source", "superseded-failure", "draft-edit", "metadata-edit", "unpublished", "layout-failed", "lease-fenced", "audit-failure", "source-withdrawn-before-conversion", "retagged-claim", "retry-conversion", "retry-layout", "target-metadata-edit"} {
 		t.Run(scenario, func(t *testing.T) {
 			db := accessDB(t)
 			now := time.Now().UTC()
@@ -286,6 +287,11 @@ func TestPublishedSimplifiedReleaseUsesFrozenSourceAndPublishesOnce(t *testing.T
 			} else if err = repo.CompleteOnlineBulletinLayout(ctx, *layout, measuredLayout(t, *layout), now); err != nil {
 				t.Fatal(err)
 			}
+			if scenario == "target-metadata-edit" {
+				if _, err = db.Exec(`UPDATE hhc_web.bulletin_version SET title='new human target title' WHERE issue_id=$1 AND locale='zh-Hans'`, source.Canonical.IssueID); err != nil {
+					t.Fatal(err)
+				}
+			}
 			if scenario == "unpublished" {
 				current, e := repo.OnlineBulletinState(ctx, source.Canonical.IssueID, "general", "zh-Hant")
 				if e != nil {
@@ -330,7 +336,7 @@ func TestPublishedSimplifiedReleaseUsesFrozenSourceAndPublishesOnce(t *testing.T
 				t.Fatal(err)
 			}
 			want := 1
-			if scenario == "unpublished" || scenario == "layout-failed" || scenario == "audit-failure" {
+			if scenario == "unpublished" || scenario == "layout-failed" || scenario == "audit-failure" || scenario == "target-metadata-edit" || scenario == "metadata-edit" {
 				want = 0
 			}
 			if count != want {

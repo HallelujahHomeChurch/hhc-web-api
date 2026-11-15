@@ -192,6 +192,7 @@ func (h *Handler) RoutesWithMiddleware(wrap func(http.Handler) http.Handler) htt
 	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/online/{series}/{contentLocale}/revisions/{revision}/restore", requireScope("cms:bulletins:publish", h.adminAuditProvenance(h.adminOnlineRestore)))
 	admin.HandleFunc("GET /api/admin/bulletins/{issueID}/online/{series}/{contentLocale}/revisions", requireScope("cms:bulletins:read", h.adminAuditProvenance(h.adminOnlineHistory)))
 	admin.HandleFunc("GET /api/admin/bulletins/{issueID}/online/{series}/{contentLocale}/revisions/{revision}", requireScope("cms:bulletins:read", h.adminAuditProvenance(h.adminOnlineRevision)))
+	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/online/{series}/{contentLocale}/recover-publication", requireScope("cms:bulletins:publish", h.adminAuditProvenance(h.adminOnlineRecoverPublication)))
 	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/online/{series}/{contentLocale}/publish", requireScope("cms:bulletins:publish", h.adminAuditProvenance(h.adminOnlinePublish)))
 	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/online/{series}/{contentLocale}/unpublish", requireScope("cms:bulletins:publish", h.adminAuditProvenance(h.adminOnlineUnpublish)))
 	admin.HandleFunc("PUT /api/admin/bulletins/{issueID}", requireScope("cms:bulletins:write", h.adminAuditProvenance(h.adminUpdateIssue)))
@@ -662,7 +663,7 @@ func (h *Handler) adminPublish(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &input) {
 		return
 	}
-	value, err := h.service.Publish(r.Context(), r.PathValue("issueID"), input.Series, input.Locale, expected, input.NotifySubscribers, actor(r))
+	value, err := h.service.PublishSelection(r.Context(), r.PathValue("issueID"), input, expected, actor(r))
 	if err != nil {
 		handleError(w, err)
 		return
@@ -855,6 +856,10 @@ func handleError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusServiceUnavailable, "asset_service_unavailable", "Asset uploads are unavailable.")
 	case errors.Is(err, bulletins.ErrAuditUnavailable):
 		writeError(w, http.StatusServiceUnavailable, "audit_unavailable", "Audit recording is unavailable.")
+	case errors.Is(err, bulletins.ErrAutomaticPublicationActive):
+		writeError(w, http.StatusConflict, "automatic_publication_active", "Automatic publication is active for this edition. Follow its progress or review the available explicit actions.")
+	case errors.Is(err, bulletins.ErrOnlinePublicationUnavailable):
+		writeError(w, http.StatusServiceUnavailable, "online_publication_unavailable", "Online publication controls are not enabled.")
 	case errors.Is(err, bulletins.ErrInvalid):
 		writeError(w, http.StatusBadRequest, "invalid_request", "The request is invalid.")
 	case errors.Is(err, bulletins.ErrNotFound):

@@ -431,7 +431,7 @@ func TestRepositoryPublishWaitsForAssetWorkflow(t *testing.T) {
 	if _, err := repository.StartPublish(ctx, replacement.ID, "general", "zh-Hant", replacement.Version, false, "user-1", now.Add(3*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	publishReplacement, found, err := repository.Claim(ctx, now.Add(3*time.Minute), 30*time.Second)
+	publishReplacement, found, err := repository.Claim(ctx, now.Add(3*time.Minute), 2*time.Minute)
 	if err != nil || !found {
 		t.Fatalf("claim replacement found=%v err=%v", found, err)
 	}
@@ -589,7 +589,8 @@ func TestRepositoryQueuesOneNotificationAfterSuccessfulBulletinPublish(t *testin
 	if _, err := repository.StartPublish(ctx, issue.ID, "general", "zh-Hant", issue.Version, true, "user-1", now); err != nil {
 		t.Fatal(err)
 	}
-	publish, found, err := repository.Claim(ctx, now, 30*time.Second)
+	// Publication completion at +1 minute must retain its claim through that time.
+	publish, found, err := repository.Claim(ctx, now, 2*time.Minute)
 	if err != nil || !found {
 		t.Fatalf("claim publish found=%v err=%v", found, err)
 	}
@@ -627,7 +628,7 @@ func TestRepositoryQueuesOneNotificationAfterSuccessfulBulletinPublish(t *testin
 	if _, err := repository.StartPublish(ctx, withEnglish.ID, "general", "en", withEnglish.Version, true, "user-1", now.Add(3*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	publishEnglish, found, err := repository.Claim(ctx, now.Add(3*time.Minute), 30*time.Second)
+	publishEnglish, found, err := repository.Claim(ctx, now.Add(3*time.Minute), 2*time.Minute)
 	if err != nil || !found || publishEnglish.EventType != "bulletin.publish.ensure_asset" {
 		t.Fatalf("english publish=%#v found=%v err=%v", publishEnglish, found, err)
 	}

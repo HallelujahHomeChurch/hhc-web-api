@@ -19,12 +19,13 @@ import (
 const simplifiedReleaseEvent = "bulletin.online.publish_simplified"
 
 type simplifiedReleasePayload struct {
-	IssueID        string                            `json:"issueId"`
-	SourceRevision int64                             `json:"sourceRevision"`
-	SourceMetadata onlinebulletins.CanonicalMetadata `json:"sourceMetadata"`
-	ActorID        string                            `json:"actorId"`
-	RequestID      string                            `json:"requestId"`
-	JobID          string                            `json:"jobId,omitempty"`
+	IssueID                  string                            `json:"issueId"`
+	SourcePublicationVersion int64                             `json:"sourcePublicationVersion"`
+	SourceRevision           int64                             `json:"sourceRevision"`
+	SourceMetadata           onlinebulletins.CanonicalMetadata `json:"sourceMetadata"`
+	ActorID                  string                            `json:"actorId"`
+	RequestID                string                            `json:"requestId"`
+	JobID                    string                            `json:"jobId,omitempty"`
 }
 
 // The human publication command authorizes this exact derived release. Queue
@@ -34,14 +35,17 @@ func enqueueSimplifiedRelease(ctx context.Context, tx *sql.Tx, source onlinebull
 	if !ok || p.ActorType != "user" || p.ActorID != actor || !auditclient.ValidActorRequest(actor, p.RequestID) {
 		return bulletins.ErrAuditUnavailable
 	}
-	raw, err := json.Marshal(simplifiedReleasePayload{IssueID: issueID, SourceRevision: source.Revision, SourceMetadata: metadata, ActorID: actor, RequestID: p.RequestID})
+	raw, err := json.Marshal(simplifiedReleasePayload{IssueID: issueID, SourceRevision: source.Revision, SourcePublicationVersion: source.Version, SourceMetadata: metadata, ActorID: actor, RequestID: p.RequestID})
 	if err != nil {
 		return err
 	}
 	key := fmt.Sprintf("online-bulletin:%s:simplified-release:%d", source.DocumentID, source.Version)
 	var status string
 	err = tx.QueryRowContext(ctx, `SELECT status FROM hhc_web.outbox_event WHERE destination='hhc-web-api' AND idempotency_key=$1 FOR UPDATE`, key).Scan(&status)
-	if err == nil && status != "failed" {
+	// A source publication replay is a read-only duplicate, even after a
+	// failure, withdrawal or distinct human recovery. Only a new source
+	// command version creates a new grant; explicit retry resumes valid ones.
+	if err == nil {
 		return nil
 	}
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -51,7 +55,7 @@ func enqueueSimplifiedRelease(ctx context.Context, tx *sql.Tx, source onlinebull
 	if _, err = tx.ExecContext(ctx, `UPDATE hhc_web.outbox_event SET status='failed',claimed_until=NULL,last_error='source_publication_changed',updated_at=$2 WHERE aggregate_id=$1 AND event_type=$3 AND status IN ('pending','processing')`, source.DocumentID, now, simplifiedReleaseEvent); err != nil {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO hhc_web.outbox_event(id,destination,event_type,aggregate_type,aggregate_id,aggregate_version,payload_json,idempotency_key,status,next_attempt_at,created_at,updated_at) VALUES($1,'hhc-web-api',$2,'online_bulletin',$3,$4,$5,$6,'pending',$7,$7,$7) ON CONFLICT(destination,idempotency_key) DO UPDATE SET status='pending',payload_json=EXCLUDED.payload_json,attempts=0,next_attempt_at=EXCLUDED.next_attempt_at,last_error='',claimed_until=NULL,updated_at=EXCLUDED.updated_at WHERE outbox_event.status='failed'`, platform.NewID(), simplifiedReleaseEvent, source.DocumentID, source.Revision, raw, key, now)
+	_, err = tx.ExecContext(ctx, `INSERT INTO hhc_web.outbox_event(id,destination,event_type,aggregate_type,aggregate_id,aggregate_version,payload_json,idempotency_key,status,next_attempt_at,created_at,updated_at) VALUES($1,'hhc-web-api',$2,'online_bulletin',$3,$4,$5,$6,'pending',$7,$7,$7) ON CONFLICT(destination,idempotency_key) DO NOTHING`, platform.NewID(), simplifiedReleaseEvent, source.DocumentID, source.Revision, raw, key, now)
 	return err
 }
 
@@ -75,17 +79,17 @@ func (r *Repository) CompleteSimplifiedRelease(ctx context.Context, event public
 		return err
 	}
 	var raw []byte
-	var status string
+	var status, claimToken string
 	var until sql.NullTime
 	var attempts int
-	err = tx.QueryRowContext(ctx, `SELECT payload_json,status,claimed_until,attempts FROM hhc_web.outbox_event WHERE id=$1 AND event_type=$2 AND aggregate_id=$3 AND aggregate_version=$4 FOR UPDATE`, event.ID, simplifiedReleaseEvent, event.AggregateID, event.AggregateVersion).Scan(&raw, &status, &until, &attempts)
+	err = tx.QueryRowContext(ctx, `SELECT payload_json,status,claimed_until,attempts,COALESCE(simplified_claim_token::text,'') FROM hhc_web.outbox_event WHERE id=$1 AND event_type=$2 AND aggregate_id=$3 AND aggregate_version=$4 FOR UPDATE`, event.ID, simplifiedReleaseEvent, event.AggregateID, event.AggregateVersion).Scan(&raw, &status, &until, &attempts, &claimToken)
 	if err != nil {
 		return err
 	}
 	if status == "delivered" {
 		return nil
 	}
-	if status != "processing" || !bytes.Equal(raw, event.Payload) || !until.Valid || !until.Time.Equal(event.ClaimedUntil) || !until.Time.After(now) || attempts != event.Attempts {
+	if event.SimplifiedClaimToken == "" || claimToken != event.SimplifiedClaimToken || status != "processing" || !bytes.Equal(raw, event.Payload) || !until.Valid || !until.Time.Equal(event.ClaimedUntil) || !until.Time.After(now) || attempts != event.Attempts {
 		return publication.ErrStalePublication
 	}
 	finish := func(status, code string) error {
@@ -100,7 +104,7 @@ func (r *Repository) CompleteSimplifiedRelease(ctx context.Context, event public
 		if e != nil {
 			return e
 		}
-		_, e = tx.ExecContext(ctx, `UPDATE hhc_web.outbox_event SET status='pending',payload_json=$2,attempts=GREATEST(attempts-1,0),claimed_until=NULL,next_attempt_at=$3,updated_at=$4 WHERE id=$1`, event.ID, payload, now.Add(10*time.Second), now)
+		_, e = tx.ExecContext(ctx, `UPDATE hhc_web.outbox_event SET status='pending',last_error='',payload_json=$2,attempts=GREATEST(attempts-1,0),claimed_until=NULL,next_attempt_at=$3,updated_at=$4 WHERE id=$1`, event.ID, payload, now.Add(10*time.Second), now)
 		if e != nil {
 			return e
 		}
@@ -174,6 +178,13 @@ func (r *Repository) CompleteSimplifiedRelease(ctx context.Context, event public
 	var metadata onlinebulletins.CanonicalMetadata
 	if json.Unmarshal(documentJSON, &document) != nil || json.Unmarshal(issuesJSON, &issues) != nil || json.Unmarshal(layoutMetadata, &metadata) != nil {
 		return bulletins.ErrConflict
+	}
+	var currentMetadata onlinebulletins.CanonicalMetadata
+	if err = tx.QueryRowContext(ctx, `SELECT v.title,v.subtitle,i.issue_number,i.issue_date::text FROM hhc_web.bulletin_version v JOIN hhc_web.bulletin_issue i ON i.id=v.issue_id WHERE v.issue_id=$1 AND v.series='general' AND v.locale='zh-Hans' FOR UPDATE OF v`, p.IssueID).Scan(&currentMetadata.Title, &currentMetadata.Subtitle, &currentMetadata.IssueNumber, &currentMetadata.Date); err != nil {
+		return err
+	}
+	if currentMetadata != metadata {
+		return finish("failed", "stale_metadata")
 	}
 	if len(issues) != 0 {
 		return finish("failed", "simplified_review_required")
@@ -280,6 +291,13 @@ func (r *Repository) RescheduleSimplifiedRelease(ctx context.Context, event publ
 		status = "failed"
 		next = now
 	}
-	_, err := r.db.ExecContext(ctx, `UPDATE hhc_web.outbox_event SET status=$2,next_attempt_at=$3,claimed_until=NULL,last_error=$4,updated_at=$5 WHERE id=$1 AND event_type=$6 AND status='processing' AND aggregate_id=$7 AND aggregate_version=$8 AND attempts=$9 AND claimed_until=$10 AND claimed_until>$5`, event.ID, status, next, code, now, simplifiedReleaseEvent, event.AggregateID, event.AggregateVersion, event.Attempts, event.ClaimedUntil)
+	_, err := r.db.ExecContext(ctx, `UPDATE hhc_web.outbox_event SET status=$2,next_attempt_at=$3,claimed_until=NULL,last_error=$4,updated_at=$5 WHERE id=$1 AND event_type=$6 AND status='processing' AND aggregate_id=$7 AND aggregate_version=$8 AND attempts=$9 AND claimed_until=$10 AND claimed_until>$5 AND simplified_claim_token::text=$11`, event.ID, status, next, code, now, simplifiedReleaseEvent, event.AggregateID, event.AggregateVersion, event.Attempts, event.ClaimedUntil, event.SimplifiedClaimToken)
+	return err
+}
+
+// An explicit withdrawal cancels the derived grant even before Hans has its
+// first published revision. The issue/document lock is held by the caller.
+func cancelSimplifiedReleaseTx(ctx context.Context, tx *sql.Tx, documentID string, now time.Time) error {
+	_, err := tx.ExecContext(ctx, `UPDATE hhc_web.outbox_event e SET status='failed',claimed_until=NULL,last_error='publication_withdrawn',updated_at=$2 WHERE e.event_type='bulletin.online.publish_simplified' AND e.status IN ('pending','processing','failed') AND (e.aggregate_id=$1 OR e.payload_json->>'issueId'=(SELECT issue_id::text FROM hhc_web.online_bulletin_document WHERE id=$1 AND content_locale='zh-Hans'))`, documentID, now)
 	return err
 }

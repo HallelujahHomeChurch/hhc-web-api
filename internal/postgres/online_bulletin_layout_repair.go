@@ -15,6 +15,7 @@ const automaticLayoutSource = ` FROM hhc_web.online_bulletin_update_job u
  JOIN hhc_web.bulletin_version v ON v.issue_id=i.id AND v.series=d.series AND v.locale=d.content_locale
  WHERE u.document_id=j.document_id AND u.result_revision=j.source_revision AND u.status='ready'
  AND d.local_revision=j.source_revision AND e.auto_publish AND v.auto_publish AND NOT e.superseded
+ AND (v.online_intent_epoch=0 OR e.publication_intent_id=v.online_intent_id AND e.publication_intent_epoch=v.online_intent_epoch AND (SELECT t.status IN ('authorized','running') FROM hhc_web.online_bulletin_intent_transition t WHERE t.intent_id=v.online_intent_id ORDER BY t.sequence DESC LIMIT 1))
  AND e.authorizer_request_id=v.auto_publish_request AND e.source_asset_id=v.pdf_asset_id AND e.source_asset_checksum=v.pdf_sha256
  AND j.canonical_metadata=jsonb_build_object('title',v.title,'subtitle',v.subtitle,'issueNumber',i.issue_number,'date',i.issue_date::text)`
 

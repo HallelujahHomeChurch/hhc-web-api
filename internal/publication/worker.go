@@ -212,6 +212,9 @@ func (w *Worker) processNext(ctx context.Context) (bool, error) {
 	default:
 		err = terminalError{fmt.Errorf("unsupported outbox event %s", event.EventType)}
 	}
+	if event.EventType == "bulletin.publish.ensure_asset" {
+		now = w.now().UTC()
+	}
 	if err == nil {
 		return true, nil
 	}
@@ -223,7 +226,7 @@ func (w *Worker) processNext(ctx context.Context) (bool, error) {
 		if !event.CreatedAt.IsZero() && now.Sub(event.CreatedAt) >= assetReadinessDeadline {
 			return true, w.repository.Fail(ctx, event, "asset readiness deadline exceeded", now)
 		}
-		return true, w.repository.Defer(ctx, event.ID, safeError(err), now.Add(10*time.Second), now)
+		return true, w.reschedulePublication(ctx, event, safeError(err), now.Add(10*time.Second), now, true)
 	}
 	var terminal terminalError
 	var compensation compensationError
@@ -233,7 +236,7 @@ func (w *Worker) processNext(ctx context.Context) (bool, error) {
 		return true, w.repository.Fail(ctx, event, safeError(err), now)
 	}
 	backoff := time.Duration(1<<min(event.Attempts-1, 5)) * 5 * time.Second
-	return true, w.repository.Retry(ctx, event.ID, safeError(err), now.Add(backoff), now)
+	return true, w.reschedulePublication(ctx, event, safeError(err), now.Add(backoff), now, false)
 }
 
 func (w *Worker) submitNotifications(ctx context.Context, event Event, now time.Time) error {
@@ -345,6 +348,7 @@ func (w *Worker) publish(ctx context.Context, event Event, now time.Time) error 
 	if err := readyAsset(asset); err != nil {
 		return err
 	}
+	now = w.now().UTC()
 	if err := w.repository.CompletePublish(ctx, event, "", "", now); err != nil {
 		return w.handlePublishFailure(ctx, event, payload.AssetID, "", err, now)
 	}
@@ -610,4 +614,20 @@ func safeError(err error) string {
 		value = value[:500]
 	}
 	return value
+}
+
+// Bulletin publication uses the full persisted claim. Keep other outbox
+// consumers on their existing contract until their own migration is reviewed.
+func (w *Worker) reschedulePublication(ctx context.Context, event Event, detail string, next, now time.Time, waiting bool) error {
+	if event.EventType == "bulletin.publish.ensure_asset" {
+		if r, ok := w.repository.(interface {
+			RescheduleBulletinPublication(context.Context, Event, string, time.Time, time.Time, bool) error
+		}); ok {
+			return r.RescheduleBulletinPublication(ctx, event, detail, next, now, waiting)
+		}
+	}
+	if waiting {
+		return w.repository.Defer(ctx, event.ID, detail, next, now)
+	}
+	return w.repository.Retry(ctx, event.ID, detail, next, now)
 }

@@ -87,7 +87,7 @@ func run() error {
 		ctx = diagnostics.WithRecorder(ctx, contention)
 	}
 	auditOutbox := postgres.NewAuditOutbox(db)
-	repository := postgres.New(db, cfg.EnableFiveLocaleBulletinNotificationsAfterFluentReview).WithAudit(auditOutbox).WithAutomaticBulletinExtraction(cfg.BulletinAutoExtractionEnabled).WithLLMBulletinExtraction(cfg.BulletinLLMExtractionEnabled)
+	repository := postgres.New(db, cfg.EnableFiveLocaleBulletinNotificationsAfterFluentReview).WithAudit(auditOutbox).WithAutomaticBulletinExtraction(cfg.BulletinAutoExtractionEnabled).WithLLMBulletinExtraction(cfg.BulletinLLMExtractionEnabled).WithExplicitOnlinePublication(cfg.BulletinExplicitOnlinePublicationEnabled).WithSimplifiedPublicationRecovery(cfg.BulletinSimplifiedPublicationRecoveryEnabled)
 	service := bulletins.NewService(repository, time.Now)
 	contentService := content.NewService(repository, time.Now)
 	siteSettingsService := sitesettings.NewService(postgres.NewSiteSettingsRepository(db).WithAudit(auditOutbox), time.Now)
