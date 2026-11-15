@@ -472,3 +472,41 @@ for mutation in \
     exit 1
   fi
 done
+
+# ARM may compare env entries by array position after a manifest-only update.
+cat >"$tmp/cms-env-reorder.json" <<'JSON'
+{"changes":[{"resourceId":"/subscriptions/test/resourceGroups/example-group/providers/Microsoft.App/containerApps/hhc-web-api","changeType":"Modify","before":{"properties":{"template":{"containers":[{"name":"hhc-web-api","env":[{"name":"DATABASE_URL","secretRef":"database-url"},{"name":"BULLETIN_EXPLICIT_ONLINE_PUBLICATION_ENABLED","value":"true"},{"name":"RELEASE","value":"old"}]}]}}},"after":{"properties":{"template":{"containers":[{"name":"hhc-web-api","env":[{"name":"BULLETIN_EXPLICIT_ONLINE_PUBLICATION_ENABLED","value":"true"},{"name":"DATABASE_URL","secretRef":"database-url"},{"name":"RELEASE","value":"candidate"}]}]}}},"delta":[{"path":"properties.template.containers","propertyChangeType":"Array","children":[{"path":"0","propertyChangeType":"Modify","children":[{"path":"env","propertyChangeType":"Array","children":[{"path":"0","propertyChangeType":"Modify","children":[{"path":"secretRef","propertyChangeType":"Delete","before":"database-url"}]},{"path":"1","propertyChangeType":"Modify","children":[{"path":"value","propertyChangeType":"Delete","before":"true"}]}]}]}]}]}]}
+JSON
+./scripts/check-what-if.sh "$tmp/cms-env-reorder.json" preview
+jq '.changes[0].delta=[{path:"properties.template.containers[0].env[0].secretRef",propertyChangeType:"Delete",before:"database-url"},{path:"properties.template.containers[0].env[1].value",propertyChangeType:"Delete",before:"true"}]' "$tmp/cms-env-reorder.json" >"$tmp/cms-env-reorder-flat.json"
+./scripts/check-what-if.sh "$tmp/cms-env-reorder-flat.json" preview
+for mutation in \
+  'del(.changes[0].after.properties.template.containers[0].env[1])' \
+  '.changes[0].after.properties.template.containers[0].env[1].secretRef="different"' \
+  '.changes[0].after.properties.template.containers[0].env[1]={name:"DATABASE_URL",value:"inline"}' \
+  '.changes[0].after.properties.template.containers[0].env[1].value="inline"' \
+  '.changes[0].after.properties.template.containers[0].env[1].secretRef=null' \
+  '.changes[0].after.properties.template.containers[0].env[0].value="false"' \
+  'del(.changes[0].before.properties.template.containers[0].env[0].name)' \
+  '.changes[0].after.properties.template.containers[0].env[0].name=""' \
+  '.changes[0].before.properties.template.containers[0].env += [.changes[0].before.properties.template.containers[0].env[0]]' \
+  '.changes[0].after.properties.template.containers[0].env += [.changes[0].after.properties.template.containers[0].env[0]]' \
+  '.changes[0].after.properties.template.containers[0].env += [{name:"EXTRA",value:"true"}]' \
+  '.changes[0].after.properties.template.containers[0].env=.changes[0].before.properties.template.containers[0].env' \
+  '.changes[0].delta[0].children[0].children[0].children[0].children[0].before="different"' \
+  '.changes[0].delta[0].path="properties.template.initContainers"' \
+  '.changes[0].resourceId |= sub("containerApps/hhc-web-api$";"jobs/hhc-web-migrate")' \
+  'del(.changes[0].before)' \
+  '.changes[0].after.properties.template.containers[0].name="other"'; do
+  jq "$mutation" "$tmp/cms-env-reorder.json" >"$tmp/cms-env-reorder-unsafe.json"
+  if ./scripts/check-what-if.sh "$tmp/cms-env-reorder-unsafe.json" preview 2>/dev/null; then
+    echo "Unsafe env deletion accepted: $mutation" >&2
+    exit 1
+  fi
+done
+# A whole entry deletion is not a positional binding-field mismatch.
+jq '.changes[0].delta[0].children[0].children[0].children=[{path:"0",propertyChangeType:"Delete",before:{name:"DATABASE_URL",secretRef:"database-url"}}]' "$tmp/cms-env-reorder.json" >"$tmp/cms-env-entry-delete.json"
+if ./scripts/check-what-if.sh "$tmp/cms-env-entry-delete.json" preview 2>/dev/null; then
+  echo 'Whole env entry deletion accepted' >&2
+  exit 1
+fi

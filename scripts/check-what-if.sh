@@ -186,6 +186,44 @@ jq -e --argjson targets "$(python3 scripts/deployment_config.py targets)" --arg 
     ] | index($name) != null)
     and ($property.after == null)
     and ($property.children == null);
+  # Only positional leaf deletions whose complete named binding moved intact.
+  # This does not permit deleting an env entry, changing its binding, or guessing
+  # through absent/duplicate names or incomplete before/after payloads.
+  def complete_env:
+    if type != "array" then false else
+      all(.[]; type == "object" and (.name | type == "string" and length > 0)
+        and ((keys == ["name","value"] and (.value | type == "string"))
+          or (keys == ["name","secretRef"] and (.secretRef | type == "string" and length > 0)))
+        and (.value != "*******" and .secretRef != "*******"))
+      and (map(.name) | length == (unique | length))
+    end;
+  def is_cms_env_binding_reorder($change; $propertyPath; $property):
+    if ($change.resourceId | is_hhc_web_api_resource) and $change.changeType == "Modify"
+      and $propertyPath[0] == "delta"
+      and all($propertyPath[]; type == "number" or . == "delta" or . == "children")
+      and $property.after == null and $property.children == null then
+      ([range(1; ($propertyPath | length) + 1) as $n
+        | $change | getpath($propertyPath[0:$n]) | objects | .path? | strings]
+        | join(".") | gsub("\\[(?<i>[0-9]+)\\]"; ".\(.i)")
+        | [capture("^properties\\.template\\.containers\\.0\\.env\\.(?<index>[0-9]+)\\.(?<field>value|secretRef)$")]
+        | .[0]) as $match
+      | $change.before.properties.template.containers as $before
+      | $change.after.properties.template.containers as $after
+      | if $match == null or ($before | type) != "array" or ($after | type) != "array"
+        or ($before | length) != 1 or ($after | length) != 1 then false else
+        $before[0].env as $old | $after[0].env as $new
+        | if $before[0].name != "hhc-web-api" or $after[0].name != "hhc-web-api"
+          or ($old | complete_env | not) or ($new | complete_env | not) then false else
+          ($match.index | tonumber) as $index
+          | $old[$index] as $entry
+          | [$new | to_entries[] | select(.value.name == $entry.name)] as $moved
+          | ($old | map(.name) | sort) == ($new | map(.name) | sort)
+            and $entry != null and ($moved | length) == 1
+            and $moved[0].key != $index and $moved[0].value == $entry
+            and ($entry | has($match.field)) and $property.before == $entry[$match.field]
+        end
+      end
+    else false end;
   def is_retired_operations_workload_auth_provider($change; $property):
     ($change.resourceId | is_operations_auth)
     and ($property.path? == "properties.identityProviders")
@@ -239,6 +277,7 @@ jq -e --argjson targets "$(python3 scripts/deployment_config.py targets)" --arg 
       or is_cms_http_scaler_retirement($change; $propertyPath; $property)
       or is_locations_alias_disable($change; $propertyPath; $property)
       or is_retired_operations_workload_env($change; $property)
+      or is_cms_env_binding_reorder($change; $propertyPath; $property)
       or is_retired_operations_workload_auth_provider($change; $property)
       ) | not)
   ] | length == 0)
