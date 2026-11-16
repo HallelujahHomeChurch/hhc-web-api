@@ -28,7 +28,7 @@ func bulletinDeletionReasons(ctx context.Context, query bulletinQueryer, issues 
   SELECT 1 FROM hhc_web.online_bulletin_update_job u JOIN hhc_web.publication_workflow w ON w.id=u.pdf_workflow_id
   WHERE u.document_id=d.id AND w.workflow_type='bulletin_publish' AND w.aggregate_version=i.version AND w.asset_id=v.pdf_asset_id AND w.status NOT IN('completed','failed','cancelled')
  )) THEN 2
- WHEN v.published_at IS NOT NULL OR EXISTS(SELECT 1 FROM hhc_web.publication_workflow w WHERE (w.resource_id,w.series,w.locale)=(v.issue_id,v.series,v.locale) AND w.workflow_type='bulletin_publish' AND w.status='completed')
+ WHEN v.published_at IS NOT NULL OR EXISTS(SELECT 1 FROM hhc_web.publication_workflow w WHERE (w.resource_id,w.series,w.locale)=(v.issue_id,v.series,v.locale) AND w.workflow_type='bulletin_publish' AND w.resource_type='bulletin' AND w.status='completed')
    OR EXISTS(SELECT 1 FROM hhc_web.online_bulletin_publication p WHERE p.document_id=d.id)
    OR EXISTS(SELECT 1 FROM hhc_web.online_bulletin_conversion_job c JOIN hhc_web.online_bulletin_publication p ON p.document_id=c.document_id WHERE c.source_document_id=d.id) THEN 1
  ELSE 0 END

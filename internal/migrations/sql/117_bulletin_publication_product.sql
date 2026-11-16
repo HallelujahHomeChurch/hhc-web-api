@@ -66,3 +66,7 @@ CREATE TABLE hhc_web.bulletin_upload_asset (
  asset_id text NOT NULL CHECK(octet_length(asset_id) BETWEEN 1 AND 255),
  PRIMARY KEY(issue_id,series,locale,asset_id)
 );
+
+CREATE INDEX bulletin_product_outbox_lookup_idx
+ ON hhc_web.outbox_event(event_type,aggregate_id,created_at DESC,id DESC)
+ WHERE event_type IN('bulletin.online.ensure_extraction','bulletin.online.publish_simplified');
