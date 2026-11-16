@@ -1,11 +1,13 @@
 package onlinebulletins
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -391,5 +393,106 @@ esac
 	}
 	if deadlines != 2 {
 		t.Fatalf("postserialization measurement inherited the composition-only deadline: caller deadline consulted %d times", deadlines)
+	}
+}
+
+func TestCompositionFailureRetainsOnlyIndependentlyVerifiedSourceLayout(t *testing.T) {
+	for _, valid := range []bool{true, false} {
+		t.Run(fmt.Sprintf("valid=%t", valid), func(t *testing.T) {
+			document, metadata, _ := layoutRunnerFixture(t)
+			before, _ := json.Marshal(document)
+			submission, _, err := MarshalLayoutSubmission(document, metadata)
+			if err != nil {
+				t.Fatal(err)
+			}
+			output := layoutRunnerOutput(t, document, submission, func(m map[string]any) {
+				if !valid {
+					m["overflow"] = []any{map[string]any{"pageId": "page-1", "slotId": "slot"}}
+				}
+			})
+			var envelope struct {
+				Measurement json.RawMessage `json:"measurement"`
+			}
+			if json.Unmarshal(output, &envelope) != nil {
+				t.Fatal("fixture")
+			}
+			root := t.TempDir()
+			if err = os.WriteFile(filepath.Join(root, "measurement.json"), envelope.Measurement, 0600); err != nil {
+				t.Fatal(err)
+			}
+			script := `#!/bin/sh
+case "$1" in
+ /opt/bulletin-layout/compose.mjs) exit 1;;
+ *) cat "$(dirname "$0")/measurement.json";;
+esac
+`
+			path := filepath.Join(root, "node")
+			if err = os.WriteFile(path, []byte(script), 0700); err != nil {
+				t.Fatal(err)
+			}
+			runner := LayoutRunner{NodePath: path, ScriptPath: "/trusted/measure.mjs", AssetsDirectory: "/trusted/assets", RendererArtifactSHA256: document.LayoutManifest.RendererArtifactSha256}
+			result, err := runner.Compose(context.Background(), document, metadata)
+			if valid {
+				if err != nil || result.LayoutValidationHash == "" || !bytes.Equal(result.SubmissionJSON, submission) {
+					t.Fatalf("valid original was not retained: %v", err)
+				}
+			} else if err == nil {
+				t.Fatal("overflowing original bypassed validation")
+			}
+			after, _ := json.Marshal(document)
+			if !bytes.Equal(before, after) {
+				t.Fatal("source document was mutated")
+			}
+		})
+	}
+}
+
+func TestOriginalLayoutFallbackKeepsCancellationAndOriginalFinding(t *testing.T) {
+	document, metadata, _ := layoutRunnerFixture(t)
+	_, hash, err := MarshalLayoutSubmission(document, metadata)
+	if err != nil {
+		t.Fatal(err)
+	}
+	failure, _ := json.Marshal(map[string]any{"failure": map[string]any{"contentHash": hash, "rendererArtifactSha256": document.LayoutManifest.RendererArtifactSha256, "locations": []any{map[string]string{"pageId": document.Pages[0].ID, "slotId": document.LayoutManifest.Pages[0].Slots[0].ID}}}})
+	root := t.TempDir()
+	if err = os.WriteFile(filepath.Join(root, "failure.json"), failure, 0600); err != nil {
+		t.Fatal(err)
+	}
+	script := `#!/bin/sh
+case "$1" in
+ /opt/bulletin-layout/compose.mjs) cat "$(dirname "$0")/failure.json"; exit 1;;
+ *) touch "$(dirname "$0")/fallback-started"; sleep 30;;
+esac
+`
+	path := filepath.Join(root, "node")
+	if err = os.WriteFile(path, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	runner := LayoutRunner{NodePath: path, ScriptPath: "/trusted/measure.mjs", AssetsDirectory: "/trusted/assets", RendererArtifactSHA256: document.LayoutManifest.RendererArtifactSha256}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		tick := time.NewTicker(time.Millisecond)
+		defer tick.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-tick.C:
+				if _, e := os.Stat(filepath.Join(root, "fallback-started")); e == nil {
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+	start := time.Now()
+	_, err = runner.Compose(ctx, document, metadata)
+	<-done
+	var finding *LayoutReviewError
+	if !errors.As(err, &finding) || len(finding.Issues) != 1 || ctx.Err() != context.Canceled || time.Since(start) > 3*time.Second {
+		t.Fatalf("fallback lost original finding or caller cancellation: %v", err)
 	}
 }
