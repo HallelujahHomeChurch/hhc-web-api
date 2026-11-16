@@ -38,6 +38,7 @@ func TestPublicationEligibilityRequiresANewDraftOrNoPublicEdition(t *testing.T) 
 		}
 	}
 	p := bulletinProductState{number: 1747, publishable: true, withdrawn: true, asset: "withdrawn-source"}
+	p.outcome.Availability = bulletins.PublicationChannels{PDF: true, Traditional: true}
 	p.classify(true)
 	if p.outcome.Status != "withdrawn" || p.outcome.NextAction != "publish" {
 		t.Fatalf("withdrawn=%+v", p.outcome)

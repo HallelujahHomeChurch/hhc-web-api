@@ -249,13 +249,13 @@ func (p *bulletinProductState) classify(productEnabled bool) {
 		outcome.Status = "draft"
 	}
 	// Source freshness and old automation history must not revoke a public
-	// edition or authorize a new write. Only an actual saved PDF draft may
-	// update an existing publication through this command.
+	// edition or authorize a new write. A saved PDF draft or an explicitly
+	// withdrawn edition may authorize an update to an existing publication.
 	available := outcome.Availability.PDF || outcome.Availability.Traditional || outcome.Availability.Simplified
 	if outcome.Status == "draft" && available && !p.sourceDraft {
 		outcome.Status = "published"
 	}
-	if productEnabled && (!available || p.sourceDraft) && p.publishable && !p.automatic && p.number >= 1739 && p.asset != "" && (outcome.Status == "draft" || outcome.Status == "withdrawn") {
+	if productEnabled && (!available || p.sourceDraft || p.withdrawn) && p.publishable && !p.automatic && p.number >= 1739 && p.asset != "" && (outcome.Status == "draft" || outcome.Status == "withdrawn") {
 		outcome.NextAction = "publish"
 	}
 }
