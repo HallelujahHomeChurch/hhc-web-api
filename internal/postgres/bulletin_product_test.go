@@ -309,3 +309,29 @@ func TestDraftDeletionCollectsPendingUploadSessionsBeforeAndAfterDelete(t *testi
 		t.Fatal("lost asset cleanup", count, err)
 	}
 }
+
+func TestProductOutcomeUsesAgreedSourceAssessmentForMetadataCorrection(t *testing.T) {
+	db := accessDB(t)
+	now := time.Now().UTC()
+	ctx := bulletinAuditContext()
+	repo, source := seedAutomaticUpdate(t, db, now)
+	repo.WithAutomaticBulletinExtraction(true)
+	job, err := repo.ClaimOnlineBulletinUpdate(ctx, now, time.Minute, 3)
+	if err != nil || job == nil {
+		t.Fatal("claim", err)
+	}
+	evidence := verifiedUpdateForTest(t, job.Input)
+	for _, attempt := range evidence.Attempts {
+		attempt.Plan.Readiness = "wrong_issue"
+		if err = repo.SaveOnlineBulletinUpdateAttempt(ctx, *job, attempt, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err = repo.FailOnlineBulletinUpdate(ctx, *job, "source_not_ready", now, 3); err != nil {
+		t.Fatal(err)
+	}
+	outcome, err := repo.BulletinPublicationOutcome(ctx, source.Canonical.IssueID)
+	if err != nil || outcome.Reason != "metadata_mismatch" || outcome.NextAction != "update_metadata" {
+		t.Fatal("assessment did not route to metadata correction", outcome, err)
+	}
+}

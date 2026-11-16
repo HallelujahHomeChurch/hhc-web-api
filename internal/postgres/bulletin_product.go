@@ -24,7 +24,7 @@ type bulletinProductState struct {
 	uploadStatus, uploadError, extractionStatus, extractionError    string
 	updateStatus, updateError, layoutStatus, layoutError, pdfStatus string
 	derivedBlocked                                                  bool
-	derivedStatus, derivedError                                     string
+	derivedStatus, derivedError, sourceAssessment                   string
 	onlineVersion                                                   int64
 	traditionalRevision                                             sql.NullInt64
 	metadataMismatch, extractionBlocked, layoutBlocked              bool
@@ -56,6 +56,9 @@ func (r *Repository) loadBulletinProductStates(ctx context.Context, query bullet
  COALESCE(upload.status,''),COALESCE(upload.last_error,''),
  COALESCE(e.id::text,''),COALESCE(e.status,''),COALESCE(e.last_error_code,''),
  COALESCE(u.id::text,''),COALESCE(u.status,''),COALESCE(u.last_error_code,''),
+ COALESCE(CASE WHEN u.last_error_code='source_not_ready' AND
+  u.checkpoint_json#>>'{0,plan,readiness}'=u.checkpoint_json#>>'{1,plan,readiness}'
+  THEN u.checkpoint_json#>>'{0,plan,readiness}' END,''),
  COALESCE(l.id::text,''),COALESCE(l.status,''),COALESCE(l.last_error_code,''),
  COALESCE(w.status,''),COALESCE(derived.id::text,''),COALESCE(derived.status,''),COALESCE(derived.last_error,''),
  COALESCE(e.snapshot_json->'issues' @> '[{"code":"canonical_source_mismatch"}]',false),
@@ -97,7 +100,7 @@ func (r *Repository) loadBulletinProductStates(ctx context.Context, query bullet
 		if err = rows.Scan(&id, &p.number, &p.automatic, &p.asset, &p.withdrawn, &p.onlineVersion, &p.traditionalRevision,
 			&a.PDF, &a.Traditional, &a.Simplified, &c.PDF, &c.Traditional, &c.Simplified,
 			&p.uploadStatus, &p.uploadError, &p.extraction, &p.extractionStatus, &p.extractionError,
-			&p.update, &p.updateStatus, &p.updateError, &p.layout, &p.layoutStatus, &p.layoutError,
+			&p.update, &p.updateStatus, &p.updateError, &p.sourceAssessment, &p.layout, &p.layoutStatus, &p.layoutError,
 			&p.pdfStatus, &p.derived, &p.derivedStatus, &p.derivedError, &p.metadataMismatch, &p.extractionBlocked, &p.layoutBlocked, &pending, &p.correction, &p.correctionStatus, &p.correctionBlocked, &p.derivedBlocked); err != nil {
 			return nil, err
 		}
@@ -188,6 +191,17 @@ func (p *bulletinProductState) classify() {
 			attention("processing_failed", "resume", "extraction")
 		}
 	case p.automatic && p.updateStatus == "failed":
+		switch p.sourceAssessment {
+		case "wrong_issue":
+			attention("metadata_mismatch", "update_metadata", "")
+			return
+		case "wrong_edition", "unsupported":
+			attention("unsupported_source", "replace_source", "")
+			return
+		case "incomplete":
+			attention("source_invalid", "replace_source", "")
+			return
+		}
 		if p.updateError == "provider_unavailable" || p.updateError == "attempt_limit" {
 			attention("processing_failed", "resume", "update")
 		} else {
