@@ -771,8 +771,18 @@ func (r *Repository) unpublishBulletin(ctx context.Context, id, series, locale s
 		if currentOnline != *onlineVersion {
 			return bulletins.Issue{}, bulletins.ErrPrecondition
 		}
-		if published.Valid {
-			if err = r.clearOnlinePublication(ctx, tx, documentID, actor, now); err != nil {
+		// The explicit paired action withdraws both online languages. Clearing
+		// visibility and fencing automatic continuations share this transaction.
+		if err = r.clearOnlinePublication(ctx, tx, documentID, actor, now); err != nil {
+			return bulletins.Issue{}, err
+		}
+		var targetID string
+		err = tx.QueryRowContext(ctx, `SELECT id::text FROM hhc_web.online_bulletin_document WHERE issue_id=$1 AND series=$2 AND content_locale='zh-Hans' FOR UPDATE`, canonicalID, series).Scan(&targetID)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return bulletins.Issue{}, err
+		}
+		if err == nil {
+			if err = r.clearOnlinePublication(ctx, tx, targetID, actor, now); err != nil {
 				return bulletins.Issue{}, err
 			}
 		}

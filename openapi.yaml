@@ -4079,7 +4079,7 @@ paths:
     post:
       operationId: unpublishBulletin
       summary: Unpublish bulletin
-      description: By default removes only the PDF projection and retains Online publication. Admin reads Online state to show a warning and an unchecked simultaneous-unpublish option. Only explicit unpublishOnline=true with the current onlineVersion clears the matching Online pointer synchronously in the same transaction; either CAS or audit failure rolls back both. Historical Online revisions and private annotations are retained. Existing PDF asset revocation remains asynchronous.
+      description: By default removes only the PDF projection and retains Online publication. The automatic product UI defaults to an explicitly confirmed paired withdrawal. Only explicit unpublishOnline=true with the current Traditional onlineVersion clears both Traditional and Simplified Online pointers and cancels their automatic continuation in the same transaction; either CAS or audit failure rolls back the PDF projection and both readers. Historical Online revisions and private annotations are retained. Existing PDF asset revocation remains asynchronous.
       tags: [Admin]
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]

@@ -24,7 +24,7 @@ func claimSimplifiedRelease(t *testing.T, db *sql.DB, id string, now time.Time) 
 }
 
 func TestPublishedSimplifiedReleaseUsesFrozenSourceAndPublishesOnce(t *testing.T) {
-	for _, scenario := range []string{"clean", "llm-assessed", "explicit-republish-derived", "llm-missing-assessment", "reuploaded-before-assessment", "republished-source", "superseded-failure", "draft-edit", "metadata-edit", "unpublished", "layout-failed", "lease-fenced", "audit-failure", "source-withdrawn-before-conversion", "retagged-claim", "retry-conversion", "product-retry-conversion", "retry-layout", "target-metadata-edit"} {
+	for _, scenario := range []string{"paired-withdrawal-in-flight", "paired-withdrawal", "clean", "llm-assessed", "explicit-republish-derived", "llm-missing-assessment", "reuploaded-before-assessment", "republished-source", "superseded-failure", "draft-edit", "metadata-edit", "unpublished", "layout-failed", "lease-fenced", "audit-failure", "source-withdrawn-before-conversion", "retagged-claim", "retry-conversion", "product-retry-conversion", "retry-layout", "target-metadata-edit"} {
 		t.Run(scenario, func(t *testing.T) {
 			db := accessDB(t)
 			now := time.Now().UTC()
@@ -330,6 +330,23 @@ func TestPublishedSimplifiedReleaseUsesFrozenSourceAndPublishesOnce(t *testing.T
 				t.Cleanup(func() { db.Exec(`ALTER TABLE hhc_web.outbox_event DROP CONSTRAINT test_simplified_publish_audit`) })
 			}
 			e = claimSimplifiedRelease(t, db, id, now.Add(11*time.Second))
+			if scenario == "paired-withdrawal-in-flight" {
+				current, stateErr := repo.OnlineBulletinState(ctx, source.Canonical.IssueID, "general", "zh-Hant")
+				if stateErr != nil {
+					t.Fatal(stateErr)
+				}
+				if _, err = repo.UnpublishWithOnline(ctx, source.Canonical.IssueID, "general", "zh-Hant", current.CanonicalVersion, current.Version, postgresBulletinAuditActor, now.Add(11*time.Second)); err != nil {
+					t.Fatal(err)
+				}
+				if err = repo.CompleteSimplifiedRelease(ctx, e, now.Add(12*time.Second)); !errors.Is(err, publication.ErrStalePublication) {
+					t.Fatal("claimed work was not fenced", err)
+				}
+				var visible int
+				if err = db.QueryRow(`SELECT count(*) FROM hhc_web.online_bulletin_document WHERE issue_id=$1 AND published_revision IS NOT NULL`, source.Canonical.IssueID).Scan(&visible); err != nil || visible != 0 {
+					t.Fatal("late work restored visibility", visible, err)
+				}
+				return
+			}
 			err = repo.CompleteSimplifiedRelease(ctx, e, now.Add(11*time.Second))
 			if scenario == "audit-failure" {
 				if err == nil {
@@ -377,6 +394,46 @@ func TestPublishedSimplifiedReleaseUsesFrozenSourceAndPublishesOnce(t *testing.T
 				target, stateErr := repo.OnlineBulletinState(ctx, source.Canonical.IssueID, "general", "zh-Hans")
 				if stateErr != nil || target.Conversion == nil || target.Conversion.Status != "review_ready" || target.PublishedRevision == nil {
 					t.Fatal("delivered intent was masked by historical failure", target.Conversion, stateErr)
+				}
+				if scenario == "paired-withdrawal" {
+					current, e := repo.GetIssueWithPublicationOutcome(ctx, source.Canonical.IssueID)
+					if e != nil {
+						t.Fatal(e)
+					}
+					hant, e := repo.OnlineBulletinState(ctx, source.Canonical.IssueID, "general", "zh-Hant")
+					if e != nil {
+						t.Fatal(e)
+					}
+					// A failure in the target's audit must roll back both readers and the PDF.
+					if _, e = db.Exec(`ALTER TABLE hhc_web.outbox_event ADD CONSTRAINT test_paired_target_audit CHECK(payload_json->>'resourceId'<>'` + target.DocumentID + `' OR payload_json->>'action'<>'cms.bulletin.online.unpublish') NOT VALID`); e != nil {
+						t.Fatal(e)
+					}
+					t.Cleanup(func() { db.Exec(`ALTER TABLE hhc_web.outbox_event DROP CONSTRAINT IF EXISTS test_paired_target_audit`) })
+					if _, e = repo.UnpublishWithOnline(ctx, current.ID, "general", "zh-Hant", current.Version, hant.Version, postgresBulletinAuditActor, now.Add(12*time.Second)); e == nil {
+						t.Fatal("target audit failure did not stop paired withdrawal")
+					}
+					var pdfStatus string
+					var pdfCount int
+					if e = db.QueryRow(`SELECT status,(SELECT count(*) FROM hhc_web.bulletin_published_version WHERE issue_id=$1) FROM hhc_web.bulletin_version WHERE issue_id=$1 AND series='general' AND locale='zh-Hant'`, current.ID).Scan(&pdfStatus, &pdfCount); e != nil || pdfStatus != "published" || pdfCount != 1 {
+						t.Fatal("PDF did not roll back", pdfStatus, pdfCount, e)
+					}
+					var visible int
+					if e = db.QueryRow(`SELECT count(*) FROM hhc_web.online_bulletin_document WHERE issue_id=$1 AND published_revision IS NOT NULL`, current.ID).Scan(&visible); e != nil || visible != 2 {
+						t.Fatal("partial withdrawal", visible, e)
+					}
+					if _, e = db.Exec(`ALTER TABLE hhc_web.outbox_event DROP CONSTRAINT test_paired_target_audit`); e != nil {
+						t.Fatal(e)
+					}
+					if _, e = repo.UnpublishWithOnline(ctx, current.ID, "general", "zh-Hant", current.Version, hant.Version, postgresBulletinAuditActor, now.Add(13*time.Second)); e != nil {
+						t.Fatal(e)
+					}
+					if e = db.QueryRow(`SELECT count(*) FROM hhc_web.online_bulletin_document WHERE issue_id=$1 AND published_revision IS NOT NULL`, current.ID).Scan(&visible); e != nil || visible != 0 {
+						t.Fatal("paired withdrawal left a readable language", visible, e)
+					}
+					var history int
+					if e = db.QueryRow(`SELECT count(*) FROM hhc_web.online_bulletin_publication p JOIN hhc_web.online_bulletin_document d ON d.id=p.document_id WHERE d.issue_id=$1`, current.ID).Scan(&history); e != nil || history != 2 {
+						t.Fatal("withdrawal removed history", history, e)
+					}
 				}
 				if scenario == "explicit-republish-derived" {
 					current, e := repo.GetIssueWithPublicationOutcome(ctx, source.Canonical.IssueID)
