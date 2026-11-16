@@ -96,3 +96,11 @@ regexes = [
   '''^\s*"docs/obs-capture/ten-second-v1/(rc2/)?(asset|cms)\.openapi\.snapshot\.yaml": "[0-9a-f]{64}",?\s*$''',
 ]
 paths = ['''^docs/obs-capture/output-replay-v1/manifest\.json$''']
+
+[[allowlists]]
+description = "Literal hexadecimal alphabet in bulletin command-token validation"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+regexes = ['''^\s*return len\(token\) == 64 && strings\.Trim\(token, "0123456789abcdef"\) == ""\s*$''']
+paths = ['''^internal/bulletins/product\.go$''']
