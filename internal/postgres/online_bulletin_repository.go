@@ -11,24 +11,11 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/HallelujahHomeChurch/hhc-web-api/internal/bulletins"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/onlinebulletins"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/platform"
 )
 
 var extractionErrorCode = regexp.MustCompile(`^[a-z0-9_]{1,64}$`)
-
-// Caller holds the issue lock; the FK remains the final concurrent-delete guard.
-func rejectOnlineHistoryDeletion(ctx context.Context, tx *sql.Tx, issueID, series, locale string) error {
-	var exists bool
-	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM hhc_web.online_bulletin_document WHERE issue_id=$1 AND ($2='' OR (series=$2 AND content_locale=$3)))`, issueID, series, locale).Scan(&exists); err != nil {
-		return err
-	}
-	if exists {
-		return bulletins.ErrOnlineDocumentExists
-	}
-	return nil
-}
 
 func (r *Repository) ClaimOnlineBulletinExtraction(ctx context.Context, now time.Time, lease time.Duration, maxAttempts int) (*onlinebulletins.ExtractionJob, error) {
 	if now.IsZero() || lease <= 0 || lease > onlinebulletins.RecognitionJobTimeout || maxAttempts < 1 || maxAttempts > 10 {
@@ -97,11 +84,13 @@ func (r *Repository) FailOnlineBulletinExtraction(ctx context.Context, job onlin
 	}
 	defer tx.Rollback()
 	var ignored string
-	if err = tx.QueryRowContext(ctx, `SELECT id::text FROM hhc_web.bulletin_issue WHERE id=$1 FOR UPDATE`, job.Canonical.IssueID).Scan(&ignored); err != nil {
+	if err = tx.QueryRowContext(ctx, `SELECT id::text FROM hhc_web.bulletin_issue WHERE id=$1 FOR UPDATE`, job.Canonical.IssueID).Scan(&ignored); errors.Is(err, sql.ErrNoRows) {
+		return onlinebulletins.ErrExtractionLease
+	} else if err != nil {
 		return err
 	}
 	result, err := tx.ExecContext(ctx, `UPDATE hhc_web.online_bulletin_extraction_job
-		SET status=CASE WHEN extractor_version=$5 AND attempts<CASE WHEN auto_publish THEN LEAST($6,3) ELSE $6 END AND ($3='extraction_timeout' OR auto_publish AND $3 IN ('recognition_failed','extraction_failed')) THEN 'queued' ELSE 'failed' END,
+		SET status=CASE WHEN extractor_version=$5 AND attempts<CASE WHEN auto_publish THEN LEAST($6,3) ELSE $6 END AND ($3='extraction_timeout' OR auto_publish AND $3 IN ('recognition_failed','extraction_failed','template_assets_unavailable')) THEN 'queued' ELSE 'failed' END,
 		last_error_code=$3,available_at=$4::timestamptz+CASE WHEN auto_publish THEN interval '1 minute' ELSE interval '10 seconds' END,lease_token=NULL,lease_until=NULL,updated_at=$4
 		WHERE id=$1 AND lease_token=$2 AND status='parsing' AND lease_until>$4 AND NOT superseded`, job.ID, job.LeaseToken, code, now, onlinebulletins.RecognitionExtractorVersion(), maxAttempts)
 	if err != nil {
@@ -193,6 +182,9 @@ func (r *Repository) CompleteOnlineBulletinExtraction(ctx context.Context, job o
 	var current onlinebulletins.CanonicalMetadata
 	var asset, checksum string
 	err = tx.QueryRowContext(ctx, `SELECT v.title,v.subtitle,i.issue_number,i.issue_date::text,v.pdf_asset_id,v.pdf_sha256 FROM hhc_web.bulletin_version v JOIN hhc_web.bulletin_issue i ON i.id=v.issue_id WHERE v.issue_id=$1 AND v.series=$2 AND v.locale=$3 FOR UPDATE OF v,i`, job.Canonical.IssueID, job.Canonical.Series, job.Canonical.ContentLocale).Scan(&current.Title, &current.Subtitle, &current.IssueNumber, &current.Date, &asset, &checksum)
+	if errors.Is(err, sql.ErrNoRows) {
+		return onlinebulletins.ErrExtractionLease
+	}
 	if err != nil {
 		return err
 	}

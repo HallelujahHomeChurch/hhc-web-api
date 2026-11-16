@@ -178,6 +178,9 @@ func (r *Repository) CompleteOnlineBulletinLayout(ctx context.Context, job onlin
 	 FROM hhc_web.online_bulletin_document d JOIN hhc_web.bulletin_issue i ON i.id=d.issue_id
 	 JOIN hhc_web.bulletin_version v ON v.issue_id=d.issue_id AND v.series=d.series AND v.locale=d.content_locale
 	 WHERE d.id=$1 FOR UPDATE OF v,i,d`, job.DocumentID).Scan(&current.Title, &current.Subtitle, &current.IssueNumber, &current.Date, &local)
+	if errors.Is(err, sql.ErrNoRows) {
+		return onlinebulletins.ErrLayoutLease
+	}
 	if err != nil {
 		return err
 	}
@@ -220,6 +223,14 @@ func (r *Repository) CompleteOnlineBulletinLayout(ctx context.Context, job onlin
 	if status != "validating" || token.String != job.LeaseToken || !until.Valid || !until.Time.After(now) {
 		return onlinebulletins.ErrLayoutLease
 	}
+	correction, correctionValid, err := loadBulletinMetadataJob(ctx, tx, job)
+	if err != nil {
+		return err
+	}
+	oldNumber := current.IssueNumber
+	if correctionValid {
+		current = metadata
+	}
 	// A derived release measures its published source snapshot, even when a
 	// later un-published canonical edit changes the shared date/issue fields.
 	if current != metadata && current.Title == metadata.Title && current.Subtitle == metadata.Subtitle {
@@ -233,7 +244,7 @@ func (r *Repository) CompleteOnlineBulletinLayout(ctx context.Context, job onlin
 			current.Date = metadata.Date
 		}
 	}
-	if local != job.Revision || current != metadata {
+	if local != job.Revision || current != metadata || correction != nil && !correctionValid {
 		_, err = tx.ExecContext(ctx, `UPDATE hhc_web.online_bulletin_layout_job SET status='superseded',last_error_code='stale_layout_input',lease_token=NULL,lease_until=NULL,updated_at=$2 WHERE id=$1`, job.ID, now)
 		if err != nil {
 			return err
@@ -288,6 +299,11 @@ func (r *Repository) CompleteOnlineBulletinLayout(ctx context.Context, job onlin
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE hhc_web.online_bulletin_layout_job SET status='ready',result_revision=$2,measurement_json=$3,lease_token=NULL,lease_until=NULL,updated_at=$4 WHERE id=$1`, job.ID, next, checked.MeasurementJSON, now); err != nil {
 		return err
+	}
+	if correction != nil {
+		if err = r.finishBulletinMetadata(ctx, tx, *correction, job, oldNumber, metadata, next, checked, now); err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
 }

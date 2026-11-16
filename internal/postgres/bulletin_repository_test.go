@@ -3,9 +3,11 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
 	"errors"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -71,8 +73,17 @@ func TestRestoreIssueRevisionRejectsUnsupportedEditionBeforeMutation(t *testing.
 	}
 }
 
+type bulletinPageSQLMockConverter struct{}
+
+func (bulletinPageSQLMockConverter) ConvertValue(input any) (driver.Value, error) {
+	if ids, ok := input.([]string); ok {
+		return strings.Join(ids, ","), nil
+	}
+	return driver.DefaultParameterConverter.ConvertValue(input)
+}
+
 func TestListIssuesLoadsPageVersionsWithOneBatchQuery(t *testing.T) {
-	db, mock, err := sqlmock.New()
+	db, mock, err := sqlmock.New(sqlmock.ValueConverterOption(bulletinPageSQLMockConverter{}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,12 +103,25 @@ func TestListIssuesLoadsPageVersionsWithOneBatchQuery(t *testing.T) {
 			AddRow("10000000-0000-0000-0000-000000000001", "00000000-0000-0000-0000-000000000001", "general", "zh-Hant", "本週週報", "副標", "asset-1", "weekly.pdf", "", "draft", "", "", 1, nil, now, now).
 			AddRow("10000000-0000-0000-0000-000000000002", "00000000-0000-0000-0000-000000000002", "general", "en", "Weekly", "", "asset-2", "weekly-en.pdf", "", "draft", "", "", 1, nil, now, now))
 
+	ids := "00000000-0000-0000-0000-000000000001,00000000-0000-0000-0000-000000000002"
+	mock.ExpectQuery("SELECT i.id::text,COALESCE").
+		WithArgs(ids, sqlmock.AnyArg(), sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+	mock.ExpectQuery("SELECT v.issue_id::text,v.series,v.locale,CASE").
+		WithArgs(ids).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "series", "locale", "rank"}).
+			AddRow("00000000-0000-0000-0000-000000000001", "general", "zh-Hant", 0).
+			AddRow("00000000-0000-0000-0000-000000000002", "general", "en", 3))
+
 	page, err := New(db).ListIssues(context.Background(), 1, 20, "", "", "issueNumber", "desc")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(page.Items) != 2 || len(page.Items[0].Versions) != 1 || page.Items[0].Versions[0].Title != "本週週報" || len(page.Items[1].Versions) != 1 || page.Items[1].Versions[0].Locale != "en" {
 		t.Fatalf("page=%#v", page)
+	}
+	if !page.Items[0].Deletion.Allowed || page.Items[1].Deletion.Allowed || page.Items[1].Versions[0].Deletion.Reason != "published" {
+		t.Fatalf("deletion eligibility=%#v", page.Items)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)

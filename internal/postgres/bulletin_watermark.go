@@ -337,7 +337,7 @@ func (r *Repository) PurgeWatermarkRecords(ctx context.Context, now time.Time, l
 func (r *Repository) PublishedWatermarkSource(ctx context.Context, date, locale string) (bulletinwatermark.Source, error) {
 	var source bulletinwatermark.Source
 	var title string
-	err := r.db.QueryRowContext(ctx, `SELECT i.id::text,p.asset_id,p.version,p.title FROM hhc_web.bulletin_issue i JOIN hhc_web.bulletin_published_version p ON p.issue_id=i.id WHERE p.series='general' AND i.issue_date=$1 AND p.locale=$2`, date, locale).Scan(&source.IssueID, &source.AssetID, &source.Revision, &title)
+	err := r.db.QueryRowContext(ctx, `SELECT i.id::text,p.asset_id,p.version,p.title FROM hhc_web.bulletin_issue i JOIN hhc_web.bulletin_published_version p ON p.issue_id=i.id WHERE p.series='general' AND COALESCE(p.issue_date,i.issue_date)=$1 AND p.locale=$2`, date, locale).Scan(&source.IssueID, &source.AssetID, &source.Revision, &title)
 	if errors.Is(err, sql.ErrNoRows) {
 		return source, bulletinwatermark.ErrNotFound
 	}

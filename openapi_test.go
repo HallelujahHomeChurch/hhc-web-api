@@ -2029,6 +2029,7 @@ func expectedCatalogRoutes() []string {
 		PUT /admin/bulletins/{}
 		DELETE /admin/bulletins/{}
 		POST /admin/bulletins/{}/upload-sessions
+		POST /admin/bulletins/{}/publication-update
 		PUT /admin/bulletins/{}/versions/{}
 		DELETE /admin/bulletins/{}/versions/{}
 		GET /admin/bulletins/{}/assets/{}

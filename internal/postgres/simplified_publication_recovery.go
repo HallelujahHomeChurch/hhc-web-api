@@ -204,7 +204,7 @@ func (r *Repository) RecoverSimplifiedOnlineBulletinPublication(ctx context.Cont
 		}
 	}
 
-	publishedResult, e := r.publishOnlineBulletinTx(ctx, tx, issue, "general", "zh-Hans", onlinebulletins.PublishInput{CanonicalVersion: canonical, OnlineVersion: confirmed.Version, Revision: input.Revision, Mappings: mappings}, actor, now, &metadata)
+	publishedResult, e := r.publishOnlineBulletinTx(ctx, tx, issue, "general", "zh-Hans", onlinebulletins.PublishInput{CanonicalVersion: canonical, OnlineVersion: confirmed.Version, Revision: input.Revision, Mappings: mappings}, actor, now, &metadata, true)
 	if e != nil {
 		return result, e
 	}

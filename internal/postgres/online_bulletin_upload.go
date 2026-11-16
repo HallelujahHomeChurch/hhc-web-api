@@ -22,7 +22,7 @@ func enqueueUploadExtraction(ctx context.Context, tx *sql.Tx, issue bulletins.Is
 	if !ok || p.ActorType != "user" || p.ActorID != actor || !auditclient.ValidActorRequest(p.ActorID, p.RequestID) {
 		return bulletins.ErrAuditUnavailable
 	}
-	payload, err := json.Marshal(publication.BulletinExtractionPayload{IssueID: issue.ID, AssetID: assetID, ActorID: p.ActorID, RequestID: p.RequestID, AutoPublish: autoPublish, NotifySubscribers: notify})
+	payload, err := json.Marshal(publication.BulletinExtractionPayload{IssueID: issue.ID, AssetID: assetID, ActorID: p.ActorID, RequestID: p.RequestID, AutoPublish: autoPublish, NotifySubscribers: notify, RetryScan: autoPublish})
 	if err != nil {
 		return err
 	}
@@ -40,6 +40,13 @@ func (r *Repository) CompleteOnlineExtractionRequest(ctx context.Context, event 
 		return err
 	}
 	defer tx.Rollback()
+	// Delete/replace holds the issue lock before cancelling a delivery.
+	var issue string
+	if err = tx.QueryRowContext(ctx, `SELECT id::text FROM hhc_web.bulletin_issue WHERE id=$1 FOR UPDATE`, event.AggregateID).Scan(&issue); errors.Is(err, sql.ErrNoRows) {
+		return publication.ErrStalePublication
+	} else if err != nil {
+		return err
+	}
 	var stored []byte
 	var status string
 	var lease sql.NullTime
@@ -107,6 +114,6 @@ func (r *Repository) RescheduleOnlineExtractionRequest(ctx context.Context, even
 	if next.IsZero() {
 		status, next = "failed", now
 	}
-	_, err := r.db.ExecContext(ctx, `UPDATE hhc_web.outbox_event SET status=$2,next_attempt_at=$3,claimed_until=NULL,last_error=$4,attempts=CASE WHEN $5 THEN GREATEST(attempts-1,0) ELSE attempts END,updated_at=$6 WHERE id=$1 AND event_type='bulletin.online.ensure_extraction' AND status='processing' AND aggregate_id=$7 AND aggregate_version=$8 AND attempts=$9 AND claimed_until=$10 AND claimed_until>$6`, event.ID, status, next, code, waiting, now, event.AggregateID, event.AggregateVersion, event.Attempts, event.ClaimedUntil)
+	_, err := r.db.ExecContext(ctx, `UPDATE hhc_web.outbox_event SET status=$2,next_attempt_at=$3,claimed_until=NULL,last_error=$4,payload_json=CASE WHEN $4='upload_scan_requeued' THEN payload_json - 'retryScan' ELSE payload_json END,attempts=CASE WHEN $5 THEN GREATEST(attempts-1,0) ELSE attempts END,updated_at=$6 WHERE id=$1 AND event_type='bulletin.online.ensure_extraction' AND status='processing' AND aggregate_id=$7 AND aggregate_version=$8 AND attempts=$9 AND claimed_until=$10 AND claimed_until>$6`, event.ID, status, next, code, waiting, now, event.AggregateID, event.AggregateVersion, event.Attempts, event.ClaimedUntil)
 	return err
 }

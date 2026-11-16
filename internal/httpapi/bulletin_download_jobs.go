@@ -181,6 +181,9 @@ func (h *Handler) currentDownloadJob(ctx context.Context, p principal, protected
 	if err != nil || source.IssueID != job.IssueID || source.Series != protected.series || source.Series != job.Series || job.Series != protected.series || source.Locale != job.Locale || job.Locale != protected.locale || source.Version != job.Revision || source.ProtectedAssetID != job.SourceAssetID {
 		return bulletinwatermark.DownloadJob{}, errBulletinChanged
 	}
+	if source.DownloadName != "" {
+		job.Filename = source.DownloadName
+	}
 	return job, nil
 }
 

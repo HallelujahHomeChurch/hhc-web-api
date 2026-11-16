@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/jackc/pgx/v5/pgconn"
 	"strings"
 	"time"
 
@@ -147,6 +148,9 @@ func (r *Repository) ListIssues(ctx context.Context, page, size int, status, que
 		if items[index].Versions == nil {
 			items[index].Versions = []bulletins.Version{}
 		}
+	}
+	if err = r.enrichBulletinProduct(ctx, r.db, items, ids); err != nil {
+		return bulletins.Page{}, err
 	}
 	return bulletins.Page{Items: items, Page: page, PageSize: size, Total: total}, nil
 }
@@ -298,6 +302,13 @@ func (r *Repository) PutVersion(ctx context.Context, id string, expected int64, 
 	} else if err != nil {
 		return bulletins.Issue{}, err
 	}
+	if input.CompletionCommand.Key != "" {
+		var prior bulletins.Issue
+		replayed, lookupErr := bulletinProductReceipt(ctx, tx, id, actor, "complete_upload", input.CompletionCommand.Key, input.CompletionCommand.InputHash[:], &prior)
+		if lookupErr != nil || replayed {
+			return prior, lookupErr
+		}
+	}
 	if current != expected {
 		return bulletins.Issue{}, bulletins.ErrPrecondition
 	}
@@ -354,6 +365,12 @@ func (r *Repository) PutVersion(ctx context.Context, id string, expected int64, 
 			return bulletins.Issue{}, err
 		}
 	}
+	if input.CompletionCommand.Key != "" {
+		clearBulletinWorkflowDiagnostics(&issue)
+		if err = writeBulletinProductReceipt(ctx, tx, id, actor, "complete_upload", input.CompletionCommand.Key, input.CompletionCommand.InputHash[:], issue, now); err != nil {
+			return bulletins.Issue{}, err
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return bulletins.Issue{}, err
 	}
@@ -404,28 +421,31 @@ func (r *Repository) DeleteVersion(ctx context.Context, id, series, locale strin
 		return bulletins.Issue{}, err
 	}
 	defer tx.Rollback()
-	if err := lockMutableIssue(ctx, tx, id, expected); err != nil {
+	if err := lockBulletinIssueVersion(ctx, tx, id, expected); err != nil {
 		return bulletins.Issue{}, err
 	}
-	var versionID, assetID, status, publicGrantID, retiringGrantID string
-	if err := tx.QueryRowContext(ctx, `SELECT id::text,pdf_asset_id,status,COALESCE(public_grant_id,''),COALESCE(retiring_grant_id,'') FROM hhc_web.bulletin_version WHERE issue_id=$1 AND series=$2 AND locale=$3 FOR UPDATE`, id, series, locale).Scan(&versionID, &assetID, &status, &publicGrantID, &retiringGrantID); errors.Is(err, sql.ErrNoRows) {
+	var versionID, assetID string
+	if err := tx.QueryRowContext(ctx, `SELECT id::text,pdf_asset_id FROM hhc_web.bulletin_version WHERE issue_id=$1 AND series=$2 AND locale=$3 FOR UPDATE`, id, series, locale).Scan(&versionID, &assetID); errors.Is(err, sql.ErrNoRows) {
 		return bulletins.Issue{}, bulletins.ErrNotFound
 	} else if err != nil {
 		return bulletins.Issue{}, err
 	}
-	if err := rejectOnlineHistoryDeletion(ctx, tx, id, series, locale); err != nil {
+	if err := checkBulletinDeletion(ctx, tx, id, series, locale); err != nil {
 		return bulletins.Issue{}, err
 	}
-	if status != "draft" && status != "unpublished" || publicGrantID != "" || retiringGrantID != "" {
-		return bulletins.Issue{}, bulletins.ErrConflict
-	}
 	if err := r.changeBulletinIntent(ctx, tx, id, series, locale, "cancelled", "manual_state_change", actor, now, ""); err != nil {
+		return bulletins.Issue{}, err
+	}
+	if err := cancelAutomaticPDFPublication(ctx, tx, id, series, locale, now); err != nil {
+		return bulletins.Issue{}, err
+	}
+	if err := deleteBulletinDrafts(ctx, tx, id, series, locale, now); err != nil {
 		return bulletins.Issue{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM hhc_web.bulletin_version WHERE issue_id=$1 AND series=$2 AND locale=$3`, id, series, locale); err != nil {
 		return bulletins.Issue{}, err
 	}
-	if err := enqueueAssetDeletes(ctx, tx, "bulletin", id, expected, []string{assetID}, now); err != nil {
+	if err := deleteEditionBulletinAssets(ctx, tx, id, series, locale, assetID, expected, now); err != nil {
 		return bulletins.Issue{}, err
 	}
 	if err := r.enqueueBulletinAudit(ctx, tx, "cms.bulletin.version.delete", versionID, actor, now); err != nil {
@@ -803,8 +823,8 @@ func (r *Repository) DeleteIssue(ctx context.Context, id string, expected int64,
 
 	var canonicalID string
 	var current int64
-	var status string
-	if err := tx.QueryRowContext(ctx, `SELECT id::text,version,status FROM hhc_web.bulletin_issue WHERE id=$1 FOR UPDATE`, id).Scan(&canonicalID, &current, &status); errors.Is(err, sql.ErrNoRows) {
+
+	if err := tx.QueryRowContext(ctx, `SELECT id::text,version FROM hhc_web.bulletin_issue WHERE id=$1 FOR UPDATE`, id).Scan(&canonicalID, &current); errors.Is(err, sql.ErrNoRows) {
 		return bulletins.ErrNotFound
 	} else if err != nil {
 		return err
@@ -812,11 +832,8 @@ func (r *Repository) DeleteIssue(ctx context.Context, id string, expected int64,
 	if current != expected {
 		return bulletins.ErrPrecondition
 	}
-	if err := rejectOnlineHistoryDeletion(ctx, tx, canonicalID, "", ""); err != nil {
+	if err := checkBulletinDeletion(ctx, tx, canonicalID, "", ""); err != nil {
 		return err
-	}
-	if status == "publishing" || status == "published" || status == "unpublishing" || status == "unpublish_failed" {
-		return bulletins.ErrConflict
 	}
 	assetIDs, err := bulletinAssetIDs(ctx, tx, canonicalID)
 	if err != nil {
@@ -829,6 +846,12 @@ func (r *Repository) DeleteIssue(ctx context.Context, id string, expected int64,
 		return err
 	}
 	if err := r.changeBulletinIntent(ctx, tx, canonicalID, "general", "zh-Hant", "cancelled", "manual_state_change", actor, now, ""); err != nil {
+		return err
+	}
+	if err := cancelAutomaticPDFPublication(ctx, tx, canonicalID, "general", "zh-Hant", now); err != nil {
+		return err
+	}
+	if err := deleteBulletinDrafts(ctx, tx, canonicalID, "", "", now); err != nil {
 		return err
 	}
 	if result, err := tx.ExecContext(ctx, `DELETE FROM hhc_web.bulletin_issue WHERE id=$1`, canonicalID); err != nil {
@@ -875,6 +898,8 @@ func bulletinAssetIDs(ctx context.Context, tx *sql.Tx, id string) ([]string, err
 	rows, err := tx.QueryContext(ctx, `
 		SELECT asset_id FROM (
 			SELECT pdf_asset_id AS asset_id FROM hhc_web.bulletin_version WHERE issue_id=$1
+			UNION
+			SELECT asset_id FROM hhc_web.bulletin_upload_asset WHERE issue_id=$1
 			UNION
 			SELECT snapshot_version->>'pdfAssetId'
 			FROM hhc_web.bulletin_revision revision
@@ -1189,7 +1214,7 @@ func (r *Repository) CompletePublish(ctx context.Context, event publication.Even
 	if err := recalculateBulletinIssueStatus(ctx, tx, payload.IssueID, issueVersion, now); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO hhc_web.bulletin_published_version(issue_id,series,locale,title,subtitle,asset_id,published_at,version) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(issue_id,series,locale) DO UPDATE SET title=EXCLUDED.title,subtitle=EXCLUDED.subtitle,asset_id=EXCLUDED.asset_id,published_at=EXCLUDED.published_at,version=EXCLUDED.version`, payload.IssueID, payload.Series, payload.Locale, title, subtitle, payload.AssetID, now, issueVersion); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO hhc_web.bulletin_published_version(issue_id,series,locale,title,subtitle,asset_id,published_at,version,issue_number,issue_date) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT(issue_id,series,locale) DO UPDATE SET title=EXCLUDED.title,subtitle=EXCLUDED.subtitle,asset_id=EXCLUDED.asset_id,published_at=EXCLUDED.published_at,version=EXCLUDED.version,issue_number=EXCLUDED.issue_number,issue_date=EXCLUDED.issue_date`, payload.IssueID, payload.Series, payload.Locale, title, subtitle, payload.AssetID, now, issueVersion, issueNumber, issueDate); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.publication_workflow SET status='completed',updated_at=$2 WHERE id=$1`, payload.WorkflowID, now); err != nil {
@@ -1464,7 +1489,8 @@ func mapConflict(err error) error {
 	if err == nil {
 		return nil
 	}
-	if strings.Contains(strings.ToLower(err.Error()), "duplicate key") {
+	var uniqueError *pgconn.PgError
+	if errors.As(err, &uniqueError) && uniqueError.Code == "23505" || strings.Contains(strings.ToLower(err.Error()), "duplicate key") {
 		return bulletins.ErrConflict
 	}
 	return err

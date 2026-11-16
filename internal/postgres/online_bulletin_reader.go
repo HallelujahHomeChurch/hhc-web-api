@@ -34,11 +34,11 @@ func (r *Repository) DiscoverOnlineBulletins(ctx context.Context, series string,
  LEFT JOIN hhc_web.bulletin_published_version p ON p.issue_id=v.issue_id AND p.series=v.series AND p.locale=v.locale
  LEFT JOIN hhc_web.online_bulletin_document d ON d.issue_id=v.issue_id AND d.series=v.series AND d.content_locale=v.locale
  LEFT JOIN hhc_web.online_bulletin_publication o ON o.document_id=d.id AND o.revision=d.published_revision AND i.issue_number>=1739
- WHERE v.series=$1 AND v.locale=ANY($2::text[]) AND (p.issue_id IS NOT NULL OR o.document_id IS NOT NULL) AND ($3::integer IS NULL OR i.issue_number=$3)`
+ WHERE v.series=$1 AND v.locale=ANY($2::text[]) AND (p.issue_id IS NOT NULL OR o.document_id IS NOT NULL) AND ($3::integer IS NULL OR i.issue_number=$3 OR EXISTS(SELECT 1 FROM hhc_web.bulletin_issue_number_alias a WHERE a.issue_id=i.id AND a.issue_number=$3))`
 	if err = tx.QueryRowContext(ctx, `SELECT count(DISTINCT i.id)`+from, series, locales, issueNumber).Scan(&result.Total); err != nil {
 		return result, err
 	}
-	const projection = `SELECT i.id::text AS id,i.issue_number,i.issue_date::text AS issue_date,v.locale,COALESCE(o.canonical_metadata,jsonb_build_object('title',p.title,'subtitle',p.subtitle,'issueNumber',COALESCE(i.issue_number,0),'date',i.issue_date::text)) AS metadata,COALESCE(o.document_id::text,'') AS document_id,o.revision,p.issue_id IS NOT NULL AS pdf_published`
+	const projection = `SELECT i.id::text AS id,i.issue_number,i.issue_date::text AS issue_date,v.locale,COALESCE(o.canonical_metadata,jsonb_build_object('title',p.title,'subtitle',p.subtitle,'issueNumber',COALESCE(p.issue_number,i.issue_number,0),'date',COALESCE(p.issue_date,i.issue_date)::text)) AS metadata,COALESCE(o.document_id::text,'') AS document_id,o.revision,p.issue_id IS NOT NULL AS pdf_published`
 	rows, err := tx.QueryContext(ctx, `WITH editions AS (`+projection+from+`), selected AS (SELECT DISTINCT id,issue_number,issue_date FROM editions ORDER BY issue_number DESC NULLS LAST,issue_date DESC,id DESC LIMIT $4 OFFSET $5) SELECT e.id,e.issue_number,e.issue_date,e.locale,e.metadata,e.document_id,e.revision,e.pdf_published FROM editions e JOIN selected s ON s.id=e.id ORDER BY s.issue_number DESC NULLS LAST,s.issue_date DESC,s.id DESC,e.locale`, series, locales, issueNumber, limit, offset)
 	if err != nil {
 		return result, err

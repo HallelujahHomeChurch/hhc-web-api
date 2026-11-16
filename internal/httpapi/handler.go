@@ -3,6 +3,7 @@ package httpapi
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -195,10 +196,11 @@ func (h *Handler) RoutesWithMiddleware(wrap func(http.Handler) http.Handler) htt
 	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/online/{series}/{contentLocale}/recover-publication", requireScope("cms:bulletins:publish", h.adminAuditProvenance(h.adminOnlineRecoverPublication)))
 	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/online/{series}/{contentLocale}/publish", requireScope("cms:bulletins:publish", h.adminAuditProvenance(h.adminOnlinePublish)))
 	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/online/{series}/{contentLocale}/unpublish", requireScope("cms:bulletins:publish", h.adminAuditProvenance(h.adminOnlineUnpublish)))
+	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/publication-update", requireScopes([]string{"cms:bulletins:write", "cms:bulletins:publish"}, h.adminAuditProvenance(h.adminUpdateBulletinPublication)))
 	admin.HandleFunc("PUT /api/admin/bulletins/{issueID}", requireScope("cms:bulletins:write", h.adminAuditProvenance(h.adminUpdateIssue)))
 	admin.HandleFunc("PUT /api/admin/bulletins/{issueID}/versions/{locale}", requireScope("cms:bulletins:write", h.adminAuditProvenance(h.adminUpdateVersion)))
 	admin.HandleFunc("DELETE /api/admin/bulletins/{issueID}/versions/{locale}", requireScope("cms:bulletins:write", h.adminAuditProvenance(h.adminDeleteVersion)))
-	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/upload-sessions", requireScope("cms:bulletins:write", h.adminCreateUpload))
+	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/upload-sessions", requireScope("cms:bulletins:write", h.adminAuditProvenance(h.adminCreateUpload)))
 	admin.HandleFunc("GET /api/admin/bulletins/{issueID}/assets/{assetID}", requireScope("cms:bulletins:read", h.adminAuditProvenance(h.adminAssetStatus)))
 	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/assets/{assetID}/scan/retry", requireScope("cms:bulletins:write", h.adminRetryAssetScan))
 	admin.HandleFunc("POST /api/admin/bulletins/{issueID}/assets/{assetID}/complete", requireScope("cms:bulletins:write", h.adminAuditProvenance(h.adminCompleteUpload)))
@@ -464,6 +466,10 @@ func (h *Handler) adminCreateUpload(w http.ResponseWriter, r *http.Request) {
 		handleError(w, err)
 		return
 	}
+	if err = h.service.TrackBulletinUploadAsset(r.Context(), r.PathValue("issueID"), edition, created.Asset.ID, actor(r)); err != nil {
+		handleError(w, err)
+		return
+	}
 	logAssetEvent(r, "asset upload session created", "bulletin", r.PathValue("issueID"), created.Asset.ID)
 	writeData(w, http.StatusCreated, created, nil)
 }
@@ -488,12 +494,32 @@ func (h *Handler) adminCompleteUpload(w http.ResponseWriter, r *http.Request) {
 	if !allowBulletinAutomaticPublish(w, r, input.AutoPublish, input.NotifySubscribers, string(edition.Series), input.Locale) {
 		return
 	}
-	_, err := h.service.GetIssue(r.Context(), r.PathValue("issueID"))
+	if len(r.Header.Values("Idempotency-Key")) > 1 || len(r.Header.Values("Idempotency-Key")) == 1 && r.Header.Get("Idempotency-Key") == "" {
+		handleError(w, bulletins.ErrInvalid)
+		return
+	}
+	assetID := r.PathValue("assetID")
+	fingerprint, _ := json.Marshal(struct {
+		Version int64
+		AssetID string
+		Input   completeUploadInput
+	}{expected, assetID, input})
+	command := bulletins.UploadCompletionCommand{Key: r.Header.Get("Idempotency-Key"), InputHash: sha256.Sum256(fingerprint)}
+	prior, replayed, err := h.service.ReplayUploadCompletion(r.Context(), r.PathValue("issueID"), actor(r), command)
 	if err != nil {
 		handleError(w, err)
 		return
 	}
-	assetID := r.PathValue("assetID")
+	if replayed {
+		w.Header().Set("ETag", fmt.Sprintf(`"%d"`, prior.Version))
+		writeData(w, http.StatusOK, prior, nil)
+		return
+	}
+	_, err = h.service.GetIssue(r.Context(), r.PathValue("issueID"))
+	if err != nil {
+		handleError(w, err)
+		return
+	}
 	asset, err := h.uploads.Get(r.Context(), assetID)
 	if errors.Is(err, assetclient.ErrUnavailable) {
 		writeError(w, http.StatusServiceUnavailable, "asset_service_unavailable", "Asset uploads are unavailable.")
@@ -520,7 +546,7 @@ func (h *Handler) adminCompleteUpload(w http.ResponseWriter, r *http.Request) {
 	if fileName == "" {
 		fileName = input.FileName
 	}
-	value, err := h.service.PutVersion(r.Context(), r.PathValue("issueID"), expected, bulletins.PutVersionInput{Series: string(edition.Series), Locale: input.Locale, Title: input.Title, Subtitle: input.Subtitle, PDFAssetID: asset.ID, PDFFileName: fileName, AutoPublish: input.AutoPublish, NotifySubscribers: input.NotifySubscribers}, actor(r))
+	value, err := h.service.PutVersion(r.Context(), r.PathValue("issueID"), expected, bulletins.PutVersionInput{Series: string(edition.Series), Locale: input.Locale, Title: input.Title, Subtitle: input.Subtitle, PDFAssetID: asset.ID, PDFFileName: fileName, AutoPublish: input.AutoPublish, NotifySubscribers: input.NotifySubscribers, CompletionCommand: command}, actor(r))
 	if err != nil {
 		handleError(w, err)
 		return
@@ -613,7 +639,7 @@ func (h *Handler) adminList(w http.ResponseWriter, r *http.Request) {
 	writeData(w, http.StatusOK, value.Items, map[string]any{"page": value.Page, "pageSize": value.PageSize, "total": value.Total})
 }
 func (h *Handler) adminGet(w http.ResponseWriter, r *http.Request) {
-	value, err := h.service.GetIssue(r.Context(), r.PathValue("issueID"))
+	value, err := h.service.GetIssueWithPublicationOutcome(r.Context(), r.PathValue("issueID"))
 	if err != nil {
 		handleError(w, err)
 		return
@@ -866,6 +892,12 @@ func handleError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "not_found", "The bulletin was not found.")
 	case errors.Is(err, bulletins.ErrConflict):
 		writeError(w, http.StatusConflict, "conflict", "The request conflicts with an existing resource.")
+	case errors.Is(err, bulletins.ErrDeletePublished):
+		writeError(w, http.StatusConflict, "bulletin_delete_published", "Withdraw the published editions before removing this bulletin.")
+	case errors.Is(err, bulletins.ErrDeleteCleanupPending):
+		writeError(w, http.StatusConflict, "bulletin_delete_cleanup_pending", "Publication or withdrawal cleanup is still in progress.")
+	case errors.Is(err, bulletins.ErrDeleteRetainedHistory):
+		writeError(w, http.StatusConflict, "bulletin_delete_retained_history", "Previously published bulletin history must be retained.")
 	case errors.Is(err, bulletins.ErrOnlineDocumentExists):
 		writeError(w, http.StatusConflict, "online_document_exists", "Online bulletin history prevents deletion of this issue or edition.")
 	case errors.Is(err, bulletins.ErrPrecondition):
