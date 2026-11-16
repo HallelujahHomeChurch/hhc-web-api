@@ -16170,11 +16170,11 @@ components:
       type: object
       required: [status, availability, current]
       properties:
-        status: { type: string, enum: [draft, withdrawn, preparing, published, needs_attention] }
+        status: { type: string, enum: [draft, withdrawn, preparing, published, needs_attention], description: Current workflow or public state. Existing public editions remain published when no new draft or active update exists; freshness alone does not make them drafts. }
         pendingMetadata: { $ref: '#/components/schemas/BulletinPublicationMetadata' }
         commandToken: { type: string, pattern: '^[0-9a-f]{64}$', description: Opaque precondition for publish or metadata commands. }
         reason: { type: string, enum: [source_invalid, metadata_mismatch, processing_failed, review_required, unsupported_source] }
-        nextAction: { type: string, enum: [replace_source, update_metadata, resume, review, publish] }
+        nextAction: { type: string, enum: [replace_source, update_metadata, resume, review, publish], description: 'Server-authorized next action. Publish requires an explicit draft replacement, a withdrawn edition, or no currently public edition; historical work and source freshness alone do not grant publication authority.' }
         availability: { $ref: '#/components/schemas/BulletinPublicationChannels', description: Editions currently readable by entitled members, including earlier healthy editions. }
         current: { $ref: '#/components/schemas/BulletinPublicationChannels', description: Readable editions matching the current requested publication. }
     BulletinPublicationUpdateInput:
