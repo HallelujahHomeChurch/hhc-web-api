@@ -17,7 +17,7 @@ import (
 type bulletinProductState struct {
 	outcome                                                         bulletins.PublicationOutcome
 	number                                                          int
-	automatic, withdrawn, publishable, publishing                   bool
+	automatic, withdrawn, publishable, publishing, sourceDraft      bool
 	asset, extraction, update, layout, derived                      string
 	correction, correctionStatus                                    string
 	correctionBlocked                                               bool
@@ -47,7 +47,7 @@ func (r *Repository) loadBulletinProductState(ctx context.Context, query bulleti
 func (r *Repository) loadBulletinProductStates(ctx context.Context, query bulletinQueryer, issues []string) (map[string]*bulletinProductState, error) {
 	rows, err := query.QueryContext(ctx, `
  SELECT i.id::text,COALESCE(i.issue_number,0),v.auto_publish,v.pdf_asset_id,
- v.status IN('draft','unpublished','published') AND i.status NOT IN('publishing','unpublishing'), v.status='publishing',
+ v.status IN('draft','unpublished','published') AND i.status NOT IN('publishing','unpublishing'), v.status='publishing',v.status='draft',
  encode(sha256(convert_to(jsonb_build_array(i.id,i.version,v.id,v.version,v.pdf_asset_id,v.status,v.online_intent_epoch,d.id,d.version,d.published_revision,sd.id,sd.version,sd.published_revision,mc.layout_job_id,ml.status)::text,'UTF8')),'hex'),
  (v.status IN('unpublished','unpublishing','unpublish_failed') OR d.published_revision IS NULL AND EXISTS(SELECT 1 FROM hhc_web.online_bulletin_publication old WHERE old.document_id=d.id) OR sd.published_revision IS NULL AND EXISTS(SELECT 1 FROM hhc_web.online_bulletin_publication old WHERE old.document_id=sd.id)),
  COALESCE(d.version,0),d.published_revision,
@@ -99,7 +99,7 @@ func (r *Repository) loadBulletinProductStates(ctx context.Context, query bullet
 		var id string
 		var pending []byte
 		a, c := &p.outcome.Availability, &p.outcome.Current
-		if err = rows.Scan(&id, &p.number, &p.automatic, &p.asset, &p.publishable, &p.publishing, &p.outcome.CommandToken, &p.withdrawn, &p.onlineVersion, &p.traditionalRevision,
+		if err = rows.Scan(&id, &p.number, &p.automatic, &p.asset, &p.publishable, &p.publishing, &p.sourceDraft, &p.outcome.CommandToken, &p.withdrawn, &p.onlineVersion, &p.traditionalRevision,
 			&a.PDF, &a.Traditional, &a.Simplified, &c.PDF, &c.Traditional, &c.Simplified,
 			&p.uploadStatus, &p.uploadError, &p.extraction, &p.extractionStatus, &p.extractionError,
 			&p.update, &p.updateStatus, &p.updateError, &p.sourceAssessment, &p.layout, &p.layoutStatus, &p.layoutError,
@@ -248,7 +248,14 @@ func (p *bulletinProductState) classify(productEnabled bool) {
 	default:
 		outcome.Status = "draft"
 	}
-	if productEnabled && p.publishable && !p.automatic && p.number >= 1739 && p.asset != "" && (outcome.Status == "draft" || outcome.Status == "withdrawn") {
+	// Source freshness and old automation history must not revoke a public
+	// edition or authorize a new write. Only an actual saved PDF draft may
+	// update an existing publication through this command.
+	available := outcome.Availability.PDF || outcome.Availability.Traditional || outcome.Availability.Simplified
+	if outcome.Status == "draft" && available && !p.sourceDraft {
+		outcome.Status = "published"
+	}
+	if productEnabled && (!available || p.sourceDraft) && p.publishable && !p.automatic && p.number >= 1739 && p.asset != "" && (outcome.Status == "draft" || outcome.Status == "withdrawn") {
 		outcome.NextAction = "publish"
 	}
 }
