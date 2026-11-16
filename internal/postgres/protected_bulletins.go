@@ -9,7 +9,7 @@ import (
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/bulletins"
 )
 
-const protectedBulletinColumns = `i.id::text,i.issue_number,i.issue_date::text,p.series,p.locale,p.title,p.subtitle,p.asset_id,p.published_at,p.version`
+const protectedBulletinColumns = `i.id::text,COALESCE(p.issue_number,i.issue_number),COALESCE(p.issue_date,i.issue_date)::text,p.series,p.locale,p.title,p.subtitle,p.asset_id,p.published_at,p.version`
 
 func (r *Repository) BulletinEntitlement(ctx context.Context, series, locale string) (string, error) {
 	var code string
@@ -22,10 +22,10 @@ func (r *Repository) BulletinEntitlement(ctx context.Context, series, locale str
 
 func (r *Repository) ListProtected(ctx context.Context, series, locale string, page, size int, issueNumber *int) (bulletins.ProtectedPage, error) {
 	var total int64
-	if err := r.db.QueryRowContext(ctx, `SELECT count(*) FROM hhc_web.bulletin_issue i JOIN hhc_web.bulletin_published_version p ON p.issue_id=i.id WHERE p.series=$1 AND p.locale=$2 AND ($3::integer IS NULL OR i.issue_number=$3)`, series, locale, issueNumber).Scan(&total); err != nil {
+	if err := r.db.QueryRowContext(ctx, `SELECT count(*) FROM hhc_web.bulletin_issue i JOIN hhc_web.bulletin_published_version p ON p.issue_id=i.id WHERE p.series=$1 AND p.locale=$2 AND ($3::integer IS NULL OR i.issue_number=$3 OR EXISTS(SELECT 1 FROM hhc_web.bulletin_issue_number_alias a WHERE a.issue_id=i.id AND a.issue_number=$3))`, series, locale, issueNumber).Scan(&total); err != nil {
 		return bulletins.ProtectedPage{}, err
 	}
-	rows, err := r.db.QueryContext(ctx, `SELECT `+protectedBulletinColumns+` FROM hhc_web.bulletin_issue i JOIN hhc_web.bulletin_published_version p ON p.issue_id=i.id WHERE p.series=$1 AND p.locale=$2 AND ($3::integer IS NULL OR i.issue_number=$3) ORDER BY i.issue_number DESC NULLS LAST,i.issue_date DESC LIMIT $4 OFFSET $5`, series, locale, issueNumber, size, (page-1)*size)
+	rows, err := r.db.QueryContext(ctx, `SELECT `+protectedBulletinColumns+` FROM hhc_web.bulletin_issue i JOIN hhc_web.bulletin_published_version p ON p.issue_id=i.id WHERE p.series=$1 AND p.locale=$2 AND ($3::integer IS NULL OR i.issue_number=$3 OR EXISTS(SELECT 1 FROM hhc_web.bulletin_issue_number_alias a WHERE a.issue_id=i.id AND a.issue_number=$3)) ORDER BY COALESCE(p.issue_number,i.issue_number) DESC NULLS LAST,COALESCE(p.issue_date,i.issue_date) DESC LIMIT $4 OFFSET $5`, series, locale, issueNumber, size, (page-1)*size)
 	if err != nil {
 		return bulletins.ProtectedPage{}, err
 	}
@@ -42,7 +42,7 @@ func (r *Repository) ListProtected(ctx context.Context, series, locale string, p
 }
 
 func (r *Repository) GetProtectedLatest(ctx context.Context, series, locale string) (bulletins.ProtectedBulletin, error) {
-	return scanProtectedBulletin(r.db.QueryRowContext(ctx, `SELECT `+protectedBulletinColumns+` FROM hhc_web.bulletin_issue i JOIN hhc_web.bulletin_published_version p ON p.issue_id=i.id WHERE p.series=$1 AND p.locale=$2 ORDER BY i.issue_number DESC NULLS LAST,i.issue_date DESC LIMIT 1`, series, locale))
+	return scanProtectedBulletin(r.db.QueryRowContext(ctx, `SELECT `+protectedBulletinColumns+` FROM hhc_web.bulletin_issue i JOIN hhc_web.bulletin_published_version p ON p.issue_id=i.id WHERE p.series=$1 AND p.locale=$2 ORDER BY COALESCE(p.issue_number,i.issue_number) DESC NULLS LAST,COALESCE(p.issue_date,i.issue_date) DESC LIMIT 1`, series, locale))
 }
 
 func (r *Repository) GetProtectedVersion(ctx context.Context, issueID, series, locale string) (bulletins.ProtectedBulletin, error) {

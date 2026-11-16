@@ -73,6 +73,9 @@ type Issue struct {
 	CreatedAt   time.Time  `json:"createdAt"`
 	UpdatedAt   time.Time  `json:"updatedAt"`
 	Versions    []Version  `json:"versions"`
+
+	Deletion           *DeletionEligibility `json:"deletion,omitempty"`
+	PublicationOutcome *PublicationOutcome  `json:"publicationOutcome,omitempty"`
 }
 
 type Version struct {
@@ -92,6 +95,8 @@ type Version struct {
 	PublishedAt    *time.Time `json:"publishedAt,omitempty"`
 	CreatedAt      time.Time  `json:"createdAt"`
 	UpdatedAt      time.Time  `json:"updatedAt"`
+
+	Deletion *DeletionEligibility `json:"deletion,omitempty"`
 }
 
 type Workflow struct {
@@ -126,6 +131,8 @@ type PutVersionInput struct {
 	Subtitle          string `json:"subtitle"`
 	PDFAssetID        string `json:"pdfAssetId"`
 	PDFFileName       string `json:"pdfFileName"`
+
+	CompletionCommand UploadCompletionCommand `json:"-"`
 }
 type UpdateVersionInput struct {
 	Title    string `json:"title"`

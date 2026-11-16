@@ -45,38 +45,28 @@ func seedOnlineExtraction(t *testing.T, db *sql.DB, now time.Time) string {
 	return job
 }
 
-func TestOnlineHistoryPreventsIssueAndEditionDeletion(t *testing.T) {
+func TestPublishedBulletinPreventsIssueAndEditionDeletion(t *testing.T) {
 	db := accessDB(t)
 	now := time.Now().UTC()
 	repo, source := seedOnlineLayout(t, db, now)
 	ctx := context.Background()
-	if _, err := repo.DeleteVersion(ctx, source.Canonical.IssueID, "general", "zh-Hant", 1, "admin", now); !errors.Is(err, bulletins.ErrOnlineDocumentExists) {
-		t.Fatalf("edition deletion error=%v", err)
-	}
-	if err := repo.DeleteIssue(ctx, source.Canonical.IssueID, 1, "admin", now); !errors.Is(err, bulletins.ErrOnlineDocumentExists) {
-		t.Fatalf("issue deletion error=%v", err)
-	}
-	var count int
-	if err := db.QueryRow(`SELECT count(*) FROM hhc_web.online_bulletin_revision WHERE document_id=$1`, source.DocumentID).Scan(&count); err != nil || count != 1 {
-		t.Fatal("history changed", count, err)
-	}
-	if err := db.QueryRow(`SELECT count(*) FROM hhc_web.outbox_event WHERE aggregate_id=$1`, source.Canonical.IssueID).Scan(&count); err != nil || count != 0 {
-		t.Fatal("rejected deletion enqueued side effects", count, err)
-	}
 	if _, err := db.Exec(`UPDATE hhc_web.bulletin_issue SET status='published' WHERE id=$1`, source.Canonical.IssueID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.Exec(`UPDATE hhc_web.bulletin_version SET status='published' WHERE issue_id=$1`, source.Canonical.IssueID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := repo.DeleteVersion(ctx, source.Canonical.IssueID, "general", "zh-Hant", 1, "admin", now); !errors.Is(err, bulletins.ErrOnlineDocumentExists) {
-		t.Fatalf("published edition lost history conflict: %v", err)
+	if _, err := repo.DeleteVersion(ctx, source.Canonical.IssueID, "general", "zh-Hant", 1, "admin", now); !errors.Is(err, bulletins.ErrDeletePublished) {
+		t.Fatalf("published edition can be deleted: %v", err)
 	}
-	if err := repo.DeleteIssue(ctx, source.Canonical.IssueID, 1, "admin", now); !errors.Is(err, bulletins.ErrOnlineDocumentExists) {
-		t.Fatalf("published issue lost history conflict: %v", err)
+	if err := repo.DeleteIssue(ctx, source.Canonical.IssueID, 1, "admin", now); !errors.Is(err, bulletins.ErrDeletePublished) {
+		t.Fatalf("published issue can be deleted: %v", err)
+	}
+	var count int
+	if err := db.QueryRow(`SELECT count(*) FROM hhc_web.online_bulletin_revision WHERE document_id=$1`, source.DocumentID).Scan(&count); err != nil || count != 1 {
+		t.Fatal("history changed", count, err)
 	}
 }
-
 func TestOnlineExtractionLeaseFencesExpiredWorkersAndBoundsAttempts(t *testing.T) {
 	db := accessDB(t)
 	repo := New(db)

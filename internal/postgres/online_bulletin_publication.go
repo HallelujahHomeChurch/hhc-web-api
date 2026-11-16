@@ -20,7 +20,7 @@ func (r *Repository) PublishOnlineBulletin(ctx context.Context, issueID, series,
 		return onlinebulletins.ConfirmedRevision{}, err
 	}
 	defer tx.Rollback()
-	result, err := r.publishOnlineBulletinTx(ctx, tx, issueID, series, locale, input, actor, now, nil)
+	result, err := r.publishOnlineBulletinTx(ctx, tx, issueID, series, locale, input, actor, now, nil, true)
 	if err != nil {
 		return result, err
 	}
@@ -33,7 +33,7 @@ func (r *Repository) PublishOnlineBulletin(ctx context.Context, issueID, series,
 	return result, tx.Commit()
 }
 
-func (r *Repository) publishOnlineBulletinTx(ctx context.Context, tx *sql.Tx, issueID, series, locale string, input onlinebulletins.PublishInput, actor string, now time.Time, metadataOverride *onlinebulletins.CanonicalMetadata) (onlinebulletins.ConfirmedRevision, error) {
+func (r *Repository) publishOnlineBulletinTx(ctx context.Context, tx *sql.Tx, issueID, series, locale string, input onlinebulletins.PublishInput, actor string, now time.Time, metadataOverride *onlinebulletins.CanonicalMetadata, deriveSimplified bool) (onlinebulletins.ConfirmedRevision, error) {
 	var result onlinebulletins.ConfirmedRevision
 	if err := r.validatePublishOnlineBulletinInput(ctx, input, actor, now); err != nil {
 		return result, err
@@ -108,7 +108,7 @@ func (r *Repository) publishOnlineBulletinTx(ctx context.Context, tx *sql.Tx, is
 		if len(input.Mappings) != 0 {
 			return result, bulletins.ErrInvalid
 		}
-		if locale == "zh-Hant" && r.auditOutbox != nil {
+		if deriveSimplified && locale == "zh-Hant" && r.auditOutbox != nil {
 			if err = enqueueSimplifiedRelease(ctx, tx, result, issueID, canonical, actor, now); err != nil {
 				return result, err
 			}
@@ -168,7 +168,7 @@ func (r *Repository) publishOnlineBulletinTx(ctx context.Context, tx *sql.Tx, is
 		return result, err
 	}
 	result.Version++
-	if locale == "zh-Hant" && r.auditOutbox != nil {
+	if deriveSimplified && locale == "zh-Hant" && r.auditOutbox != nil {
 		if err = enqueueSimplifiedRelease(ctx, tx, result, issueID, canonical, actor, now); err != nil {
 			return result, err
 		}

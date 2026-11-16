@@ -97,7 +97,7 @@ func (r *Repository) AutoPublishNextRecognition(ctx context.Context, now time.Ti
 			decisions = append(decisions, mapping)
 		}
 	}
-	if _, err = r.publishOnlineBulletinTx(ctx, tx, issue, "general", "zh-Hant", onlinebulletins.PublishInput{CanonicalVersion: canonicalVersion, OnlineVersion: confirmed.Version, Revision: revision, Mappings: decisions}, actor, now, nil); err != nil {
+	if _, err = r.publishOnlineBulletinTx(ctx, tx, issue, "general", "zh-Hant", onlinebulletins.PublishInput{CanonicalVersion: canonicalVersion, OnlineVersion: confirmed.Version, Revision: revision, Mappings: decisions}, actor, now, nil, true); err != nil {
 		return false, err
 	}
 	if notify {

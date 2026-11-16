@@ -192,7 +192,7 @@ func (r *Repository) RecoverOnlineBulletinPublication(ctx context.Context, issue
 			decisions = append(decisions, m)
 		}
 	}
-	publication, err := r.publishOnlineBulletinTx(ctx, tx, issue, "general", "zh-Hant", onlinebulletins.PublishInput{CanonicalVersion: canonical, OnlineVersion: confirmed.Version, Revision: input.Revision, Mappings: decisions}, actor, now, nil)
+	publication, err := r.publishOnlineBulletinTx(ctx, tx, issue, "general", "zh-Hant", onlinebulletins.PublishInput{CanonicalVersion: canonical, OnlineVersion: confirmed.Version, Revision: input.Revision, Mappings: decisions}, actor, now, nil, true)
 	if err != nil {
 		if errors.Is(err, bulletins.ErrConflict) {
 			return result, recoveryBlocked("incompatible_proof")

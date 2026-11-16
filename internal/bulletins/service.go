@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 )
@@ -58,7 +59,7 @@ func (s *Service) PutVersion(ctx context.Context, id string, expected int64, inp
 	input.PDFAssetID = strings.TrimSpace(input.PDFAssetID)
 	input.PDFFileName = filepath.Base(strings.TrimSpace(input.PDFFileName))
 	edition, ok := NormalizeBulletinEdition(input.Series, input.Locale)
-	if id == "" || expected <= 0 || !ok || input.Title == "" || len(input.Title) > 200 || len(input.Subtitle) > 300 || input.PDFAssetID == "" || input.PDFFileName == "" || len(input.PDFFileName) > 255 || actor == "" {
+	if id == "" || expected <= 0 || !ok || input.Title == "" || utf8.RuneCountInString(input.Title) > 200 || utf8.RuneCountInString(input.Subtitle) > 300 || input.PDFAssetID == "" || input.PDFFileName == "" || len(input.PDFFileName) > 255 || actor == "" {
 		return Issue{}, ErrInvalid
 	}
 	input.Series = string(edition.Series)
@@ -68,7 +69,7 @@ func (s *Service) UpdateVersion(ctx context.Context, id, series, locale string, 
 	input.Title = strings.TrimSpace(input.Title)
 	input.Subtitle = strings.TrimSpace(input.Subtitle)
 	edition, ok := NormalizeBulletinEdition(strings.TrimSpace(series), locale)
-	if strings.TrimSpace(id) == "" || !ok || expected < 1 || input.Title == "" || len(input.Title) > 200 || len(input.Subtitle) > 300 || strings.TrimSpace(actor) == "" {
+	if strings.TrimSpace(id) == "" || !ok || expected < 1 || input.Title == "" || utf8.RuneCountInString(input.Title) > 200 || utf8.RuneCountInString(input.Subtitle) > 300 || strings.TrimSpace(actor) == "" {
 		return Issue{}, ErrInvalid
 	}
 	return s.repository.UpdateVersion(ctx, id, string(edition.Series), locale, expected, input.Title, input.Subtitle, actor, s.now().UTC())

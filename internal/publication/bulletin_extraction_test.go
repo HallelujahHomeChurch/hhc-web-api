@@ -125,3 +125,26 @@ func TestExtractionWakeDeliverySurvivesOutboxAttemptLimit(t *testing.T) {
 		}
 	}
 }
+
+type requeueBulletinScanAsset struct {
+	*workerAssets
+	calls int
+}
+
+func (a *requeueBulletinScanAsset) RequeueScan(context.Context, string) error { a.calls++; return nil }
+
+func TestAutomaticUploadRetriesTheOwnedScannerOncePerIntent(t *testing.T) {
+	asset := Asset{ID: "asset-1", Namespace: "cms.weekly.pdf", OwnerService: "hhc-web-api", OwnerType: "bulletin_issue", OwnerID: "issue-1", Locale: "zh-Hant", UploadStatus: "completed", ScanStatus: "failed"}
+	scanner := &requeueBulletinScanAsset{workerAssets: &workerAssets{asset: asset}}
+	for _, retry := range []bool{true, false} {
+		extra := ""
+		if retry {
+			extra = `,"retryScan":true`
+		}
+		repo := &extractionRequestRepository{workerRepository: &workerRepository{event: Event{ID: "event-1", EventType: "bulletin.online.ensure_extraction", AggregateID: "issue-1", Attempts: 1, Payload: []byte(`{"issueId":"issue-1","assetId":"asset-1","actorId":"018f47a1-0f8a-4f25-8f09-111111111111","requestId":"upload-request-1","autoPublish":true` + extra + `}`)}}}
+		worked, err := NewWorker(repo, scanner, 3).processNext(context.Background())
+		if err != nil || !worked || scanner.calls != 1 || (repo.deferCount == 1) != retry || (repo.failCount == 1) == retry || repo.checksum != "" {
+			t.Fatal("scan retry became unbounded or bypassed readiness", retry, scanner.calls, repo.deferCount, repo.failCount, err)
+		}
+	}
+}

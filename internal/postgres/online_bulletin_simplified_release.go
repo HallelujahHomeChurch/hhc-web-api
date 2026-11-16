@@ -209,7 +209,7 @@ func (r *Repository) CompleteSimplifiedRelease(ctx context.Context, event public
 		targetVersion = confirmation.Version
 	}
 	// A mapping ambiguity is a real exception; never invent note migrations.
-	if _, err = r.publishOnlineBulletinTx(ctx, tx, p.IssueID, "general", "zh-Hans", onlinebulletins.PublishInput{CanonicalVersion: canonicalVersion, OnlineVersion: targetVersion, Revision: local.Int64, Mappings: mappings}, p.ActorID, now, &metadata); err != nil {
+	if _, err = r.publishOnlineBulletinTx(ctx, tx, p.IssueID, "general", "zh-Hans", onlinebulletins.PublishInput{CanonicalVersion: canonicalVersion, OnlineVersion: targetVersion, Revision: local.Int64, Mappings: mappings}, p.ActorID, now, &metadata, true); err != nil {
 		return err
 	}
 	return finish("delivered", "")

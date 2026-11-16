@@ -12,7 +12,11 @@ import (
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/auditclient"
 )
 
+var errBulletinScanFailed = errors.New("bulletin scan failed")
+var errBulletinScanRequeued = errors.New("bulletin scan requeued")
+
 type BulletinExtractionPayload struct {
+	RetryScan         bool   `json:"retryScan,omitempty"`
 	AutoPublish       bool   `json:"autoPublish,omitempty"`
 	NotifySubscribers bool   `json:"notifySubscribers,omitempty"`
 	IssueID           string `json:"issueId"`
@@ -38,6 +42,18 @@ func (w *Worker) ensureBulletinExtraction(ctx context.Context, event Event) erro
 	}
 	if asset.ID != payload.AssetID || asset.Namespace != "cms.weekly.pdf" || asset.OwnerService != "hhc-web-api" || asset.OwnerType != "bulletin_issue" || asset.OwnerID != payload.IssueID || asset.Locale != "zh-Hant" {
 		return terminalError{fmt.Errorf("bulletin extraction asset owner mismatch")}
+	}
+	if asset.UploadStatus == "completed" && asset.ScanStatus == "failed" {
+		scanner, canRequeue := w.assets.(interface {
+			RequeueScan(context.Context, string) error
+		})
+		if !payload.AutoPublish || !payload.RetryScan || !canRequeue {
+			return errBulletinScanFailed
+		}
+		if err = scanner.RequeueScan(ctx, asset.ID); err != nil {
+			return err
+		}
+		return errBulletinScanRequeued
 	}
 	if err = readyAsset(asset); err != nil {
 		return err
@@ -66,6 +82,10 @@ func (w *Worker) rescheduleBulletinExtraction(ctx context.Context, event Event, 
 	var terminal terminalError
 	var permanent interface{ Permanent() bool }
 	switch {
+	case errors.Is(cause, errBulletinScanFailed):
+		code, next = "upload_scan_failed", time.Time{}
+	case errors.Is(cause, errBulletinScanRequeued):
+		code, next, waiting = "upload_scan_requeued", now.Add(10*time.Second), true
 	case errors.As(cause, &pending):
 		code = "upload_source_pending"
 		if !event.CreatedAt.IsZero() && now.Sub(event.CreatedAt) >= assetReadinessDeadline {
