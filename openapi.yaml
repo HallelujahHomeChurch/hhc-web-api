@@ -3767,8 +3767,8 @@ paths:
   /admin/bulletins/{issueId}/publication-update:
     post:
       operationId: updateBulletinPublication
-      summary: Resume bulletin publication or stage a metadata correction
-      description: Publisher command for General Traditional bulletins. An empty object resumes the eligible current stage. A metadata snapshot requests a correction while existing editions remain readable. Repeating the same actor, key, version and body returns the original command response. Read the issue for current availability.
+      summary: Publish an existing draft, resume publication, or stage a metadata correction
+      description: Publisher command for General Traditional bulletins. An empty object resumes the eligible current stage. Action publish starts publication from the selected saved PDF. A metadata snapshot requests a correction while existing editions remain readable. Publish and metadata require the current commandToken. Repeating the same actor, key, version and body returns the original command response. Read the issue for current availability.
       tags: [Admin]
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
@@ -16172,14 +16172,17 @@ components:
       properties:
         status: { type: string, enum: [draft, withdrawn, preparing, published, needs_attention] }
         pendingMetadata: { $ref: '#/components/schemas/BulletinPublicationMetadata' }
+        commandToken: { type: string, pattern: '^[0-9a-f]{64}$', description: Opaque precondition for publish or metadata commands. }
         reason: { type: string, enum: [source_invalid, metadata_mismatch, processing_failed, review_required, unsupported_source] }
-        nextAction: { type: string, enum: [replace_source, update_metadata, resume, review] }
+        nextAction: { type: string, enum: [replace_source, update_metadata, resume, review, publish] }
         availability: { $ref: '#/components/schemas/BulletinPublicationChannels', description: Editions currently readable by entitled members, including earlier healthy editions. }
         current: { $ref: '#/components/schemas/BulletinPublicationChannels', description: Readable editions matching the current requested publication. }
     BulletinPublicationUpdateInput:
       type: object
       additionalProperties: false
       properties:
+        action: { type: string, enum: [publish], description: Mutually exclusive with metadata. }
+        commandToken: { type: string, pattern: '^[0-9a-f]{64}$', description: Required with publish or metadata. }
         metadata: { $ref: '#/components/schemas/BulletinPublicationMetadata' }
     BulletinPublicationMetadata:
       type: object

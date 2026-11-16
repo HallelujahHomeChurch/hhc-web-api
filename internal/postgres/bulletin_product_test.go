@@ -144,6 +144,11 @@ func TestPublishedMetadataIsStagedAndOldIssueNumberResolvesAfterCommit(t *testin
 	}
 	oldNumber := source.Canonical.Metadata.IssueNumber
 	input := bulletins.PublicationUpdateInput{Metadata: &bulletins.PublicationMetadata{IssueNumber: oldNumber + 17, IssueDate: "2099-12-31", Title: "Corrected issue title", Subtitle: "Subtitle"}}
+	current, err := repo.GetIssueWithPublicationOutcome(ctx, issue)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.CommandToken = current.PublicationOutcome.CommandToken
 	correction, err := repo.UpdateBulletinPublication(ctx, issue, 1, input, "metadata-correction", postgresBulletinAuditActor, now.Add(time.Second))
 	if err != nil || correction.Outcome.Status != "preparing" || correction.Outcome.PendingMetadata == nil || *correction.Issue.IssueNumber != oldNumber {
 		t.Fatalf("stage=%+v err=%v", correction, err)
@@ -189,7 +194,22 @@ func TestPublishedMetadataIsStagedAndOldIssueNumberResolvesAfterCommit(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = repo.UnpublishWithOnline(ctx, issue, "general", "zh-Hant", final.CanonicalVersion, final.Version, postgresBulletinAuditActor, now.Add(3*time.Second)); err != nil {
+	preWithdraw, err := repo.GetIssueWithPublicationOutcome(ctx, issue)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = repo.UnpublishOnlineBulletin(ctx, issue, "general", "zh-Hant", final.CanonicalVersion, final.Version, postgresBulletinAuditActor, now.Add(2*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	for _, late := range []bulletins.PublicationUpdateInput{
+		{Action: "publish", CommandToken: preWithdraw.PublicationOutcome.CommandToken},
+		{Metadata: input.Metadata, CommandToken: preWithdraw.PublicationOutcome.CommandToken},
+	} {
+		if _, err = repo.UpdateBulletinPublication(ctx, issue, preWithdraw.Version, late, "late-after-online-withdrawal", postgresBulletinAuditActor, now.Add(3*time.Second)); !errors.Is(err, bulletins.ErrPrecondition) {
+			t.Fatal("old command acquired authority after online-only withdrawal", err)
+		}
+	}
+	if _, err = repo.Unpublish(ctx, issue, "general", "zh-Hant", final.CanonicalVersion, postgresBulletinAuditActor, now.Add(3*time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	hidden, err := repo.DiscoverOnlineBulletins(ctx, "general", []string{"zh-Hant"}, 0, 5, &oldNumber)
@@ -333,5 +353,55 @@ func TestProductOutcomeUsesAgreedSourceAssessmentForMetadataCorrection(t *testin
 	outcome, err := repo.BulletinPublicationOutcome(ctx, source.Canonical.IssueID)
 	if err != nil || outcome.Reason != "metadata_mismatch" || outcome.NextAction != "update_metadata" {
 		t.Fatal("assessment did not route to metadata correction", outcome, err)
+	}
+}
+
+func TestProductCommandPublishesExistingExplicitDraftWithoutReupload(t *testing.T) {
+	for _, withdrawn := range []bool{false, true} {
+		name := "draft"
+		if withdrawn {
+			name = "withdrawn"
+		}
+		t.Run(name, func(t *testing.T) {
+			db := accessDB(t)
+			now := time.Now().UTC()
+			ctx := bulletinAuditContext()
+			actor := postgresBulletinAuditActor
+			repo, source := seedOnlineLayout(t, db, now)
+			repo.WithAudit(NewAuditOutbox(db)).WithAutomaticBulletinExtraction(true).WithLLMBulletinExtraction(true)
+			issue := source.Canonical.IssueID
+			if withdrawn {
+				if _, err := db.Exec(`UPDATE hhc_web.bulletin_version SET status='unpublished' WHERE issue_id=$1`, issue); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := db.Exec(`UPDATE hhc_web.bulletin_issue SET status='unpublished' WHERE id=$1`, issue); err != nil {
+					t.Fatal(err)
+				}
+			}
+			before, err := repo.GetIssueWithPublicationOutcome(ctx, issue)
+			if err != nil || before.PublicationOutcome.Status != name || before.PublicationOutcome.NextAction != "publish" {
+				t.Fatal("existing source offers no publish action", before, err)
+			}
+			if _, err = repo.UpdateBulletinPublication(ctx, issue, before.Version, bulletins.PublicationUpdateInput{}, "old-resume-key", actor, now); !errors.Is(err, bulletins.ErrConflict) {
+				t.Fatal("resume started a new publication", err)
+			}
+			command := bulletins.PublicationUpdateInput{Action: "publish", CommandToken: before.PublicationOutcome.CommandToken}
+			outcome, err := repo.UpdateBulletinPublication(ctx, issue, before.Version, command, "publish-existing-source", actor, now)
+			if err != nil || outcome.Outcome.Status != "preparing" || outcome.Issue.Versions[0].PDFAssetID != source.SourceAssetID {
+				t.Fatal("explicit publish lost original source", outcome, err)
+			}
+			event := claimUploadRequest(t, repo, issue, now)
+			if err = repo.CompleteOnlineExtractionRequest(ctx, event, source.SourceAssetChecksum, now); err != nil {
+				t.Fatal(err)
+			}
+			replay, err := repo.UpdateBulletinPublication(ctx, issue, before.Version, command, "publish-existing-source", actor, now.Add(time.Second))
+			if err != nil || !reflect.DeepEqual(outcome, replay) {
+				t.Fatal("publish command was not idempotent", replay, err)
+			}
+			var sourceCount int
+			if err = db.QueryRow(`SELECT count(*) FROM hhc_web.outbox_event WHERE aggregate_id=$1 AND event_type='bulletin.online.ensure_extraction' AND payload_json->>'assetId'=$2`, issue, source.SourceAssetID).Scan(&sourceCount); err != nil || sourceCount != 1 {
+				t.Fatal("publish duplicated source work", sourceCount, err)
+			}
+		})
 	}
 }

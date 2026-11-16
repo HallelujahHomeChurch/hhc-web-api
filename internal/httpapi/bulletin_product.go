@@ -20,12 +20,18 @@ func (h *Handler) adminUpdateBulletinPublication(w http.ResponseWriter, r *http.
 		return
 	}
 	var body struct {
-		Metadata json.RawMessage `json:"metadata"`
+		Action       json.RawMessage `json:"action"`
+		CommandToken string          `json:"commandToken"`
+		Metadata     json.RawMessage `json:"metadata"`
 	}
 	if !decodeLimit(w, r, &body, 32<<10) {
 		return
 	}
-	var input bulletins.PublicationUpdateInput
+	input := bulletins.PublicationUpdateInput{CommandToken: body.CommandToken}
+	if len(body.Action) > 0 && (json.Unmarshal(body.Action, &input.Action) != nil || input.Action != "publish") {
+		handleError(w, bulletins.ErrInvalid)
+		return
+	}
 	if len(body.Metadata) > 0 {
 		var metadata struct {
 			IssueNumber int     `json:"issueNumber"`

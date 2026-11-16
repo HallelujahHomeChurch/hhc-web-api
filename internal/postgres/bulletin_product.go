@@ -17,7 +17,7 @@ import (
 type bulletinProductState struct {
 	outcome                                                         bulletins.PublicationOutcome
 	number                                                          int
-	automatic, withdrawn                                            bool
+	automatic, withdrawn, publishable, publishing                   bool
 	asset, extraction, update, layout, derived                      string
 	correction, correctionStatus                                    string
 	correctionBlocked                                               bool
@@ -47,6 +47,8 @@ func (r *Repository) loadBulletinProductState(ctx context.Context, query bulleti
 func (r *Repository) loadBulletinProductStates(ctx context.Context, query bulletinQueryer, issues []string) (map[string]*bulletinProductState, error) {
 	rows, err := query.QueryContext(ctx, `
  SELECT i.id::text,COALESCE(i.issue_number,0),v.auto_publish,v.pdf_asset_id,
+ v.status IN('draft','unpublished','published') AND i.status NOT IN('publishing','unpublishing'), v.status='publishing',
+ encode(sha256(convert_to(jsonb_build_array(i.id,i.version,v.id,v.version,v.pdf_asset_id,v.status,v.online_intent_epoch,d.id,d.version,d.published_revision,sd.id,sd.version,sd.published_revision,mc.layout_job_id,ml.status)::text,'UTF8')),'hex'),
  (v.status IN('unpublished','unpublishing','unpublish_failed') OR d.published_revision IS NULL AND EXISTS(SELECT 1 FROM hhc_web.online_bulletin_publication old WHERE old.document_id=d.id) OR sd.published_revision IS NULL AND EXISTS(SELECT 1 FROM hhc_web.online_bulletin_publication old WHERE old.document_id=sd.id)),
  COALESCE(d.version,0),d.published_revision,
  pdf.issue_id IS NOT NULL,hp.document_id IS NOT NULL,sp.document_id IS NOT NULL,
@@ -97,7 +99,7 @@ func (r *Repository) loadBulletinProductStates(ctx context.Context, query bullet
 		var id string
 		var pending []byte
 		a, c := &p.outcome.Availability, &p.outcome.Current
-		if err = rows.Scan(&id, &p.number, &p.automatic, &p.asset, &p.withdrawn, &p.onlineVersion, &p.traditionalRevision,
+		if err = rows.Scan(&id, &p.number, &p.automatic, &p.asset, &p.publishable, &p.publishing, &p.outcome.CommandToken, &p.withdrawn, &p.onlineVersion, &p.traditionalRevision,
 			&a.PDF, &a.Traditional, &a.Simplified, &c.PDF, &c.Traditional, &c.Simplified,
 			&p.uploadStatus, &p.uploadError, &p.extraction, &p.extractionStatus, &p.extractionError,
 			&p.update, &p.updateStatus, &p.updateError, &p.sourceAssessment, &p.layout, &p.layoutStatus, &p.layoutError,
@@ -107,7 +109,7 @@ func (r *Repository) loadBulletinProductStates(ctx context.Context, query bullet
 		if len(pending) > 0 && json.Unmarshal(pending, &p.outcome.PendingMetadata) != nil {
 			return nil, bulletins.ErrConflict
 		}
-		p.classify()
+		p.classify(r.llmBulletinExtraction && r.automaticBulletinExtraction)
 		states[id] = &p
 	}
 	return states, rows.Err()
@@ -156,7 +158,7 @@ func (r *Repository) enrichBulletinProduct(ctx context.Context, query bulletinQu
 	return nil
 }
 
-func (p *bulletinProductState) classify() {
+func (p *bulletinProductState) classify(productEnabled bool) {
 	outcome := &p.outcome
 	outcome.Current.Simplified = outcome.Current.Simplified && outcome.Current.Traditional
 	attention := func(reason, action, stage string) {
@@ -222,7 +224,7 @@ func (p *bulletinProductState) classify() {
 		}
 	case p.automatic && (p.updateStatus == "superseded" || p.layoutStatus == "superseded" || p.extraction == "" && p.uploadStatus == "delivered"):
 		attention("review_required", "review", "")
-	case p.automatic && !outcome.Current.Traditional:
+	case p.publishing || p.automatic && !outcome.Current.Traditional:
 		outcome.Status = "preparing"
 	case outcome.Current.Traditional && (p.derivedStatus == "pending" || p.derivedStatus == "processing"):
 		outcome.Status = "preparing"
@@ -245,6 +247,9 @@ func (p *bulletinProductState) classify() {
 		outcome.Status = "withdrawn"
 	default:
 		outcome.Status = "draft"
+	}
+	if productEnabled && p.publishable && !p.automatic && p.number >= 1739 && p.asset != "" && (outcome.Status == "draft" || outcome.Status == "withdrawn") {
+		outcome.NextAction = "publish"
 	}
 }
 
@@ -285,9 +290,15 @@ func (r *Repository) UpdateBulletinPublication(ctx context.Context, issue string
 	if state == nil {
 		return receipt, bulletins.ErrConflict
 	}
-	if input.Metadata != nil {
+	if (input.Metadata != nil || input.Action == "publish" || input.CommandToken != "") && input.CommandToken != state.outcome.CommandToken {
+		return receipt, bulletins.ErrPrecondition
+	}
+	switch {
+	case input.Metadata != nil:
 		err = r.stageBulletinMetadata(ctx, tx, issue, current, *input.Metadata, actor, now)
-	} else {
+	case input.Action == "publish":
+		err = r.publishExistingBulletin(ctx, tx, issue, current, *state, actor, now)
+	default:
 		err = r.resumeBulletinPublication(ctx, tx, issue, current, *state, actor, p.RequestID, now)
 	}
 	if err != nil {
@@ -381,17 +392,7 @@ func (r *Repository) resumeBulletinPublication(ctx context.Context, tx *sql.Tx, 
 		return err
 	}
 	if state.stage == "upload" {
-		if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.bulletin_issue SET version=version+1,updated_by=$2,updated_at=$3 WHERE id=$1`, issue, actor, now); err != nil {
-			return err
-		}
-		next, err := loadIssue(ctx, tx, issue)
-		if err != nil {
-			return err
-		}
-		if err = insertBulletinRevision(ctx, tx, next, actor, now); err != nil {
-			return err
-		}
-		return enqueueUploadExtraction(ctx, tx, next, state.asset, true, false, actor, now)
+		return r.queueExistingBulletinSource(ctx, tx, issue, current, state.asset, actor, now)
 	}
 	if err := productAffected(tx.ExecContext(ctx, `UPDATE hhc_web.online_bulletin_extraction_job e SET authorizer_id=$2,authorizer_request_id=$3,publication_intent_id=v.online_intent_id,publication_intent_epoch=v.online_intent_epoch FROM hhc_web.bulletin_version v WHERE e.id=$1 AND NOT e.superseded AND e.auto_publish AND (e.issue_id,e.series,e.content_locale)=(v.issue_id,v.series,v.locale) AND v.pdf_asset_id=e.source_asset_id AND v.pdf_sha256=e.source_asset_checksum`, state.extraction, actor, request)); err != nil {
 		return err
@@ -420,6 +421,56 @@ func (r *Repository) resumeBulletinPublication(ctx context.Context, tx *sql.Tx, 
 	default:
 		return bulletins.ErrConflict
 	}
+}
+
+func (r *Repository) queueExistingBulletinSource(ctx context.Context, tx *sql.Tx, issue string, current int64, asset, actor string, now time.Time) error {
+	if err := productAffected(tx.ExecContext(ctx, `UPDATE hhc_web.bulletin_issue SET status=CASE WHEN status='unpublished' THEN 'draft' ELSE status END,version=version+1,updated_by=$3,updated_at=$4 WHERE id=$1 AND version=$2`, issue, current, actor, now)); err != nil {
+		return err
+	}
+	next, err := loadIssue(ctx, tx, issue)
+	if err != nil {
+		return err
+	}
+	if err = insertBulletinRevision(ctx, tx, next, actor, now); err != nil {
+		return err
+	}
+	return enqueueUploadExtraction(ctx, tx, next, asset, true, false, actor, now)
+}
+
+func (r *Repository) publishExistingBulletin(ctx context.Context, tx *sql.Tx, issue string, current int64, state bulletinProductState, actor string, now time.Time) error {
+	if !r.llmBulletinExtraction || !r.automaticBulletinExtraction {
+		return bulletins.ErrOnlinePublicationUnavailable
+	}
+	if state.outcome.NextAction != "publish" {
+		return bulletins.ErrConflict
+	}
+	if state.outcome.Current.PDF && state.outcome.Current.Traditional {
+		// A fresh user request may authorize only the missing derived edition
+		// without reopening the current PDF or Traditional publication.
+		var source onlinebulletins.ConfirmedRevision
+		var metadata onlinebulletins.CanonicalMetadata
+		var raw []byte
+		err := tx.QueryRowContext(ctx, `UPDATE hhc_web.online_bulletin_document d SET version=d.version+1,updated_at=$3 FROM hhc_web.online_bulletin_publication p
+ WHERE d.issue_id=$1 AND d.series='general' AND d.content_locale='zh-Hant' AND d.published_revision=$2 AND p.document_id=d.id AND p.revision=d.published_revision
+ RETURNING d.id::text,d.version,d.published_revision,p.canonical_metadata`, issue, state.traditionalRevision.Int64, now).Scan(&source.DocumentID, &source.Version, &source.Revision, &raw)
+		if errors.Is(err, sql.ErrNoRows) {
+			return bulletins.ErrPrecondition
+		}
+		if err != nil {
+			return err
+		}
+		if err = json.Unmarshal(raw, &metadata); err != nil {
+			return err
+		}
+		return enqueueSimplifiedRelease(ctx, tx, source, issue, metadata, actor, now)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.bulletin_version SET status='draft',version=version+1,updated_by=$2,updated_at=$3 WHERE issue_id=$1 AND series='general' AND locale='zh-Hant' AND status='unpublished'`, issue, actor, now); err != nil {
+		return err
+	}
+	if err := r.setAutomaticBulletinIntentReason(ctx, tx, issue, "general", "zh-Hant", true, false, actor, now, "automatic_authorized"); err != nil {
+		return err
+	}
+	return r.queueExistingBulletinSource(ctx, tx, issue, current, state.asset, actor, now)
 }
 
 func productAffected(result sql.Result, err error) error {

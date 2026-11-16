@@ -29,6 +29,7 @@ type PublicationChannels struct {
 }
 
 type PublicationOutcome struct {
+	CommandToken    string               `json:"commandToken,omitempty"`
 	PendingMetadata *PublicationMetadata `json:"pendingMetadata,omitempty"`
 	Status          string               `json:"status"`
 	Reason          string               `json:"reason,omitempty"`
@@ -45,7 +46,9 @@ type PublicationMetadata struct {
 }
 
 type PublicationUpdateInput struct {
-	Metadata *PublicationMetadata `json:"metadata,omitempty"`
+	Action       string               `json:"action,omitempty"`
+	CommandToken string               `json:"commandToken,omitempty"`
+	Metadata     *PublicationMetadata `json:"metadata,omitempty"`
 }
 
 type PublicationUpdateResult struct {
@@ -70,6 +73,9 @@ func (s *Service) GetIssueWithPublicationOutcome(ctx context.Context, id string)
 
 func (s *Service) UpdatePublication(ctx context.Context, id string, expected int64, input PublicationUpdateInput, key, actor string) (PublicationUpdateResult, error) {
 	if uuid.Validate(id) != nil || expected < 1 || !onlinebulletins.ValidSimplifiedRecoveryKey(key) || actor == "" {
+		return PublicationUpdateResult{}, ErrInvalid
+	}
+	if input.Action != "" && (input.Action != "publish" || input.Metadata != nil) || (input.Action == "publish" || input.Metadata != nil || input.CommandToken != "") && !validPublicationCommandToken(input.CommandToken) {
 		return PublicationUpdateResult{}, ErrInvalid
 	}
 	if input.Metadata != nil {
@@ -121,4 +127,8 @@ func (s *Service) TrackBulletinUploadAsset(ctx context.Context, issue string, ed
 		return ErrInvalid
 	}
 	return repo.TrackBulletinUploadAsset(ctx, issue, edition, asset, actor, s.now().UTC())
+}
+
+func validPublicationCommandToken(token string) bool {
+	return len(token) == 64 && strings.Trim(token, "0123456789abcdef") == ""
 }

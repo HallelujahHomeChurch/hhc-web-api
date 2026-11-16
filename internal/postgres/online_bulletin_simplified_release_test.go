@@ -24,14 +24,14 @@ func claimSimplifiedRelease(t *testing.T, db *sql.DB, id string, now time.Time) 
 }
 
 func TestPublishedSimplifiedReleaseUsesFrozenSourceAndPublishesOnce(t *testing.T) {
-	for _, scenario := range []string{"clean", "llm-assessed", "llm-missing-assessment", "reuploaded-before-assessment", "republished-source", "superseded-failure", "draft-edit", "metadata-edit", "unpublished", "layout-failed", "lease-fenced", "audit-failure", "source-withdrawn-before-conversion", "retagged-claim", "retry-conversion", "product-retry-conversion", "retry-layout", "target-metadata-edit"} {
+	for _, scenario := range []string{"clean", "llm-assessed", "explicit-republish-derived", "llm-missing-assessment", "reuploaded-before-assessment", "republished-source", "superseded-failure", "draft-edit", "metadata-edit", "unpublished", "layout-failed", "lease-fenced", "audit-failure", "source-withdrawn-before-conversion", "retagged-claim", "retry-conversion", "product-retry-conversion", "retry-layout", "target-metadata-edit"} {
 		t.Run(scenario, func(t *testing.T) {
 			db := accessDB(t)
 			now := time.Now().UTC()
 			ctx := bulletinAuditContext()
 			repo, source := seedSimplifiedSource(t, db, now)
 			repo = repo.WithAudit(NewAuditOutbox(db))
-			if scenario == "llm-assessed" || scenario == "llm-missing-assessment" || scenario == "product-retry-conversion" {
+			if scenario == "llm-assessed" || scenario == "explicit-republish-derived" || scenario == "llm-missing-assessment" || scenario == "product-retry-conversion" {
 				repo.WithLLMBulletinExtraction(true).WithAutomaticBulletinExtraction(true)
 			}
 			t.Cleanup(func() {
@@ -61,7 +61,7 @@ func TestPublishedSimplifiedReleaseUsesFrozenSourceAndPublishesOnce(t *testing.T
 			if err != nil {
 				t.Fatal(err)
 			}
-			if scenario == "llm-assessed" || scenario == "product-retry-conversion" {
+			if scenario == "llm-assessed" || scenario == "explicit-republish-derived" || scenario == "product-retry-conversion" {
 				outcome, e := repo.BulletinPublicationOutcome(ctx, source.Canonical.IssueID)
 				if e != nil || outcome.Status != "preparing" || outcome.Availability != (bulletins.PublicationChannels{PDF: true, Traditional: true}) {
 					t.Fatal("outcome claimed all editions before the target published", outcome, e)
@@ -219,7 +219,7 @@ func TestPublishedSimplifiedReleaseUsesFrozenSourceAndPublishesOnce(t *testing.T
 					t.Fatal(err)
 				}
 			}
-			if scenario == "llm-assessed" || scenario == "product-retry-conversion" {
+			if scenario == "llm-assessed" || scenario == "explicit-republish-derived" || scenario == "product-retry-conversion" {
 				input, err := onlinebulletins.SimplifiedAssessmentInput(conversion.Source, conversion.SourceMetadata, draft, conversion.SourceMetadata)
 				if err != nil {
 					t.Fatal(err)
@@ -367,7 +367,7 @@ func TestPublishedSimplifiedReleaseUsesFrozenSourceAndPublishesOnce(t *testing.T
 				}
 			}
 			if want == 1 {
-				if scenario == "llm-assessed" || scenario == "product-retry-conversion" {
+				if scenario == "llm-assessed" || scenario == "explicit-republish-derived" || scenario == "product-retry-conversion" {
 					outcome, e := repo.BulletinPublicationOutcome(ctx, source.Canonical.IssueID)
 					ready := bulletins.PublicationChannels{PDF: true, Traditional: true, Simplified: true}
 					if e != nil || outcome.Status != "published" || outcome.Availability != ready || outcome.Current != ready {
@@ -377,6 +377,40 @@ func TestPublishedSimplifiedReleaseUsesFrozenSourceAndPublishesOnce(t *testing.T
 				target, stateErr := repo.OnlineBulletinState(ctx, source.Canonical.IssueID, "general", "zh-Hans")
 				if stateErr != nil || target.Conversion == nil || target.Conversion.Status != "review_ready" || target.PublishedRevision == nil {
 					t.Fatal("delivered intent was masked by historical failure", target.Conversion, stateErr)
+				}
+				if scenario == "explicit-republish-derived" {
+					current, e := repo.GetIssueWithPublicationOutcome(ctx, source.Canonical.IssueID)
+					if e != nil {
+						t.Fatal(e)
+					}
+					if _, e = repo.UnpublishOnlineBulletin(ctx, source.Canonical.IssueID, "general", "zh-Hans", current.Version, target.Version, postgresBulletinAuditActor, now.Add(12*time.Second)); e != nil {
+						t.Fatal(e)
+					}
+					after, e := repo.GetIssueWithPublicationOutcome(ctx, source.Canonical.IssueID)
+					if e != nil || after.PublicationOutcome.Status != "withdrawn" || after.PublicationOutcome.NextAction != "publish" {
+						t.Fatal("withdrawn Simplified cannot be republished", after, e)
+					}
+					command := bulletins.PublicationUpdateInput{Action: "publish", CommandToken: after.PublicationOutcome.CommandToken}
+					result, e := repo.UpdateBulletinPublication(ctx, source.Canonical.IssueID, after.Version, command, "republish-only-derived", postgresBulletinAuditActor, now.Add(13*time.Second))
+					if e != nil || result.Outcome.Status != "preparing" || result.Outcome.Availability != (bulletins.PublicationChannels{PDF: true, Traditional: true}) {
+						t.Fatal("reused source stages changed", result, e)
+					}
+					var next string
+					if e = db.QueryRow(`SELECT id::text FROM hhc_web.outbox_event WHERE aggregate_id=$1 AND event_type=$2 ORDER BY created_at DESC,id DESC LIMIT 1`, source.DocumentID, simplifiedReleaseEvent).Scan(&next); e != nil || next == id {
+						t.Fatal("not a fresh authorization", e)
+					}
+					start := claimSimplifiedRelease(t, db, next, now.Add(13*time.Second))
+					if e = repo.CompleteSimplifiedRelease(ctx, start, now.Add(13*time.Second)); e != nil {
+						t.Fatal(e)
+					}
+					end := claimSimplifiedRelease(t, db, next, now.Add(24*time.Second))
+					if e = repo.CompleteSimplifiedRelease(ctx, end, now.Add(24*time.Second)); e != nil {
+						t.Fatal(e)
+					}
+					done, e := repo.BulletinPublicationOutcome(ctx, source.Canonical.IssueID)
+					if e != nil || done.Status != "published" || !done.Current.Simplified {
+						t.Fatal("saved proof did not republish", done, e)
+					}
 				}
 				if scenario == "superseded-failure" {
 					hant, err := repo.OnlineBulletinState(ctx, source.Canonical.IssueID, "general", "zh-Hant")

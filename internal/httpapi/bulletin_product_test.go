@@ -19,7 +19,9 @@ func TestBulletinPublicationUpdateRequiresBothScopes(t *testing.T) {
 		{"publisher", "cms:bulletins:publish", "update-1", "1", "{}", http.StatusForbidden},
 		{"no key", "cms:bulletins:write cms:bulletins:publish", "", "1", "{}", http.StatusBadRequest},
 		{"no match", "cms:bulletins:write cms:bulletins:publish", "update-1", "", "{}", http.StatusPreconditionRequired},
-		{"invalid date", "cms:bulletins:write cms:bulletins:publish", "update-1", "1", `{"metadata":{"issueNumber":1740,"issueDate":"2026-11-31","title":"Weekly","subtitle":""}}`, http.StatusBadRequest},
+		{"publish without token", "cms:bulletins:write cms:bulletins:publish", "update-1", "1", `{"action":"publish"}`, http.StatusBadRequest},
+		{"null action", "cms:bulletins:write cms:bulletins:publish", "update-1", "1", `{"action":null}`, http.StatusBadRequest},
+		{"invalid date", "cms:bulletins:write cms:bulletins:publish", "update-1", "1", `{"commandToken":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","metadata":{"issueNumber":1740,"issueDate":"2026-11-31","title":"Weekly","subtitle":""}}`, http.StatusBadRequest},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			request := httptest.NewRequest(http.MethodPost, "/api/admin/bulletins/018f47d2-e5d1-4f3f-8f18-6c8e32621f73/publication-update", strings.NewReader(tc.body))
