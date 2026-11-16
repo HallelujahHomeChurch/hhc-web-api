@@ -33,7 +33,17 @@ type LayoutResult struct {
 }
 
 func (r LayoutRunner) Compose(ctx context.Context, document Document, metadata CanonicalMetadata) (LayoutResult, error) {
-	return r.run(ctx, document, metadata, true)
+	result, err := r.run(ctx, document, metadata, true)
+	if err == nil || ctx.Err() != nil {
+		return result, err
+	}
+	// Reflow can introduce collisions into an already-fitting source layout.
+	// Retain it only after the same immutable renderer verifies the exact saved
+	// document, fonts, content hash and every page without overflow.
+	if original, validationErr := r.Validate(ctx, document, metadata); validationErr == nil {
+		return original, nil
+	}
+	return result, err
 }
 
 func (r LayoutRunner) Validate(ctx context.Context, document Document, metadata CanonicalMetadata) (LayoutResult, error) {
