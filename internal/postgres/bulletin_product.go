@@ -167,7 +167,7 @@ func (p *bulletinProductState) classify(productEnabled bool) {
 	if outcome.PendingMetadata != nil {
 		outcome.Current = bulletins.PublicationChannels{}
 		switch {
-		case p.correctionBlocked:
+		case p.correctionBlocked && p.correctionStatus != "queued" && p.correctionStatus != "validating":
 			attention("review_required", "update_metadata", "")
 		case p.correctionStatus == "failed":
 			attention("processing_failed", "resume", "metadata")
@@ -209,7 +209,7 @@ func (p *bulletinProductState) classify(productEnabled bool) {
 		} else {
 			attention("review_required", "review", "")
 		}
-	case p.automatic && p.layoutBlocked:
+	case p.automatic && p.layoutBlocked && p.layoutStatus != "queued" && p.layoutStatus != "validating":
 		attention("review_required", "review", "")
 	case p.automatic && p.layoutStatus == "failed":
 		attention("processing_failed", "resume", "layout")
