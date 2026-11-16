@@ -16174,7 +16174,7 @@ components:
         pendingMetadata: { $ref: '#/components/schemas/BulletinPublicationMetadata' }
         commandToken: { type: string, pattern: '^[0-9a-f]{64}$', description: Opaque precondition for publish or metadata commands. }
         reason: { type: string, enum: [source_invalid, metadata_mismatch, processing_failed, review_required, unsupported_source] }
-        nextAction: { type: string, enum: [replace_source, update_metadata, resume, review, publish], description: Server-authorized next action. Publish requires an explicit draft replacement, a withdrawn edition, or no currently public edition; historical work and source freshness alone do not grant publication authority. }
+        nextAction: { type: string, enum: [replace_source, update_metadata, resume, review, publish], description: 'Server-authorized next action. Publish requires an explicit draft replacement, a withdrawn edition, or no currently public edition; historical work and source freshness alone do not grant publication authority.' }
         availability: { $ref: '#/components/schemas/BulletinPublicationChannels', description: Editions currently readable by entitled members, including earlier healthy editions. }
         current: { $ref: '#/components/schemas/BulletinPublicationChannels', description: Readable editions matching the current requested publication. }
     BulletinPublicationUpdateInput:
