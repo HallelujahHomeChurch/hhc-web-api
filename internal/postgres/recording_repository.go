@@ -266,11 +266,6 @@ func (r *RecordingRepository) mutateTx(ctx context.Context, tx *sql.Tx, id strin
 }
 
 func enqueueRecordingNotification(ctx context.Context, tx *sql.Tx, id, title, actor string, version int64, now time.Time, live ...bool) error {
-	var publicID string
-	err := tx.QueryRowContext(ctx, `SELECT public_id FROM hhc_web.member_recording_public_id WHERE recording_id=$1`, id).Scan(&publicID)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return err
-	}
 	eventID := platform.NewID()
 	key := "notification:v1:recording:" + id + ":g0"
 	translations := make(map[string]publication.NotificationTranslation)
@@ -280,10 +275,8 @@ func enqueueRecordingNotification(ctx context.Context, tx *sql.Tx, id, title, ac
 		subjects = map[string]string{"zh-Hant": "直播已開始", "zh-Hans": "直播已开始", "en": "The live broadcast has started", "ja": "ライブ配信が始まりました", "ko": "라이브 방송이 시작되었습니다"}
 	}
 	for locale, subject := range subjects {
+		// Engagement binds this path to the recording before the website resolves its share URL.
 		path := "/" + locale + "/member-videos/" + id
-		if publicID != "" {
-			path = "/video/" + publicID
-		}
 		translations[locale] = publication.NotificationTranslation{Subject: subject, Body: title, ClickBehavior: "url", ActionURL: path}
 		required[locale] = "video.meeting-recordings.access"
 	}

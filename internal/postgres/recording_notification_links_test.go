@@ -63,9 +63,6 @@ func TestRecordingNotificationCanonicalLinksAndReplay(t *testing.T) {
 					}
 					for locale, translation := range notification.Translations {
 						want := "/" + locale + "/member-videos/" + id
-						if mapped {
-							want = "/video/" + publicID
-						}
 						if translation.ActionURL != want || translation.Body != "First" || notification.RequiredEntitlements[locale] != "video.meeting-recordings.access" {
 							t.Fatalf("translation=%+v want=%s", translation, want)
 						}
