@@ -284,7 +284,7 @@ func (r *Repository) QueueOnlineBulletinExtraction(ctx context.Context, issueID 
 			input.Retry = false
 		}
 	}
-	result, err = r.queueOnlineBulletinExtractionTx(ctx, tx, issueID, input, actor, now)
+	result, err = r.queueOnlineBulletinExtractionTx(ctx, tx, issueID, input, actor, now, false)
 	if err != nil {
 		return result, err
 	}
@@ -296,7 +296,9 @@ func (r *Repository) QueueOnlineBulletinExtraction(ctx context.Context, issueID 
 	return result, tx.Commit()
 }
 
-func (r *Repository) queueOnlineBulletinExtractionTx(ctx context.Context, tx *sql.Tx, issueID string, input onlinebulletins.QueueExtractionInput, actor string, now time.Time) (onlinebulletins.QueuedExtraction, error) {
+// An upload delivery carries the already persisted intent. Only a new publisher
+// command may create an epoch. Both callers have verified the current private PDF.
+func (r *Repository) queueOnlineBulletinExtractionTx(ctx context.Context, tx *sql.Tx, issueID string, input onlinebulletins.QueueExtractionInput, actor string, now time.Time, fromUpload bool) (onlinebulletins.QueuedExtraction, error) {
 	var result onlinebulletins.QueuedExtraction
 	var err error
 	var canonicalVersion int64
@@ -319,8 +321,13 @@ func (r *Repository) queueOnlineBulletinExtractionTx(ctx context.Context, tx *sq
 	if result.Version != input.OnlineVersion {
 		return result, bulletins.ErrPrecondition
 	}
-	if err = r.setAutomaticBulletinIntent(ctx, tx, issueID, "general", "zh-Hant", input.AutoPublish, input.NotifySubscribers, actor, now); err != nil {
+	if err = productAffected(tx.ExecContext(ctx, `UPDATE hhc_web.bulletin_version SET verified_pdf_asset_id=$2,pdf_sha256=$3 WHERE issue_id=$1 AND series='general' AND locale='zh-Hant' AND pdf_asset_id=$2 AND (verified_pdf_asset_id IS DISTINCT FROM $2 OR pdf_sha256=$3)`, issueID, input.SourceAssetID, input.SourceChecksum)); err != nil {
 		return result, err
+	}
+	if !fromUpload {
+		if err = r.setAutomaticBulletinIntent(ctx, tx, issueID, "general", "zh-Hant", input.AutoPublish, input.NotifySubscribers, actor, now); err != nil {
+			return result, err
+		}
 	}
 	if input.AutoPublish {
 		if err = cancelPendingSimplifiedRelease(ctx, tx, issueID, now); err != nil {
@@ -441,9 +448,6 @@ func (r *Repository) queueOnlineBulletinExtractionTx(ctx context.Context, tx *sq
 		return result, err
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE hhc_web.online_bulletin_extraction_job e SET publication_intent_id=v.online_intent_id,publication_intent_epoch=NULLIF(v.online_intent_epoch,0) FROM hhc_web.bulletin_version v WHERE e.id=$1 AND v.issue_id=e.issue_id AND v.series=e.series AND v.locale=e.content_locale`, result.Job.ID); err != nil {
-		return result, err
-	}
-	if _, err = tx.ExecContext(ctx, `UPDATE hhc_web.bulletin_version SET pdf_sha256=$2 WHERE issue_id=$1 AND series='general' AND locale='zh-Hant'`, issueID, input.SourceChecksum); err != nil {
 		return result, err
 	}
 	if !created {

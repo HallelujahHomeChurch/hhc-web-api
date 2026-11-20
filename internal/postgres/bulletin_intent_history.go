@@ -60,6 +60,11 @@ func (r *Repository) changeBulletinIntent(ctx context.Context, tx *sql.Tx, issue
 		if _, err = tx.ExecContext(ctx, `INSERT INTO hhc_web.online_bulletin_publication_intent(id,issue_id,series,locale,epoch,canonical_version,source_asset_id,source_checksum,actor_id,request_id,supersedes_id,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NULLIF($11,'')::uuid,$12)`, id, issue, series, locale, epoch, canonical, asset, checksum, actor, p.RequestID, oldID, now); err != nil {
 			return err
 		}
+		if r.explicitOnlinePublication && reason != "recovery_authorized" {
+			if _, err = tx.ExecContext(ctx, `INSERT INTO hhc_web.bulletin_independent_release(intent_id) VALUES($1)`, id); err != nil {
+				return err
+			}
+		}
 		if _, err = tx.ExecContext(ctx, `UPDATE hhc_web.bulletin_version SET online_intent_id=$4,online_intent_epoch=$5 WHERE issue_id=$1 AND series=$2 AND locale=$3`, issue, series, locale, id, epoch); err != nil {
 			return err
 		}

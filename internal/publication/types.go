@@ -21,6 +21,8 @@ type Event struct {
 }
 type PublishPayload struct {
 	WorkflowID        string `json:"workflowId"`
+	RequirePrivatePDF bool   `json:"requirePrivatePDF,omitempty"`
+	SourceChecksum    string `json:"sourceChecksum,omitempty"`
 	IssueID           string `json:"issueId"`
 	Series            string `json:"series,omitempty"`
 	Locale            string `json:"locale"`
@@ -137,7 +139,7 @@ type AssetClient interface {
 type Asset struct {
 	ID, Namespace, OwnerService, OwnerType, OwnerID, Locale, Purpose string
 	UploadStatus, ScanStatus, ProcessingStatus, DetectedMIMEType     string
-	ChecksumSHA256                                                   string
+	ChecksumSHA256, Visibility                                       string
 }
 type Grant struct{ ID string }
 

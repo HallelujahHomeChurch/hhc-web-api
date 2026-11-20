@@ -44,10 +44,10 @@ func (r *Repository) RecoverOnlineBulletinPublication(ctx context.Context, issue
 	var canonical int64
 	var asset, checksum string
 	var metadata onlinebulletins.CanonicalMetadata
-	var pdfPublished bool
+	var publishableSource bool
 	err = tx.QueryRowContext(ctx, `SELECT i.version,v.pdf_asset_id,COALESCE(v.pdf_sha256,''),v.title,v.subtitle,i.issue_number,i.issue_date::text,
- v.status='published' AND EXISTS(SELECT 1 FROM hhc_web.bulletin_published_version p WHERE p.issue_id=i.id AND p.series=v.series AND p.locale=v.locale AND p.asset_id=v.pdf_asset_id AND p.title=v.title AND p.subtitle=v.subtitle)
- FROM hhc_web.bulletin_issue i JOIN hhc_web.bulletin_version v ON v.issue_id=i.id AND v.series='general' AND v.locale='zh-Hant' WHERE i.id=$1 AND i.issue_number>=1739 FOR UPDATE OF i,v`, issue).Scan(&canonical, &asset, &checksum, &metadata.Title, &metadata.Subtitle, &metadata.IssueNumber, &metadata.Date, &pdfPublished)
+ (v.verified_pdf_asset_id=v.pdf_asset_id AND length(v.pdf_sha256)=64 AND v.status IN ('draft','publishing','published')) IS TRUE OR v.status='published' AND EXISTS(SELECT 1 FROM hhc_web.bulletin_published_version p WHERE p.issue_id=i.id AND p.series=v.series AND p.locale=v.locale AND p.asset_id=v.pdf_asset_id AND p.title=v.title AND p.subtitle=v.subtitle)
+ FROM hhc_web.bulletin_issue i JOIN hhc_web.bulletin_version v ON v.issue_id=i.id AND v.series='general' AND v.locale='zh-Hant' WHERE i.id=$1 AND i.issue_number>=1739 FOR UPDATE OF i,v`, issue).Scan(&canonical, &asset, &checksum, &metadata.Title, &metadata.Subtitle, &metadata.IssueNumber, &metadata.Date, &publishableSource)
 
 	if errors.Is(err, sql.ErrNoRows) {
 		return result, bulletins.ErrNotFound
@@ -98,7 +98,7 @@ func (r *Repository) RecoverOnlineBulletinPublication(ctx context.Context, issue
 	if canonical != input.CanonicalVersion || version != input.OnlineVersion || local.Int64 != input.Revision {
 		return result, bulletins.ErrPrecondition
 	}
-	if !pdfPublished {
+	if !publishableSource {
 		return result, recoveryBlocked("pdf_not_published")
 	}
 	if incoming.Valid {
@@ -160,15 +160,21 @@ func (r *Repository) RecoverOnlineBulletinPublication(ctx context.Context, issue
 		return result, recoveryBlocked("stale_metadata")
 	}
 	receiptID := platform.NewID()
-	// Supersede prior automatic intent before granting this exact synchronous act.
-	if err = r.changeBulletinIntent(ctx, tx, issue, "general", "zh-Hant", "superseded", "recovery_started", actor, now, receiptID); err != nil {
+	independent, err := markIndependentOnline(ctx, tx, issue, "general", "zh-Hant")
+	if err != nil {
 		return result, err
 	}
-	if err = r.cancelOnlineAutomaticIntent(ctx, tx, doc, now); err != nil {
-		return result, err
-	}
-	if err = r.changeBulletinIntent(ctx, tx, issue, "general", "zh-Hant", "authorized", "recovery_authorized", actor, now, receiptID); err != nil {
-		return result, err
+	if !independent {
+		// Legacy coupled work must be superseded before granting this synchronous act.
+		if err = r.changeBulletinIntent(ctx, tx, issue, "general", "zh-Hant", "superseded", "recovery_started", actor, now, receiptID); err != nil {
+			return result, err
+		}
+		if err = r.cancelOnlineAutomaticIntent(ctx, tx, doc, now); err != nil {
+			return result, err
+		}
+		if err = r.changeBulletinIntent(ctx, tx, issue, "general", "zh-Hant", "authorized", "recovery_authorized", actor, now, receiptID); err != nil {
+			return result, err
+		}
 	}
 	var confirmed onlinebulletins.ConfirmedRevision
 	var confirmation bool
@@ -199,7 +205,12 @@ func (r *Repository) RecoverOnlineBulletinPublication(ctx context.Context, issue
 		}
 		return result, err
 	}
-	if err = r.changeBulletinIntent(ctx, tx, issue, "general", "zh-Hant", "completed", "recovery_published", actor, now, receiptID); err != nil {
+	if independent {
+		err = r.finishIndependentRelease(ctx, tx, issue, actor, now)
+	} else {
+		err = r.changeBulletinIntent(ctx, tx, issue, "general", "zh-Hant", "completed", "recovery_published", actor, now, receiptID)
+	}
+	if err != nil {
 		return result, err
 	}
 	result = onlinebulletins.RecoveryResult{Receipt: onlinebulletins.RecoveryReceipt{ID: receiptID, OperationKey: key, DocumentID: doc, Revision: input.Revision, CanonicalVersion: canonical, OnlineVersion: input.OnlineVersion, LayoutValidationHash: proof, Outcome: "published", CreatedAt: now}, Publication: publication}

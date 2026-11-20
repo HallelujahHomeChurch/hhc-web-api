@@ -27,7 +27,7 @@ func (r *Repository) NextOnlineBulletinWork(ctx context.Context) (time.Time, err
  ) pending`
 	args := []any{}
 	if r.llmBulletinExtraction {
-		query = `SELECT min(ready_at) FROM (` + query + ` UNION ALL SELECT now()` + recognitionReleaseFrom + `) all_work(ready_at)`
+		query = `SELECT min(ready_at) FROM (` + query + ` UNION ALL SELECT now()` + recognitionReleaseFrom + ` UNION ALL SELECT now()` + independentPDFEligibility + `) all_work(ready_at)`
 		args = append(args, onlinebulletins.RecognitionExtractorVersion(), onlinebulletins.UpdateProtocolSHA256())
 	}
 	err := r.db.QueryRowContext(ctx, query, args...).Scan(&next)

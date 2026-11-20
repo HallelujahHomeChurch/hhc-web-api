@@ -21,6 +21,7 @@ func (a *AssetAdapter) Get(ctx context.Context, id string) (Asset, error) {
 		OwnerID:          value.OwnerID,
 		Locale:           value.Locale,
 		Purpose:          value.Purpose,
+		Visibility:       value.Visibility,
 		UploadStatus:     value.UploadStatus,
 		ScanStatus:       value.ScanStatus,
 		ProcessingStatus: value.ProcessingStatus,

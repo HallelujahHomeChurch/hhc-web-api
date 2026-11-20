@@ -85,7 +85,8 @@ func (r *Repository) loadBulletinProductStates(ctx context.Context, query bullet
  LEFT JOIN hhc_web.online_bulletin_update_job u ON u.extraction_job_id=e.id AND u.protocol_sha256=$3
  LEFT JOIN LATERAL(SELECT id,status,result_revision,last_error_code,review_issues FROM hhc_web.online_bulletin_layout_job WHERE document_id=d.id AND source_revision=u.result_revision ORDER BY created_at DESC,id DESC LIMIT 1) l ON true
  LEFT JOIN hhc_web.online_bulletin_revision lr ON lr.document_id=d.id AND lr.revision=l.result_revision
- LEFT JOIN hhc_web.publication_workflow w ON w.id=u.pdf_workflow_id
+ LEFT JOIN hhc_web.bulletin_independent_release b ON b.intent_id=v.online_intent_id
+ LEFT JOIN hhc_web.publication_workflow w ON w.id=COALESCE(b.pdf_workflow_id,u.pdf_workflow_id)
  LEFT JOIN hhc_web.bulletin_metadata_update mc ON mc.issue_id=i.id AND mc.issue_version=i.version AND mc.online_version=d.version
  LEFT JOIN hhc_web.online_bulletin_layout_job ml ON ml.id=mc.layout_job_id
  WHERE i.id=ANY($1::uuid[])`, issues, onlinebulletins.RecognitionExtractorVersion(), onlinebulletins.UpdateProtocolSHA256())
@@ -388,6 +389,22 @@ func (r *Repository) resumeBulletinPublication(ctx context.Context, tx *sql.Tx, 
 	if !state.automatic || state.stage == "" {
 		return bulletins.ErrConflict
 	}
+	// A retry transfers only this publisher's current edition to a fresh epoch.
+	// Fence a claimed PDF before replacing its authority.
+	var previous string
+	var onlineCompleted bool
+	err := tx.QueryRowContext(ctx, `SELECT b.intent_id::text,b.online_completed FROM hhc_web.bulletin_independent_release b JOIN hhc_web.bulletin_version v ON v.online_intent_id=b.intent_id WHERE v.issue_id=$1 AND v.series='general' AND v.locale='zh-Hant'`, issue).Scan(&previous, &onlineCompleted)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if previous != "" {
+		if err = cancelAutomaticPDFPublication(ctx, tx, issue, "general", "zh-Hant", now); err != nil {
+			return err
+		}
+		if err = tx.QueryRowContext(ctx, `SELECT version FROM hhc_web.bulletin_issue WHERE id=$1`, issue).Scan(&current); err != nil {
+			return err
+		}
+	}
 	// A publisher renews authority for the same current source, keeping completed
 	// recognition, semantic passes and measured layout proofs in their original rows.
 	withHistory := *r
@@ -395,14 +412,21 @@ func (r *Repository) resumeBulletinPublication(ctx context.Context, tx *sql.Tx, 
 	if err := withHistory.changeBulletinIntent(ctx, tx, issue, "general", "zh-Hant", "authorized", "recovery_authorized", actor, now, ""); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.bulletin_version SET auto_notify=false,auto_publish_request=$2 WHERE issue_id=$1 AND series='general' AND locale='zh-Hant' AND auto_publish`, issue, request); err != nil {
+	if previous != "" {
+		if _, err = tx.ExecContext(ctx, `INSERT INTO hhc_web.bulletin_independent_release(intent_id,online_completed) SELECT online_intent_id,$3 FROM hhc_web.bulletin_version WHERE issue_id=$1 AND series='general' AND locale='zh-Hant' AND online_intent_id<>$2::uuid`, issue, previous, onlineCompleted); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.bulletin_version SET auto_notify=auto_notify AND $3,auto_publish_request=$2 WHERE issue_id=$1 AND series='general' AND locale='zh-Hant' AND auto_publish`, issue, request, previous != ""); err != nil {
 		return err
 	}
 	if state.stage == "upload" {
 		return r.queueExistingBulletinSource(ctx, tx, issue, current, state.asset, actor, now)
 	}
-	if err := productAffected(tx.ExecContext(ctx, `UPDATE hhc_web.online_bulletin_extraction_job e SET authorizer_id=$2,authorizer_request_id=$3,publication_intent_id=v.online_intent_id,publication_intent_epoch=v.online_intent_epoch FROM hhc_web.bulletin_version v WHERE e.id=$1 AND NOT e.superseded AND e.auto_publish AND (e.issue_id,e.series,e.content_locale)=(v.issue_id,v.series,v.locale) AND v.pdf_asset_id=e.source_asset_id AND v.pdf_sha256=e.source_asset_checksum`, state.extraction, actor, request)); err != nil {
-		return err
+	if state.stage != "pdf" || state.extraction != "" {
+		if err := productAffected(tx.ExecContext(ctx, `UPDATE hhc_web.online_bulletin_extraction_job e SET authorizer_id=$2,authorizer_request_id=$3,publication_intent_id=v.online_intent_id,publication_intent_epoch=v.online_intent_epoch FROM hhc_web.bulletin_version v WHERE e.id=$1 AND NOT e.superseded AND e.auto_publish AND (e.issue_id,e.series,e.content_locale)=(v.issue_id,v.series,v.locale) AND v.pdf_asset_id=e.source_asset_id AND v.pdf_sha256=e.source_asset_checksum`, state.extraction, actor, request)); err != nil {
+			return err
+		}
 	}
 	switch state.stage {
 	case "extraction":
@@ -421,6 +445,13 @@ func (r *Repository) resumeBulletinPublication(ctx context.Context, tx *sql.Tx, 
 		}
 		return enqueueOnlineBulletinWake(ctx, tx, state.layout, now)
 	case "pdf":
+		if previous != "" {
+			scheduled, err := r.scheduleIndependentPDF(ctx, tx, issue, now)
+			if err == nil && !scheduled {
+				return bulletins.ErrConflict
+			}
+			return err
+		}
 		if err := productAffected(tx.ExecContext(ctx, `UPDATE hhc_web.online_bulletin_update_job u SET pdf_workflow_id=NULL,updated_at=$2 FROM hhc_web.publication_workflow w WHERE u.id=$1 AND u.pdf_workflow_id=w.id AND w.status='failed'`, state.update, now)); err != nil {
 			return err
 		}

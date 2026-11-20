@@ -29,6 +29,15 @@ func (r *Repository) setAutomaticBulletinIntentReason(ctx context.Context, tx *s
 	} else if enabled {
 		return bulletins.ErrAuditUnavailable
 	}
+	if enabled && request != "" {
+		var replay bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM hhc_web.bulletin_version v JOIN hhc_web.online_bulletin_publication_intent h ON h.id=v.online_intent_id JOIN hhc_web.bulletin_independent_release b ON b.intent_id=h.id WHERE v.issue_id=$1 AND v.series=$2 AND v.locale=$3 AND v.auto_publish AND v.auto_notify=$5 AND v.auto_publish_request=$4 AND h.actor_id=$6 AND h.request_id=$4 AND h.source_asset_id=v.pdf_asset_id AND (SELECT status IN('authorized','running') FROM hhc_web.online_bulletin_intent_transition WHERE intent_id=h.id ORDER BY sequence DESC LIMIT 1))`, issue, series, locale, request, notify, actor).Scan(&replay); err != nil {
+			return err
+		}
+		if replay {
+			return nil
+		}
+	}
 	status := "cancelled"
 	if enabled {
 		status = "authorized"
@@ -83,10 +92,9 @@ func (r *Repository) cancelOnlineAutomaticIntent(ctx context.Context, tx *sql.Tx
 // projections and independently requested PDF workflows retain their authority.
 func cancelAutomaticPDFPublication(ctx context.Context, tx *sql.Tx, issue, series, locale string, now time.Time) error {
 	rows, err := tx.QueryContext(ctx, `UPDATE hhc_web.publication_workflow w SET status='cancelled',error_code='AUTOMATIC_RELEASE_CANCELLED',error_detail='automatic_release_cancelled',updated_at=$4
- FROM hhc_web.online_bulletin_update_job u JOIN hhc_web.online_bulletin_document d ON d.id=u.document_id
- JOIN hhc_web.bulletin_issue i ON i.id=d.issue_id
- JOIN hhc_web.bulletin_version v ON v.issue_id=i.id AND v.series=d.series AND v.locale=d.content_locale
- WHERE u.pdf_workflow_id=w.id AND d.issue_id=$1 AND d.series=$2 AND d.content_locale=$3
+ FROM hhc_web.bulletin_issue i JOIN hhc_web.bulletin_version v ON v.issue_id=i.id
+ WHERE (EXISTS(SELECT 1 FROM hhc_web.online_bulletin_update_job u WHERE u.pdf_workflow_id=w.id) OR EXISTS(SELECT 1 FROM hhc_web.bulletin_independent_release b WHERE b.pdf_workflow_id=w.id))
+ AND w.resource_id=i.id AND w.series=v.series AND w.locale=v.locale AND i.id=$1 AND v.series=$2 AND v.locale=$3
  AND w.workflow_type='bulletin_publish' AND w.aggregate_version=i.version AND i.status='publishing' AND v.status='publishing' AND w.status NOT IN ('completed','failed','cancelled') RETURNING w.id::text`, issue, series, locale, now)
 	if err != nil {
 		return err
