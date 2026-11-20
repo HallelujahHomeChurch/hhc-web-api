@@ -474,3 +474,32 @@ func TestBroadcastProjectionPollDiscardsChangedAuthority(t *testing.T) {
 		})
 	}
 }
+
+func TestBroadcastReconciliationKeepsArrivalAndPublicationClocks(t *testing.T) {
+	repo, now, _ := pendingBroadcastCaptureFixture()
+	repo.broadcast.SourceManaged = false
+	repo.broadcast.View.Boundaries.StartSequence = nil
+	repo.broadcast.RangePending = false
+	repo.broadcast.MemberState = "blocked"
+	repo.broadcast.View.Phase = "preview"
+	repo.broadcast.View.Policy.AutoStart = false
+	repo.capture.Status.State = "validating"
+	repo.capture.Status.StopAcceptedAt = &now
+	arrived := now.Add(-time.Second)
+	published := now.Add(-time.Minute)
+	repo.broadcast.View.Health.LastConfirmedAt = &arrived
+	repo.capture.Status.Progress = assetclient.RecordingLiveProgress{LastSequence: 114, Revision: 115, LastAdvancedAt: &published, MediaEndSeconds: 1150}
+	svc := NewService(repo, "", nil, func() time.Time { return now })
+	if err := svc.ReconcileBroadcasts(context.Background(), 1); err != nil {
+		t.Fatal(err)
+	}
+	h := repo.broadcast.View.Health
+	if h.LastConfirmedAt == nil || !h.LastConfirmedAt.Equal(arrived) || h.LastPublishedAt == nil || !h.LastPublishedAt.Equal(published) {
+		t.Fatalf("independent clocks changed: %+v", h)
+	}
+	h.observeConfirmed(nil)
+	h.observeConfirmed(&published)
+	if !h.LastConfirmedAt.Equal(arrived) {
+		t.Fatal("stale observation regressed the arrival clock")
+	}
+}

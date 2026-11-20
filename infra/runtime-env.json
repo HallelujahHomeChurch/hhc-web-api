@@ -1,6 +1,9 @@
 {
   "resources": {
     "hhc-web-api": {
+      "STUDIO_DIRECT_HANDOFF_ENABLED": {
+        "value": "false"
+      },
       "BULLETIN_LLM_EXTRACTION_ENABLED": {
         "value": "true"
       },

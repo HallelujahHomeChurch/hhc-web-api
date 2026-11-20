@@ -27,6 +27,9 @@ func broadcastError(w http.ResponseWriter, e error) {
 		status, code = 409, "broadcast_output_capacity_exhausted"
 	case errors.Is(e, recordings.ErrBroadcastOutputTerminal):
 		status, code = 409, "broadcast_output_terminal"
+	case errors.Is(e, recordings.ErrStudioUpdateRequired):
+		writeError(w, 409, "broadcast_studio_update_required", recordings.ErrStudioUpdateRequired.Error())
+		return
 	case errors.Is(e, recordings.ErrBroadcastSourceBusy):
 		status, code = 409, "broadcast_source_busy"
 	case errors.Is(e, recordings.ErrBroadcastSourceNotPrepared):
@@ -525,7 +528,7 @@ func broadcastDecode(w http.ResponseWriter, r *http.Request, destination any, li
 		required = []string{"operationKey", "expectedRevision", "protocolVersion"}
 	case *recordings.BroadcastBindInput:
 		required = []string{"operationKey", "expectedRevision", "protocolVersion"}
-	case *recordings.BroadcastMutationInput:
+	case *recordings.BroadcastMutationInput, *recordings.DirectPrepareInput:
 		required = []string{"operationKey", "expectedRevision"}
 	case *recordings.BroadcastEmergencyCloseInput:
 		required = []string{"operationKey", "expectedRevision", "reason"}

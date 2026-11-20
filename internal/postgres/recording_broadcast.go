@@ -378,6 +378,7 @@ func (r *RecordingRepository) reserveBroadcastBinding(ctx context.Context, tx *s
 		return b, empty, recordings.ErrForbidden
 	}
 	b.Epoch++
+	b.View.Health = recordings.BroadcastHealth{State: "waiting"}
 	b.Recovery = recordings.BroadcastRecovery{State: "unsupported"}
 	b.PublicEnd = nil
 	b.Revoked = false

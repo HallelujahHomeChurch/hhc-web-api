@@ -51,6 +51,7 @@ type Config struct {
 	BroadcastWritersEnabled                                bool
 	RecordingVODRepublishEnabled                           bool
 	StudioWritersEnabled                                   bool
+	StudioDirectHandoffEnabled                             bool
 	MemberLegalEnforcementEnabled                          bool
 	Port                                                   string
 	DatabaseURL                                            string
@@ -175,6 +176,7 @@ func load(worker bool) (Config, error) {
 		RecordingLifecycleReconcileEnabled: strings.EqualFold(strings.TrimSpace(os.Getenv("RECORDING_LIFECYCLE_RECONCILE_ENABLED")), "true"),
 		VideoInteractionsEnabled:           strings.EqualFold(strings.TrimSpace(os.Getenv("VIDEO_INTERACTIONS_ENABLED")), "true"),
 		VideoAnalyticsEnabled:              strings.EqualFold(strings.TrimSpace(os.Getenv("VIDEO_ANALYTICS_ENABLED")), "true"),
+		StudioDirectHandoffEnabled:         strings.EqualFold(strings.TrimSpace(os.Getenv("STUDIO_DIRECT_HANDOFF_ENABLED")), "true"),
 		StudioWritersEnabled:               strings.EqualFold(strings.TrimSpace(os.Getenv("STUDIO_WRITERS_ENABLED")), "true"),
 		BroadcastWritersEnabled:            strings.EqualFold(strings.TrimSpace(os.Getenv("BROADCAST_WRITERS_ENABLED")), "true"),
 		MemberLegalEnforcementEnabled:      strings.EqualFold(strings.TrimSpace(os.Getenv("MEMBER_LEGAL_ENFORCEMENT_ENABLED")), "true"),

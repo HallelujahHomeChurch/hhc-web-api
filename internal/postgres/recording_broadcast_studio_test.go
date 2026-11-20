@@ -29,7 +29,7 @@ func TestStudioNamedSourcesCannotClaimEachOthersDraft(t *testing.T) {
 	}
 	a := create("A", "hhc_stream_"+strings.Repeat("A", 43))
 	b := create("B", "hhc_stream_"+strings.Repeat("B", 42)+"A")
-	direct, e := repo.EnsureDirectBroadcast(ctx, a.ID, actor, recordings.BroadcastMutationInput{OperationKey: "direct", ExpectedRevision: a.Revision}, now)
+	direct, e := repo.EnsureDirectBroadcast(ctx, a.ID, actor, recordings.DirectPrepareInput{OperationKey: "direct", ExpectedRevision: a.Revision}, now)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -96,7 +96,7 @@ func TestStudioScheduleDoesNotReserveInput(t *testing.T) {
 	if scheduled.Broadcast.Policy.AutoStart || !scheduled.Broadcast.Policy.AutoEnd || !scheduled.Broadcast.Policy.AutoPublish || scheduled.Broadcast.Announced {
 		t.Fatal("unexpected scheduled policy")
 	}
-	direct, e := repo.EnsureDirectBroadcast(ctx, source, actor, recordings.BroadcastMutationInput{OperationKey: "direct", ExpectedRevision: 2}, now)
+	direct, e := repo.EnsureDirectBroadcast(ctx, source, actor, recordings.DirectPrepareInput{OperationKey: "direct", ExpectedRevision: 2}, now)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -115,7 +115,7 @@ func TestStudioCustomCoverHasIndependentSourceAndEventReferences(t *testing.T) {
 	}
 	var source string
 	repo.db.QueryRow(`SELECT id::text FROM hhc_web.member_recording_broadcast_source WHERE singleton`).Scan(&source)
-	first, e := repo.EnsureDirectBroadcast(ctx, source, actor, recordings.BroadcastMutationInput{OperationKey: "first", ExpectedRevision: 2}, now)
+	first, e := repo.EnsureDirectBroadcast(ctx, source, actor, recordings.DirectPrepareInput{OperationKey: "first", ExpectedRevision: 2}, now)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -142,7 +142,7 @@ func TestStudioCustomCoverHasIndependentSourceAndEventReferences(t *testing.T) {
 	if _, e = repo.db.Exec(`UPDATE hhc_web.member_recording SET deleted_at=$2 WHERE id=$1`, first.View.RecordingID, now); e != nil {
 		t.Fatal(e)
 	}
-	next, e := repo.EnsureDirectBroadcast(ctx, source, actor, recordings.BroadcastMutationInput{OperationKey: "next", ExpectedRevision: 3}, now)
+	next, e := repo.EnsureDirectBroadcast(ctx, source, actor, recordings.DirectPrepareInput{OperationKey: "next", ExpectedRevision: 3, PrepareNext: true}, now)
 	if e != nil {
 		t.Fatal(e)
 	}

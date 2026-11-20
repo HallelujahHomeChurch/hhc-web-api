@@ -18,17 +18,23 @@ import (
 )
 
 type RecordingRepository struct {
-	vodRepublishEnabled bool
-	db                  *sql.DB
-	auditOutbox         *AuditOutbox
-	transactionMu       sync.Mutex
-	transactions        int
-	subjectWaiters      int
-	subjectTransactions int
-	transactionWake     chan struct{}
+	vodRepublishEnabled  bool
+	directHandoffEnabled bool
+	db                   *sql.DB
+	auditOutbox          *AuditOutbox
+	transactionMu        sync.Mutex
+	transactions         int
+	subjectWaiters       int
+	subjectTransactions  int
+	transactionWake      chan struct{}
 }
 
 func NewRecordingRepository(db *sql.DB) *RecordingRepository { return &RecordingRepository{db: db} }
+func (r *RecordingRepository) WithDirectHandoff(enabled bool) *RecordingRepository {
+	r.directHandoffEnabled = enabled
+	return r
+}
+
 func (r *RecordingRepository) WithVODRepublish(enabled bool) *RecordingRepository {
 	r.vodRepublishEnabled = enabled
 	return r

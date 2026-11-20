@@ -9514,6 +9514,7 @@ paths:
     post:
       operationId: ensureStudioDirect
       summary: Ensure the current direct event
+      description: A new request without prepareNext returns 409 broadcast_studio_update_required if the previous direct input has stopped and no new direct event is available.
       tags: [Admin]
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]
@@ -9535,7 +9536,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/BroadcastMutationInput'
+              $ref: '#/components/schemas/DirectPrepareInput'
       responses:
         '200':
           description: Operation result
@@ -10975,6 +10976,27 @@ components:
           maxLength: 100
         directEnabled:
           type: boolean
+        directRecordingId:
+          description: Current non-deleted direct event for this source, independently of its scheduled target.
+          anyOf:
+          - {type: string, format: uuid}
+          - {type: 'null'}
+        directInputReleased:
+          type: boolean
+          description: The indicated direct event has matching final stop and seal receipts and no longer holds input.
+        directHandoffEnabled:
+          type: boolean
+          description: The server allows an explicit handoff before media publication finishes.
+    DirectPrepareInput:
+      type: object
+      additionalProperties: false
+      required: [operationKey, expectedRevision]
+      properties:
+        operationKey: {type: string, pattern: '^[a-zA-Z0-9._:-]{1,128}$'}
+        expectedRevision: {type: integer, minimum: 1, maximum: 9007199254740991}
+        prepareNext:
+          type: boolean
+          description: Explicit user intent to prepare the next direct event. An early handoff requires the feature and matching stop and seal receipts.
     StudioSourceAssignment:
       type: object
       additionalProperties: false

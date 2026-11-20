@@ -81,6 +81,13 @@ type BroadcastArchive struct {
 	State  string  `json:"state"`
 	Reason *string `json:"reason"`
 }
+
+func (h *BroadcastHealth) observeConfirmed(at *time.Time) {
+	if at != nil && (h.LastConfirmedAt == nil || at.After(*h.LastConfirmedAt)) {
+		h.LastConfirmedAt = at
+	}
+}
+
 type BroadcastView struct {
 	RecordingID    string              `json:"recordingId"`
 	Revision       int64               `json:"revision"`
@@ -833,17 +840,19 @@ func (s *Service) ReconcileBroadcasts(ctx context.Context, limit int) error {
 			}
 			prepareBroadcastPolicy(b, r, s.now())
 			c.Status.LiveEnabled = !b.Revoked && (b.MemberState == "live" || b.MemberState == "vod")
-			b.View.Health = BroadcastHealth{State: "waiting"}
+			b.View.Health = BroadcastHealth{State: "waiting", LastConfirmedAt: b.View.Health.LastConfirmedAt}
 			if c.Status.Progress.LastSequence >= 0 {
 				state := "healthy"
 				if c.Status.StopAcceptedAt != nil || c.Status.Progress.LastAdvancedAt == nil || s.now().Sub(*c.Status.Progress.LastAdvancedAt) > 90*time.Second {
 					state = "interrupted"
 				}
 				seconds := c.Status.Progress.MediaEndSeconds
-				b.View.Health = BroadcastHealth{State: state, LastPublishedAt: c.Status.Progress.LastAdvancedAt, VerifiedEndSeconds: &seconds}
+				b.View.Health.State = state
+				b.View.Health.LastPublishedAt = c.Status.Progress.LastAdvancedAt
+				b.View.Health.VerifiedEndSeconds = &seconds
 			}
 			if arrival != nil {
-				b.View.Health.LastConfirmedAt = arrival.LastMediaConfirmedAt
+				b.View.Health.observeConfirmed(arrival.LastMediaConfirmedAt)
 				if c.Status.StopAcceptedAt == nil && arrival.State != "ended" {
 					b.View.Health.State = arrival.State
 				}
@@ -851,10 +860,8 @@ func (s *Service) ReconcileBroadcasts(ctx context.Context, limit int) error {
 					reason := "signal_grace"
 					b.View.Health.Reason = &reason
 				}
-				// Health transitions must survive client revision fencing too.
-				changed = changed || captureDigest(b.View) != beforeView
 			}
-			if changed && captureDigest(b.View) != beforeView {
+			if captureDigest(b.View) != beforeView {
 				b.View.Revision++
 			}
 			return nil

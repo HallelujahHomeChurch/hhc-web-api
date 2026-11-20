@@ -12,7 +12,10 @@ type StudioSource struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 	BroadcastSource
-	DirectEnabled bool `json:"directEnabled"`
+	DirectEnabled        bool    `json:"directEnabled"`
+	DirectRecordingID    *string `json:"directRecordingId"`
+	DirectInputReleased  bool    `json:"directInputReleased"`
+	DirectHandoffEnabled bool    `json:"directHandoffEnabled"`
 }
 type StudioSourceInput struct {
 	SealedKey SealedStreamKey `json:"-"`
