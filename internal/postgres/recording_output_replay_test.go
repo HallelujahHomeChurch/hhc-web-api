@@ -27,7 +27,7 @@ func outputReplayFixture(t *testing.T, profile string) (*RecordingRepository, *r
 	if err := repo.db.QueryRow(`SELECT id::text FROM hhc_web.member_recording_broadcast_source WHERE singleton`).Scan(&source); err != nil {
 		t.Fatal(err)
 	}
-	direct, err := repo.EnsureDirectBroadcast(ctx, source, actor, recordings.BroadcastMutationInput{OperationKey: "direct", ExpectedRevision: 2}, now)
+	direct, err := repo.EnsureDirectBroadcast(ctx, source, actor, recordings.DirectPrepareInput{OperationKey: "direct", ExpectedRevision: 2}, now)
 	if err != nil {
 		t.Fatal(err)
 	}

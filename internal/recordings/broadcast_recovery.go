@@ -120,7 +120,7 @@ func (s *Service) GetBroadcastControlD2(ctx context.Context, id, actor, capture 
 				if current.Recovery.State == "healthy" && signal.EndSequenceExclusive == nil {
 					current.View.Health.State = "healthy"
 					current.View.Health.Reason = nil
-					current.View.Health.LastConfirmedAt = signal.LastMediaConfirmedAt
+					current.View.Health.observeConfirmed(signal.LastMediaConfirmedAt)
 					current.View.Revision++
 				}
 				return nil

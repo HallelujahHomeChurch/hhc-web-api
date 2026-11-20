@@ -41,7 +41,7 @@ func (h *Handler) adminStudioDirect(w http.ResponseWriter, r *http.Request) {
 	if !h.broadcastRequest(w, r, false) {
 		return
 	}
-	var in recordings.BroadcastMutationInput
+	var in recordings.DirectPrepareInput
 	if !broadcastDecode(w, r, &in, 4<<10) {
 		return
 	}

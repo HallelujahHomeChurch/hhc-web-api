@@ -67,12 +67,22 @@ type BroadcastOutputReservation struct {
 
 var ErrBroadcastOutputCapacity = errors.New("broadcast output capacity exhausted")
 
+var ErrStudioUpdateRequired = errors.New("reload Studio to explicitly prepare the next direct broadcast")
+
 var ErrBroadcastOutputTerminal = errors.New("broadcast output terminal")
+
+// DirectPrepareInput is specific to Studio. Existing operation digests are unchanged
+// when the optional explicit handoff intent is absent.
+type DirectPrepareInput struct {
+	OperationKey     string `json:"operationKey"`
+	ExpectedRevision int64  `json:"expectedRevision"`
+	PrepareNext      bool   `json:"prepareNext,omitempty"`
+}
 
 type BroadcastOutputRepository interface {
 	BroadcastOutputOwner(context.Context, string, string) (string, error)
 	PrepareBroadcastOutput(context.Context, string, string, string, bool, time.Time, ...BroadcastOutputOptions) (BroadcastOutputReservation, error)
-	EnsureDirectBroadcast(context.Context, string, string, BroadcastMutationInput, time.Time) (Broadcast, error)
+	EnsureDirectBroadcast(context.Context, string, string, DirectPrepareInput, time.Time) (Broadcast, error)
 }
 
 func (s *Service) OpenBroadcastOutput(ctx context.Context, requestID string, in BroadcastOutputOpenInput) (BroadcastOutputOpened, error) {
@@ -139,7 +149,7 @@ func (s *Service) OpenBroadcastOutput(ctx context.Context, requestID string, in 
 	return out, err
 }
 func (s *Service) WithStudioWriters(enabled bool) *Service { s.studioWriters = enabled; return s }
-func (s *Service) EnsureDirectBroadcast(ctx context.Context, source, actor string, in BroadcastMutationInput) (BroadcastView, error) {
+func (s *Service) EnsureDirectBroadcast(ctx context.Context, source, actor string, in DirectPrepareInput) (BroadcastView, error) {
 	if !s.studioWriters || !s.broadcastWriters {
 		return BroadcastView{}, assetclient.ErrUnavailable
 	}

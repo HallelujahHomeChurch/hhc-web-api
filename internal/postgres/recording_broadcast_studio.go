@@ -12,24 +12,50 @@ import (
 const studioSourceColumns = `s.id::text,s.name,s.revision,s.key_hash<>'',s.suffix,s.target_recording_id::text,s.direct_actor_id IS NOT NULL,
  EXISTS(SELECT 1 FROM hhc_web.member_recording_capture c JOIN hhc_web.member_recording_broadcast b ON b.recording_id=c.recording_id WHERE b.source_id=s.id AND c.input_active)`
 
-func scanStudioSource(row interface{ Scan(...any) error }) (recordings.StudioSource, error) {
+// This query serves both the read-only source snapshot and admission under the
+// source transaction. Match the current direct binding, never a scheduled target.
+const directSourceSnapshot = `SELECT r.id::text AS recording_id,
+ CASE WHEN c.id IS NOT NULL AND NOT c.input_active
+    AND c.payload_json->>'NormalEnd'='true'
+    AND c.payload_json->'Status'->>'stopAcceptedAt' IS NOT NULL
+    AND c.payload_json->'Status'->>'state' IN ('freezing','validating','ready')
+    AND jsonb_typeof(c.payload_json->'Operations')='object'
+    AND jsonb_typeof(c.payload_json->'SealedEndSequence')='number'
+    AND c.payload_json->'SealedEndSequence'>'0'::jsonb
+ THEN (SELECT count(DISTINCT op.value->>'Operation')=2 FROM jsonb_each(c.payload_json->'Operations') op
+        WHERE op.value->>'Operation' IN ('stop','seal') AND op.value->>'Pending'='false'
+        AND op.value->'Receipt'->>'operation'=op.value->>'Operation'
+        AND op.value->'Receipt'->>'operationKey'=op.key AND op.value->'Receipt'->>'acceptedAt' IS NOT NULL
+        AND op.value->'Receipt'->>'captureId'=c.capture_id)
+ ELSE false END AS released
+ FROM hhc_web.member_recording r
+ JOIN hhc_web.member_recording_broadcast b ON b.recording_id=r.id AND b.source_id=s.id AND b.studio_mode='direct'
+ LEFT JOIN hhc_web.member_recording_capture c ON c.recording_id=r.id AND c.id::text=b.payload_json->>'CaptureIntentID'
+   AND c.broadcast_epoch::text=b.payload_json->>'Epoch'
+ WHERE r.id=s.direct_recording_id AND r.deleted_at IS NULL`
+
+const studioSourceSelect = `SELECT ` + studioSourceColumns + `,direct.recording_id,COALESCE(direct.released,false)
+ FROM hhc_web.member_recording_broadcast_source s LEFT JOIN LATERAL (` + directSourceSnapshot + `) direct ON true`
+
+func (r *RecordingRepository) scanStudioSource(row interface{ Scan(...any) error }) (recordings.StudioSource, error) {
 	var s recordings.StudioSource
-	e := row.Scan(&s.ID, &s.Name, &s.Revision, &s.Configured, &s.Suffix, &s.TargetRecordingID, &s.DirectEnabled, &s.InputBusy)
+	e := row.Scan(&s.ID, &s.Name, &s.Revision, &s.Configured, &s.Suffix, &s.TargetRecordingID, &s.DirectEnabled, &s.InputBusy, &s.DirectRecordingID, &s.DirectInputReleased)
 	if errors.Is(e, sql.ErrNoRows) {
 		e = recordings.ErrNotFound
 	}
+	s.DirectHandoffEnabled = r.directHandoffEnabled
 	s.CanRotate = !s.InputBusy
 	return s, e
 }
 func (r *RecordingRepository) ListStudioSources(ctx context.Context) ([]recordings.StudioSource, error) {
-	rows, e := r.db.QueryContext(ctx, `SELECT `+studioSourceColumns+` FROM hhc_web.member_recording_broadcast_source s WHERE deleted_at IS NULL ORDER BY created_at,id`)
+	rows, e := r.db.QueryContext(ctx, studioSourceSelect+` WHERE s.deleted_at IS NULL ORDER BY s.created_at,s.id`)
 	if e != nil {
 		return nil, e
 	}
 	defer rows.Close()
 	out := []recordings.StudioSource{}
 	for rows.Next() {
-		s, e := scanStudioSource(rows)
+		s, e := r.scanStudioSource(rows)
 		if e != nil {
 			return nil, e
 		}
@@ -57,7 +83,7 @@ func (r *RecordingRepository) MutateStudioSource(ctx context.Context, id, actor,
 		if oldActor != actor || oldDigest != digest {
 			return empty, recordings.ErrBroadcastOperation
 		}
-		s, e := scanStudioSource(tx.QueryRowContext(ctx, `SELECT `+studioSourceColumns+` FROM hhc_web.member_recording_broadcast_source s WHERE id=$1`, oldID))
+		s, e := r.scanStudioSource(tx.QueryRowContext(ctx, studioSourceSelect+` WHERE id=$1`, oldID))
 		if e != nil {
 			return empty, e
 		}
@@ -70,7 +96,7 @@ func (r *RecordingRepository) MutateStudioSource(ctx context.Context, id, actor,
 		id = platform.NewID()
 		_, e = tx.ExecContext(ctx, `INSERT INTO hhc_web.member_recording_broadcast_source(id,singleton,name,key_hash,suffix,created_at,key_ciphertext,key_encryption_id) VALUES($1,NULL,$2,$3,$4,$5,$6,$7)`, id, in.Name, hash, suffix, now, sealed.Ciphertext, sealed.KeyID)
 	} else {
-		current, err := scanStudioSource(tx.QueryRowContext(ctx, `SELECT `+studioSourceColumns+` FROM hhc_web.member_recording_broadcast_source s WHERE id=$1 AND deleted_at IS NULL FOR UPDATE OF s`, id))
+		current, err := r.scanStudioSource(tx.QueryRowContext(ctx, studioSourceSelect+` WHERE id=$1 AND deleted_at IS NULL FOR UPDATE OF s`, id))
 		if err != nil {
 			return empty, err
 		}
@@ -106,7 +132,7 @@ func (r *RecordingRepository) MutateStudioSource(ctx context.Context, id, actor,
 	if e != nil {
 		return empty, e
 	}
-	s, e := scanStudioSource(tx.QueryRowContext(ctx, `SELECT `+studioSourceColumns+` FROM hhc_web.member_recording_broadcast_source s WHERE id=$1`, id))
+	s, e := r.scanStudioSource(tx.QueryRowContext(ctx, studioSourceSelect+` WHERE id=$1`, id))
 	if e != nil {
 		return empty, e
 	}

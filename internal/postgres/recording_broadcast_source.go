@@ -30,29 +30,32 @@ func readBroadcastSourceID(ctx context.Context, tx *sql.Tx, id string) (broadcas
 	s.CanRotate = !s.InputBusy
 	return s, e
 }
-func (r *RecordingRepository) sourceTransaction(ctx context.Context) (*sql.Tx, func(), error) {
+
+const stalePreparedSource = `(
+ EXISTS(SELECT 1 FROM hhc_web.member_recording_broadcast b WHERE b.recording_id=s.target_recording_id AND (b.payload_json->>'Revoked'='true' OR b.payload_json->'View'->>'phase' IN ('cancelled','failed')) AND NOT EXISTS(SELECT 1 FROM hhc_web.member_recording_capture c WHERE c.recording_id=b.recording_id AND c.input_active))
+ OR target_recording_id IS NULL OR EXISTS(SELECT 1 FROM hhc_web.member_recording r WHERE r.id=s.target_recording_id AND r.deleted_at IS NOT NULL)
+ OR EXISTS(SELECT 1 FROM hhc_web.member_recording_capture c JOIN hhc_web.member_recording_broadcast b ON b.recording_id=c.recording_id AND b.payload_json->>'CaptureIntentID'=c.id::text WHERE c.recording_id=s.target_recording_id AND NOT c.input_active))`
+
+func (r *RecordingRepository) lockSourceTransaction(ctx context.Context) (*sql.Tx, func(), error) {
 	tx, finishTx, e := r.beginRecordingTransaction(ctx)
 	if e != nil {
 		return nil, nil, e
 	}
-	transferred := false
-	defer func() {
-		if !transferred {
-			finishTx()
-		}
-	}()
 	if _, e = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('recording-capture-single-input',0))`); e != nil {
 		finishTx()
 		return nil, nil, e
 	}
-	if _, e = tx.ExecContext(ctx, `UPDATE hhc_web.member_recording_broadcast_source s SET prepared=false,revision=revision+1 WHERE prepared AND (
- EXISTS(SELECT 1 FROM hhc_web.member_recording_broadcast b WHERE b.recording_id=s.target_recording_id AND (b.payload_json->>'Revoked'='true' OR b.payload_json->'View'->>'phase' IN ('cancelled','failed')) AND NOT EXISTS(SELECT 1 FROM hhc_web.member_recording_capture c WHERE c.recording_id=b.recording_id AND c.input_active))
- OR target_recording_id IS NULL OR EXISTS(SELECT 1 FROM hhc_web.member_recording r WHERE r.id=s.target_recording_id AND r.deleted_at IS NOT NULL)
- OR EXISTS(SELECT 1 FROM hhc_web.member_recording_capture c JOIN hhc_web.member_recording_broadcast b ON b.recording_id=c.recording_id AND b.payload_json->>'CaptureIntentID'=c.id::text WHERE c.recording_id=s.target_recording_id AND NOT c.input_active))`); e != nil {
+	return tx, finishTx, nil
+}
+func (r *RecordingRepository) sourceTransaction(ctx context.Context) (*sql.Tx, func(), error) {
+	tx, finishTx, e := r.lockSourceTransaction(ctx)
+	if e != nil {
+		return nil, nil, e
+	}
+	if _, e = tx.ExecContext(ctx, `UPDATE hhc_web.member_recording_broadcast_source s SET prepared=false,revision=revision+1 WHERE prepared AND `+stalePreparedSource); e != nil {
 		finishTx()
 		return nil, nil, e
 	}
-	transferred = true
 	return tx, finishTx, nil
 }
 

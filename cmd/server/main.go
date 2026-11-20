@@ -143,7 +143,7 @@ func run() error {
 	var recordingService *recordings.Service
 	if cfg.MediaBaseURL != "" {
 		key, _ := hex.DecodeString(cfg.MediaWatermarkKeyHex)
-		recordingRepo := postgres.NewRecordingRepository(db).WithAudit(auditOutbox).WithVODRepublish(cfg.RecordingVODRepublishEnabled)
+		recordingRepo := postgres.NewRecordingRepository(db).WithAudit(auditOutbox).WithVODRepublish(cfg.RecordingVODRepublishEnabled).WithDirectHandoff(cfg.StudioDirectHandoffEnabled)
 		recordingService = recordings.NewService(recordingRepo, cfg.MediaBaseURL, key, time.Now).WithPackages(assetClient).WithPublicationAuthorizer(accountClient).WithWatermarkTrace(cfg.RecordingWatermarkTraceEnabled).WithBroadcastWriters(cfg.BroadcastWritersEnabled).WithStudioWriters(cfg.StudioWritersEnabled).WithVideoInteractions(cfg.VideoInteractionsEnabled).WithVideoAnalytics(cfg.VideoAnalyticsEnabled)
 
 		if cfg.StreamKeyEncryptionID != "" {

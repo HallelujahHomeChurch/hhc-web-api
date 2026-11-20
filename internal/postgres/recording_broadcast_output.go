@@ -20,7 +20,7 @@ type studioSource struct {
 
 func readStudioSource(ctx context.Context, tx *sql.Tx, id, hash string) (studioSource, error) {
 	var s studioSource
-	err := tx.QueryRowContext(ctx, `SELECT id::text,key_hash,COALESCE(direct_actor_id::text,''),key_generation,revision,target_recording_id::text,direct_recording_id::text,prepared FROM hhc_web.member_recording_broadcast_source WHERE deleted_at IS NULL AND (($1<>'' AND id::text=$1) OR ($1='' AND key_hash=$2 AND key_hash<>'')) FOR UPDATE`, id, hash).Scan(&s.id, &s.hash, &s.actor, &s.generation, &s.revision, &s.target, &s.direct, &s.prepared)
+	err := tx.QueryRowContext(ctx, `SELECT id::text,key_hash,COALESCE(direct_actor_id::text,''),key_generation,revision,target_recording_id::text,direct_recording_id::text,prepared AND NOT `+stalePreparedSource+` FROM hhc_web.member_recording_broadcast_source s WHERE deleted_at IS NULL AND (($1<>'' AND id::text=$1) OR ($1='' AND key_hash=$2 AND key_hash<>'')) FOR UPDATE`, id, hash).Scan(&s.id, &s.hash, &s.actor, &s.generation, &s.revision, &s.target, &s.direct, &s.prepared)
 	if errors.Is(err, sql.ErrNoRows) {
 		if id == "" {
 			err = recordings.ErrBroadcastStreamKey
@@ -30,8 +30,9 @@ func readStudioSource(ctx context.Context, tx *sql.Tx, id, hash string) (studioS
 	}
 	return s, err
 }
-func (r *RecordingRepository) EnsureDirectBroadcast(ctx context.Context, source, actor string, in recordings.BroadcastMutationInput, now time.Time) (recordings.Broadcast, error) {
-	tx, finishTx, err := r.sourceTransaction(ctx)
+func (r *RecordingRepository) EnsureDirectBroadcast(ctx context.Context, source, actor string, in recordings.DirectPrepareInput, now time.Time) (recordings.Broadcast, error) {
+	// A legacy observer must not advance a source revision by reconciling other sources.
+	tx, finishTx, err := r.lockSourceTransaction(ctx)
 	if err != nil {
 		return recordings.Broadcast{}, err
 	}
@@ -62,13 +63,26 @@ func (r *RecordingRepository) EnsureDirectBroadcast(ctx context.Context, source,
 	if s.hash == "" {
 		return recordings.Broadcast{}, recordings.ErrBroadcastSourceNotPrepared
 	}
-	b, err := r.ensureDirectTx(ctx, tx, &s, actor, now)
+	// A prepared schedule retains its delegated ownership. Reading an existing
+	// direct room does not compete with it.
+	if (in.PrepareNext || !s.direct.Valid) && s.target.Valid && s.target.String != s.direct.String {
+		target, err := availableOutputTarget(ctx, tx, s)
+		if err != nil {
+			return recordings.Broadcast{}, err
+		}
+		if s.prepared || target != nil {
+			return recordings.Broadcast{}, recordings.ErrBroadcastSourceBusy
+		}
+	}
+	previous := s.direct
+	b, err := r.ensureDirectTx(ctx, tx, &s, actor, now, in.PrepareNext)
 	if err != nil {
 		return b, err
 	}
-	_, err = tx.ExecContext(ctx, `UPDATE hhc_web.member_recording_broadcast_source SET direct_actor_id=$2,revision=revision+1 WHERE id=$1`, source, actor)
-	if err != nil {
-		return b, err
+	if previous != s.direct || in.PrepareNext && s.actor == "" {
+		if _, err = tx.ExecContext(ctx, `UPDATE hhc_web.member_recording_broadcast_source SET direct_actor_id=$2,revision=revision+1 WHERE id=$1`, source, actor); err != nil {
+			return b, err
+		}
 	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO hhc_web.member_recording_studio_operation(operation_key,source_id,actor_id,digest,recording_id,created_at) VALUES($1,$2,$3,$4,$5,$6)`, in.OperationKey, source, actor, digest, b.View.RecordingID, now)
 	if err != nil {
@@ -76,7 +90,7 @@ func (r *RecordingRepository) EnsureDirectBroadcast(ctx context.Context, source,
 	}
 	return b, tx.Commit()
 }
-func (r *RecordingRepository) ensureDirectTx(ctx context.Context, tx *sql.Tx, s *studioSource, actor string, now time.Time) (recordings.Broadcast, error) {
+func (r *RecordingRepository) ensureDirectTx(ctx context.Context, tx *sql.Tx, s *studioSource, actor string, now time.Time, prepareNext bool) (recordings.Broadcast, error) {
 	var previous *recordings.Broadcast
 	var settings directSettings
 	var snapshot []byte
@@ -88,19 +102,43 @@ func (r *RecordingRepository) ensureDirectTx(ctx context.Context, tx *sql.Tx, s 
 	}
 	if s.direct.Valid {
 		b, v, c, e := lockBroadcast(ctx, tx, s.direct.String)
-		if e != nil && !errors.Is(e, recordings.ErrNotFound) {
-			return b, e
+		if e != nil {
+			if !errors.Is(e, recordings.ErrNotFound) {
+				return b, e
+			}
+			if !prepareNext {
+				return b, recordings.ErrStudioUpdateRequired
+			}
 		}
 		if e == nil {
 			var deleted bool
 			if e = tx.QueryRowContext(ctx, `SELECT deleted_at IS NOT NULL FROM hhc_web.member_recording WHERE id=$1`, s.direct.String).Scan(&deleted); e != nil {
 				return b, e
 			}
+			current := !deleted && !b.Revoked && b.View.Phase != "cancelled" && b.View.Phase != "failed" && b.View.Phase != "archived" && !v.MediaTerminal
+			if !prepareNext {
+				if !current || b.View.Boundaries.EndSequenceExclusive != nil || c != nil && (c.Status.StopAcceptedAt != nil || !c.Active()) {
+					return b, recordings.ErrStudioUpdateRequired
+				}
+				return b, nil
+			}
 			if !deleted {
 				previous = &b
 			}
-			if !deleted && !b.Revoked && b.View.Phase != "cancelled" && b.View.Phase != "failed" && b.View.Phase != "archived" && (b.CanChangePolicy() || c != nil && b.View.Boundaries.EndSequenceExclusive == nil && !c.Terminal()) && !v.MediaTerminal {
+			if current && b.CanChangePolicy() {
 				return b, nil
+			}
+			if c != nil && !c.Terminal() {
+				if c.Active() || current && b.View.Boundaries.EndSequenceExclusive == nil {
+					// A public End alone does not release an active encoder input.
+					var released bool
+					if e = tx.QueryRowContext(ctx, `SELECT COALESCE(d.released,false) FROM hhc_web.member_recording_broadcast_source s LEFT JOIN LATERAL (`+directSourceSnapshot+`) d ON true WHERE s.id=$1`, s.id).Scan(&released); e != nil {
+						return b, e
+					}
+					if !released || current && b.View.Boundaries.EndSequenceExclusive == nil && !r.directHandoffEnabled {
+						return b, recordings.ErrBroadcastSourceBusy
+					}
+				}
 			}
 		}
 	}
@@ -145,6 +183,27 @@ func (r *RecordingRepository) ensureDirectTx(ctx context.Context, tx *sql.Tx, s 
 	return b, nil
 }
 
+func availableOutputTarget(ctx context.Context, tx *sql.Tx, s studioSource) (*recordings.Broadcast, error) {
+	if !s.target.Valid {
+		return nil, nil
+	}
+	b, v, c, err := lockBroadcast(ctx, tx, s.target.String)
+	if errors.Is(err, recordings.ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if c != nil || !sourceTargetEligible(b, v) {
+		return nil, nil
+	}
+	var deleted bool
+	if err = tx.QueryRowContext(ctx, `SELECT deleted_at IS NOT NULL FROM hhc_web.member_recording WHERE id=$1`, s.target.String).Scan(&deleted); err != nil || deleted {
+		return nil, err
+	}
+	return &b, nil
+}
+
 func (r *RecordingRepository) BroadcastOutputOwner(ctx context.Context, hash, output string) (string, error) {
 	tx, finishTx, e := r.sourceTransaction(ctx)
 	if e != nil {
@@ -163,25 +222,17 @@ func (r *RecordingRepository) BroadcastOutputOwner(ctx context.Context, hash, ou
 	if !errors.Is(e, sql.ErrNoRows) {
 		return "", e
 	}
-	if s.target.Valid {
-		b, v, c, err := lockBroadcast(ctx, tx, s.target.String)
-		if err != nil && !errors.Is(err, recordings.ErrNotFound) {
-			return "", err
+	target, err := availableOutputTarget(ctx, tx, s)
+	if err != nil {
+		return "", err
+	}
+	if target != nil {
+		err = tx.QueryRowContext(ctx, `SELECT actor_id::text FROM hhc_web.member_recording_broadcast_source_operation WHERE operation='target' AND recording_id=$1 ORDER BY occurred_at DESC LIMIT 1`, s.target.String).Scan(&owner)
+		if err == nil {
+			return owner, tx.Commit()
 		}
-		if err == nil && c == nil && sourceTargetEligible(b, v) {
-			var deleted bool
-			if err = tx.QueryRowContext(ctx, `SELECT deleted_at IS NOT NULL FROM hhc_web.member_recording WHERE id=$1`, s.target.String).Scan(&deleted); err != nil {
-				return "", err
-			}
-			if !deleted {
-				err = tx.QueryRowContext(ctx, `SELECT actor_id::text FROM hhc_web.member_recording_broadcast_source_operation WHERE operation='target' AND recording_id=$1 ORDER BY occurred_at DESC LIMIT 1`, s.target.String).Scan(&owner)
-				if err == nil {
-					return owner, tx.Commit()
-				}
-				if !errors.Is(err, sql.ErrNoRows) {
-					return "", err
-				}
-			}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return "", err
 		}
 	}
 	if s.actor == "" {
@@ -271,28 +322,20 @@ func (r *RecordingRepository) PrepareBroadcastOutput(ctx context.Context, hash, 
 		return out, recordings.ErrBroadcastOutputCapacity
 	}
 	var b recordings.Broadcast
-	if s.target.Valid {
-		target, v, c, err := lockBroadcast(ctx, tx, s.target.String)
-		if err != nil && !errors.Is(err, recordings.ErrNotFound) {
-			return out, err
+	target, e := availableOutputTarget(ctx, tx, s)
+	if e != nil {
+		return out, e
+	}
+	if target != nil {
+		var delegate string
+		e = tx.QueryRowContext(ctx, `SELECT actor_id::text FROM hhc_web.member_recording_broadcast_source_operation WHERE operation='target' AND recording_id=$1 ORDER BY occurred_at DESC LIMIT 1`, s.target.String).Scan(&delegate)
+		if e != nil {
+			return out, e
 		}
-		if err == nil && c == nil && sourceTargetEligible(target, v) {
-			var deleted bool
-			if e = tx.QueryRowContext(ctx, `SELECT deleted_at IS NOT NULL FROM hhc_web.member_recording WHERE id=$1`, s.target.String).Scan(&deleted); e != nil {
-				return out, e
-			}
-			if !deleted {
-				var delegate string
-				e = tx.QueryRowContext(ctx, `SELECT actor_id::text FROM hhc_web.member_recording_broadcast_source_operation WHERE operation='target' AND recording_id=$1 ORDER BY occurred_at DESC LIMIT 1`, s.target.String).Scan(&delegate)
-				if e != nil {
-					return out, e
-				}
-				if delegate != actor {
-					return out, recordings.ErrForbidden
-				}
-				b = target
-			}
+		if delegate != actor {
+			return out, recordings.ErrForbidden
 		}
+		b = *target
 	}
 	if b.View.RecordingID == "" {
 		if s.actor == "" {
@@ -301,7 +344,7 @@ func (r *RecordingRepository) PrepareBroadcastOutput(ctx context.Context, hash, 
 		if s.actor != actor {
 			return out, recordings.ErrForbidden
 		}
-		b, e = r.ensureDirectTx(ctx, tx, &s, actor, now)
+		b, e = r.ensureDirectTx(ctx, tx, &s, actor, now, true)
 		if e != nil {
 			return out, e
 		}

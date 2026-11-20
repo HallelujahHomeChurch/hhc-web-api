@@ -737,6 +737,24 @@ forward fix; old binaries cannot enforce source ownership.
 
 The Console prepares events and delegates upload ownership. The additive K3 `/api/ingest/` surface accepts a reusable source key without Account login and issues a short-lived, event-bound transport session. Only capture transfer, status, control polling and marker ACK are allowed; Admin and member APIs retain their existing authorization. See [fixed K3 contract](docs/obs-capture/key-only-ingest-v1/contract.md). No CLI or media-validation change is required.
 
+### Preparing the next direct broadcast
+
+Studio reads the current direct event and its input-release evidence from
+`GET /api/admin/broadcast-sources`. A new Admin prepare gesture sends
+`prepareNext: true` with its own operation key and the current source revision.
+Older ensure requests can initialize direct mode or read the existing event
+without replacing its owner. Once the previous input stops, a fresh legacy
+ensure receives HTTP 409 `broadcast_studio_update_required` until a new event
+exists. Replaying an existing operation key still resolves its original event.
+
+The `hhc-web-api` entry in `infra/runtime-env.json` owns
+`STUDIO_DIRECT_HANDOFF_ENABLED` (default `false`). After consumers and Asset
+are ready, enable it through the environment-only release to let a new
+explicit prepare or OBS output use the source after its previous direct
+capture has matching stop and seal receipts. Disable it through the same
+release to suspend new early handoffs. Existing reservations, grants, media
+publication and archive processing continue under their original identities.
+
 ### Recoverable Studio stream keys
 
 Production Studio requires `STREAM_KEY_ENCRYPTION_ID` (active version, initially
