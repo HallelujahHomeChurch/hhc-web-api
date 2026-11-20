@@ -93,9 +93,14 @@ func (r *Repository) CompleteOnlineExtractionRequest(ctx context.Context, event 
 		if err = r.validateBulletinAudit(ctx, p.ActorID); err != nil {
 			return err
 		}
-		_, err = r.queueOnlineBulletinExtractionTx(ctx, tx, p.IssueID, onlinebulletins.QueueExtractionInput{CanonicalVersion: canonicalVersion, OnlineVersion: onlineVersion, SourceAssetID: p.AssetID, SourceChecksum: checksum, AutoPublish: p.AutoPublish, NotifySubscribers: p.NotifySubscribers}, p.ActorID, now)
+		_, err = r.queueOnlineBulletinExtractionTx(ctx, tx, p.IssueID, onlinebulletins.QueueExtractionInput{CanonicalVersion: canonicalVersion, OnlineVersion: onlineVersion, SourceAssetID: p.AssetID, SourceChecksum: checksum, AutoPublish: p.AutoPublish, NotifySubscribers: p.NotifySubscribers}, p.ActorID, now, true)
 		if err != nil {
 			return err
+		}
+		if p.AutoPublish {
+			if _, err = r.scheduleIndependentPDF(ctx, tx, p.IssueID, now); err != nil {
+				return err
+			}
 		}
 	}
 	_, err = tx.ExecContext(ctx, `UPDATE hhc_web.outbox_event SET status='delivered',claimed_until=NULL,last_error='',updated_at=$2 WHERE id=$1`, event.ID, now)

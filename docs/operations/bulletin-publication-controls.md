@@ -69,3 +69,42 @@ change of plan and cancellation, not early PDF with automatic work retained.
 Human confirmed manual Online publication and qualified saved-draft recovery
 remain explicit atomic takeovers; neither has a blanket active-plan rejection.
 Recovery receipt replay remains read-only even after a later authorization.
+
+## Independent publication for new automatic requests
+
+A publisher's newly authorized general Traditional Chinese edition receives an
+independent-release record. Attaching the PDF and delivering the scan event use
+the same intent. Asset API must confirm the issue owner, edition, purpose,
+private visibility, completed upload, clean scan, ready processing, PDF type and
+SHA-256. The delivery records that source and schedules the ordinary protected
+PDF projection in parallel with extraction. The PDF worker checks the asset again
+before committing. It does not issue a public asset grant.
+
+Recognition, semantic acceptance, review and measured layout still gate the
+online release. A verified current source can publish online while the PDF
+workflow is pending or failed. Each projection remains available until its own
+successful replacement or explicit withdrawal. Member downloads generate their
+personal watermark on demand. A selected subscriber notification uses the
+existing generation-zero idempotency key and requires a published PDF link.
+
+The ordinary manual PDF action requires automatic publication to be disabled.
+The online editor can confirm and publish the measured revision of a verified
+source independently. A manual online publication or qualified recovery can finish the online branch of an active independent request. Its PDF workflow and original notification choice remain authorized. Qualified recovery binds the same source and revision.
+
+### Deployment and rollback
+
+Deploy the additive migration before the compatible API and workers. Existing
+epochs and outstanding deliveries without an independent-release record retain
+the original sequencing. Do not backfill a record from an old automatic flag.
+A pending attachment delivery resumes its captured request after a restart.
+A stale, replaced or cancelled delivery cannot create a fresh authorization.
+
+Before rolling back, stop accepting new automatic requests through the
+administrative entry points. Keep the compatible API, PDF outbox worker and
+extractor running until the new requests are terminal, or retain compatible
+workers for those requests. Inspect pending and processing PDF outbox events,
+the workflow linked by each independent-release record, and the corresponding
+online intent, update and layout jobs. Resolve or explicitly cancel outstanding
+requests before routing them to an older release. Retain the additive schema,
+immutable publications and receipts. Reopening an edition requires a fresh
+publisher action.

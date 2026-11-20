@@ -348,6 +348,9 @@ func (w *Worker) publish(ctx context.Context, event Event, now time.Time) error 
 	if err := readyAsset(asset); err != nil {
 		return err
 	}
+	if (payload.RequirePrivatePDF || payload.SourceChecksum != "") && (!validPrivateBulletinPDF(asset) || asset.ID != payload.AssetID || payload.SourceChecksum != "" && asset.ChecksumSHA256 != payload.SourceChecksum) {
+		return terminalError{fmt.Errorf("verified bulletin source changed")}
+	}
 	now = w.now().UTC()
 	if err := w.repository.CompletePublish(ctx, event, "", "", now); err != nil {
 		return w.handlePublishFailure(ctx, event, payload.AssetID, "", err, now)
