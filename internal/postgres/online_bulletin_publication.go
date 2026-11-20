@@ -44,13 +44,13 @@ func (r *Repository) publishOnlineBulletinTx(ctx context.Context, tx *sql.Tx, is
 	var canonical onlinebulletins.CanonicalMetadata
 	var documentJSON, issuesJSON []byte
 	var proof, contentHash, renderer string
-	var pdfPublished bool
+	var publishableSource bool
 	err := tx.QueryRowContext(ctx, `SELECT d.id::text,d.version,d.local_revision,d.published_revision,i.version,v.title,v.subtitle,i.issue_number,i.issue_date::text,r.document_json,r.review_issues,COALESCE(r.layout_validation_hash,''),r.content_hash,r.renderer_artifact_sha256,
-	 v.status='published' AND EXISTS(SELECT 1 FROM hhc_web.bulletin_published_version p WHERE p.issue_id=v.issue_id AND p.series=v.series AND p.locale=v.locale AND p.asset_id=v.pdf_asset_id AND p.title=v.title AND p.subtitle=v.subtitle)
+	 (v.verified_pdf_asset_id=v.pdf_asset_id AND length(v.pdf_sha256)=64 AND v.pdf_sha256=r.source_asset_checksum AND v.status IN ('draft','publishing','published')) IS TRUE OR v.status='published' AND (v.pdf_sha256='' OR v.pdf_sha256=r.source_asset_checksum) AND EXISTS(SELECT 1 FROM hhc_web.bulletin_published_version p WHERE p.issue_id=v.issue_id AND p.series=v.series AND p.locale=v.locale AND p.asset_id=v.pdf_asset_id AND p.title=v.title AND p.subtitle=v.subtitle)
 	 FROM hhc_web.online_bulletin_document d JOIN hhc_web.bulletin_issue i ON i.id=d.issue_id
 	 JOIN hhc_web.bulletin_version v ON v.issue_id=i.id AND v.series=d.series AND v.locale=d.content_locale
 	 JOIN hhc_web.online_bulletin_revision r ON r.document_id=d.id AND r.revision=d.local_revision
-	 WHERE d.issue_id=$1 AND d.series=$2 AND d.content_locale=$3 AND i.issue_number>=1739 FOR UPDATE OF i,v,d`, issueID, series, locale).Scan(&result.DocumentID, &result.Version, &result.Revision, &published, &canonicalVersion, &canonical.Title, &canonical.Subtitle, &canonical.IssueNumber, &canonical.Date, &documentJSON, &issuesJSON, &proof, &contentHash, &renderer, &pdfPublished)
+	 WHERE d.issue_id=$1 AND d.series=$2 AND d.content_locale=$3 AND i.issue_number>=1739 FOR UPDATE OF i,v,d`, issueID, series, locale).Scan(&result.DocumentID, &result.Version, &result.Revision, &published, &canonicalVersion, &canonical.Title, &canonical.Subtitle, &canonical.IssueNumber, &canonical.Date, &documentJSON, &issuesJSON, &proof, &contentHash, &renderer, &publishableSource)
 	if errors.Is(err, sql.ErrNoRows) {
 		return result, bulletins.ErrNotFound
 	}
@@ -60,7 +60,7 @@ func (r *Repository) publishOnlineBulletinTx(ctx context.Context, tx *sql.Tx, is
 	if canonicalVersion != input.CanonicalVersion || result.Version != input.OnlineVersion || result.Revision != input.Revision {
 		return result, bulletins.ErrPrecondition
 	}
-	if (locale == "zh-Hant" && !pdfPublished) || proof == "" {
+	if (locale == "zh-Hant" && !publishableSource) || proof == "" {
 		return result, bulletins.ErrConflict
 	}
 	var document onlinebulletins.Document

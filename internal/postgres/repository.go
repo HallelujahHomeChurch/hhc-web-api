@@ -330,7 +330,7 @@ func (r *Repository) PutVersion(ctx context.Context, id string, expected int64, 
 		ON CONFLICT(issue_id,series,locale) DO UPDATE SET
 			retiring_asset_id=CASE WHEN hhc_web.bulletin_version.status='published' THEN hhc_web.bulletin_version.pdf_asset_id ELSE hhc_web.bulletin_version.retiring_asset_id END,
 			retiring_grant_id=CASE WHEN hhc_web.bulletin_version.status='published' THEN hhc_web.bulletin_version.public_grant_id ELSE hhc_web.bulletin_version.retiring_grant_id END,
-			title=EXCLUDED.title,subtitle=EXCLUDED.subtitle,pdf_sha256=CASE WHEN hhc_web.bulletin_version.pdf_asset_id=EXCLUDED.pdf_asset_id THEN hhc_web.bulletin_version.pdf_sha256 ELSE '' END,pdf_asset_id=EXCLUDED.pdf_asset_id,pdf_file_name=EXCLUDED.pdf_file_name,status='draft',
+			verified_pdf_asset_id=NULL,title=EXCLUDED.title,subtitle=EXCLUDED.subtitle,pdf_sha256=CASE WHEN hhc_web.bulletin_version.pdf_asset_id=EXCLUDED.pdf_asset_id THEN hhc_web.bulletin_version.pdf_sha256 ELSE '' END,pdf_asset_id=EXCLUDED.pdf_asset_id,pdf_file_name=EXCLUDED.pdf_file_name,status='draft',
 			version=hhc_web.bulletin_version.version+1,updated_by=EXCLUDED.updated_by,updated_at=EXCLUDED.updated_at
 		RETURNING id::text`, platform.NewID(), id, input.Series, input.Locale, input.Title, input.Subtitle, input.PDFAssetID, input.PDFFileName, actor, now).Scan(&versionID)
 	if err != nil {
@@ -699,7 +699,7 @@ func (r *Repository) startBulletinPublishTx(ctx context.Context, tx *sql.Tx, id,
 	if _, err := tx.ExecContext(ctx, `INSERT INTO hhc_web.publication_workflow(id,workflow_type,resource_type,resource_id,series,locale,aggregate_version,asset_id,status,created_by,created_at,updated_at) VALUES($1,'bulletin_publish','bulletin',$2,$3,$4,$5,$6,$7,$8,$9,$9)`, workflow.ID, canonicalID, series, locale, next, assetID, workflow.Status, actor, now); err != nil {
 		return bulletins.Workflow{}, err
 	}
-	payload, _ := json.Marshal(publication.PublishPayload{WorkflowID: workflow.ID, IssueID: canonicalID, Series: series, Locale: locale, AssetID: assetID, AggregateVersion: next, NotifySubscribers: notifySubscribers, ActorID: actor})
+	payload, _ := json.Marshal(publication.PublishPayload{RequirePrivatePDF: true, WorkflowID: workflow.ID, IssueID: canonicalID, Series: series, Locale: locale, AssetID: assetID, AggregateVersion: next, NotifySubscribers: notifySubscribers, ActorID: actor})
 	if _, err := tx.ExecContext(ctx, `INSERT INTO hhc_web.outbox_event(id,destination,event_type,aggregate_type,aggregate_id,aggregate_version,payload_json,idempotency_key,status,next_attempt_at,created_at,updated_at) VALUES($1,'asset-api','bulletin.publish.ensure_asset','bulletin',$2,$3,$4,$5,'pending',$6,$6,$6)`, platform.NewID(), canonicalID, next, payload, fmt.Sprintf("bulletin:%s:%s:%s:publish:v%d", canonicalID, series, locale, next), now); err != nil {
 		return bulletins.Workflow{}, err
 	}
@@ -1215,6 +1215,15 @@ func (r *Repository) CompletePublish(ctx context.Context, event publication.Even
 		}
 		return publication.ErrStalePublication
 	}
+	var independentRequest string
+	if payload.SourceChecksum != "" {
+		if err = tx.QueryRowContext(ctx, `SELECT h.request_id FROM hhc_web.bulletin_independent_release b JOIN hhc_web.bulletin_version v ON v.online_intent_id=b.intent_id JOIN hhc_web.online_bulletin_publication_intent h ON h.id=b.intent_id
+      WHERE b.pdf_workflow_id=$1 AND v.issue_id=$2 AND v.series=$3 AND v.locale=$4 AND v.pdf_asset_id=$5 AND v.verified_pdf_asset_id=$5 AND v.pdf_sha256=$6 AND v.auto_publish AND h.request_id=v.auto_publish_request AND (SELECT status IN('authorized','running','failed') FROM hhc_web.online_bulletin_intent_transition WHERE intent_id=h.id ORDER BY sequence DESC LIMIT 1)`, payload.WorkflowID, payload.IssueID, payload.Series, payload.Locale, payload.AssetID, payload.SourceChecksum).Scan(&independentRequest); errors.Is(err, sql.ErrNoRows) {
+			return publication.ErrStalePublication
+		} else if err != nil {
+			return err
+		}
+	}
 	if issueVersion != payload.AggregateVersion || issueStatus != "publishing" || versionStatus != "publishing" {
 		return publication.ErrStalePublication
 	}
@@ -1232,6 +1241,11 @@ func (r *Repository) CompletePublish(ctx context.Context, event publication.Even
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE hhc_web.outbox_event SET status='delivered',claimed_until=NULL,last_error='',updated_at=$2 WHERE id=$1`, event.ID, now); err != nil {
 		return err
+	}
+	if independentRequest != "" {
+		if err = r.finishIndependentRelease(auditclient.WithProvenance(ctx, payload.ActorID, independentRequest), tx, payload.IssueID, payload.ActorID, now); err != nil {
+			return err
+		}
 	}
 	if payload.NotifySubscribers {
 		if err := enqueueBulletinPublicationNotification(ctx, tx, payload.IssueID, payload.Series, issueNumber, payload.ActorID, issueVersion, now); err != nil {

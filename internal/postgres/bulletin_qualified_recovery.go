@@ -44,10 +44,10 @@ func (r *Repository) RecoverOnlineBulletinPublication(ctx context.Context, issue
 	var canonical int64
 	var asset, checksum string
 	var metadata onlinebulletins.CanonicalMetadata
-	var pdfPublished bool
+	var publishableSource bool
 	err = tx.QueryRowContext(ctx, `SELECT i.version,v.pdf_asset_id,COALESCE(v.pdf_sha256,''),v.title,v.subtitle,i.issue_number,i.issue_date::text,
- v.status='published' AND EXISTS(SELECT 1 FROM hhc_web.bulletin_published_version p WHERE p.issue_id=i.id AND p.series=v.series AND p.locale=v.locale AND p.asset_id=v.pdf_asset_id AND p.title=v.title AND p.subtitle=v.subtitle)
- FROM hhc_web.bulletin_issue i JOIN hhc_web.bulletin_version v ON v.issue_id=i.id AND v.series='general' AND v.locale='zh-Hant' WHERE i.id=$1 AND i.issue_number>=1739 FOR UPDATE OF i,v`, issue).Scan(&canonical, &asset, &checksum, &metadata.Title, &metadata.Subtitle, &metadata.IssueNumber, &metadata.Date, &pdfPublished)
+ (v.verified_pdf_asset_id=v.pdf_asset_id AND length(v.pdf_sha256)=64 AND v.status IN ('draft','publishing','published')) IS TRUE OR v.status='published' AND EXISTS(SELECT 1 FROM hhc_web.bulletin_published_version p WHERE p.issue_id=i.id AND p.series=v.series AND p.locale=v.locale AND p.asset_id=v.pdf_asset_id AND p.title=v.title AND p.subtitle=v.subtitle)
+ FROM hhc_web.bulletin_issue i JOIN hhc_web.bulletin_version v ON v.issue_id=i.id AND v.series='general' AND v.locale='zh-Hant' WHERE i.id=$1 AND i.issue_number>=1739 FOR UPDATE OF i,v`, issue).Scan(&canonical, &asset, &checksum, &metadata.Title, &metadata.Subtitle, &metadata.IssueNumber, &metadata.Date, &publishableSource)
 
 	if errors.Is(err, sql.ErrNoRows) {
 		return result, bulletins.ErrNotFound
@@ -98,7 +98,7 @@ func (r *Repository) RecoverOnlineBulletinPublication(ctx context.Context, issue
 	if canonical != input.CanonicalVersion || version != input.OnlineVersion || local.Int64 != input.Revision {
 		return result, bulletins.ErrPrecondition
 	}
-	if !pdfPublished {
+	if !publishableSource {
 		return result, recoveryBlocked("pdf_not_published")
 	}
 	if incoming.Valid {

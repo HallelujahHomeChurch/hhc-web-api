@@ -15,6 +15,11 @@ import (
 var errBulletinScanFailed = errors.New("bulletin scan failed")
 var errBulletinScanRequeued = errors.New("bulletin scan requeued")
 
+func validPrivateBulletinPDF(asset Asset) bool {
+	digest, err := hex.DecodeString(asset.ChecksumSHA256)
+	return asset.Visibility == "private" && asset.Purpose == "weekly_bulletin" && asset.DetectedMIMEType == "application/pdf" && err == nil && len(digest) == 32 && asset.ChecksumSHA256 == strings.ToLower(asset.ChecksumSHA256)
+}
+
 type BulletinExtractionPayload struct {
 	RetryScan         bool   `json:"retryScan,omitempty"`
 	AutoPublish       bool   `json:"autoPublish,omitempty"`
@@ -40,7 +45,7 @@ func (w *Worker) ensureBulletinExtraction(ctx context.Context, event Event) erro
 	if err != nil {
 		return err
 	}
-	if asset.ID != payload.AssetID || asset.Namespace != "cms.weekly.pdf" || asset.OwnerService != "hhc-web-api" || asset.OwnerType != "bulletin_issue" || asset.OwnerID != payload.IssueID || asset.Locale != "zh-Hant" {
+	if asset.ID != payload.AssetID || asset.Namespace != "cms.weekly.pdf" || asset.OwnerService != "hhc-web-api" || asset.OwnerType != "bulletin_issue" || asset.OwnerID != payload.IssueID || asset.Locale != "zh-Hant" || asset.Visibility != "private" || asset.Purpose != "weekly_bulletin" {
 		return terminalError{fmt.Errorf("bulletin extraction asset owner mismatch")}
 	}
 	if asset.UploadStatus == "completed" && asset.ScanStatus == "failed" {
@@ -58,8 +63,7 @@ func (w *Worker) ensureBulletinExtraction(ctx context.Context, event Event) erro
 	if err = readyAsset(asset); err != nil {
 		return err
 	}
-	checksum, err := hex.DecodeString(asset.ChecksumSHA256)
-	if asset.DetectedMIMEType != "application/pdf" || err != nil || len(checksum) != 32 || asset.ChecksumSHA256 != strings.ToLower(asset.ChecksumSHA256) {
+	if !validPrivateBulletinPDF(asset) {
 		return terminalError{fmt.Errorf("invalid bulletin extraction source")}
 	}
 	return repository.CompleteOnlineExtractionRequest(ctx, event, asset.ChecksumSHA256, w.now().UTC())

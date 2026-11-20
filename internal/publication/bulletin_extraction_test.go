@@ -33,7 +33,7 @@ func (r *extractionRequestRepository) RescheduleOnlineExtractionRequest(_ contex
 func TestUploadExtractionStaleWorkerCannotRetryOrFailNewClaim(t *testing.T) {
 	for _, attempts := range []int{1, 5} {
 		repo := &extractionRequestRepository{workerRepository: &workerRepository{event: Event{ID: "event-1", EventType: "bulletin.online.ensure_extraction", AggregateID: "issue-1", Attempts: attempts, Payload: []byte(`{"issueId":"issue-1","assetId":"asset-1","actorId":"018f47a1-0f8a-4f25-8f09-111111111111","requestId":"upload-request-1"}`)}}, err: ErrStalePublication}
-		asset := Asset{ID: "asset-1", Namespace: "cms.weekly.pdf", OwnerService: "hhc-web-api", OwnerType: "bulletin_issue", OwnerID: "issue-1", Locale: "zh-Hant", UploadStatus: "completed", ScanStatus: "clean", ProcessingStatus: "ready", DetectedMIMEType: "application/pdf", ChecksumSHA256: strings.Repeat("a", 64)}
+		asset := Asset{ID: "asset-1", Namespace: "cms.weekly.pdf", Purpose: "weekly_bulletin", Visibility: "private", OwnerService: "hhc-web-api", OwnerType: "bulletin_issue", OwnerID: "issue-1", Locale: "zh-Hant", UploadStatus: "completed", ScanStatus: "clean", ProcessingStatus: "ready", DetectedMIMEType: "application/pdf", ChecksumSHA256: strings.Repeat("a", 64)}
 		if _, err := NewWorker(repo, &workerAssets{asset: asset}, 5).processNext(context.Background()); err != nil {
 			t.Fatal(err)
 		}
@@ -60,7 +60,7 @@ func TestUploadExtractionWaitsForCleanOwnedPDF(t *testing.T) {
 				ID: "event-1", EventType: "bulletin.online.ensure_extraction", AggregateID: "issue-1", Attempts: 1,
 				Payload: []byte(`{"issueId":"issue-1","assetId":"asset-1","actorId":"018f47a1-0f8a-4f25-8f09-111111111111","requestId":"upload-request-1"}`),
 			}}}
-			asset := Asset{ID: "asset-1", Namespace: "cms.weekly.pdf", OwnerService: "hhc-web-api", OwnerType: "bulletin_issue", OwnerID: tc.owner, Locale: "zh-Hant", UploadStatus: "completed", ScanStatus: tc.scan, ProcessingStatus: "ready", DetectedMIMEType: tc.mime, ChecksumSHA256: tc.checksum}
+			asset := Asset{ID: "asset-1", Namespace: "cms.weekly.pdf", Purpose: "weekly_bulletin", Visibility: "private", OwnerService: "hhc-web-api", OwnerType: "bulletin_issue", OwnerID: tc.owner, Locale: "zh-Hant", UploadStatus: "completed", ScanStatus: tc.scan, ProcessingStatus: "ready", DetectedMIMEType: tc.mime, ChecksumSHA256: tc.checksum}
 			worker := NewWorker(repo, &workerAssets{asset: asset}, 5)
 			if processed, err := worker.processNext(context.Background()); err != nil || !processed {
 				t.Fatal(processed, err)
@@ -74,7 +74,7 @@ func TestUploadExtractionWaitsForCleanOwnedPDF(t *testing.T) {
 
 func TestUploadExtractionRetriesDatabaseFailureWithoutPublishing(t *testing.T) {
 	repo := &extractionRequestRepository{workerRepository: &workerRepository{event: Event{ID: "event-1", EventType: "bulletin.online.ensure_extraction", AggregateID: "issue-1", Attempts: 1, Payload: []byte(`{"issueId":"issue-1","assetId":"asset-1","actorId":"018f47a1-0f8a-4f25-8f09-111111111111","requestId":"upload-request-1"}`)}}, err: errors.New("database unavailable")}
-	asset := Asset{ID: "asset-1", Namespace: "cms.weekly.pdf", OwnerService: "hhc-web-api", OwnerType: "bulletin_issue", OwnerID: "issue-1", Locale: "zh-Hant", UploadStatus: "completed", ScanStatus: "clean", ProcessingStatus: "ready", DetectedMIMEType: "application/pdf", ChecksumSHA256: strings.Repeat("a", 64)}
+	asset := Asset{ID: "asset-1", Namespace: "cms.weekly.pdf", Purpose: "weekly_bulletin", Visibility: "private", OwnerService: "hhc-web-api", OwnerType: "bulletin_issue", OwnerID: "issue-1", Locale: "zh-Hant", UploadStatus: "completed", ScanStatus: "clean", ProcessingStatus: "ready", DetectedMIMEType: "application/pdf", ChecksumSHA256: strings.Repeat("a", 64)}
 	worker := NewWorker(repo, &workerAssets{asset: asset}, 5)
 	if _, err := worker.processNext(context.Background()); err != nil {
 		t.Fatal(err)
@@ -134,7 +134,7 @@ type requeueBulletinScanAsset struct {
 func (a *requeueBulletinScanAsset) RequeueScan(context.Context, string) error { a.calls++; return nil }
 
 func TestAutomaticUploadRetriesTheOwnedScannerOncePerIntent(t *testing.T) {
-	asset := Asset{ID: "asset-1", Namespace: "cms.weekly.pdf", OwnerService: "hhc-web-api", OwnerType: "bulletin_issue", OwnerID: "issue-1", Locale: "zh-Hant", UploadStatus: "completed", ScanStatus: "failed"}
+	asset := Asset{ID: "asset-1", Namespace: "cms.weekly.pdf", Purpose: "weekly_bulletin", Visibility: "private", OwnerService: "hhc-web-api", OwnerType: "bulletin_issue", OwnerID: "issue-1", Locale: "zh-Hant", UploadStatus: "completed", ScanStatus: "failed"}
 	scanner := &requeueBulletinScanAsset{workerAssets: &workerAssets{asset: asset}}
 	for _, retry := range []bool{true, false} {
 		extra := ""
