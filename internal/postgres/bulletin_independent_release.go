@@ -45,6 +45,17 @@ func (r *Repository) scheduleIndependentPDF(ctx context.Context, tx *sql.Tx, iss
 	return true, err
 }
 
+// A publisher can finish the online branch manually under the same source
+// lock. The PDF worker keeps its original authorization and notification choice.
+func markIndependentOnline(ctx context.Context, tx *sql.Tx, issue, series, locale string) (bool, error) {
+	result, err := tx.ExecContext(ctx, `UPDATE hhc_web.bulletin_independent_release b SET online_completed=true FROM hhc_web.bulletin_version v WHERE v.issue_id=$1 AND v.series=$2 AND v.locale=$3 AND v.auto_publish AND b.intent_id=v.online_intent_id`, issue, series, locale)
+	if err != nil {
+		return false, err
+	}
+	rows, err := result.RowsAffected()
+	return rows == 1, err
+}
+
 // Finish the shared authorization after both projections reached the member;
 // the PDF projection must exist before a requested g0 can be queued.
 func (r *Repository) finishIndependentRelease(ctx context.Context, tx *sql.Tx, issue, actor string, now time.Time) error {

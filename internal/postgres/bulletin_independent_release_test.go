@@ -9,6 +9,7 @@ import (
 
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/auditclient"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/bulletins"
+	"github.com/HallelujahHomeChurch/hhc-web-api/internal/onlinebulletins"
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/publication"
 )
 
@@ -37,7 +38,7 @@ func TestScannedUploadSchedulesPDFBeforeRecognitionAndReplayIsIdempotent(t *test
 // Use the same verified semantic and measured-layout fixture as qualified
 // recovery. Both publication paths still execute their normal commit routines.
 func TestIndependentReleaseOrderAndNotification(t *testing.T) {
-	for _, order := range []string{"pdf-first", "online-first", "concurrent", "cancel-after-claim", "pdf-only-after-online-failure", "retry-pdf-after-online", "online-after-pdf-failure"} {
+	for _, order := range []string{"pdf-first", "online-first", "concurrent", "cancel-after-claim", "pdf-only-after-online-failure", "retry-pdf-after-online", "online-after-pdf-failure", "manual-online-first", "recovery-first"} {
 		for _, notify := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/notify=%t", order, notify), func(t *testing.T) {
 				repo, source, state, now := prepareRecoverableBulletin(t)
@@ -135,6 +136,29 @@ func TestIndependentReleaseOrderAndNotification(t *testing.T) {
 					}
 				case "online-first":
 					if err = online(); err != nil {
+						t.Fatal(err)
+					}
+					counts(0, 1, 0)
+					if err = pdf(); err != nil {
+						t.Fatal(err)
+					}
+				case "manual-online-first", "recovery-first":
+					current, err := repo.OnlineBulletinState(ctx, issue, "general", "zh-Hant")
+					if err != nil {
+						t.Fatal(err)
+					}
+					revision := current.Local.Revision
+					proof := current.Local.Document.LayoutManifest.LayoutValidationHash
+					if order == "recovery-first" {
+						_, err = repo.RecoverOnlineBulletinPublication(ctx, issue, onlinebulletins.RecoveryInput{CanonicalVersion: current.CanonicalVersion, OnlineVersion: current.Version, Revision: revision, LayoutValidationHash: proof}, "recover-independent-"+issue, postgresBulletinAuditActor, now)
+					} else {
+						var confirmed onlinebulletins.ConfirmedRevision
+						confirmed, err = repo.ConfirmOnlineBulletin(ctx, issue, "general", "zh-Hant", onlinebulletins.ConfirmInput{CanonicalVersion: current.CanonicalVersion, OnlineVersion: current.Version, Revision: revision, PageCount: len(current.Local.Document.Pages), LayoutValidationHash: proof, AcceptedIssues: []onlinebulletins.ReviewIssue{}}, postgresBulletinAuditActor, now)
+						if err == nil {
+							_, err = repo.PublishOnlineBulletin(ctx, issue, "general", "zh-Hant", onlinebulletins.PublishInput{CanonicalVersion: current.CanonicalVersion, OnlineVersion: confirmed.Version, Revision: revision}, postgresBulletinAuditActor, now)
+						}
+					}
+					if err != nil {
 						t.Fatal(err)
 					}
 					counts(0, 1, 0)

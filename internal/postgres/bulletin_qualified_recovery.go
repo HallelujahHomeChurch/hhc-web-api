@@ -160,15 +160,21 @@ func (r *Repository) RecoverOnlineBulletinPublication(ctx context.Context, issue
 		return result, recoveryBlocked("stale_metadata")
 	}
 	receiptID := platform.NewID()
-	// Supersede prior automatic intent before granting this exact synchronous act.
-	if err = r.changeBulletinIntent(ctx, tx, issue, "general", "zh-Hant", "superseded", "recovery_started", actor, now, receiptID); err != nil {
+	independent, err := markIndependentOnline(ctx, tx, issue, "general", "zh-Hant")
+	if err != nil {
 		return result, err
 	}
-	if err = r.cancelOnlineAutomaticIntent(ctx, tx, doc, now); err != nil {
-		return result, err
-	}
-	if err = r.changeBulletinIntent(ctx, tx, issue, "general", "zh-Hant", "authorized", "recovery_authorized", actor, now, receiptID); err != nil {
-		return result, err
+	if !independent {
+		// Legacy coupled work must be superseded before granting this synchronous act.
+		if err = r.changeBulletinIntent(ctx, tx, issue, "general", "zh-Hant", "superseded", "recovery_started", actor, now, receiptID); err != nil {
+			return result, err
+		}
+		if err = r.cancelOnlineAutomaticIntent(ctx, tx, doc, now); err != nil {
+			return result, err
+		}
+		if err = r.changeBulletinIntent(ctx, tx, issue, "general", "zh-Hant", "authorized", "recovery_authorized", actor, now, receiptID); err != nil {
+			return result, err
+		}
 	}
 	var confirmed onlinebulletins.ConfirmedRevision
 	var confirmation bool
@@ -199,7 +205,12 @@ func (r *Repository) RecoverOnlineBulletinPublication(ctx context.Context, issue
 		}
 		return result, err
 	}
-	if err = r.changeBulletinIntent(ctx, tx, issue, "general", "zh-Hant", "completed", "recovery_published", actor, now, receiptID); err != nil {
+	if independent {
+		err = r.finishIndependentRelease(ctx, tx, issue, actor, now)
+	} else {
+		err = r.changeBulletinIntent(ctx, tx, issue, "general", "zh-Hant", "completed", "recovery_published", actor, now, receiptID)
+	}
+	if err != nil {
 		return result, err
 	}
 	result = onlinebulletins.RecoveryResult{Receipt: onlinebulletins.RecoveryReceipt{ID: receiptID, OperationKey: key, DocumentID: doc, Revision: input.Revision, CanonicalVersion: canonical, OnlineVersion: input.OnlineVersion, LayoutValidationHash: proof, Outcome: "published", CreatedAt: now}, Publication: publication}

@@ -3369,7 +3369,7 @@ paths:
     post:
       operationId: publishOnlineBulletin
       summary: Publish the confirmed immutable Online revision
-      description: Atomically verifies current canonical and Online CAS, matching published PDF, exact worker layout evidence and human confirmation. Mappings describe explicit structural decisions from the last publication only; unresolved replacements block publication. No weekly notification. Repeating the current publication with fresh CAS and no mappings is a no-op.
+      description: Atomically verifies current canonical and Online CAS, the private validated source for this edition or its matching historical published PDF, exact worker layout evidence and human confirmation. The PDF and Online edition may become visible in either order. Mappings describe explicit structural decisions from the last publication only; unresolved replacements block publication. No weekly notification. Repeating the current publication with fresh CAS and no mappings is a no-op.
       tags: [Admin]
       x-hhc-visibility: admin
       x-hhc-callers: [api-gateway]

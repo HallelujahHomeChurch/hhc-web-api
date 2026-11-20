@@ -321,7 +321,7 @@ func (r *Repository) queueOnlineBulletinExtractionTx(ctx context.Context, tx *sq
 	if result.Version != input.OnlineVersion {
 		return result, bulletins.ErrPrecondition
 	}
-	if _, err = tx.ExecContext(ctx, `UPDATE hhc_web.bulletin_version SET verified_pdf_asset_id=$2,pdf_sha256=$3 WHERE issue_id=$1 AND series='general' AND locale='zh-Hant' AND pdf_asset_id=$2`, issueID, input.SourceAssetID, input.SourceChecksum); err != nil {
+	if err = productAffected(tx.ExecContext(ctx, `UPDATE hhc_web.bulletin_version SET verified_pdf_asset_id=$2,pdf_sha256=$3 WHERE issue_id=$1 AND series='general' AND locale='zh-Hant' AND pdf_asset_id=$2 AND (verified_pdf_asset_id IS DISTINCT FROM $2 OR pdf_sha256=$3)`, issueID, input.SourceAssetID, input.SourceChecksum)); err != nil {
 		return result, err
 	}
 	if !fromUpload {

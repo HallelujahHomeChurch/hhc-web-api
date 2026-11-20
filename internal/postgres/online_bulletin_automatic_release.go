@@ -108,7 +108,7 @@ func (r *Repository) AutoPublishNextRecognition(ctx context.Context, now time.Ti
 		return false, err
 	}
 	if independent {
-		if _, err = tx.ExecContext(ctx, `UPDATE hhc_web.bulletin_independent_release b SET online_completed=true FROM hhc_web.bulletin_version v WHERE v.issue_id=$1 AND v.series='general' AND v.locale='zh-Hant' AND b.intent_id=v.online_intent_id`, issue); err != nil {
+		if _, err = markIndependentOnline(ctx, tx, issue, "general", "zh-Hant"); err != nil {
 			return false, err
 		}
 		if err = r.finishIndependentRelease(ctx, tx, issue, actor, now); err != nil {

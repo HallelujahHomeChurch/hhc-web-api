@@ -89,7 +89,7 @@ existing generation-zero idempotency key and requires a published PDF link.
 
 The ordinary manual PDF action requires automatic publication to be disabled.
 The online editor can confirm and publish the measured revision of a verified
-source independently. Qualified recovery binds the same source and revision.
+source independently. A manual online publication or qualified recovery can finish the online branch of an active independent request. Its PDF workflow and original notification choice remain authorized. Qualified recovery binds the same source and revision.
 
 ### Deployment and rollback
 
