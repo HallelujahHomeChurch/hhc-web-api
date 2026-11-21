@@ -57,6 +57,7 @@ func TestBroadcastSourceContract(t *testing.T) {
 
 func TestBroadcastSourceSnapshotMatchesCanonical(t *testing.T) {
 	canonical := loadOpenAPI(t)
+	frozenBroadcastHealth(t, canonical)
 	snapshot, err := openapi3.NewLoader().LoadFromFile("docs/obs-capture/stream-source-v1/openapi.snapshot.yaml")
 	if err != nil {
 		t.Fatal(err)

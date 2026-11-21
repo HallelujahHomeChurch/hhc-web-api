@@ -57,6 +57,7 @@ func TestBroadcastIngestContract(t *testing.T) {
 
 func TestBroadcastIngestSnapshotMatchesCanonical(t *testing.T) {
 	canonical := loadOpenAPI(t)
+	frozenBroadcastHealth(t, canonical)
 	snapshot, err := openapi3.NewLoader().LoadFromFile("docs/obs-capture/key-only-ingest-v1/openapi.snapshot.yaml")
 	if err != nil {
 		t.Fatal(err)

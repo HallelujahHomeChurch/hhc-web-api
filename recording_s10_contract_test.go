@@ -115,6 +115,7 @@ func TestS10FixturesAndInventoryCeilings(t *testing.T) {
 
 func TestS10SnapshotMatchesCanonicalAndDigests(t *testing.T) {
 	canonical := loadOpenAPI(t)
+	frozenBroadcastHealth(t, canonical)
 	frozenS10OutputInput(t, canonical)
 	snapshot, err := openapi3.NewLoader().LoadFromFile(s10ContractDir + "/cms.openapi.snapshot.yaml")
 	if err != nil {

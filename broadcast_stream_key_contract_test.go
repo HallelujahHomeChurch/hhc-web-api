@@ -45,6 +45,7 @@ func TestBroadcastStreamKeyContract(t *testing.T) {
 
 func TestBroadcastStreamKeySnapshotMatchesCanonical(t *testing.T) {
 	canonical := loadOpenAPI(t)
+	frozenBroadcastHealth(t, canonical)
 	snapshot, err := openapi3.NewLoader().LoadFromFile("docs/obs-capture/stream-key-v1/openapi.snapshot.yaml")
 	if err != nil {
 		t.Fatal(err)

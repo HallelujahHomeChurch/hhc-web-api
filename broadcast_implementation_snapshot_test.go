@@ -14,6 +14,7 @@ import (
 
 func TestBroadcastImplementationSnapshot(t *testing.T) {
 	canonical := loadOpenAPI(t)
+	frozenBroadcastHealth(t, canonical)
 	frozenPreviewInput(t, canonical)
 	snapshot, err := openapi3.NewLoader().LoadFromFile("docs/obs-capture/live-control-v1/rc2/openapi.snapshot.yaml")
 	if err != nil {

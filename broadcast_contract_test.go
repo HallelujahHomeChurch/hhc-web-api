@@ -71,6 +71,7 @@ func TestBroadcastWireFixtures(t *testing.T) {
 
 func TestBroadcastCandidateSchemaAndSharedTypes(t *testing.T) {
 	canonical := loadOpenAPI(t)
+	frozenBroadcastHealth(t, canonical)
 	frozenPreviewInput(t, canonical)
 	candidate, err := openapi3.NewLoader().LoadFromFile("docs/obs-capture/live-control-v1/openapi.snapshot.yaml")
 	if err != nil {
@@ -111,6 +112,20 @@ func TestBroadcastCandidateSchemaAndSharedTypes(t *testing.T) {
 				t.Fatalf("shared schema drift: %s", name)
 			}
 		}
+	}
+}
+
+// The historical snapshots precede publication telemetry. Validate the only
+// additions allowed here, then compare all of the original schema as before.
+func frozenBroadcastHealth(t *testing.T, canonical *openapi3.T) {
+	t.Helper()
+	health := canonical.Components.Schemas["BroadcastHealth"].Value
+	for _, name := range []string{"lastConfirmedSequence", "lastPublishedSequence"} {
+		p := health.Properties[name]
+		if p == nil || p.Value == nil || !p.Value.Type.Is("integer") || p.Value.Min == nil || *p.Value.Min != -1 || slices.Contains(health.Required, name) {
+			t.Fatalf("%s must be an optional sequence with minimum -1", name)
+		}
+		delete(health.Properties, name)
 	}
 }
 
