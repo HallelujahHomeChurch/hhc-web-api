@@ -120,7 +120,7 @@ func TestBroadcastReadRecoversSignalWithoutChangingAuthority(t *testing.T) {
 					cutoff := 9
 					end = &cutoff
 				}
-				json.NewEncoder(w).Encode(assetclient.BroadcastSignal{State: state, LastMediaConfirmedAt: &confirmed, EndSequenceExclusive: end})
+				json.NewEncoder(w).Encode(map[string]any{"state": state, "lastMediaConfirmedAt": confirmed, "endSequenceExclusive": end, "lastConfirmedSequence": 14, "lastPublishedSequence": 0, "lastPublishedAt": confirmed.Add(-time.Minute)})
 			}))
 			defer server.Close()
 			svc := NewService(repo, "", nil, func() time.Time { return now }).WithPackages(assetclient.New(server.URL, "hhc-web-api", ""))
@@ -129,6 +129,10 @@ func TestBroadcastReadRecoversSignalWithoutChangingAuthority(t *testing.T) {
 				t.Fatal(err)
 			}
 			if kind == "fresh" {
+				health := got.Health
+				if health.LastConfirmedSequence == nil || *health.LastConfirmedSequence != 14 || health.LastPublishedSequence == nil || *health.LastPublishedSequence != 0 || health.LastPublishedAt == nil || !health.LastPublishedAt.Equal(confirmed.Add(-time.Minute)) {
+					t.Fatalf("paired frontiers lost on signal recovery: %+v", health)
+				}
 				if got.Health.State != "healthy" || got.Health.Reason != nil || got.Health.LastConfirmedAt == nil || !got.Health.LastConfirmedAt.Equal(confirmed) || got.Revision != 8 {
 					t.Fatalf("not recovered: %+v", got)
 				}
@@ -146,5 +150,26 @@ func TestBroadcastReadRecoversSignalWithoutChangingAuthority(t *testing.T) {
 				t.Fatalf("changed authority: %+v", got)
 			}
 		})
+	}
+}
+
+func TestBroadcastHealthRequiresOneCoherentSignalSample(t *testing.T) {
+	zero, none := 0, -1
+	now := time.Now()
+	for _, s := range []assetclient.BroadcastSignal{
+		{},
+		{LastConfirmedSequence: &zero},
+		{LastConfirmedSequence: &none, LastPublishedSequence: &zero},
+	} {
+		health := BroadcastHealth{LastPublishedAt: &now, LastConfirmedSequence: &zero, LastPublishedSequence: &zero}
+		health.observeSignal(s)
+		if health.LastConfirmedSequence != nil || health.LastPublishedSequence != nil || health.LastPublishedAt != &now {
+			t.Fatalf("incomplete sample mixed watermarks: %+v", health)
+		}
+	}
+	health := BroadcastHealth{LastPublishedAt: &now}
+	health.observeSignal(assetclient.BroadcastSignal{LastConfirmedSequence: &zero, LastPublishedSequence: &none})
+	if health.LastPublishedSequence == nil || *health.LastPublishedSequence != -1 || health.LastPublishedAt != nil {
+		t.Fatalf("first arrival became a publication: %+v", health)
 	}
 }

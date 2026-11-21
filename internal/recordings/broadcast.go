@@ -70,12 +70,14 @@ type BroadcastCommand struct {
 	BoundarySequence *int      `json:"boundarySequence"`
 }
 type BroadcastHealth struct {
-	State              string     `json:"state"`
-	LastConfirmedAt    *time.Time `json:"lastConfirmedAt"`
-	LastPublishedAt    *time.Time `json:"lastPublishedAt"`
-	VerifiedEndSeconds *float64   `json:"verifiedEndSeconds"`
-	QueuedObjects      *int       `json:"queuedObjects"`
-	Reason             *string    `json:"reason"`
+	LastConfirmedSequence *int       `json:"lastConfirmedSequence,omitempty"`
+	LastPublishedSequence *int       `json:"lastPublishedSequence,omitempty"`
+	State                 string     `json:"state"`
+	LastConfirmedAt       *time.Time `json:"lastConfirmedAt"`
+	LastPublishedAt       *time.Time `json:"lastPublishedAt"`
+	VerifiedEndSeconds    *float64   `json:"verifiedEndSeconds"`
+	QueuedObjects         *int       `json:"queuedObjects"`
+	Reason                *string    `json:"reason"`
 }
 type BroadcastArchive struct {
 	State  string  `json:"state"`
@@ -86,6 +88,18 @@ func (h *BroadcastHealth) observeConfirmed(at *time.Time) {
 	if at != nil && (h.LastConfirmedAt == nil || at.After(*h.LastConfirmedAt)) {
 		h.LastConfirmedAt = at
 	}
+}
+
+// Use the two watermarks from one Asset observation together. Older producers
+// supply timestamps only; an absent counter is different from segment zero.
+func (h *BroadcastHealth) observeSignal(s assetclient.BroadcastSignal) {
+	h.observeConfirmed(s.LastMediaConfirmedAt)
+	h.LastConfirmedSequence, h.LastPublishedSequence = nil, nil
+	if s.LastConfirmedSequence == nil || s.LastPublishedSequence == nil || *s.LastPublishedSequence < -1 || *s.LastConfirmedSequence < *s.LastPublishedSequence {
+		return
+	}
+	h.LastConfirmedSequence, h.LastPublishedSequence = s.LastConfirmedSequence, s.LastPublishedSequence
+	h.LastPublishedAt = s.LastPublishedAt
 }
 
 type BroadcastView struct {
@@ -852,7 +866,7 @@ func (s *Service) ReconcileBroadcasts(ctx context.Context, limit int) error {
 				b.View.Health.VerifiedEndSeconds = &seconds
 			}
 			if arrival != nil {
-				b.View.Health.observeConfirmed(arrival.LastMediaConfirmedAt)
+				b.View.Health.observeSignal(*arrival)
 				if c.Status.StopAcceptedAt == nil && arrival.State != "ended" {
 					b.View.Health.State = arrival.State
 				}
