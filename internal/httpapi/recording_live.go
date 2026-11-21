@@ -53,6 +53,9 @@ func (h *Handler) memberLiveRecordingPlayback(w http.ResponseWriter, r *http.Req
 	p := r.Context().Value(principalKey{}).(principal)
 	value, err := h.recordings.LivePlayback(r.Context(), r.PathValue("id"), input.CaptureID, input.PlaybackScopeID, p.UserID)
 	if err != nil {
+		if writeMemberCancellation(w, r, err) {
+			return
+		}
 		liveError(w, err)
 		return
 	}
