@@ -16158,6 +16158,10 @@ components:
         pdfFileName: { type: string }
         status: { $ref: '#/components/schemas/BulletinVersionStatus' }
         deletion: { $ref: '#/components/schemas/BulletinDeletionEligibility' }
+        pdfAvailability:
+          type: string
+          enum: [unavailable, current, previous]
+          description: Member PDF projection for this edition compared with its current asset and metadata.
         workflowStatus: { type: string }
         workflowError: { type: string }
         version: { type: integer, format: int64 }

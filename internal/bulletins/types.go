@@ -79,22 +79,23 @@ type Issue struct {
 }
 
 type Version struct {
-	ID             string     `json:"id"`
-	IssueID        string     `json:"issueId"`
-	Series         string     `json:"series"`
-	Locale         string     `json:"locale"`
-	Title          string     `json:"title"`
-	Subtitle       string     `json:"subtitle"`
-	PDFAssetID     string     `json:"pdfAssetId"`
-	PDFFileName    string     `json:"pdfFileName"`
-	PublicGrantID  string     `json:"-"`
-	Status         string     `json:"status"`
-	WorkflowStatus string     `json:"workflowStatus,omitempty"`
-	WorkflowError  string     `json:"workflowError,omitempty"`
-	Version        int64      `json:"version"`
-	PublishedAt    *time.Time `json:"publishedAt,omitempty"`
-	CreatedAt      time.Time  `json:"createdAt"`
-	UpdatedAt      time.Time  `json:"updatedAt"`
+	ID              string     `json:"id"`
+	IssueID         string     `json:"issueId"`
+	Series          string     `json:"series"`
+	Locale          string     `json:"locale"`
+	Title           string     `json:"title"`
+	Subtitle        string     `json:"subtitle"`
+	PDFAssetID      string     `json:"pdfAssetId"`
+	PDFFileName     string     `json:"pdfFileName"`
+	PublicGrantID   string     `json:"-"`
+	Status          string     `json:"status"`
+	WorkflowStatus  string     `json:"workflowStatus,omitempty"`
+	PDFAvailability string     `json:"pdfAvailability,omitempty"`
+	WorkflowError   string     `json:"workflowError,omitempty"`
+	Version         int64      `json:"version"`
+	PublishedAt     *time.Time `json:"publishedAt,omitempty"`
+	CreatedAt       time.Time  `json:"createdAt"`
+	UpdatedAt       time.Time  `json:"updatedAt"`
 
 	Deletion *DeletionEligibility `json:"deletion,omitempty"`
 }
