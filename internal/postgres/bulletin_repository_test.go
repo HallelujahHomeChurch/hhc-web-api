@@ -99,9 +99,9 @@ func TestListIssuesLoadsPageVersionsWithOneBatchQuery(t *testing.T) {
 			AddRow("00000000-0000-0000-0000-000000000002", 1731, "2026-07-26", "draft", 2, "user-1", "user-1", nil, now, now))
 	mock.ExpectQuery("FROM hhc_web.bulletin_version v").
 		WithArgs("00000000-0000-0000-0000-000000000001", "00000000-0000-0000-0000-000000000002").
-		WillReturnRows(sqlmock.NewRows([]string{"id", "issue_id", "series", "locale", "title", "subtitle", "pdf_asset_id", "pdf_file_name", "public_grant_id", "status", "workflow_status", "workflow_error", "version", "published_at", "created_at", "updated_at"}).
-			AddRow("10000000-0000-0000-0000-000000000001", "00000000-0000-0000-0000-000000000001", "general", "zh-Hant", "本週週報", "副標", "asset-1", "weekly.pdf", "", "draft", "", "", 1, nil, now, now).
-			AddRow("10000000-0000-0000-0000-000000000002", "00000000-0000-0000-0000-000000000002", "general", "en", "Weekly", "", "asset-2", "weekly-en.pdf", "", "draft", "", "", 1, nil, now, now))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "issue_id", "series", "locale", "title", "subtitle", "pdf_asset_id", "pdf_file_name", "public_grant_id", "status", "workflow_status", "workflow_error", "version", "published_at", "created_at", "updated_at", "pdf_availability"}).
+			AddRow("10000000-0000-0000-0000-000000000001", "00000000-0000-0000-0000-000000000001", "general", "zh-Hant", "本週週報", "副標", "asset-1", "weekly.pdf", "", "draft", "", "", 1, nil, now, now, "unavailable").
+			AddRow("10000000-0000-0000-0000-000000000002", "00000000-0000-0000-0000-000000000002", "general", "en", "Weekly", "", "asset-2", "weekly-en.pdf", "", "draft", "", "", 1, nil, now, now, "previous"))
 
 	ids := "00000000-0000-0000-0000-000000000001,00000000-0000-0000-0000-000000000002"
 	mock.ExpectQuery("SELECT i.id::text,COALESCE").
@@ -196,8 +196,8 @@ func TestSubmitBulletinNotificationAllocatesAndReplaysSeriesGeneration(t *testin
 	mock.ExpectQuery("SELECT .*notificationGeneration.* FROM hhc_web.outbox_event WHERE destination='engagement-api'").WithArgs("manual-bulletin:" + clientKey).
 		WillReturnError(sql.ErrNoRows)
 	mock.ExpectQuery("FROM hhc_web.bulletin_version v").WithArgs(issueID).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "issue_id", "series", "locale", "title", "subtitle", "pdf_asset_id", "pdf_file_name", "public_grant_id", "status", "workflow_status", "workflow_error", "version", "published_at", "created_at", "updated_at"}).
-			AddRow("20000000-0000-4000-8000-000000000001", issueID, "children", "zh-Hant", "兒童週報", "", "asset-1", "children.pdf", "", "published", "", "", 1, now, now, now))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "issue_id", "series", "locale", "title", "subtitle", "pdf_asset_id", "pdf_file_name", "public_grant_id", "status", "workflow_status", "workflow_error", "version", "published_at", "created_at", "updated_at", "pdf_availability"}).
+			AddRow("20000000-0000-4000-8000-000000000001", issueID, "children", "zh-Hant", "兒童週報", "", "asset-1", "children.pdf", "", "published", "", "", 1, now, now, now, "current"))
 	mock.ExpectQuery("SELECT max.*notificationGeneration").WithArgs(issueID, "children").
 		WillReturnRows(sqlmock.NewRows([]string{"max"}).AddRow(nil))
 	mock.ExpectExec("INSERT INTO hhc_web.outbox_event").WithArgs(sqlmock.AnyArg(), issueID, int64(0), sqlmock.AnyArg(), "manual-bulletin:"+clientKey, now).
@@ -295,8 +295,8 @@ func TestRestoreIssueRevisionAllowsDraftMetadataChange(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"id", "issue_number", "issue_date", "status", "version", "created_by", "updated_by", "published_at", "created_at", "updated_at"}).
 			AddRow(issueID, nil, "2026-08-02", "draft", 4, "user-1", "user-2", now, now, now))
 	mock.ExpectQuery("FROM hhc_web.bulletin_version v").WithArgs(issueID).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "issue_id", "series", "locale", "title", "subtitle", "pdf_asset_id", "pdf_file_name", "public_grant_id", "status", "workflow_status", "workflow_error", "version", "published_at", "created_at", "updated_at"}).
-			AddRow(versionID, issueID, "general", "zh-Hant", "舊週報", "", "asset-1", "weekly.pdf", "grant-1", "draft", "", "", 2, now, now, now))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "issue_id", "series", "locale", "title", "subtitle", "pdf_asset_id", "pdf_file_name", "public_grant_id", "status", "workflow_status", "workflow_error", "version", "published_at", "created_at", "updated_at", "pdf_availability"}).
+			AddRow(versionID, issueID, "general", "zh-Hant", "舊週報", "", "asset-1", "weekly.pdf", "grant-1", "draft", "", "", 2, now, now, now, "previous"))
 	mock.ExpectQuery("FROM hhc_web.online_bulletin_document d JOIN hhc_web.online_bulletin_revision").WithArgs(issueID).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "version", "document_json", "review_issues", "extractor_version", "content_hash"}))
 	mock.ExpectExec("INSERT INTO hhc_web.bulletin_revision").WithArgs(issueID, int64(4), sqlmock.AnyArg(), "user-2", now).
@@ -354,4 +354,33 @@ func TestRestoreIssueRevisionRejectsPublishedMetadataChangeBeforeMutation(t *tes
 			}
 		})
 	}
+}
+
+func TestEditionPDFAvailabilityTracksMemberProjection(t *testing.T) {
+	repo, state, _, _, _ := prepareEarlyPublishedPDF(t)
+	check := func(want string) {
+		t.Helper()
+		issue, err := repo.GetIssue(context.Background(), state.IssueID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, v := range issue.Versions {
+			if v.Series == "general" && v.Locale == "zh-Hant" {
+				if v.PDFAvailability != want {
+					t.Fatalf("pdf availability = %q, want %q", v.PDFAvailability, want)
+				}
+				return
+			}
+		}
+		t.Fatal("missing Traditional edition")
+	}
+	check("current")
+	if _, err := repo.db.Exec(`UPDATE hhc_web.bulletin_version SET pdf_asset_id='replacement',status='draft' WHERE issue_id=$1 AND series='general' AND locale='zh-Hant'`, state.IssueID); err != nil {
+		t.Fatal(err)
+	}
+	check("previous")
+	if _, err := repo.db.Exec(`DELETE FROM hhc_web.bulletin_published_version WHERE issue_id=$1 AND series='general' AND locale='zh-Hant'`, state.IssueID); err != nil {
+		t.Fatal(err)
+	}
+	check("unavailable")
 }

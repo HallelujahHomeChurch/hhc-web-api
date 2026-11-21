@@ -250,8 +250,15 @@ func queryVersions(ctx context.Context, query bulletinQueryer, ids ...string) ([
 	rows, err := query.QueryContext(ctx, fmt.Sprintf(`
 		SELECT v.id::text,v.issue_id::text,v.series,v.locale,v.title,v.subtitle,v.pdf_asset_id,v.pdf_file_name,
 		       COALESCE(v.public_grant_id,''),v.status,COALESCE(w.status,''),COALESCE(w.error_detail,''),
-		       v.version,v.published_at,v.created_at,v.updated_at
+		       v.version,v.published_at,v.created_at,v.updated_at,
+		       CASE WHEN p.issue_id IS NULL THEN 'unavailable'
+		            WHEN p.asset_id=v.pdf_asset_id AND p.title=v.title AND p.subtitle=v.subtitle
+		             AND COALESCE(p.issue_number,i.issue_number) IS NOT DISTINCT FROM i.issue_number
+		             AND COALESCE(p.issue_date,i.issue_date)=i.issue_date THEN 'current'
+		            ELSE 'previous' END
 		FROM hhc_web.bulletin_version v
+		JOIN hhc_web.bulletin_issue i ON i.id=v.issue_id
+		LEFT JOIN hhc_web.bulletin_published_version p ON (p.issue_id,p.series,p.locale)=(v.issue_id,v.series,v.locale)
 		LEFT JOIN LATERAL (
 			SELECT status,error_detail
 			FROM hhc_web.publication_workflow
@@ -269,7 +276,7 @@ func queryVersions(ctx context.Context, query bulletinQueryer, ids ...string) ([
 	for rows.Next() {
 		var v bulletins.Version
 		var published sql.NullTime
-		if err := rows.Scan(&v.ID, &v.IssueID, &v.Series, &v.Locale, &v.Title, &v.Subtitle, &v.PDFAssetID, &v.PDFFileName, &v.PublicGrantID, &v.Status, &v.WorkflowStatus, &v.WorkflowError, &v.Version, &published, &v.CreatedAt, &v.UpdatedAt); err != nil {
+		if err := rows.Scan(&v.ID, &v.IssueID, &v.Series, &v.Locale, &v.Title, &v.Subtitle, &v.PDFAssetID, &v.PDFFileName, &v.PublicGrantID, &v.Status, &v.WorkflowStatus, &v.WorkflowError, &v.Version, &published, &v.CreatedAt, &v.UpdatedAt, &v.PDFAvailability); err != nil {
 			return nil, err
 		}
 		if published.Valid {
