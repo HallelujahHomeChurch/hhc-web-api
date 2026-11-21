@@ -7,6 +7,9 @@ import (
 )
 
 type BroadcastSignal struct {
+	LastConfirmedSequence               *int       `json:"lastConfirmedSequence,omitempty"`
+	LastPublishedSequence               *int       `json:"lastPublishedSequence,omitempty"`
+	LastPublishedAt                     *time.Time `json:"lastPublishedAt,omitempty"`
 	RecoveryVersion                     string     `json:"recoveryVersion"`
 	LastCommonConfirmedAt               *time.Time `json:"lastCommonConfirmedAt"`
 	CommonConfirmedEndSequenceExclusive *int       `json:"commonConfirmedEndSequenceExclusive"`

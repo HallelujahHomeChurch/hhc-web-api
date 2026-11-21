@@ -86,7 +86,7 @@ func (s *Service) recoverBroadcastSignal(ctx context.Context, repo BroadcastRepo
 			}
 			b.View.Health.State = "healthy"
 			b.View.Health.Reason = nil
-			b.View.Health.observeConfirmed(signal.LastMediaConfirmedAt)
+			b.View.Health.observeSignal(signal)
 			b.View.Revision++
 			return nil
 		})

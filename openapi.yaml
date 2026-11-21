@@ -11584,6 +11584,14 @@ components:
           - healthy
           - interrupted
           - recovering
+        lastConfirmedSequence:
+          type: integer
+          minimum: -1
+          description: Last contiguous segment received for all renditions, zero-based. A value of -1 means none. Returned with lastPublishedSequence when observed.
+        lastPublishedSequence:
+          type: integer
+          minimum: -1
+          description: Last segment published for viewers, from the same capture observation as lastConfirmedSequence. A value of -1 means none.
         lastConfirmedAt:
           anyOf:
           - type: string
