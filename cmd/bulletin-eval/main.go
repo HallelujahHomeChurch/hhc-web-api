@@ -65,6 +65,9 @@ func main() {
 }
 
 func run(parent context.Context, args []string, output io.Writer, getenv func(string) string, client *http.Client, prepare func(context.Context, string) ([]onlinebulletins.RecognitionPage, error)) error {
+	if len(args) > 0 && args[0] == "preview-reader" {
+		return previewReader(args[1:], output)
+	}
 	if len(args) == 0 || (args[0] != "prepare" && args[0] != "run") {
 		return errEvaluation
 	}

@@ -23,6 +23,21 @@ type MemberContent struct {
 	Components                    []Component       `json:"components"`
 }
 
+func framedTopicIDs(document Document) []string {
+	var ids []string
+	for i := range document.Components {
+		component := &document.Components[i]
+		if body := component.BodySection; body != nil {
+			for _, block := range body.Blocks {
+				if len(block.Sentences) > 0 && block.Sentences[0].Source != nil && block.Sentences[0].Source.FramedTopic {
+					ids = append(ids, block.ID)
+				}
+			}
+		}
+	}
+	return ids
+}
+
 func ProjectMemberContent(source Document) (MemberContent, error) {
 	raw, err := json.Marshal(source)
 	if err != nil {
@@ -33,17 +48,12 @@ func ProjectMemberContent(source Document) (MemberContent, error) {
 		return MemberContent{}, err
 	}
 	content.HeaderSpeakerStartComponentID = headerSpeakerStart(source)
+	content.TopicBlockIDs = framedTopicIDs(source)
 	content.PrintedBodyPageCount = source.SourcePageCount - 2
 	content.IllustrationAssets = map[string]string{}
 	for i := range source.Components {
 		component := &source.Components[i]
-		if body := component.BodySection; body != nil {
-			for _, block := range body.Blocks {
-				if len(block.Sentences) > 0 && block.Sentences[0].Source != nil && block.Sentences[0].Source.FramedTopic {
-					content.TopicBlockIDs = append(content.TopicBlockIDs, block.ID)
-				}
-			}
-		}
+
 		for _, block := range componentBlocks(component) {
 			for _, sentence := range block.Sentences {
 				if source := sentence.Source; source != nil && source.StartsPDFPage {

@@ -37,10 +37,10 @@ func MergeReviewIssues(incoming, draft Document, previous, findings []ReviewIssu
 			if sourceAdopted {
 				continue
 			}
-		case "unknown_font_role", "ambiguous_body_heading", "ambiguous_inline_speaker", "inferred_inline_speaker_geometry", "non_uniform_source_tracking":
+		case "topic_frame_unverified", "unknown_font_role", "ambiguous_body_heading", "ambiguous_inline_speaker", "inferred_inline_speaker_geometry", "non_uniform_source_tracking":
 			original, exists := source[issue.ComponentID]
 			merged, retained := selected[issue.ComponentID]
-			geometryFinding := issue.Code == "inferred_inline_speaker_geometry" || issue.Code == "non_uniform_source_tracking"
+			geometryFinding := issue.Code == "topic_frame_unverified" || issue.Code == "inferred_inline_speaker_geometry" || issue.Code == "non_uniform_source_tracking"
 			if !retained || (exists && (!geometryFinding || geometryAdopted) && bytes.Equal(componentSemantic(original, true), componentSemantic(merged, true))) {
 				continue
 			}
