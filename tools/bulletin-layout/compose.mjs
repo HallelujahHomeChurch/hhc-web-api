@@ -17,11 +17,14 @@ export async function composeWithDiagnostics(input, renderer) {
       if (pageId) evidence = evidence.filter(location => location.pageId === pageId);
       if (!evidence.length && pageId) evidence = [{pageId}];
     }
-    if (!Array.isArray(evidence) || !evidence.length || evidence.length > 64) throw error;
+    if (!Array.isArray(evidence) || !evidence.length) throw error;
     const locations = [];
     for (const {pageId, slotId} of evidence) {
       if (!validID(pageId) || slotId !== undefined && !validID(slotId)) throw error;
-      if (!locations.some(location => location.pageId === pageId && location.slotId === slotId)) locations.push(slotId ? {pageId, slotId} : {pageId});
+      if (!locations.some(location => location.pageId === pageId && location.slotId === slotId)) {
+        locations.push(slotId ? {pageId, slotId} : {pageId});
+        if (locations.length > 64) throw error;
+      }
     }
     return {failure: {
       contentHash: input.expectedContentHash,

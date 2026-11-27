@@ -29,3 +29,14 @@ test('never diagnoses tampering, unknown failures, invalid IDs or empty evidence
   }
   await assert.rejects(composeWithDiagnostics(input, {composeBulletinLayout: async () => {throw new Error('page_requires_edit')}, measureBulletinLayout: async () => ({overflow: []})}));
 });
+
+test('preserves actionable evidence across repeated measurements of the same block', async () => {
+  const overflow = Array.from({length: 80}, () => ({pageId: 'p2', slotId: 'body'}));
+  const renderer = {
+    composeBulletinLayout: async () => { throw new Error('page_requires_edit'); },
+    measureBulletinLayout: async () => ({overflow}),
+  };
+  assert.deepEqual((await composeWithDiagnostics(input, renderer)).failure.locations, [overflow[0]]);
+  overflow.forEach((location, i) => { location.slotId = 'block-' + i; });
+  await assert.rejects(composeWithDiagnostics(input, renderer), /page_requires_edit/);
+});
