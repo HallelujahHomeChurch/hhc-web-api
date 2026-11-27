@@ -49,6 +49,8 @@ RUN node scripts/verify-bulletin-renderer-v11.mjs \
     && apt-get -o Acquire::Retries=0 update \
     && apt-get -o Acquire::Retries=0 install -y --no-install-recommends apt=3.0.4 libapt-pkg7.0=3.0.4 \
     && apt-get update && apt-get install -y --no-install-recommends ca-certificates poppler-utils=25.03.0-5+deb13u4 python3=3.13.5-1 libexpat1=2.9.0-1~deb13u1 libbrotli1=1.1.0-2+deb13u1 zlib1g=1:1.3.dfsg+really1.3.1-1+deb13u1 \
+        libgssapi-krb5-2=1.21.3-5+deb13u2 libk5crypto3=1.21.3-5+deb13u2 \
+        libkrb5-3=1.21.3-5+deb13u2 libkrb5support0=1.21.3-5+deb13u2 libzstd1=1.5.7+dfsg-1+deb13u1 \
     && test -s /etc/ssl/certs/ca-certificates.crt \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=extractor-build /bulletin-extractor /bulletin-extractor
