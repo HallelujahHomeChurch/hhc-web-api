@@ -199,6 +199,15 @@ func AssembleRecognition(source GeometryDocument, pages []RecognitionPage, resul
 				return DocumentCandidate{}, nil, err
 			}
 			block.Style.LetterSpacing = 0
+			if role == "body_topic" || role == "body_paragraph" || role == "body_subtitle" {
+				whole, partial := recognitionTopicFrame(lines, page.Frames)
+				switch {
+				case role == "body_topic" && whole:
+					block.Sentences[0].Source.FramedTopic = true
+				case role == "body_topic" || partial:
+					issues = append(issues, ReviewIssue{Code: "topic_frame_unverified", ComponentID: componentID, BlockID: block.ID, SourcePage: page.Number, Blocking: true})
+				}
+			}
 			for _, issue := range blockIssues {
 				if issue.Code != "non_uniform_source_tracking" {
 					issues = append(issues, issue)
@@ -238,30 +247,7 @@ func AssembleRecognition(source GeometryDocument, pages []RecognitionPage, resul
 				}
 			case "body_speaker":
 				bodies[bodyIndex].BodySection.Contributors = append(bodies[bodyIndex].BodySection.Contributors, Contributor{Role: "speaker", Name: block})
-			case "body_topic":
-				framed := len(lines) > 0
-				for _, line := range lines {
-					_, outside, matched := framedBodyHeading(line, page.Frames)
-					if !matched || len(outside) != 0 {
-						framed = false
-						break
-					}
-				}
-				if framed {
-					block.Sentences[0].Source.FramedTopic = true
-				} else {
-					issues = append(issues, ReviewIssue{Code: "topic_frame_unverified", ComponentID: componentID, BlockID: block.ID, SourcePage: page.Number, Blocking: true})
-				}
-				bodies[bodyIndex].BodySection.Blocks = append(bodies[bodyIndex].BodySection.Blocks, block)
-			case "body_paragraph", "body_quote":
-				if role == "body_paragraph" {
-					for _, line := range lines {
-						if _, outside, framed := framedBodyHeading(line, page.Frames); framed && len(outside) == 0 {
-							issues = append(issues, ReviewIssue{Code: "topic_frame_unverified", ComponentID: componentID, BlockID: block.ID, SourcePage: page.Number, Blocking: true})
-							break
-						}
-					}
-				}
+			case "body_topic", "body_paragraph", "body_quote":
 				bodies[bodyIndex].BodySection.Blocks = append(bodies[bodyIndex].BodySection.Blocks, block)
 			case "hymn_title":
 				hymns.HymnLyrics.Hymns[hymnIndex].Title = block
@@ -309,6 +295,25 @@ func AssembleRecognition(source GeometryDocument, pages []RecognitionPage, resul
 	}
 	issues = append(issues, validation...)
 	return DocumentCandidate{Document: &document, Evidence: allowed}, issues, nil
+}
+
+// Wrapped headings may occupy several lines, but must fit the same source frame.
+func recognitionTopicFrame(lines []geometryLine, frames []GeometryFrame) (whole, partial bool) {
+	for i := range frames {
+		matched := 0
+		for _, line := range lines {
+			if _, outside, ok := framedBodyHeading(line, frames[i:i+1]); ok && len(outside) == 0 {
+				matched++
+			}
+		}
+		if matched > 0 {
+			partial = true
+			if matched == len(lines) {
+				return true, true
+			}
+		}
+	}
+	return false, partial
 }
 
 // These are output-template positions, not recognition assumptions about the PDF.
