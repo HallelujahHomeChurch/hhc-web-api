@@ -168,3 +168,22 @@ func TestComponentEditAddsFirstAnnouncement(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestReplacingTextDropsItsVerifiedReadingHints(t *testing.T) {
+	d := validDocument(4)
+	b := &d.Components[1].BodySection.Blocks[0]
+	b.Sentences[0].Source = &SourceLocation{FramedTopic: true, StartsPDFPage: true, Page: 2, Box: Box{X: .1, Y: .2, Width: .3, Height: .04}}
+	member, err := ProjectMemberContent(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	member.Components[1].BodySection.Blocks[0].Sentences[0].Spans[0].Text = "更新。"
+	changed, err := EditComponents(d, member.Components)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projected, err := ProjectMemberContent(changed)
+	if err != nil || len(projected.TopicBlockIDs) != 0 || len(projected.PDFPageStarts) != 0 {
+		t.Fatal("stale reading hints", err)
+	}
+}

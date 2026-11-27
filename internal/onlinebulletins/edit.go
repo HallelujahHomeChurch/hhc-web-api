@@ -23,13 +23,19 @@ func EditComponents(current Document, components []Component) (Document, error) 
 	if json.Unmarshal(raw, &draft) != nil {
 		return Document{}, ErrComponentEdit
 	}
-	sources := map[string]*SourceLocation{}
+	type origin struct {
+		location                   *SourceLocation
+		componentID, blockID, text string
+	}
+	sources := map[string]origin{}
 	illustrations := map[string][]Illustration{}
 	for i := range draft.Components {
 		illustrations[draft.Components[i].ID] = draft.Components[i].Illustrations
 		for _, block := range componentBlocks(&draft.Components[i]) {
 			for _, sentence := range block.Sentences {
-				sources[sentence.ID] = sentence.Source
+				if sentence.Source != nil {
+					sources[sentence.ID] = origin{sentence.Source, draft.Components[i].ID, block.ID, sentenceIdentityText(sentence)}
+				}
 			}
 		}
 	}
@@ -52,8 +58,12 @@ func EditComponents(current Document, components []Component) (Document, error) 
 				if sentence.Source != nil {
 					return Document{}, ErrComponentEdit
 				}
-				if source := sources[sentence.ID]; source != nil {
-					copy := *source
+				if source, ok := sources[sentence.ID]; ok {
+					copy := *source.location
+					if source.componentID != draft.Components[i].ID || source.blockID != block.ID || source.text != sentenceIdentityText(*sentence) {
+						copy.FramedTopic = false
+						copy.StartsPDFPage = false
+					}
 					sentence.Source = &copy
 				}
 				for _, span := range sentence.Spans {

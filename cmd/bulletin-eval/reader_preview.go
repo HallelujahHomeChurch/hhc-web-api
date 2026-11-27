@@ -26,12 +26,7 @@ func previewReader(args []string, output io.Writer) error {
 			return document, err
 		}
 		defer file.Close()
-		raw, err := io.ReadAll(io.LimitReader(file, onlinebulletins.MaxDocumentBytes+1))
-		if err != nil || len(raw) > onlinebulletins.MaxDocumentBytes || json.Unmarshal(raw, &document) != nil {
-			return document, errEvaluation
-		}
-		_, err = onlinebulletins.ValidateDocument(document)
-		return document, err
+		return onlinebulletins.DecodeDocument(file)
 	}
 	before, err := read(*published)
 	if err != nil {
