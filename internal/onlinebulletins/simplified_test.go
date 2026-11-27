@@ -122,3 +122,17 @@ func TestConvertSimplifiedMetadata(t *testing.T) {
 		t.Fatalf("metadata: %+v %v", got, err)
 	}
 }
+
+func TestSimplifiedReaderRetainsTopicAndPDFBreak(t *testing.T) {
+	source := validDocument(4)
+	sentence := &source.Components[1].BodySection.Blocks[0].Sentences[0]
+	sentence.Source = &SourceLocation{FramedTopic: true, StartsPDFPage: true, Page: 2, Box: Box{X: .1, Y: .3, Width: .4, Height: .02}}
+	draft, err := simplifiedRunner(t).ConvertSimplified(context.Background(), source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	member, err := ProjectMemberContent(draft)
+	if err != nil || len(member.TopicBlockIDs) != 1 || member.TopicBlockIDs[0] != "block-body" || member.PDFPageStarts[sentence.ID] != 2 {
+		t.Fatal("conversion lost source page or topic", err)
+	}
+}

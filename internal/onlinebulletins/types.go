@@ -255,8 +255,10 @@ type Sentence struct {
 	Source *SourceLocation `json:"source,omitempty"`
 }
 type SourceLocation struct {
-	Page int `json:"page"`
-	Box  Box `json:"box"`
+	StartsPDFPage bool `json:"startsPdfPage,omitempty"`
+	FramedTopic   bool `json:"framedTopic,omitempty"`
+	Page          int  `json:"page"`
+	Box           Box  `json:"box"`
 }
 type Span struct {
 	Text     string   `json:"text"`

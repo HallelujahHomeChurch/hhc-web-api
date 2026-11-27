@@ -161,7 +161,7 @@ func ApplyUpdatePlan(input UpdateInput, plan UpdatePlan) (Document, []SentenceMa
 	if err != nil {
 		return Document{}, nil, err
 	}
-	if plan.Readiness != "ready" {
+	if plan.Readiness != "ready" || !slices.Equal(framedTopicIDs(input.Incoming), framedTopicIDs(document)) {
 		return Document{}, nil, ErrUpdateSource
 	}
 	if input.Published == nil {

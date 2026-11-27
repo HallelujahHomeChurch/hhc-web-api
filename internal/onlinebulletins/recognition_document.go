@@ -199,6 +199,15 @@ func AssembleRecognition(source GeometryDocument, pages []RecognitionPage, resul
 				return DocumentCandidate{}, nil, err
 			}
 			block.Style.LetterSpacing = 0
+			if role == "body_topic" || role == "body_paragraph" || role == "body_subtitle" {
+				whole, partial := recognitionTopicFrame(lines, page.Frames)
+				switch {
+				case role == "body_topic" && whole:
+					block.Sentences[0].Source.FramedTopic = true
+				case role == "body_topic" || partial:
+					issues = append(issues, ReviewIssue{Code: "topic_frame_unverified", ComponentID: componentID, BlockID: block.ID, SourcePage: page.Number, Blocking: true})
+				}
+			}
 			for _, issue := range blockIssues {
 				if issue.Code != "non_uniform_source_tracking" {
 					issues = append(issues, issue)
@@ -238,7 +247,7 @@ func AssembleRecognition(source GeometryDocument, pages []RecognitionPage, resul
 				}
 			case "body_speaker":
 				bodies[bodyIndex].BodySection.Contributors = append(bodies[bodyIndex].BodySection.Contributors, Contributor{Role: "speaker", Name: block})
-			case "body_paragraph":
+			case "body_topic", "body_paragraph", "body_quote":
 				bodies[bodyIndex].BodySection.Blocks = append(bodies[bodyIndex].BodySection.Blocks, block)
 			case "hymn_title":
 				hymns.HymnLyrics.Hymns[hymnIndex].Title = block
@@ -265,6 +274,20 @@ func AssembleRecognition(source GeometryDocument, pages []RecognitionPage, resul
 	document.Components = append([]Component{cover}, bodies...)
 	document.Components = append(document.Components, hymns)
 	document.Components = append(document.Components, back...)
+	// Recognition creates each block from exactly one source page. Mark the
+	// first visible sentence for each physical page before any layout reflow.
+	markedPages := map[int]bool{}
+	for i := range document.Components {
+		for _, block := range componentBlocks(&document.Components[i]) {
+			for _, sentence := range block.Sentences {
+				location := sentence.Source
+				if location != nil && location.Page > 1 && !markedPages[location.Page] {
+					location.StartsPDFPage = true
+					markedPages[location.Page] = true
+				}
+			}
+		}
+	}
 	recognitionFixedSlots(&document, canonical.Metadata)
 	validation, err := ValidateDocument(document)
 	if err != nil {
@@ -272,6 +295,25 @@ func AssembleRecognition(source GeometryDocument, pages []RecognitionPage, resul
 	}
 	issues = append(issues, validation...)
 	return DocumentCandidate{Document: &document, Evidence: allowed}, issues, nil
+}
+
+// Wrapped headings may occupy several lines, but must fit the same source frame.
+func recognitionTopicFrame(lines []geometryLine, frames []GeometryFrame) (whole, partial bool) {
+	for i := range frames {
+		matched := 0
+		for _, line := range lines {
+			if _, outside, ok := framedBodyHeading(line, frames[i:i+1]); ok && len(outside) == 0 {
+				matched++
+			}
+		}
+		if matched > 0 {
+			partial = true
+			if matched == len(lines) {
+				return true, true
+			}
+		}
+	}
+	return false, partial
 }
 
 // These are output-template positions, not recognition assumptions about the PDF.

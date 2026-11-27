@@ -460,3 +460,18 @@ func TestSourceIllustrationsSurviveSameSourceAndRequireCurrentSourceSelectionAft
 		t.Fatal("incoming source could not resolve picture", err)
 	}
 }
+
+func TestMergePreservesVerifiedTopicAndPhysicalPageAtSameText(t *testing.T) {
+	base, local, incoming := validDocument(4), validDocument(4), validDocument(4)
+	incoming.Components[1].BodySection.Blocks[0].Sentences[0].Source = &SourceLocation{
+		FramedTopic: true, StartsPDFPage: true, Page: 2, Box: Box{X: .1, Y: .4, Width: .3, Height: .02},
+	}
+	merged, err := MergeDocuments(base, local, incoming, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	member, err := ProjectMemberContent(merged)
+	if err != nil || len(member.TopicBlockIDs) != 1 || member.PDFPageStarts["sentence-body"] != 2 {
+		t.Fatalf("lost verified reading anchors: %v", err)
+	}
+}

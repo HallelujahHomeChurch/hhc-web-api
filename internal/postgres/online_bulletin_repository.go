@@ -9,6 +9,7 @@ import (
 	"errors"
 	"reflect"
 	"regexp"
+	"slices"
 	"time"
 
 	"github.com/HallelujahHomeChurch/hhc-web-api/internal/onlinebulletins"
@@ -276,7 +277,10 @@ func (r *Repository) CompleteOnlineBulletinExtraction(ctx context.Context, job o
 			return err
 		}
 		planned := false
-		if r.llmBulletinExtraction && job.ExtractorVersion == onlinebulletins.RecognitionExtractorVersion() {
+		topicNeedsReview := slices.ContainsFunc(issues, func(issue onlinebulletins.ReviewIssue) bool {
+			return issue.Code == "topic_frame_unverified"
+		})
+		if !topicNeedsReview && r.llmBulletinExtraction && job.ExtractorVersion == onlinebulletins.RecognitionExtractorVersion() {
 			planned, err = queueOnlineUpdate(ctx, tx, job, next, candidate, now)
 			if err != nil {
 				return err

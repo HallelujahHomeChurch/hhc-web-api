@@ -10,6 +10,8 @@ const OfflineValidity = 7 * 24 * time.Hour
 // MemberContent is intentionally not Document: extraction provenance never
 // crosses the member boundary. Components retain semantic IDs and typography.
 type MemberContent struct {
+	TopicBlockIDs                 []string          `json:"topicBlockIds,omitempty"`
+	PDFPageStarts                 map[string]int    `json:"pdfPageStarts,omitempty"`
 	IllustrationAssets            map[string]string `json:"-"`
 	HeaderSpeakerStartComponentID string            `json:"headerSpeakerStartComponentId,omitempty"`
 	PrintedBodyPageCount          int               `json:"printedBodyPageCount"`
@@ -19,6 +21,21 @@ type MemberContent struct {
 	Pages                         []Page            `json:"pages"`
 	LayoutManifest                LayoutManifest    `json:"layoutManifest"`
 	Components                    []Component       `json:"components"`
+}
+
+func framedTopicIDs(document Document) []string {
+	var ids []string
+	for i := range document.Components {
+		component := &document.Components[i]
+		if body := component.BodySection; body != nil {
+			for _, block := range body.Blocks {
+				if len(block.Sentences) > 0 && block.Sentences[0].Source != nil && block.Sentences[0].Source.FramedTopic {
+					ids = append(ids, block.ID)
+				}
+			}
+		}
+	}
+	return ids
 }
 
 func ProjectMemberContent(source Document) (MemberContent, error) {
@@ -31,8 +48,23 @@ func ProjectMemberContent(source Document) (MemberContent, error) {
 		return MemberContent{}, err
 	}
 	content.HeaderSpeakerStartComponentID = headerSpeakerStart(source)
+	content.TopicBlockIDs = framedTopicIDs(source)
 	content.PrintedBodyPageCount = source.SourcePageCount - 2
 	content.IllustrationAssets = map[string]string{}
+	for i := range source.Components {
+		component := &source.Components[i]
+
+		for _, block := range componentBlocks(component) {
+			for _, sentence := range block.Sentences {
+				if source := sentence.Source; source != nil && source.StartsPDFPage {
+					if content.PDFPageStarts == nil {
+						content.PDFPageStarts = map[string]int{}
+					}
+					content.PDFPageStarts[sentence.ID] = source.Page
+				}
+			}
+		}
+	}
 	for i := range content.Components {
 		for j := range content.Components[i].Illustrations {
 			picture := &content.Components[i].Illustrations[j]

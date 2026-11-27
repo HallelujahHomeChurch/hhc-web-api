@@ -110,7 +110,7 @@ func recognitionSemanticSHA256(input RecognitionPage, result RecognitionResult) 
 					return "", false
 				}
 				owner.separator = true
-			case "body_paragraph":
+			case "body_paragraph", "body_topic", "body_quote":
 				owner.prose = true
 			}
 			ownerAnchor = owner.anchor
