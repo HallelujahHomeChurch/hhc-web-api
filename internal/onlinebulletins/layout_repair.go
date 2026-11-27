@@ -44,16 +44,46 @@ func layoutRepairInputSHA256(job LayoutJob, issues []ReviewIssue) string {
 	return updateHash(comparisonJSON([]any{job.Document, job.Canonical, issues}))
 }
 
+// A page-level failure can be repaired with local style changes only when
+// the target block is used exclusively on the diagnosed page.
+func localPageRepairTargets(job LayoutJob, issue ReviewIssue) map[string]string {
+	targets := map[string]string{}
+	pages := job.Document.LayoutManifest.Pages
+	if issue.Code != "layout_validation_failed" || issue.SourcePage < 1 || issue.SourcePage > len(pages) ||
+		issue.FixedElement != "" || issue.ComponentID != "" || issue.BlockID != "" || issue.SentenceID != "" {
+		return targets
+	}
+	for _, slot := range pages[issue.SourcePage-1].Slots {
+		if slot.BlockID != "" {
+			targets[slot.BlockID] = slot.ComponentID
+		}
+	}
+	for index, page := range pages {
+		if index+1 != issue.SourcePage {
+			for _, slot := range page.Slots {
+				delete(targets, slot.BlockID)
+			}
+		}
+	}
+	return targets
+}
+
 func repairableBlocks(job LayoutJob, issues []ReviewIssue) []Block {
 	if !job.Automatic || len(issues) == 0 || len(issues) > 64 {
 		return nil
+	}
+	pageTargets := map[string]string{}
+	for _, issue := range issues {
+		for block, component := range localPageRepairTargets(job, issue) {
+			pageTargets[block] = component
+		}
 	}
 	var blocks []Block
 	seen := map[string]bool{}
 	for _, component := range job.Document.Components {
 		for _, block := range componentBlocks(&component) {
 			for _, issue := range issues {
-				if issue.BlockID == block.ID && issue.ComponentID == component.ID && !seen[block.ID] {
+				if ((issue.BlockID == block.ID && issue.ComponentID == component.ID) || pageTargets[block.ID] == component.ID) && !seen[block.ID] {
 					seen[block.ID] = true
 					blocks = append(blocks, *block)
 				}

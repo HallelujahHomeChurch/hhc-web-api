@@ -84,3 +84,16 @@ func TestAzureLayoutRepairBindsEvidenceAndRejectsInjectedContent(t *testing.T) {
 		t.Fatal("model content injection accepted")
 	}
 }
+
+func TestPageRepairTargetsExcludeCrossPageBlocks(t *testing.T) {
+	job := LayoutJob{Document: validDocument(4), Automatic: true}
+	issue := ReviewIssue{Code: "layout_validation_failed", SourcePage: 2, Blocking: true}
+	page := job.Document.LayoutManifest.Pages[1]
+	if len(repairableBlocks(job, []ReviewIssue{issue})) == 0 {
+		t.Fatal("located page should permit local presentation repair")
+	}
+	job.Document.LayoutManifest.Pages[2].Slots = append(job.Document.LayoutManifest.Pages[2].Slots, page.Slots...)
+	if len(repairableBlocks(job, []ReviewIssue{issue})) != 0 {
+		t.Fatal("page-wide repair included cross-page blocks")
+	}
+}
