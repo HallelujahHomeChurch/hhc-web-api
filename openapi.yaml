@@ -13891,6 +13891,14 @@ components:
           then: { required: [templateSnapshot] }
           else: { not: { required: [templateSnapshot] } }
       properties:
+        topicBlockIds:
+          type: array
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/OnlineBulletinID' }
+        pdfPageStarts:
+          type: object
+          additionalProperties: { type: integer, minimum: 2, maximum: 40 }
+          description: Physical source PDF page beginning at the keyed sentence.
         headerSpeakerStartComponentId:
           allOf: [{ $ref: '#/components/schemas/OnlineBulletinID' }]
           description: Source-verified first section for article-header speakers. Omitted when ambiguous; conveys no PDF coordinates.
@@ -14425,6 +14433,8 @@ components:
           additionalProperties: false
           required: [page, box]
           properties:
+            startsPdfPage: { type: boolean }
+            framedTopic: { type: boolean }
             page: { type: integer, minimum: 1, maximum: 40 }
             box: { $ref: '#/components/schemas/OnlineBulletinBox' }
     OnlineBulletinParagraphStyle:

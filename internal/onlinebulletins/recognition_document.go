@@ -238,7 +238,30 @@ func AssembleRecognition(source GeometryDocument, pages []RecognitionPage, resul
 				}
 			case "body_speaker":
 				bodies[bodyIndex].BodySection.Contributors = append(bodies[bodyIndex].BodySection.Contributors, Contributor{Role: "speaker", Name: block})
-			case "body_paragraph":
+			case "body_topic":
+				framed := len(lines) > 0
+				for _, line := range lines {
+					_, outside, matched := framedBodyHeading(line, page.Frames)
+					if !matched || len(outside) != 0 {
+						framed = false
+						break
+					}
+				}
+				if framed {
+					block.Sentences[0].Source.FramedTopic = true
+				} else {
+					issues = append(issues, ReviewIssue{Code: "topic_frame_unverified", ComponentID: componentID, BlockID: block.ID, SourcePage: page.Number, Blocking: true})
+				}
+				bodies[bodyIndex].BodySection.Blocks = append(bodies[bodyIndex].BodySection.Blocks, block)
+			case "body_paragraph", "body_quote":
+				if role == "body_paragraph" {
+					for _, line := range lines {
+						if _, outside, framed := framedBodyHeading(line, page.Frames); framed && len(outside) == 0 {
+							issues = append(issues, ReviewIssue{Code: "topic_frame_unverified", ComponentID: componentID, BlockID: block.ID, SourcePage: page.Number, Blocking: true})
+							break
+						}
+					}
+				}
 				bodies[bodyIndex].BodySection.Blocks = append(bodies[bodyIndex].BodySection.Blocks, block)
 			case "hymn_title":
 				hymns.HymnLyrics.Hymns[hymnIndex].Title = block
@@ -265,6 +288,20 @@ func AssembleRecognition(source GeometryDocument, pages []RecognitionPage, resul
 	document.Components = append([]Component{cover}, bodies...)
 	document.Components = append(document.Components, hymns)
 	document.Components = append(document.Components, back...)
+	// Recognition creates each block from exactly one source page. Mark the
+	// first visible sentence for each physical page before any layout reflow.
+	markedPages := map[int]bool{}
+	for i := range document.Components {
+		for _, block := range componentBlocks(&document.Components[i]) {
+			for _, sentence := range block.Sentences {
+				location := sentence.Source
+				if location != nil && location.Page > 1 && !markedPages[location.Page] {
+					location.StartsPDFPage = true
+					markedPages[location.Page] = true
+				}
+			}
+		}
+	}
 	recognitionFixedSlots(&document, canonical.Metadata)
 	validation, err := ValidateDocument(document)
 	if err != nil {

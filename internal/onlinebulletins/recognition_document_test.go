@@ -231,3 +231,32 @@ func TestRecognitionHymnNumberMayPrecedeItsTitle(t *testing.T) {
 		}
 	}
 }
+
+func TestRecognitionFramedTopicWithinArticle(t *testing.T) {
+	source, pages, results := recognitionDocumentFixture(t)
+	for i, role := range []string{"body_topic", "body_quote", "body_topic"} {
+		text := fmt.Sprintf("測試段落%d", i+1)
+		box := Box{X: .155, Y: .4 + float64(i)*.04, Width: .2, Height: .015}
+		source.Pages[1].Texts = append(source.Pages[1].Texts, GeometryText{Text: text, Box: box, FontFamily: "MingLiU", FontSize: 12})
+		source.Pages[1].Frames = append(source.Pages[1].Frames, GeometryFrame{Element: "bodyHeadingFrame", Box: box})
+		id := fmt.Sprintf("p2-t%d", len(pages[1].Native)+1)
+		pages[1].Native = append(pages[1].Native, RecognitionText{ID: id, Text: text, Box: box})
+		results[1].Blocks = append(results[1].Blocks, RecognitionBlock{Mode: "native", Role: role, Group: "article", Text: text, SourceIDs: []string{id}, Box: box})
+	}
+	pages[1].Frames = recognitionFrames(source.Pages[1])
+	candidate, _, err := AssembleRecognition(source, pages, results, candidateIssue(), ConversionTemplateSettings(), validDocument(4).LayoutManifest.Assets)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, err := ProjectMemberContent(*candidate.Document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := content.Components[1].BodySection
+	if len(body.Blocks) != 4 || len(content.TopicBlockIDs) != 2 || content.TopicBlockIDs[0] != body.Blocks[1].ID || content.TopicBlockIDs[1] != body.Blocks[3].ID {
+		t.Fatalf("topics or article order changed: %v", content.TopicBlockIDs)
+	}
+	if content.PDFPageStarts[body.Title.Sentences[0].ID] != 2 || body.Blocks[1].Sentences[0].Source != nil {
+		t.Fatal("missing page start or leaked source evidence")
+	}
+}

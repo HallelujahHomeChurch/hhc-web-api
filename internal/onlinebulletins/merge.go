@@ -198,6 +198,32 @@ func MergeDocuments(base, local, incoming Document, choices []ComparisonChoice) 
 	if err != nil {
 		return Document{}, ErrComparison
 	}
+	// A merge may retain historical sentence IDs. Restore only hints proved by
+	// the same incoming block and unchanged spans, never from the previous PDF.
+	type blockKey struct{ component, block string }
+	incomingBlocks := map[blockKey]*Block{}
+	for i := range incoming.Components {
+		component := &incoming.Components[i]
+		for _, block := range componentBlocks(component) {
+			incomingBlocks[blockKey{component.ID, block.ID}] = block
+		}
+	}
+	for i := range draft.Components {
+		component := &draft.Components[i]
+		for _, block := range componentBlocks(component) {
+			source := incomingBlocks[blockKey{component.ID, block.ID}]
+			if source == nil || len(block.Sentences) != len(source.Sentences) {
+				continue
+			}
+			for j := range block.Sentences {
+				expected := source.Sentences[j]
+				if expected.Source != nil && (expected.Source.FramedTopic || expected.Source.StartsPDFPage) && bytes.Equal(comparisonJSON(block.Sentences[j].Spans), comparisonJSON(expected.Spans)) {
+					copy := *expected.Source
+					block.Sentences[j].Source = &copy
+				}
+			}
+		}
+	}
 	return draft, nil
 }
 
