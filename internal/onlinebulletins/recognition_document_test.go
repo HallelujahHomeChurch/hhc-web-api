@@ -77,6 +77,19 @@ func TestAssembleRecognitionDoesNotUseLegacyCoverParser(t *testing.T) {
 		t.Fatal("full recognition did not form a document", err, issues)
 	}
 	document := *candidate.Document
+	for _, part := range source.Pages[2].Texts {
+		if part.Text == "小組詩歌" {
+			found := false
+			for _, slot := range document.LayoutManifest.Pages[2].FixedSlots {
+				if slot.Element == "hymnLabel" {
+					found = slot.Box.X == part.Box.X && slot.Box.Y == part.Box.Y
+				}
+			}
+			if !found {
+				t.Fatal("hymn label must retain its measured source position")
+			}
+		}
+	}
 	for page, elements := range map[int][]string{0: {"title", "subtitle"}, 1: {"title", "subtitle", "topRule"}} {
 		for _, element := range elements {
 			found := false
