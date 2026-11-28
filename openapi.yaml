@@ -6444,6 +6444,11 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+        '499':
+          description: The caller canceled the request during playback authorization (request_canceled). A disconnected caller may not receive the response.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
         '503':
           description: Temporary dependency failure; capped backoff with jitter.
           content:
