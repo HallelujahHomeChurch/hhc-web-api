@@ -3,6 +3,7 @@ package onlinebulletins
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"time"
 )
 
@@ -142,16 +143,28 @@ func (w ExtractionWorker) runLayout(parent context.Context, job LayoutJob) error
 			return result, err
 		}
 		result, err = w.Validate(processing, job.Document, job.Canonical)
-		if err != nil && job.Automatic && w.RepairLayout != nil {
-			issues := layoutReviewIssues(err)
-			if len(repairableBlocks(job, issues)) > 0 {
-				repaired, repairErr := w.RepairLayout(processing, job, issues)
-				if repairErr == nil {
-					return repaired, nil
-				}
-				if errors.Is(repairErr, ErrLayoutLease) {
-					return LayoutResult{}, repairErr
-				}
+		if err == nil {
+			return result, nil
+		}
+		issues := layoutReviewIssues(err)
+		reason := "eligible"
+		switch {
+		case !job.Automatic:
+			reason = "manual_revision"
+		case w.RepairLayout == nil:
+			reason = "repair_unavailable"
+		case len(repairableBlocks(job, issues)) == 0:
+			reason = "no_repairable_block"
+		}
+		first := issues[0]
+		slog.Info("bulletin layout validation failed", "job", job.ID, "revision", job.Revision, "attempt", job.Attempts, "code", first.Code, "sourcePage", first.SourcePage, "component", first.ComponentID, "block", first.BlockID, "fixedElement", first.FixedElement, "findings", len(issues), "repairEligibility", reason)
+		if reason == "eligible" {
+			repaired, repairErr := w.RepairLayout(processing, job, issues)
+			if repairErr == nil {
+				return repaired, nil
+			}
+			if errors.Is(repairErr, ErrLayoutLease) {
+				return LayoutResult{}, repairErr
 			}
 		}
 		return result, err

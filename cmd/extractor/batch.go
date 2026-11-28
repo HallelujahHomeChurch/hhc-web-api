@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"log/slog"
+	"path/filepath"
 	"regexp"
 	"time"
 
@@ -130,7 +132,11 @@ func runBatch(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		runner := onlinebulletins.RecognitionRunner{Client: client, Store: repository, Assets: assets}
+		coverage, err := onlinebulletins.LoadRecognitionFontCoverage(filepath.Join(filepath.Dir(templateManifestFile), "font-coverage.json"), assets)
+		if err != nil {
+			return err
+		}
+		runner := onlinebulletins.RecognitionRunner{Client: client, Store: repository, Assets: assets, FontCoverage: coverage}
 		worker.AutoPublish = repository.AutoPublishNextRecognition
 		worker.AssessDerived = func(ctx context.Context, job onlinebulletins.ConversionJob, document onlinebulletins.Document, metadata onlinebulletins.CanonicalMetadata) error {
 			input, err := onlinebulletins.SimplifiedAssessmentInput(job.Source, job.SourceMetadata, document, metadata)
@@ -166,6 +172,7 @@ func runBatch(ctx context.Context) error {
 				var err error
 				evidence, err = client.PlanLayoutRepair(inference, job, issues)
 				cancel()
+				slog.Info("bulletin layout repair inference", "job", job.ID, "revision", job.Revision, "model", evidence.Usage.Model, "requests", evidence.Usage.Requests, "inputTokens", evidence.Usage.InputTokens, "outputTokens", evidence.Usage.OutputTokens, "planReady", err == nil)
 				if evidence.InputSHA256 != "" {
 					persistence, stop := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 					saveErr := repository.SaveOnlineBulletinLayoutRepair(persistence, job, evidence, time.Now().UTC())
@@ -182,7 +189,9 @@ func runBatch(ctx context.Context) error {
 			if err != nil {
 				return onlinebulletins.LayoutResult{}, err
 			}
-			return compose(ctx, repaired, job.Canonical)
+			result, err := compose(ctx, repaired, job.Canonical)
+			slog.Info("bulletin layout repair revalidation", "job", job.ID, "revision", job.Revision, "reusedPlan", job.Repair != nil, "passed", err == nil)
+			return result, err
 		}
 		worker.Update = func(ctx context.Context, job onlinebulletins.UpdateJob) (onlinebulletins.UpdateEvidence, error) {
 			return client.ResumeVerifiedUpdate(ctx, job.Input, job.SavedAttempts, func(attempt onlinebulletins.UpdateAttempt) error {

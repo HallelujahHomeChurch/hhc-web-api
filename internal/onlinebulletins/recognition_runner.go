@@ -14,9 +14,10 @@ type RecognitionStore interface {
 }
 
 type RecognitionRunner struct {
-	Client *AzureExtractor
-	Store  RecognitionStore
-	Assets []Asset
+	Client       *AzureExtractor
+	Store        RecognitionStore
+	Assets       []Asset
+	FontCoverage FontCoverage
 }
 
 func (r RecognitionRunner) Run(ctx context.Context, job ExtractionJob, source GeometryDocument, inputs []RecognitionPage, images map[string]SourceImage) (DocumentCandidate, []ReviewIssue, error) {
@@ -104,6 +105,9 @@ func (r RecognitionRunner) Run(ctx context.Context, job ExtractionJob, source Ge
 	candidate, issues, err := AssembleRecognition(source, inputs, results, job.Canonical, *job.TemplateSnapshot, r.Assets)
 	if err != nil || candidate.Document == nil {
 		return candidate, issues, err
+	}
+	if r.FontCoverage != nil {
+		issues = append(issues, r.FontCoverage.apply(candidate.Document)...)
 	}
 	if err := attachRecognitionImages(&candidate, results, images); err != nil {
 		return DocumentCandidate{}, nil, err

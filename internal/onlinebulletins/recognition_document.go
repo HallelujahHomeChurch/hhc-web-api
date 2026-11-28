@@ -288,7 +288,7 @@ func AssembleRecognition(source GeometryDocument, pages []RecognitionPage, resul
 			}
 		}
 	}
-	recognitionFixedSlots(&document, canonical.Metadata)
+	recognitionFixedSlots(&document, canonical.Metadata, allowed.Pages[len(allowed.Pages)-2])
 	validation, err := ValidateDocument(document)
 	if err != nil {
 		return DocumentCandidate{}, nil, fmt.Errorf("%w: document: %v", ErrRecognition, err)
@@ -317,7 +317,7 @@ func recognitionTopicFrame(lines []geometryLine, frames []GeometryFrame) (whole,
 }
 
 // These are output-template positions, not recognition assumptions about the PDF.
-func recognitionFixedSlots(document *Document, canonical CanonicalMetadata) {
+func recognitionFixedSlots(document *Document, canonical CanonicalMetadata, hymnPage GeometryPage) {
 	add := func(page int, element string, x, y, w, h, size float64) {
 		document.LayoutManifest.Pages[page].FixedSlots = append(document.LayoutManifest.Pages[page].FixedSlots, FixedSlot{ID: fmt.Sprintf("fixed-%d-%s", page, element), Element: element, sourcePage: page + 1, Box: Box{X: x, Y: y, Width: w, Height: h}, Style: ParagraphStyle{FontSize: size, LineHeight: size * 1.25, Align: "left"}})
 	}
@@ -349,6 +349,25 @@ func recognitionFixedSlots(document *Document, canonical CanonicalMetadata) {
 	add(last, "summaryFrame", .13, .025, .82, .2, 10)
 	add(last, "announcementsFrame", .04, .23, .91, .19, 10)
 	add(last, "prayersFrame", .04, .43, .91, .12, 10)
+	// A mixed page can start with the end of a sermon. Anchor the label
+	// to its measured source line when that line is unambiguous.
+	lines, err := sourceLines(hymnPage, true)
+	if err == nil {
+		var labels []geometryLine
+		for _, line := range lines {
+			if strings.TrimSpace(lineText(line)) == "小組詩歌" {
+				labels = append(labels, line)
+			}
+		}
+		if len(labels) == 1 {
+			box := textBounds(labels[0].parts)
+			size := labels[0].parts[0].FontSize
+			if size >= 9 && size <= 48 {
+				add(last-1, "hymnLabel", box.X, box.Y, 1-box.X-.02, math.Max(box.Height, size*1.25/hymnPage.Height), size)
+				return
+			}
+		}
+	}
 	add(last-1, "hymnLabel", .06, .07, .85, .04, 16)
 }
 
